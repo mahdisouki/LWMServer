@@ -164,6 +164,7 @@ assignHelperToTruck: async (req, res) => {
       res.status(500).json({ message: "Failed to assign helper", error: error.message });
   }
 },
+
 updateDriverLocation: async (req, res) => {
   const { driverId } = req.params;
   const { latitude, longitude } = req.body;
@@ -180,7 +181,7 @@ updateDriverLocation: async (req, res) => {
     // Find the assigned helper by the truck's helperId
     const truck = await Truck.findOne({ driverId: driverId });
     if (!truck || !truck.helperId) {
-      return res.status(404).json({ message: "No helper assigned to this driver" });
+      return res.status(404).json({ message: "No helper assigned to this truck" });
     }
 
     const helper = await Helper.findById(truck.helperId);

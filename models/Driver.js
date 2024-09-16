@@ -10,12 +10,13 @@ const driverSchema = new mongoose.Schema({
     type: {
       type: String,
       enum: ['Point'],
-      required: true,
+      required: false,
     },
     coordinates: {
       type: [Number],
-      required: true,
+      required: false,
     },
+    helperId: { type: mongoose.Schema.Types.ObjectId, ref: 'Helper' } 
   }
 });
 

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const mongoose = require ('mongoose');
 
-mongoose.connect("mongodb+srv://soukimahdi:londonwaste@clusterwaste.eytju.mongodb.net/?retryWrites=true&w=majority&appName=ClusterWaste")
+mongoose.connect(process.env.MONGODB_URI)
 .then(()=>{
 console.log("DB connected!");
 }).catch((err)=>console.log(err));

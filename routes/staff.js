@@ -12,6 +12,8 @@ router.get('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.getStaffById);
 router.delete('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.deleteStaff);
 router.put('/staff/:id', isAuth, checkRole('Admin'),multer.single('picture'), staffCtrl.updateStaff);
 router.post('/assignDriver/:driverId',isAuth, checkRole('Admin'), staffCtrl.assignDriverToTruck);
+router.put('/updateDriverLocation/:driverId',isAuth, checkRole('Admin'), staffCtrl.updateDriverLocation);
 router.post('/assignHelper/:helperId',isAuth, checkRole('Admin'), staffCtrl.assignHelperToTruck);
+
 
 module.exports = router;

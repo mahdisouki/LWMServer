@@ -6,7 +6,8 @@ const truckStatusSchema = new Schema({
   
   pictureBefore: [{ type: String }], 
   pictureAfter: [{ type: String }], 
-  fuelLevel: { type: Number, required: true } ,
+  fuelLevelBefore: { type: Number } ,
+  fuelLevelAfter: { type: Number } ,
   mileageStart: { type: Number },
   mileageEnd: { type: Number },
   conditionReport: { type: String },
