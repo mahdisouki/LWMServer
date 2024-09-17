@@ -1,12 +1,76 @@
 const { User } = require("../models/User");
+const { Helper } = require("../models/Helper");
 const Task = require("../models/Task");
 const Truck = require("../models/Truck");
 const bcrypt = require("bcrypt");
 const TruckStatus = require("../models/TruckStatus");
 
 const driverManagement = {
+  updateDriverProfile: async (req, res) => {
+    const driverId = req.user._id; 
+    const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth,picture } = req.body;
+
+    try {
+        const driver = await User.findById(driverId);
+        if (!driver) {
+            return res.status(404).json({ message: "Driver not found" });
+        }
+
+        // Update fields if provided
+        if (email) driver.email = email;
+        if (officialEmail) driver.officialEmail = officialEmail;
+        if (phoneNumber) driver.phoneNumber = phoneNumber;
+        if (username) driver.username = username;
+        if (gender) driver.gender = gender;
+        if (designation) driver.designation = designation;
+        if (dateOfBirth) driver.dateOfBirth = dateOfBirth;
+      
+        // The picture URL is automatically set by the Cloudinary middleware
+        if (req.file) {
+            driver.picture = req.file.path;  // This should be adjusted if `req.file.path` does not correctly point to the image URL
+        }
+
+        await driver.save();
+        res.status(200).json({ message: "Driver profile updated successfully", driver });
+    } catch (error) {
+        console.error("Error updating driver profile:", error);
+        res.status(500).json({ message: "Failed to update driver profile", error: error.message });
+    }
+},
+
+// getHelperLocationForDriver: async (req, res) => {
+//   const driverId = req.user._id; // Assuming the driver ID is obtained from authenticated user's context
+
+//   try {
+//     // Find the truck assigned to this driver
+//     const truck = await Truck.findOne({ driverId: driverId });
+//     if (!truck) {
+//       return res.status(404).json({ message: "No truck found for the given driver." });
+//     }
+
+//     // Check if a helper is assigned to the truck
+//     if (!truck.helperId) {
+//       return res.status(404).json({ message: "No helper assigned to this truck" });
+//     }
+
+//     // Fetch the helper using helperId from the truck
+//     const helper = await Helper.findById(truck.helperId);
+//     if (!helper) {
+//       return res.status(404).json({ message: "Helper not found" });
+//     }
+
+//     if (!helper.location) {
+//       return res.status(404).json({ message: "Location for this helper is not set" });
+//     }
+
+//     res.status(200).json({ message: "Helper location retrieved successfully", location: helper.location });
+//   } catch (error) {
+//     res.status(500).json({ message: "Failed to retrieve helper location", error: error.message });
+//   }
+// },
+
      getTasksForDriver : async (req, res) => {
-        const { driverId } = req.params;  // ID of the driver from URL
+        const driverId = req.user._id;   // ID of the driver from URL
       
         try {
           // Find the truck that this driver is assigned to
@@ -22,10 +86,29 @@ const driverManagement = {
           res.status(500).json({ message: "Failed to retrieve tasks", error: error.message });
         }
       },
-      
+    
+// rateTask: async (req, res) => {
+//   const { taskId } = req.params;
+//   const { clientSatisfaction, feedback } = req.body;
 
+//   try {
+//     const task = await Task.findById(taskId);
+//     if (!task) {
+//       return res.status(404).json({ message: "Task not found" });
+//     }
+
+//     task.clientSatisfaction = clientSatisfaction;
+//     if (feedback) task.feedback = feedback; // Only update feedback if provided
+
+//     await task.save();
+//     res.status(200).json({ message: "Task rated successfully", task });
+//   } catch (error) {
+//     res.status(500).json({ message: "Failed to rate task", error: error.message });
+//   }
+// },
 
       // Début de la journée pour un camion
+     
       updateTruckStart : async (req, res) => {
           const { truckId } = req.params;
           const { fuelLevel, mileageStart } = req.body;
@@ -77,26 +160,107 @@ const driverManagement = {
       res.status(500).json({ message: "Failed to update truck end status", error: error.message });
   }
 },
+ uploadInitialConditionPhotos : async (req, res) => {
+    const { taskId } = req.params;
+    const uploads = req.files.map(file => file.path); // Paths of uploaded images stored by Cloudinary
 
-// rateTask: async (req, res) => {
-//   const { taskId } = req.params;
-//   const { clientSatisfaction, feedback } = req.body;
+    try {
+        const taskUpdate = {
+            initialConditionPhotos: uploads
+        };
 
-//   try {
-//     const task = await Task.findById(taskId);
-//     if (!task) {
-//       return res.status(404).json({ message: "Task not found" });
-//     }
+        const task = await Task.findByIdAndUpdate(
+            taskId,
+            taskUpdate,
+            { new: true} // Update the task document or create a new one if it doesn't exist
+        );
 
-//     task.clientSatisfaction = clientSatisfaction;
-//     if (feedback) task.feedback = feedback; // Only update feedback if provided
+        res.status(200).json({ message: "Initial condition photos uploaded successfully", task });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to upload initial condition photos", error: error.message });
+    }
+},
+uploadFinalConditionPhotos : async (req, res) => {
+    const { taskId } = req.params;
+    const uploads = req.files.map(file => file.path); // Paths of uploaded images stored by Cloudinary
 
-//     await task.save();
-//     res.status(200).json({ message: "Task rated successfully", task });
-//   } catch (error) {
-//     res.status(500).json({ message: "Failed to rate task", error: error.message });
-//   }
-// }
+    try {
+        const taskUpdate = {
+            finalConditionPhotos: uploads
+        };
+
+        const task = await Task.findByIdAndUpdate(
+            taskId,
+            taskUpdate,
+            { new: true} // Update the task document or create a new one if it doesn't exist
+        );
+
+        res.status(200).json({ message: "Final condition photos uploaded successfully", task });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to upload final condition photos", error: error.message });
+    }
+},
+
+addAdditionalItems : async (req, res) => {
+    const { taskId } = req.params;
+    const uploads = req.files.map(file => file.path);
+
+    try {
+        const taskUpdate = {
+            additionalItems: uploads
+        };
+
+        const task = await Task.findByIdAndUpdate(
+            taskId,
+            taskUpdate,
+            { new: true} // Update the task document or create a new one if it doesn't exist
+        );
+
+        res.status(200).json({ message: "Additional items added successfully", task });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to add additional items", error: error.message });
+    }
+},
+
+updateJobStatus: async (req, res) => {
+    const { taskId } = req.params;
+    const { taskStatus } = req.body; // Assuming the new status is passed in the body of the request
+
+    try {
+        const task = await Task.findById(taskId);
+        if (!task) {
+            return res.status(404).json({ message: "Task not found" });
+        }
+
+        // Update the task status
+        task.taskStatus = taskStatus;
+        await task.save();
+        res.status(200).json({ message: "Task status updated successfully", task });
+    } catch (error) {
+        console.error("Error updating task status:", error);
+        res.status(500).json({ message: "Failed to update task status", error: error.message });
+    }
+},
+rateTask: async (req, res) => {
+    const { taskId } = req.params;
+    const { clientFeedback } = req.body; // Assuming satisfaction rating and feedback are sent in the body
+
+    try {
+        const task = await Task.findById(taskId);
+        if (!task) {
+            return res.status(404).json({ message: "Task not found" });
+        }
+        // Update task with the client satisfaction rating and feedback
+        task.clientFeedback = clientFeedback;
+       
+        await task.save();
+        res.status(200).json({ message: "Task rated successfully", task });
+    } catch (error) {
+        console.error("Error rating task:", error);
+        res.status(500).json({ message: "Failed to rate task", error: error.message });
+    }
+}
+
 };
 
 

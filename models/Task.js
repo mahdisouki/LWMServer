@@ -23,7 +23,7 @@ const taskSchema = new Schema({
   },
   taskStatus: {
     type: String,
-    enum: ["Accepted", "Declined", "Processing", "Completed"],
+    enum: ["Declined", "Processing", "Completed"],
     default: "Processing"
   },
   additionalNotes: { type: String, required: false },
