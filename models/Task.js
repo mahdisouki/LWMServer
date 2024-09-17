@@ -8,9 +8,18 @@ const taskSchema = new Schema({
   lastName:{ type: String, required: true },
   phoneNumber:{ type: String, required: true },
   clientObjectPhotos: [{ type: String, required: true }],
-  initialConditionPhotos: [{ type: String }],
-  finalConditionPhotos: [{ type: String }],
-  additionalItems: [{ type: String, required: false }],
+  initialConditionPhotos: [{
+    items: [{ type: String }], // Array of URLs for initial condition photos
+    description: { type: String } // Single description for all initial condition photos
+  }],
+  finalConditionPhotos: [{
+    items: [{ type: String }], // Array of URLs for final condition photos
+    description: { type: String } // Single description for all final condition photos
+  }],
+  additionalItems: [{
+    items: [{ type: String }], // Array of additional item names
+    description: { type: String } // Single description for these additional items
+  }],
   location: { type: String, required: true },
   date: { type: Date, required: true },
   hour: { type: String, required: true },

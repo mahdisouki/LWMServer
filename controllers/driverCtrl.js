@@ -160,19 +160,24 @@ const driverManagement = {
       res.status(500).json({ message: "Failed to update truck end status", error: error.message });
   }
 },
- uploadInitialConditionPhotos : async (req, res) => {
+uploadInitialConditionPhotos : async (req, res) => {
     const { taskId } = req.params;
-    const uploads = req.files.map(file => file.path); // Paths of uploaded images stored by Cloudinary
+    const description = req.body.description; // Single description for all uploaded files
+    const uploads = req.files.map(file => file.path); // Collecting file paths
+    console.log(req.body);
 
     try {
         const taskUpdate = {
-            initialConditionPhotos: uploads
+            initialConditionPhotos: [{
+                items: uploads,
+                description: description
+            }]
         };
 
         const task = await Task.findByIdAndUpdate(
             taskId,
             taskUpdate,
-            { new: true} // Update the task document or create a new one if it doesn't exist
+            { new: true } // Update the task document
         );
 
         res.status(200).json({ message: "Initial condition photos uploaded successfully", task });
@@ -180,19 +185,27 @@ const driverManagement = {
         res.status(500).json({ message: "Failed to upload initial condition photos", error: error.message });
     }
 },
+
 uploadFinalConditionPhotos : async (req, res) => {
     const { taskId } = req.params;
-    const uploads = req.files.map(file => file.path); // Paths of uploaded images stored by Cloudinary
+    const description = req.body.description;
+    const uploads = req.files.map(file => file.path);
+
+
+   // console.log(uploads);
 
     try {
         const taskUpdate = {
-            finalConditionPhotos: uploads
+            finalConditionPhotos: [{
+                items: uploads,  // This should be an array of strings
+                description: description
+            }]
         };
 
         const task = await Task.findByIdAndUpdate(
             taskId,
             taskUpdate,
-            { new: true} // Update the task document or create a new one if it doesn't exist
+            { new: true }
         );
 
         res.status(200).json({ message: "Final condition photos uploaded successfully", task });
@@ -201,19 +214,25 @@ uploadFinalConditionPhotos : async (req, res) => {
     }
 },
 
-addAdditionalItems : async (req, res) => {
-    const { taskId } = req.params;
-    const uploads = req.files.map(file => file.path);
 
+
+addAdditionalItems : async (req, res) => {
+    const { taskId } = req.params; // Ensure your route is set to capture this
+  
+    const description = req.body.description; // Single description for all uploads
+    const uploads = req.files.map(file => file.path); // Array of image URLs
     try {
         const taskUpdate = {
-            additionalItems: uploads
+            additionalItems: [{
+                items: uploads,
+                description: description
+            }]
         };
 
         const task = await Task.findByIdAndUpdate(
             taskId,
             taskUpdate,
-            { new: true} // Update the task document or create a new one if it doesn't exist
+            { new: true } // Ensures the updated document is returned
         );
 
         res.status(200).json({ message: "Additional items added successfully", task });
@@ -221,6 +240,8 @@ addAdditionalItems : async (req, res) => {
         res.status(500).json({ message: "Failed to add additional items", error: error.message });
     }
 },
+
+
 
 updateJobStatus: async (req, res) => {
     const { taskId } = req.params;
