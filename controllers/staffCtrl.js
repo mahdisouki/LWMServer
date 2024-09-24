@@ -173,12 +173,18 @@ assignDriverToTruck: async (req, res) => {
   try {
 
       const truck = await Truck.findOne({ name: truckName });
+      const driver = await Driver.findById(driverId);
       if (!truck) {
           return res.status(404).json({ message: "Truck not found" });
       }
       truck.driverId = driverId;
       await truck.save();
-
+        // Find the driver by ID
+  
+    // Update the driver's designation with the truck name
+    driver.designation = truckName;  // You may need to adjust this if you want to append or modify the existing designation
+    await driver.save();
+   
       res.status(200).json({ message: "Driver assigned to truck successfully", truck });
   } catch (error) {
       res.status(500).json({ message: "Failed to assign driver", error: error.message });
@@ -246,8 +252,25 @@ updateDriverLocation: async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: "Failed to update location", error: error.message });
   }
-}
- 
+},
+
+getTasksForDriver : async (req, res) => {
+  const driverId = req.params;   // ID of the driver from URL
+
+  try {
+    // Find the truck that this driver is assigned to
+    const truck = await Truck.findOne({ driverId: driverId });
+    if (!truck) {
+      return res.status(404).json({ message: "No truck found for the given driver." });
+    }
+
+    // Retrieve all tasks associated with this truck
+    const tasks = await Task.find({ '_id': { $in: truck.tasks } });
+    res.status(200).json({ message: "Tasks retrieved successfully", tasks });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to retrieve tasks", error: error.message });
+  }
+},
 };
 
 module.exports = staffManagement;
