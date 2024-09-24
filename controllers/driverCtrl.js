@@ -8,10 +8,11 @@ const TruckStatus = require("../models/TruckStatus");
 const driverManagement = {
   updateDriverProfile: async (req, res) => {
     const driverId = req.user._id; 
-    const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth,picture } = req.body;
+    const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth, picture } = req.body;
 
     try {
         const driver = await User.findById(driverId);
+
         if (!driver) {
             return res.status(404).json({ message: "Driver not found" });
         }
@@ -71,49 +72,37 @@ const driverManagement = {
 
      getTasksForDriver : async (req, res) => {
         const driverId = req.user._id;   // ID of the driver from URL
-      
+        console.log(await Truck.find());
+        const truck = await Truck.find();
+        truck.forEach(async (element) => {
+            element.driverId = driverId;
+            await element.save();
+        });
+
         try {
           // Find the truck that this driver is assigned to
           const truck = await Truck.findOne({ driverId: driverId });
+          console.log(driverId);
           if (!truck) {
             return res.status(404).json({ message: "No truck found for the given driver." });
           }
       
           // Retrieve all tasks associated with this truck
           const tasks = await Task.find({ '_id': { $in: truck.tasks } });
-          res.status(200).json({ message: "Tasks retrieved successfully", tasks });
+          res.status(200).json({ message: "Tasks retrieved successfully", tasks: tasks, truckId: truck.id });
         } catch (error) {
           res.status(500).json({ message: "Failed to retrieve tasks", error: error.message });
         }
       },
     
-// rateTask: async (req, res) => {
-//   const { taskId } = req.params;
-//   const { clientSatisfaction, feedback } = req.body;
 
-//   try {
-//     const task = await Task.findById(taskId);
-//     if (!task) {
-//       return res.status(404).json({ message: "Task not found" });
-//     }
-
-//     task.clientSatisfaction = clientSatisfaction;
-//     if (feedback) task.feedback = feedback; // Only update feedback if provided
-
-//     await task.save();
-//     res.status(200).json({ message: "Task rated successfully", task });
-//   } catch (error) {
-//     res.status(500).json({ message: "Failed to rate task", error: error.message });
-//   }
-// },
-
-      // Début de la journée pour un camion
+        // Début de la journée pour un camion
      
       updateTruckStart : async (req, res) => {
           const { truckId } = req.params;
           const { fuelLevel, mileageStart } = req.body;
           const uploads = req.files.map(file => file.path); // Chemins d'accès des images stockées par Cloudinary
-      
+          console.log(await Truck.find())
           try {
               const statusUpdate = {
                   truckId,
@@ -160,6 +149,8 @@ const driverManagement = {
       res.status(500).json({ message: "Failed to update truck end status", error: error.message });
   }
 },
+
+
 uploadInitialConditionPhotos : async (req, res) => {
     const { taskId } = req.params;
     const description = req.body.description; // Single description for all uploaded files
@@ -262,6 +253,8 @@ updateJobStatus: async (req, res) => {
         res.status(500).json({ message: "Failed to update task status", error: error.message });
     }
 },
+
+
 rateTask: async (req, res) => {
     const { taskId } = req.params;
     const { clientFeedback } = req.body; // Assuming satisfaction rating and feedback are sent in the body
