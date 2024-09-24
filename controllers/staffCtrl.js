@@ -24,6 +24,39 @@ const isWithinDistance = (coord1, coord2, maxDistance) => {
 
   return distance <= maxDistance;
 };
+
+class APIfeatures {
+  constructor(query , queryString){
+      this.query=query;
+      this.queryString= queryString;
+  }
+  filtering(){
+     const queryObj = {...this.queryString} //queryString = req.query
+     const exludedFileds = ['page', 'sort' , 'limit']
+     exludedFileds.forEach(el => delete(queryObj[el]))
+     let queryStr = JSON.stringify(queryObj)
+     queryStr = queryStr.replace(/\b(gte|gt|lt|lte|regex)\b/g , match => '$' + match)
+     this.query.find(JSON.parse(queryStr))
+      return this ;
+  }
+  sorting(){
+      if(this.queryString.sort){
+          const sortBy = this.queryString.sort.split(',').join(' ')
+          console.log(sortBy)
+          this.query = this.query.sort(sortBy)
+      }else{
+          this.query = this.query.sort('-createdAt')
+      }
+      return this ; 
+  }
+  paginating(){ 
+      const page = this.queryString.page * 1 || 1
+      const limit = this.queryString.limit * 1 || 9
+      const skip = (page-1) * limit
+      this.query = this.query.skip(skip).limit(limit )
+       return this ; 
+  }
+}
 const staffManagement = {
   addStaff: async (req, res) => {
     console.log('Request Body:', req.body);  // Log to see what you actually received
@@ -71,8 +104,15 @@ const staffManagement = {
   
   getAllStaff: async (req, res) => {
     try {
-      // Simple fetch of all users without populating any references
-      const users = await User.find();
+      const features = new APIfeatures(
+        User.find({ role: { $in: ["Driver", "Helper"], $nin: ["Admin"] } }), 
+        req.query
+      )
+      .filtering()
+      .sorting()
+      .paginating();
+
+    const users = await features.query; 
       res.status(200).json({ message: "Staff retrieved successfully", users });
     } catch (error) {
       res.status(500).json({ message: "Failed to retrieve staff", error: error.message });

@@ -78,25 +78,25 @@ const driverManagement = {
   }
 },
 
-// rateTask: async (req, res) => {
-//   const { taskId } = req.params;
-//   const { clientSatisfaction, feedback } = req.body;
+rateTask: async (req, res) => {
+  const { taskId } = req.params;
+  const { clientSatisfaction, feedback } = req.body;
 
-//   try {
-//     const task = await Task.findById(taskId);
-//     if (!task) {
-//       return res.status(404).json({ message: "Task not found" });
-//     }
+  try {
+    const task = await Task.findById(taskId);
+    if (!task) {
+      return res.status(404).json({ message: "Task not found" });
+    }
 
-//     task.clientSatisfaction = clientSatisfaction;
-//     if (feedback) task.feedback = feedback; // Only update feedback if provided
+    task.clientSatisfaction = clientSatisfaction;
+    if (feedback) task.feedback = feedback; // Only update feedback if provided
 
-//     await task.save();
-//     res.status(200).json({ message: "Task rated successfully", task });
-//   } catch (error) {
-//     res.status(500).json({ message: "Failed to rate task", error: error.message });
-//   }
-// }
+    await task.save();
+    res.status(200).json({ message: "Task rated successfully", task });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to rate task", error: error.message });
+  }
+}
 };
 
 
