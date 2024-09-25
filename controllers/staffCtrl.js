@@ -24,6 +24,7 @@ const isWithinDistance = (coord1, coord2, maxDistance) => {
 
   return distance <= maxDistance;
 };
+
 const staffManagement = {
   addStaff: async (req, res) => {
     console.log('Request Body:', req.body);  // Log to see what you actually received
