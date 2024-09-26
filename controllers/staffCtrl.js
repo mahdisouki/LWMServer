@@ -199,8 +199,12 @@ const staffManagement = {
     const { id } = req.params;
     let updateData = req.body; // Take all incoming fields for potential update
 
+    if (req.file) {
+      updateData.picture = req.file.path; // Save or update the path to the file in the database
+    }
+
     // If password is included, hash it before updating
-    if (updateData.password) {
+    if (updateData.password && updateData.password.trim() !== "") {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }
 
@@ -232,6 +236,7 @@ const staffManagement = {
       if (!truck) {
         return res.status(404).json({ message: "Truck not found" });
       }
+
       truck.driverId = driverId;
       await truck.save();
       // Find the driver by ID
@@ -256,12 +261,16 @@ const staffManagement = {
 
     try {
       const truck = await Truck.findOne({ name: truckName });
+      const helper = await Helper.findById(helperId);
       if (!truck) {
         return res.status(404).json({ message: "Truck not found" });
       }
 
       truck.helperId = helperId;
       await truck.save();
+
+      helper.designation = truckName;
+      await helper.save();
 
       res
         .status(200)
