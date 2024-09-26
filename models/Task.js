@@ -20,7 +20,16 @@ const taskSchema = new Schema({
     items: [{ type: String }], // Array of additional item names
     description: { type: String } // Single description for these additional items
   }],
-  location: { type: String, required: true },
+  location: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      required: false,
+    },
+    coordinates: {
+      type: [Number],
+      required: false,
+    },},
   date: { type: Date, required: true },
   hour: { type: String, required: true },
   object: { type: String, required: true },
