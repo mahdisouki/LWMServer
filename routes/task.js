@@ -8,6 +8,7 @@ const multer = require('../middlewares/multer');
 
 router.post('/create-request', isAuth, checkRole('Admin'), multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
+router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
 
 
 

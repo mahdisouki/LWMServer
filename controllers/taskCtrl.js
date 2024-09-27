@@ -136,7 +136,43 @@ traiterTask: async (req, res) => {
     }
   },
 
+  updateTask: async (req, res) => {
+    const { taskId } = req.params;
+    const {
+      firstName, lastName, phoneNumber, location,
+      date, hour, object, price, paymentStatus, taskStatus
+    } = req.body;
 
+    try {
+      // Updating the task by its ID
+      const updatedTask = await Task.findByIdAndUpdate(
+        taskId,
+        {
+          $set: {
+            firstName,
+            lastName,
+            phoneNumber,
+            location,
+            date,
+            hour,
+            object,
+            price,
+            paymentStatus,
+            taskStatus
+          }
+        },
+        { new: true } // This option returns the updated document
+      );
+
+      if (!updatedTask) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      res.status(200).json({ message: "Task updated successfully", task: updatedTask });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update task", error: error.message });
+    }
+  },
 
 
 };
