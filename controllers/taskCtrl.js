@@ -65,6 +65,20 @@ const taskCtrl = {
         res.status(400).json({ message: "Failed to create task", error: error.message });
     }
 },
+// GET TASK BY ID 
+getTaskById: async (req, res) => {
+    const { taskId } = req.params;
+    try {
+        const task = await Task.findById(taskId);
+        if (!task) {
+            return res.status(404).json({ message: "Task not found" });
+        }
+        res.status(200).json({ message: "Task retrieved successfully", task });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to retrieve task", error: error.message });
+    }
+},
+
 getAllTasks: async (req, res) => {
     try {
         const features = new APIfeatures(Task.find(), req.query)
