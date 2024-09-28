@@ -159,7 +159,73 @@ const taskCtrl = {
         .status(500)
         .json({ message: "Failed to assign truck", error: error.message });
     }
+},
+traiterTask: async (req, res) => {
+    const { taskId } = req.params; 
+    const { taskStatus } = req.body; 
+
+    try {
+      
+      if (!["Accepted", "Declined"].includes(taskStatus)) {
+        return res.status(400).json({ message: "Invalid task status" });
+      }
+
+      
+      const updatedTask = await Task.findByIdAndUpdate(
+        taskId,
+        { $set: { taskStatus } },
+        { new: true }
+      );
+
+      if (!updatedTask) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      res.status(200).json({ message: `Task ${taskStatus} successfully`, task: updatedTask });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update task status", error: error.message });
+    }
   },
+
+  updateTask: async (req, res) => {
+    const { taskId } = req.params;
+    const {
+      firstName, lastName, phoneNumber, location,
+      date, hour, object, price, paymentStatus, taskStatus
+    } = req.body;
+
+    try {
+      // Updating the task by its ID
+      const updatedTask = await Task.findByIdAndUpdate(
+        taskId,
+        {
+          $set: {
+            firstName,
+            lastName,
+            phoneNumber,
+            location,
+            date,
+            hour,
+            object,
+            price,
+            paymentStatus,
+            taskStatus
+          }
+        },
+        { new: true } // This option returns the updated document
+      );
+
+      if (!updatedTask) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      res.status(200).json({ message: "Task updated successfully", task: updatedTask });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update task", error: error.message });
+    }
+  },
+
+
 };
 
 module.exports = taskCtrl;
