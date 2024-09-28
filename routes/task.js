@@ -11,6 +11,7 @@ router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignT
 router.get('/tasks', isAuth, checkRole('Admin'), taskCtrl.getAllTasks);
 router.get('/task/:taskId', isAuth, checkRole('Admin'), taskCtrl.getTaskById);
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
+router.put('/task/:taskId', isAuth, checkRole('Admin'),multer.array('clientObjectPhotos'), taskCtrl.updateTask);
 
 
 

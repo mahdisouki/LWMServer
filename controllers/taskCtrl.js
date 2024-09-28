@@ -105,10 +105,23 @@ const taskCtrl = {
         query = query.find(filters);
       }
 
-      const tasks = await query
+      let tasks = await query
         .skip((page - 1) * limit)
         .limit(limit)
         .exec();
+
+      // get the truck name by its ID
+      tasks = await Promise.all(
+        tasks.map(async (task) => {
+          console.log(task.truckId);
+          if (task.truckId) {
+            const truck = await Truck.findById(task.truckId);
+            task = task.toObject(); // Converts Mongoose document to a plain object
+            task.truckName = truck.name;
+          }
+          return task;
+        })
+      );
 
       res.status(200).json({
         message: "All tasks retrieved successfully",
@@ -159,18 +172,17 @@ const taskCtrl = {
         .status(500)
         .json({ message: "Failed to assign truck", error: error.message });
     }
-},
-traiterTask: async (req, res) => {
-    const { taskId } = req.params; 
-    const { taskStatus } = req.body; 
+  },
+
+  traiterTask: async (req, res) => {
+    const { taskId } = req.params;
+    const { taskStatus } = req.body;
 
     try {
-      
       if (!["Accepted", "Declined"].includes(taskStatus)) {
         return res.status(400).json({ message: "Invalid task status" });
       }
 
-      
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
         { $set: { taskStatus } },
@@ -181,51 +193,66 @@ traiterTask: async (req, res) => {
         return res.status(404).json({ message: "Task not found" });
       }
 
-      res.status(200).json({ message: `Task ${taskStatus} successfully`, task: updatedTask });
+      res.status(200).json({
+        message: `Task ${taskStatus} successfully`,
+        task: updatedTask,
+      });
     } catch (error) {
-      res.status(500).json({ message: "Failed to update task status", error: error.message });
+      res.status(500).json({
+        message: "Failed to update task status",
+        error: error.message,
+      });
     }
   },
 
   updateTask: async (req, res) => {
     const { taskId } = req.params;
-    const {
-      firstName, lastName, phoneNumber, location,
-      date, hour, object, price, paymentStatus, taskStatus
-    } = req.body;
 
     try {
-      // Updating the task by its ID
+      const existingTask = await Task.findById(taskId);
+      if (!existingTask) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      let updateData = { ...req.body };
+      if (req.body.deletedMedia && req.body.deletedMedia.length > 0) {
+        existingTask.clientObjectPhotos =
+          existingTask.clientObjectPhotos.filter(
+            (photo) => !req.body.deletedMedia.includes(photo)
+          );
+
+        await existingTask.save();
+      }
+
+      if (req.files) {
+        const newClientObjectPhotos = req.files.map((file) => file.path);
+
+        const updatedClientObjectPhotos = existingTask.clientObjectPhotos
+          ? existingTask.clientObjectPhotos.concat(newClientObjectPhotos)
+          : newClientObjectPhotos;
+
+        updateData.clientObjectPhotos = updatedClientObjectPhotos;
+      }
+
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
-        {
-          $set: {
-            firstName,
-            lastName,
-            phoneNumber,
-            location,
-            date,
-            hour,
-            object,
-            price,
-            paymentStatus,
-            taskStatus
-          }
-        },
-        { new: true } // This option returns the updated document
+        { $set: updateData },
+        { new: true }
       );
 
       if (!updatedTask) {
         return res.status(404).json({ message: "Task not found" });
       }
 
-      res.status(200).json({ message: "Task updated successfully", task: updatedTask });
+      res
+        .status(200)
+        .json({ message: "Task updated successfully", task: updatedTask });
     } catch (error) {
-      res.status(500).json({ message: "Failed to update task", error: error.message });
+      res
+        .status(500)
+        .json({ message: "Failed to update task", error: error.message });
     }
   },
-
-
 };
 
 module.exports = taskCtrl;
