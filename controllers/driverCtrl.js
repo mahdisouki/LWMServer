@@ -6,7 +6,7 @@ const bcrypt = require("bcrypt");
 const TruckStatus = require("../models/TruckStatus");
 
 const driverManagement = {
-  updateDriverProfile: async (req, res) => {
+updateDriverProfile: async (req, res) => {
     const driverId = req.user._id; 
     const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth,picture } = req.body;
 
@@ -38,38 +38,38 @@ const driverManagement = {
     }
 },
 
-// getHelperLocationForDriver: async (req, res) => {
-//   const driverId = req.user._id; // Assuming the driver ID is obtained from authenticated user's context
+getHelperLocationForDriver: async (req, res) => {
+  const driverId = req.user._id; // Assuming the driver ID is obtained from authenticated user's context
 
-//   try {
-//     // Find the truck assigned to this driver
-//     const truck = await Truck.findOne({ driverId: driverId });
-//     if (!truck) {
-//       return res.status(404).json({ message: "No truck found for the given driver." });
-//     }
+  try {
+    // Find the truck assigned to this driver
+    const truck = await Truck.findOne({ driverId: driverId });
+    if (!truck) {
+      return res.status(404).json({ message: "No truck found for the given driver." });
+    }
 
-//     // Check if a helper is assigned to the truck
-//     if (!truck.helperId) {
-//       return res.status(404).json({ message: "No helper assigned to this truck" });
-//     }
+    // Check if a helper is assigned to the truck
+    if (!truck.helperId) {
+      return res.status(404).json({ message: "No helper assigned to this truck" });
+    }
 
-//     // Fetch the helper using helperId from the truck
-//     const helper = await Helper.findById(truck.helperId);
-//     if (!helper) {
-//       return res.status(404).json({ message: "Helper not found" });
-//     }
+    // Fetch the helper using helperId from the truck
+    const helper = await Helper.findById(truck.helperId);
+    if (!helper) {
+      return res.status(404).json({ message: "Helper not found" });
+    }
 
-//     if (!helper.location) {
-//       return res.status(404).json({ message: "Location for this helper is not set" });
-//     }
+    if (!helper.location) {
+      return res.status(404).json({ message: "Location for this helper is not set" });
+    }
 
-//     res.status(200).json({ message: "Helper location retrieved successfully", location: helper.location });
-//   } catch (error) {
-//     res.status(500).json({ message: "Failed to retrieve helper location", error: error.message });
-//   }
-// },
+    res.status(200).json({ message: "Helper location retrieved successfully", location: helper.location });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to retrieve helper location", error: error.message });
+  }
+},
 
-     getTasksForDriver : async (req, res) => {
+getTasksForDriver : async (req, res) => {
         const driverId = req.user._id;   // ID of the driver from URL
       
         try {
@@ -109,7 +109,7 @@ const driverManagement = {
 
       // Début de la journée pour un camion
      
-      updateTruckStart : async (req, res) => {
+updateTruckStart : async (req, res) => {
           const { truckId } = req.params;
           const { fuelLevel, mileageStart } = req.body;
           const uploads = req.files.map(file => file.path); // Chemins d'accès des images stockées par Cloudinary
@@ -135,7 +135,7 @@ const driverManagement = {
  
         },
     // Fin de la journée pour un camion
- updateTruckEnd : async (req, res) => {
+updateTruckEnd : async (req, res) => {
   const { truckId } = req.params;
   const { fuelLevelBefore,fuelLevelAfter, mileageEnd } = req.body;
   const uploads = req.files.map(file => file.path); // Chemins d'accès des images stockées par Cloudinary
