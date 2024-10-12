@@ -8,11 +8,9 @@ const socket = require('../socket'); // Ensure you have the correct path to your
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
   const [lon2, lat2] = coord2;
-
   const R = 6371; // Radius of the Earth in kilometers
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
-
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
@@ -25,21 +23,72 @@ const isWithinDistance = (coord1, coord2, maxDistance) => {
   return distance <= maxDistance;
 };
 
+// class APIfeatures {
+//   constructor(query, queryString) {
+//     this.query = query;
+//     this.queryString = queryString;
+//     this.total = 0;
+//   }
+//   async filtering() {
+//     const queryObj = { ...this.queryString };
+//     const excludedFields = ["page", "sort", "limit"];
+//     excludedFields.forEach((el) => delete queryObj[el]);
+
+//     let queryStr = JSON.stringify(queryObj);
+//     queryStr = queryStr.replace(
+//       /\b(gte|gt|lt|lte|regex)\b/g,
+//       (match) => "$" + match
+//     );
+
+//     let countQuery = this.query.clone();
+
+//     this.query = this.query.find(JSON.parse(queryStr));
+//     countQuery = countQuery.find(JSON.parse(queryStr));
+
+//     this.total = await countQuery.countDocuments();
+
+//     return this;
+//   }
+
+//   sorting() {
+//     if (this.queryString.sort) {
+//       const sortBy = this.queryString.sort.split(",").join(" ");
+//       this.query = this.query.sort(sortBy);
+//     } else {
+//       this.query = this.query.sort("-createdAt");
+//     }
+
+//     return this;
+//   }
+//   paginating() {
+//     const page = parseInt(this.queryString.page, 10) || 1;
+//     const limit = parseInt(this.queryString.limit, 10) || 9;
+//     const skip = (page - 1) * limit;
+//     this.query = this.query.skip(skip).limit(limit);
+
+//     return this;
+//   }
+// }
+
 const staffManagement = {
   addStaff: async (req, res) => {
-    console.log('Request Body:', req.body); // Log to see what you actually received
-
     try {
-      const { password, role, username, email, phoneNumber } = req.body;
+      const {
+        password,
+        role,
+        username,
+        email,
+        phoneNumber,
+        gender,
+        designation,
+      } = req.body;
       const pictureUrl = req.file ? req.file.path : null;
 
       if (!username || !email || !password || !role || !phoneNumber) {
-        return res
-          .status(400)
-          .json({
-            message:
-              'Missing required fields: username, email, password, phoneNumber, and role are required.',
-          });
+        return res.status(400).json({
+          message:
+            'Missing required fields: username, email, password, phoneNumber, and role are required.',
+        });
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -54,6 +103,8 @@ const staffManagement = {
           password: hashedPassword,
           role: [role],
           picture: pictureUrl,
+          gender,
+          designation,
         });
       } else {
         newUser = new User({
@@ -63,6 +114,8 @@ const staffManagement = {
           password: hashedPassword,
           role: [role],
           picture: pictureUrl,
+          gender,
+          designation,
         });
       }
       await newUser.save();
@@ -71,27 +124,41 @@ const staffManagement = {
         .json({ message: `${role} created successfully`, user: newUser });
     } catch (error) {
       console.error('Error in addStaff:', error);
-      res
-        .status(500)
-        .json({
-          message: `Failed to create staff member`,
-          error: error.message,
-        });
+      res.status(500).json({
+        message: `Failed to create staff member`,
+        error: error.message,
+      });
     }
   },
 
   getAllStaff: async (req, res) => {
     try {
-      const features = new APIfeatures(
-        User.find({ role: { $in: ['Driver', 'Helper'], $nin: ['Admin'] } }),
-        req.query,
-      )
-        .filtering()
-        .sorting()
-        .paginating();
+      const { page, limit, filters } = req.query;
 
-      const users = await features.query;
-      res.status(200).json({ message: 'Staff retrieved successfully', users });
+      let query = User.find({
+        role: { $in: ['Driver', 'Helper'], $nin: ['Admin'] },
+      });
+
+      if (filters) {
+        query = query.find(filters);
+      }
+
+      const total = await User.countDocuments(query);
+      const users = await query
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec();
+
+      res.status(200).json({
+        message: 'Staff retrieved successfully',
+        users,
+        meta: {
+          currentPage: Number(page),
+          limit: Number(limit),
+          total,
+          count: users.length,
+        },
+      });
     } catch (error) {
       res
         .status(500)
@@ -133,8 +200,12 @@ const staffManagement = {
     const { id } = req.params;
     let updateData = req.body; // Take all incoming fields for potential update
 
+    if (req.file) {
+      updateData.picture = req.file.path; // Save or update the path to the file in the database
+    }
+
     // If password is included, hash it before updating
-    if (updateData.password) {
+    if (updateData.password && updateData.password.trim() !== '') {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }
 
@@ -166,6 +237,7 @@ const staffManagement = {
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
+
       truck.driverId = driverId;
       await truck.save();
       // Find the driver by ID
@@ -190,12 +262,16 @@ const staffManagement = {
 
     try {
       const truck = await Truck.findOne({ name: truckName });
+      const helper = await Helper.findById(helperId);
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
       truck.helperId = helperId;
       await truck.save();
+
+      helper.designation = truckName;
+      await helper.save();
 
       res
         .status(200)

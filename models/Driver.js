@@ -16,7 +16,7 @@ const driverSchema = new mongoose.Schema({
       type: [Number],
       required: false,
     },
-    helperId: { type: mongoose.Schema.Types.ObjectId, ref: 'Helper' } 
+    // helperId: { type: mongoose.Schema.Types.ObjectId, ref: 'Helper' } 
   }
 });
 
