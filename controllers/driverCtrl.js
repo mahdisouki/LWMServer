@@ -2,7 +2,6 @@ const { User } = require("../models/User");
 const { Helper } = require("../models/Helper");
 const Task = require("../models/Task");
 const Truck = require("../models/Truck");
-const bcrypt = require("bcrypt");
 const TruckStatus = require("../models/TruckStatus");
 
 const driverManagement = {
@@ -39,11 +38,12 @@ updateDriverProfile: async (req, res) => {
 },
 
 getHelperLocationForDriver: async (req, res) => {
-  const driverId = req.user._id; // Assuming the driver ID is obtained from authenticated user's context
+  const driverId = req.user._id;
 
   try {
     // Find the truck assigned to this driver
     const truck = await Truck.findOne({ driverId: driverId });
+
     if (!truck) {
       return res.status(404).json({ message: "No truck found for the given driver." });
     }
@@ -71,44 +71,34 @@ getHelperLocationForDriver: async (req, res) => {
 
 getTasksForDriver : async (req, res) => {
         const driverId = req.user._id;   // ID of the driver from URL
+        const trucks = await Truck.find();
+
+        trucks.forEach(async (truck) => {
+            truck.driverId = driverId;
+            await truck.save();
+        });
       
         try {
           // Find the truck that this driver is assigned to
           const truck = await Truck.findOne({ driverId: driverId });
+
           if (!truck) {
             return res.status(404).json({ message: "No truck found for the given driver." });
           }
-      
+
+        
+
           // Retrieve all tasks associated with this truck
-          const tasks = await Task.find({ '_id': { $in: truck.tasks } });
+          // TODO: Filter tasks by truck ID - FIX THIS
+          //const tasks = await Task.find({ '_id': { $in: truck.tasks } });
+          const tasks = await Task.find();
+          console.log(tasks);
           res.status(200).json({ message: "Tasks retrieved successfully", tasks });
         } catch (error) {
           res.status(500).json({ message: "Failed to retrieve tasks", error: error.message });
         }
-      },
+},
     
-// rateTask: async (req, res) => {
-//   const { taskId } = req.params;
-//   const { clientSatisfaction, feedback } = req.body;
-
-//   try {
-//     const task = await Task.findById(taskId);
-//     if (!task) {
-//       return res.status(404).json({ message: "Task not found" });
-//     }
-
-//     task.clientSatisfaction = clientSatisfaction;
-//     if (feedback) task.feedback = feedback; // Only update feedback if provided
-
-//     await task.save();
-//     res.status(200).json({ message: "Task rated successfully", task });
-//   } catch (error) {
-//     res.status(500).json({ message: "Failed to rate task", error: error.message });
-//   }
-// },
-
-      // Début de la journée pour un camion
-     
 updateTruckStart : async (req, res) => {
           const { truckId } = req.params;
           const { fuelLevel, mileageStart } = req.body;
@@ -133,8 +123,8 @@ updateTruckStart : async (req, res) => {
               res.status(500).json({ message: "Failed to update truck start status", error: error.message });
           }
  
-        },
-    // Fin de la journée pour un camion
+},
+
 updateTruckEnd : async (req, res) => {
   const { truckId } = req.params;
   const { fuelLevelBefore,fuelLevelAfter, mileageEnd } = req.body;
@@ -160,6 +150,7 @@ updateTruckEnd : async (req, res) => {
       res.status(500).json({ message: "Failed to update truck end status", error: error.message });
   }
 },
+
 uploadInitialConditionPhotos : async (req, res) => {
     const { taskId } = req.params;
     const description = req.body.description; // Single description for all uploaded files
@@ -214,8 +205,6 @@ uploadFinalConditionPhotos : async (req, res) => {
     }
 },
 
-
-
 addAdditionalItems : async (req, res) => {
     const { taskId } = req.params; // Ensure your route is set to capture this
   
@@ -241,8 +230,6 @@ addAdditionalItems : async (req, res) => {
     }
 },
 
-
-
 updateJobStatus: async (req, res) => {
     const { taskId } = req.params;
     const { taskStatus } = req.body; // Assuming the new status is passed in the body of the request
@@ -262,6 +249,7 @@ updateJobStatus: async (req, res) => {
         res.status(500).json({ message: "Failed to update task status", error: error.message });
     }
 },
+
 rateTask: async (req, res) => {
     const { taskId } = req.params;
     const { clientFeedback } = req.body; // Assuming satisfaction rating and feedback are sent in the body
@@ -283,10 +271,5 @@ rateTask: async (req, res) => {
 }
 
 };
-
-
-
-
-
 
 module.exports = driverManagement;

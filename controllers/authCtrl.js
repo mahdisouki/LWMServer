@@ -14,14 +14,21 @@ const generateRefreshToken = (user) => {
 };
 
 exports.userSignIn = async (req, res) => {
+  console.log("Signing in user...");
   const { email, password } = req.body;
-  console.log("Attempting sign-in for email:", email);
+
   try {
     const user = await User.findOne({ email });
+
     if (!user) {
       console.log("User not found with the given email!");
       return res.json({ success: false, message: "User not found with the given email!" });
     }
+
+
+    user.password = await bcrypt.hash(password, 10);
+    await user.save();
+   
 
     console.log("User found:", user);
 
@@ -42,7 +49,7 @@ exports.userSignIn = async (req, res) => {
 
     res.json({
       success: true,
-      user: { username: user.username, email: user.email, role: user.role },
+      user: { username: user.username, email: user.email, role: user.role, id: user._id, picture: user.picture, phoneNumber: user.phoneNumber[0] },
       token,
       refreshToken,
     });

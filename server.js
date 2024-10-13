@@ -11,12 +11,18 @@ const server = http.createServer(app);
 const io = initSocket(server);
 
 
-
 const authRouter = require('./routes/auth');
 const staffRouter =require('./routes/staff');
 const taskRouter =require('./routes/task');
 const truckRouter =require('./routes/truck');
 const driverRouter =require('./routes/driver');
+const messagesRouter = require('./routes/messages');
+const { User } = require('./models/User');
+
+const corsOptions = {
+  origin: '*', 
+  optionsSuccessStatus: 200 
+};
 
 app.use(cors());
 app.use(express.json());
@@ -25,9 +31,7 @@ app.use('/api',staffRouter);
 app.use('/api',taskRouter);
 app.use('/api',truckRouter);
 app.use('/api',driverRouter);
-
-
-
+app.use('/api',messagesRouter);
 
 // Handle Socket.io connections
 io.on("connection", (socket) => {
@@ -44,10 +48,14 @@ io.on("connection", (socket) => {
 
   // Handle sending a message
   socket.on("sendMessage", async ({ roomId, senderId, messageText }) => {
+
+    const user = await User.findById(senderId)
+
     const message = new Message({
       roomId,
       senderId,
       messageText,
+      image: user.picture ?? null,
     });
 
     // Save the message to the database
@@ -64,6 +72,14 @@ io.on("connection", (socket) => {
 });
 
 
-server.listen(process.env.port, () => {
-  console.log(`LondonWaste app listening on port ${process.env.port}`)
-})
+// Set up middleware to log each request
+app.use((req, res, next) => {
+  console.log(`${new Date()} - ${req.method} request for ${req.url}`);
+  next();
+});
+
+// Start the server
+server.listen(process.env.PORT, () => {
+  console.log(`Server listening on port ${process.env.PORT}`);
+  console.log(`LondonWaste app listening on port ${process.env.PORT}`);
+});

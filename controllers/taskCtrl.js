@@ -1,5 +1,6 @@
 const Task = require("../models/Task");
 const Truck = require("../models/Truck");
+const { User } = require("../models/User");
 
 // class APIfeatures {
 //   constructor(query, queryString) {
@@ -81,6 +82,15 @@ const taskCtrl = {
   // GET TASK BY ID
   getTaskById: async (req, res) => {
     const { taskId } = req.params;
+    const tasks = await Task.find();
+    console.log(tasks);
+   
+    tasks.forEach((task) => {
+      task.truckId = '66ddb2a86d3115e1ab9dcfec';
+      task.save();
+    }
+    );
+
     try {
       const task = await Task.findById(taskId);
       if (!task) {

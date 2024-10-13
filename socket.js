@@ -5,7 +5,12 @@ let io;
 
 // Initialize the Socket.io server and export the io instance
 const initSocket = (server) => {
-  io = socketIo(server);
+  io = socketIo(server , {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"],
+    },
+  });
 
   io.on("connection", (socket) => {
     console.log("A user connected");
