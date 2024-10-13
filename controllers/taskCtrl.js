@@ -1,41 +1,6 @@
 const Task = require("../models/Task");
 const Truck = require("../models/Truck");
-
-// class APIfeatures {
-//   constructor(query, queryString) {
-//     this.query = query;
-//     this.queryString = queryString;
-//   }
-//   filtering() {
-//     const queryObj = { ...this.queryString }; //queryString = req.query
-//     const exludedFileds = ["page", "sort", "limit"];
-//     exludedFileds.forEach((el) => delete queryObj[el]);
-//     let queryStr = JSON.stringify(queryObj);
-//     queryStr = queryStr.replace(
-//       /\b(gte|gt|lt|lte|regex)\b/g,
-//       (match) => "$" + match
-//     );
-//     this.query.find(JSON.parse(queryStr));
-//     return this;
-//   }
-//   sorting() {
-//     if (this.queryString.sort) {
-//       const sortBy = this.queryString.sort.split(",").join(" ");
-//       console.log(sortBy);
-//       this.query = this.query.sort(sortBy);
-//     } else {
-//       this.query = this.query.sort("-createdAt");
-//     }
-//     return this;
-//   }
-//   paginating() {
-//     const page = this.queryString.page * 1 || 1;
-//     const limit = this.queryString.limit * 1 || 9;
-//     const skip = (page - 1) * limit;
-//     this.query = this.query.skip(skip).limit(limit);
-//     return this;
-//   }
-// }
+const APIfeatures = require("../utils/APIFeatures");
 
 const taskCtrl = {
   createTask: async (req, res) => {
@@ -78,7 +43,6 @@ const taskCtrl = {
         .json({ message: "Failed to create task", error: error.message });
     }
   },
-  // GET TASK BY ID
   getTaskById: async (req, res) => {
     const { taskId } = req.params;
     try {
@@ -96,39 +60,41 @@ const taskCtrl = {
 
   getAllTasks: async (req, res) => {
     try {
-      const query = Task.find();
       const { page, limit, filters } = req.query;
 
-      const total = await Task.countDocuments(query);
+      let query = Task.find();
+
+      const features = new APIfeatures(query, req.query);
 
       if (filters) {
-        query = query.find(filters);
+        features.filtering();
       }
 
-      let tasks = await query
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .exec();
+      features.sorting().paginating();
 
-      // get the truck name by its ID
+      let tasks = await features.query.exec();
+      const total = await Task.countDocuments(features.query);
+
       tasks = await Promise.all(
         tasks.map(async (task) => {
-          console.log(task.truckId);
           if (task.truckId) {
             const truck = await Truck.findById(task.truckId);
-            task = task.toObject(); // Converts Mongoose document to a plain object
-            task.truckName = truck.name;
+            task = task.toObject();
+            task.truckName = truck ? truck.name : null;
           }
           return task;
         })
       );
 
+      const currentPage = parseInt(req.query.page, 10) || 1;
+      const limitNum = parseInt(req.query.limit, 10) || 9;
+
       res.status(200).json({
         message: "All tasks retrieved successfully",
         tasks,
         meta: {
-          currentPage: Number(page),
-          limit: Number(limit),
+          currentPage,
+          limit: limitNum,
           total,
           count: tasks.length,
         },
