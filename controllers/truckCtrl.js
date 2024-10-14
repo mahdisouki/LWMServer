@@ -1,41 +1,7 @@
 const Task = require("../models/Task");
 const Truck = require("../models/Truck");
+const APIfeatures = require("../utils/APIFeatures");
 
-// class APIfeatures {
-//   constructor(query, queryString) {
-//     this.query = query;
-//     this.queryString = queryString;
-//   }
-//   filtering() {
-//     const queryObj = { ...this.queryString }; //queryString = req.query
-//     const exludedFileds = ["page", "sort", "limit"];
-//     exludedFileds.forEach((el) => delete queryObj[el]);
-//     let queryStr = JSON.stringify(queryObj);
-//     queryStr = queryStr.replace(
-//       /\b(gte|gt|lt|lte|regex)\b/g,
-//       (match) => "$" + match
-//     );
-//     this.query.find(JSON.parse(queryStr));
-//     return this;
-//   }
-//   sorting() {
-//     if (this.queryString.sort) {
-//       const sortBy = this.queryString.sort.split(",").join(" ");
-//       console.log(sortBy);
-//       this.query = this.query.sort(sortBy);
-//     } else {
-//       this.query = this.query.sort("-createdAt");
-//     }
-//     return this;
-//   }
-//   paginating() {
-//     const page = this.queryString.page * 1 || 1;
-//     const limit = this.queryString.limit * 1 || 9;
-//     const skip = (page - 1) * limit;
-//     this.query = this.query.skip(skip).limit(limit);
-//     return this;
-//   }
-// }
 
 const truckCtrl = {
   createTruck: async (req, res) => {
@@ -54,12 +20,33 @@ const truckCtrl = {
   },
   getAllTrucks: async (req, res) => {
     try {
-      const trucks = await Truck.find();
-      res.status(200).json({ trucks });
+      const { page = 1, limit = 9, filters } = req.query;
+      let query = Truck.find();
+      const features = new APIfeatures(query, req.query);
+      if (filters) {
+        features.filtering();
+      }
+      features.sorting().paginating();
+      const trucks = await features.query.exec();
+      const total = await Truck.countDocuments(features.query.getFilter());
+      const currentPage = parseInt(req.query.page, 10) || 1;
+      const limitNum = parseInt(req.query.limit, 10) || 9;
+
+      res.status(200).json({
+        message: "All trucks retrieved successfully",
+        trucks,
+        meta: {
+          currentPage,
+          limit: limitNum,
+          total,
+          count: trucks.length,
+        },
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: "Failed to retrieve trucks", error: error.message });
+      res.status(500).json({
+        message: "Failed to retrieve trucks",
+        error: error.message,
+      });
     }
   },
   deleteTruck: async (req, res) => {
