@@ -15,18 +15,22 @@ const staffRouter = require("./routes/staff");
 const taskRouter = require("./routes/task");
 const truckRouter = require("./routes/truck");
 const driverRouter = require("./routes/driver");
-const tippingRouter = require("./routes/tipping");
-const dayoffRouter = require("./routes/dayoff");
+//const messagesRouter = require("./routes/messages");
+const { User } = require("./models/User");
 
-app.use(cors());
+const corsOptions = {
+  origin: "*",
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use("/api", authRouter);
 app.use("/api", staffRouter);
 app.use("/api", taskRouter);
 app.use("/api", truckRouter);
 app.use("/api", driverRouter);
-app.use("/api", tippingRouter);
-app.use("/api", dayoffRouter);
+//app.use("/api", messagesRouter);
 
 // Handle Socket.io connections
 io.on("connection", (socket) => {
@@ -43,10 +47,13 @@ io.on("connection", (socket) => {
 
   // Handle sending a message
   socket.on("sendMessage", async ({ roomId, senderId, messageText }) => {
+    const user = await User.findById(senderId);
+
     const message = new Message({
       roomId,
       senderId,
       messageText,
+      image: user.picture ?? null,
     });
 
     // Save the message to the database
@@ -62,6 +69,41 @@ io.on("connection", (socket) => {
   });
 });
 
-server.listen(process.env.port, () => {
-  console.log(`LondonWaste app listening on port ${process.env.port}`);
+// Set up middleware to log each request
+app.use((req, res, next) => {
+  console.log(`${new Date()} - ${req.method} request for ${req.url}`);
+  next();
+});
+
+app.get("/test", (req, res) => {
+  // Base coordinates
+  const baseLat = 23.8103;
+  const baseLong = 90.4525;
+
+  // Generate random offset
+  const latOffset = (Math.random() - 0.5) * 0.01; // creates a range from -0.005 to 0.005
+  const longOffset = (Math.random() - 0.5) * 0.01; // creates a range from -0.005 to 0.005
+
+  // New coordinates around the base point
+  const newLat = baseLat + latOffset;
+  const newLong = baseLong + longOffset;
+
+  // Simulate driver location data
+  const testLocationUpdate = {
+    driverId: "12345",
+    latitude: newLat.toFixed(4), // limit to 4 decimal places
+    longitude: newLong.toFixed(4), // limit to 4 decimal places
+  };
+
+  // Emit an event to all connected clients
+  io.emit("driverLocationUpdate", testLocationUpdate);
+
+  // Respond to the HTTP request indicating the event has been emitted
+  res.send("Test event emitted with random location!");
+});
+
+// Start the server
+server.listen(process.env.PORT, () => {
+  console.log(`Server listening on port ${process.env.PORT}`);
+  console.log(`LondonWaste app listening on port ${process.env.PORT}`);
 });

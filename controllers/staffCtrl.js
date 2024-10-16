@@ -3,8 +3,8 @@ const Driver = require("../models/Driver");
 const Helper = require("../models/Helper");
 const Truck = require("../models/Truck");
 const bcrypt = require("bcrypt");
-const socket = require("../socket"); // Ensure you have the correct path to your socket module
-const APIfeatures = require("../utils/APIFeatures"); // Adjust the path to where your class is located
+const socket = require("../socket"); 
+const APIfeatures = require("../utils/APIFeatures"); 
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -156,13 +156,12 @@ const staffManagement = {
 
   updateStaff: async (req, res) => {
     const { id } = req.params;
-    let updateData = req.body; // Take all incoming fields for potential update
+    let updateData = req.body; 
 
     if (req.file) {
-      updateData.picture = req.file.path; // Save or update the path to the file in the database
+      updateData.picture = req.file.path;
     }
 
-    // If password is included, hash it before updating
     if (updateData.password && updateData.password.trim() !== "") {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }
@@ -276,7 +275,6 @@ const staffManagement = {
           )
         ) {
           if (!driver.startTime) {
-            // Start time is not already set
             driver.startTime = new Date(); // Record the start time
           }
         }
@@ -284,7 +282,6 @@ const staffManagement = {
 
       await driver.save();
 
-      // Emit the new driver location to all connected clients
       socket.emitEvent("driverLocationUpdate", {
         driverId,
         latitude,
@@ -300,10 +297,9 @@ const staffManagement = {
   },
 
   getTasksForDriver: async (req, res) => {
-    const driverId = req.params; // ID of the driver from URL
+    const driverId = req.params;
 
     try {
-      // Find the truck that this driver is assigned to
       const truck = await Truck.findOne({ driverId: driverId });
       if (!truck) {
         return res
@@ -311,7 +307,6 @@ const staffManagement = {
           .json({ message: "No truck found for the given driver." });
       }
 
-      // Retrieve all tasks associated with this truck
       const tasks = await Task.find({ _id: { $in: truck.tasks } });
       res.status(200).json({ message: "Tasks retrieved successfully", tasks });
     } catch (error) {
