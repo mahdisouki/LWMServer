@@ -3,14 +3,16 @@ const { Helper } = require("../models/Helper");
 const Task = require("../models/Task");
 const Truck = require("../models/Truck");
 const TruckStatus = require("../models/TruckStatus");
+const bcrypt = require("bcrypt");
 
 const driverManagement = {
 updateDriverProfile: async (req, res) => {
     const driverId = req.user._id; 
-    const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth,picture } = req.body;
+    const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth, picture, password } = req.body;
 
     try {
         const driver = await User.findById(driverId);
+
         if (!driver) {
             return res.status(404).json({ message: "Driver not found" });
         }
@@ -23,6 +25,7 @@ updateDriverProfile: async (req, res) => {
         if (gender) driver.gender = gender;
         if (designation) driver.designation = designation;
         if (dateOfBirth) driver.dateOfBirth = dateOfBirth;
+        if (password) driver.password = await bcrypt.hash(password, 10);
       
         // The picture URL is automatically set by the Cloudinary middleware
         if (req.file) {
@@ -30,7 +33,8 @@ updateDriverProfile: async (req, res) => {
         }
 
         await driver.save();
-        res.status(200).json({ message: "Driver profile updated successfully", driver });
+        
+        res.status(200).json({ message: "Driver profile updated successfully", user: { username: driver.username, email: driver.email, role: driver.role, id: driver._id, picture: driver.picture, phoneNumber: driver.phoneNumber[0] } });
     } catch (error) {
         console.error("Error updating driver profile:", error);
         res.status(500).json({ message: "Failed to update driver profile", error: error.message });

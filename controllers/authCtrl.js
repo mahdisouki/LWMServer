@@ -25,11 +25,9 @@ exports.userSignIn = async (req, res) => {
       return res.json({ success: false, message: "User not found with the given email!" });
     }
 
-
-    user.password = await bcrypt.hash(password, 10);
-    await user.save();
-   
-
+    // user.password = await bcrypt.hash(password, 10);
+    // await user.save();
+  
     console.log("User found:", user);
 
     const isMatch = await bcrypt.compare(password, user.password);
