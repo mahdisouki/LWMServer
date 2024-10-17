@@ -24,7 +24,7 @@ const corsOptions = {
   optionsSuccessStatus: 200 
 };
 
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/api',authRouter);
 app.use('/api',staffRouter);
@@ -35,7 +35,7 @@ app.use('/api',messagesRouter);
 
 // Handle Socket.io connections
 io.on("connection", (socket) => {
-  console.log("A user connected");
+  console.log(`User connected: ${socket.id}`);
   // Handle joining a room (conversation between admin and a specific staff member)
   socket.on("joinRoom", async (roomId) => {
     socket.join(roomId);
@@ -50,7 +50,7 @@ io.on("connection", (socket) => {
   socket.on("sendMessage", async ({ roomId, senderId, messageText }) => {
 
     const user = await User.findById(senderId)
-
+    console.log(user);
     const message = new Message({
       roomId,
       senderId,

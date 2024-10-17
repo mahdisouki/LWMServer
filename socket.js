@@ -13,7 +13,8 @@ const initSocket = (server) => {
   });
 
   io.on("connection", (socket) => {
-    console.log("A user connected");
+    console.log(`User connected: ${socket.id}`);
+
 
     socket.on("disconnect", () => {
       console.log("User disconnected");
@@ -29,8 +30,14 @@ const emitEvent = (eventName, data) => {
     io.emit(eventName, data);
   }
 };
+const emitNotificationToUser = (socketId, notification) => {
+  if (io) {
+    io.to(socketId).emit("notification", notification);
+  }
+};
 
 module.exports = {
   initSocket,
   emitEvent,
+  emitNotificationToUser
 };

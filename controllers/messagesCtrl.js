@@ -81,12 +81,6 @@ module.exports = {
 
   //---> get the helper assigned to a driver
   getAssignedHelper: async (req, res) => {
-
-    const truck = await Truck.findById('66ddb2a86d3115e1ab9dcfec');
-    truck.driverId = req.user.id;
-    truck.helperId = '66f3de99e55b4714e2997b45';
-    await truck.save();
-
     const driverId = req.user.id;
     try {
       const truck = await Truck.findOne({ driverId });
