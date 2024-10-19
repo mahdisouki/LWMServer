@@ -15,6 +15,8 @@ const staffRouter = require("./routes/staff");
 const taskRouter = require("./routes/task");
 const truckRouter = require("./routes/truck");
 const driverRouter = require("./routes/driver");
+const tippingRouter = require("./routes/tipping");
+const dayoffRouter = require("./routes/dayoff");
 //const messagesRouter = require("./routes/messages");
 const { User } = require("./models/User");
 
@@ -30,6 +32,8 @@ app.use("/api", staffRouter);
 app.use("/api", taskRouter);
 app.use("/api", truckRouter);
 app.use("/api", driverRouter);
+app.use("/api", tippingRouter);
+app.use("/api", dayoffRouter);
 //app.use("/api", messagesRouter);
 
 // Handle Socket.io connections
