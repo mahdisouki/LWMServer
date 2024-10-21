@@ -105,6 +105,10 @@ getAllDayOffRequests: async (req, res) => {
   
       const total = await Dayoff.countDocuments(); // Count total documents
       const requests = await Dayoff.find({})
+                                    .populate({
+                                        path: 'userId',
+                                        select: 'id email username'
+                                    })
                                    .skip((page - 1) * limit) // Skip the previous pages' documents
                                    .limit(limit) // Limit the number of documents returned
                                    .exec(); // Execute the query
