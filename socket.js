@@ -24,8 +24,14 @@ const emitEvent = (eventName, data) => {
     io.emit(eventName, data);
   }
 };
+const emitNotificationToUser = (socketId, notification) => {
+  if (io) {
+    io.to(socketId).emit("notification", notification);
+  }
+};
 
 module.exports = {
   initSocket,
   emitEvent,
+  emitNotificationToUser
 };

@@ -17,6 +17,7 @@ const truckRouter = require("./routes/truck");
 const driverRouter = require("./routes/driver");
 const tippingRouter = require("./routes/tipping");
 const dayoffRouter = require("./routes/dayoff");
+const dailySheetRoutes = require('./routes/dailySheet');
 
 app.use(cors());
 app.use(express.json());
@@ -27,10 +28,11 @@ app.use("/api", truckRouter);
 app.use("/api", driverRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
+app.use('/api/dailySheets', dailySheetRoutes);
 
 // Handle Socket.io connections
 io.on("connection", (socket) => {
-  console.log("A user connected");
+  console.log(`User connected: ${socket.id}`);
   // Handle joining a room (conversation between admin and a specific staff member)
   socket.on("joinRoom", async (roomId) => {
     socket.join(roomId);
