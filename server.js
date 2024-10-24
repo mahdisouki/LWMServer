@@ -1,23 +1,23 @@
-const express = require('express')
-const app = express()
-const http = require('http');  
+const express = require("express");
+const app = express();
+const http = require("http");
 
-require('dotenv').config();
-require('./config/db');
-const cors = require('cors');
+require("dotenv").config();
+require("./config/db");
+const cors = require("cors");
 const Message = require("./models/Message");
 const { initSocket, emitEvent } = require("./socket");
-const server = http.createServer(app);   
+const server = http.createServer(app);
 const io = initSocket(server);
 
-
-const authRouter = require('./routes/auth');
-const staffRouter =require('./routes/staff');
-const taskRouter =require('./routes/task');
-const truckRouter =require('./routes/truck');
-const driverRouter =require('./routes/driver');
-const messagesRouter = require('./routes/messages');
-const { User } = require('./models/User');
+const authRouter = require("./routes/auth");
+const staffRouter = require("./routes/staff");
+const taskRouter = require("./routes/task");
+const truckRouter = require("./routes/truck");
+const driverRouter = require("./routes/driver");
+const tippingRouter = require("./routes/tipping");
+const dayoffRouter = require("./routes/dayoff");
+const dailySheetRoutes = require('./routes/dailySheet');
 
 const corsOptions = {
   origin: '*', 
@@ -32,6 +32,9 @@ app.use('/api',taskRouter);
 app.use('/api',truckRouter);
 app.use('/api',driverRouter);
 app.use('/api',messagesRouter);
+app.use("/api", tippingRouter);
+app.use("/api", dayoffRouter);
+app.use('/api/dailySheets', dailySheetRoutes);
 
 // Handle Socket.io connections
 io.on("connection", (socket) => {
@@ -40,7 +43,7 @@ io.on("connection", (socket) => {
   socket.on("joinRoom", async (roomId) => {
     socket.join(roomId);
     console.log(`User joined room: ${roomId}`);
-    
+
     // Optionally, fetch chat history from the database when joining a room
     const messages = await Message.find({ roomId }).sort({ createdAt: 1 });
     socket.emit("chatHistory", messages);
@@ -71,15 +74,6 @@ io.on("connection", (socket) => {
   });
 });
 
-
-// Set up middleware to log each request
-app.use((req, res, next) => {
-  console.log(`${new Date()} - ${req.method} request for ${req.url}`);
-  next();
-});
-
-// Start the server
-server.listen(process.env.PORT, () => {
-  console.log(`Server listening on port ${process.env.PORT}`);
-  console.log(`LondonWaste app listening on port ${process.env.PORT}`);
+server.listen(process.env.port, () => {
+  console.log(`LondonWaste app listening on port ${process.env.port}`);
 });

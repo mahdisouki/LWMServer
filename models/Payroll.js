@@ -7,13 +7,15 @@ const payrollSchema = new Schema({
         ref: 'User',
         required: true
     },
-    startTime: { type: Date},
+    startTime: { type: Date },
     endTime: { type: Date },
-    totalHoursWorked: { type: Number, default: 0 },
-    totalSalary: { type: Number, default: 0 }
+    totalHoursWorked: { type: Number, default: 0 }, // Total hours worked
+    regularHours: { type: Number, default: 0 }, // Regular hours (up to 8h)
+    extraHours: { type: Number, default: 0 }, // Extra hours (after 8h)
+    totalSalary: { type: Number, default: 0 }, // Total salary including extra hours
+    status: { type: String, enum: ['Pending', 'Paid'], default: 'Pending' }, // New status field to track payment status
 }, { timestamps: true });
-
-// Optionally add a pre-save hook if needed for automatic calculations before saving.
 
 const Payroll = mongoose.model('Payroll', payrollSchema);
 module.exports = Payroll;
+

@@ -5,6 +5,8 @@ const Admin = require("../models/Admin")
 const Truck = require("../models/Truck");
 const bcrypt = require("bcrypt");
 const socket = require("../socket"); // Ensure you have the correct path to your socket module
+const APIfeatures = require("../utils/APIFeatures"); // Adjust the path to where your class is located
+const Admin = require("../models/Admin")
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -94,22 +96,26 @@ const staffManagement = {
         role: { $in: ["Driver", "Helper"], $nin: ["Admin"] },
       });
 
+      const features = new APIfeatures(query, req.query);
+
       if (filters) {
-        query = query.find(filters);
+        features.filtering();
       }
 
-      const total = await User.countDocuments(query);
-      const users = await query
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .exec();
+      features.sorting().paginating();
+
+      const users = await features.query.exec(); 
+      const total = await User.countDocuments(features.query);
+
+      const currentPage = parseInt(req.query.page, 10) || 1;
+      const limitNum = parseInt(req.query.limit, 10) || 9;
 
       res.status(200).json({
         message: "Staff retrieved successfully",
         users,
         meta: {
-          currentPage: Number(page),
-          limit: Number(limit),
+          currentPage,
+          limit: limitNum,
           total,
           count: users.length,
         },

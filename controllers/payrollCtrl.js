@@ -59,7 +59,7 @@ const PayrollCtrl = {
                 return res.status(400).json({ message: "End time must be after start time." });
             }
     
-            const hoursWorked = (end - start) / (1000 * 3600); // Convert milliseconds to hours
+            const totalHoursWorked = (end - start) / (1000 * 3600); // Convert milliseconds to hours
     
             const user = await User.findById(userId);
             if (!user) {
@@ -73,12 +73,29 @@ const PayrollCtrl = {
                 user.payrollReset = false; // Unset the reset flag
             }
     
+            const REGULAR_HOURS_LIMIT = 8; // 8 hours per day
+    
+            // Calculate regular and overtime hours
+            let regularHours = totalHoursWorked;
+            let overtimeHours = 0;
+    
+            if (totalHoursWorked > REGULAR_HOURS_LIMIT) {
+                regularHours = REGULAR_HOURS_LIMIT;
+                overtimeHours = totalHoursWorked - REGULAR_HOURS_LIMIT;
+            }
+    
+            // Calculate salary: regular hours + overtime hours
+            const regularSalary = regularHours * user.hourPrice;
+            const overtimeSalary = overtimeHours * user.hourPrice * 1.5; // 1.5x for overtime
+    
             payroll.endTime = end;
-            payroll.totalHoursWorked = hoursWorked;
-            payroll.totalSalary = hoursWorked * user.hourPrice;
+            payroll.totalHoursWorked = totalHoursWorked;
+            payroll.regularHours = regularHours;
+            payroll.overtimeHours = overtimeHours;
+            payroll.totalSalary = regularSalary + overtimeSalary;
     
             // Update the user's total hours worked and total salary
-            user.totalHoursWorked += hoursWorked;
+            user.totalHoursWorked += totalHoursWorked;
             user.totalSalary += payroll.totalSalary;
     
             await payroll.save();
@@ -91,7 +108,8 @@ const PayrollCtrl = {
         } catch (error) {
             res.status(500).json({ message: "Failed to log end time.", error: error.message });
         }
-    },    
+    },
+       
 
     // Get all payroll records for the logged-in user
     getIndividualPayrollRecords: async (req, res) => {
@@ -267,7 +285,47 @@ const PayrollCtrl = {
         } catch (error) {
             res.status(500).json({ message: "Failed to delete payroll record.", error: error.message });
         }
-    }
+    },
+    markPayrollAsPaid : async (payrollId) => {
+        try {
+          // Find the payroll by ID
+          const payroll = await Payroll.findById(payrollId);
+          
+          if (!payroll) throw new Error("Payroll not found");
+      
+          // Check if the payroll is already marked as paid
+          if (payroll.status === 'paid') {
+            throw new Error("Payroll is already marked as paid");
+          }
+      
+          // Recalculate hours worked and salary before marking as paid
+          const totalHoursWorked = (new Date(payroll.endTime) - new Date(payroll.startTime)) / (1000 * 3600);
+          const regularHours = Math.min(totalHoursWorked, 8);
+          const extraHours = Math.max(totalHoursWorked - 8, 0);
+      
+          // Fetch user to get the hourly rate
+          const user = await User.findById(payroll.userId);
+      
+          payroll.totalHoursWorked = totalHoursWorked;
+          payroll.regularHours = regularHours;
+          payroll.extraHours = extraHours;
+          payroll.totalSalary = (regularHours * user.hourPrice) + (extraHours * user.hourPrice * 1.5);
+      
+          // Mark payroll as paid
+          payroll.status = 'paid';
+      
+          // Save updated payroll
+          await payroll.save();
+      
+          console.log(`Payroll ${payrollId} marked as paid successfully.`);
+      
+          // Optionally reset driver's work data for the next pay period
+          await resetDriverWorkData(payroll.userId);
+          
+        } catch (error) {
+          console.error(`Error marking payroll as paid: ${error.message}`);
+        }
+      }
 };
 
 module.exports = PayrollCtrl;
