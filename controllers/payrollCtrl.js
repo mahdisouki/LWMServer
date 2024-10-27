@@ -364,9 +364,11 @@ const PayrollCtrl = {
       });
     }
   },
-  markPayrollAsPaid: async (payrollId) => {
+  markPayrollAsPaid: async (req, res) => {
     try {
       // Find the payroll by ID
+      const payrollId = req.params.payrollId;
+      console.log(payrollId);
       const payroll = await Payroll.findById(payrollId);
 
       if (!payroll) throw new Error("Payroll not found");
@@ -398,10 +400,11 @@ const PayrollCtrl = {
       // Save updated payroll
       await payroll.save();
 
-      console.log(`Payroll ${payrollId} marked as paid successfully.`);
-
       // Optionally reset driver's work data for the next pay period
       await resetDriverWorkData(payroll.userId);
+      res
+        .status(200)
+        .json({ message: "Payroll record marked as paid successfully." });
     } catch (error) {
       console.error(`Error marking payroll as paid: ${error.message}`);
     }
