@@ -145,7 +145,7 @@ const taskCtrl = {
     const { taskStatus } = req.body;
 
     try {
-      if (!["Accepted", "Declined"].includes(taskStatus)) {
+      if (!["Created","Declined", "Processing", "Completed"].includes(taskStatus)) {
         return res.status(400).json({ message: "Invalid task status" });
       }
 

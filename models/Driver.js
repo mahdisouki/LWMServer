@@ -16,7 +16,8 @@ const driverSchema = new mongoose.Schema({
       type: [Number],
       required: false,
     },
-    // helperId: { type: mongoose.Schema.Types.ObjectId, ref: 'Helper' } 
+    currentJobAddress: { type: String, required: false }, // Current job address
+    nextJobAddress: { type: String, required: false }, // Next job address
   }
 });
 

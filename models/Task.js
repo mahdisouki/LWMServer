@@ -50,8 +50,8 @@ const taskSchema = new Schema(
     },
     taskStatus: {
       type: String,
-      enum: ["Declined", "Processing", "Completed"],
-      default: "Processing",
+      enum: ["Created","Declined", "Processing", "Completed"],
+      default: "Created",
     },
     additionalNotes: { type: String, required: false },
     itemDescription: { type: String, required: false },

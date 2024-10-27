@@ -9,7 +9,7 @@ const Message = require("./models/Message");
 const { initSocket, emitEvent } = require("./socket");
 const server = http.createServer(app);
 const io = initSocket(server);
-
+const Driver = require('./models/Driver')
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
 const taskRouter = require("./routes/task");
@@ -18,7 +18,7 @@ const driverRouter = require("./routes/driver");
 const tippingRouter = require("./routes/tipping");
 const dayoffRouter = require("./routes/dayoff");
 const dailySheetRoutes = require('./routes/dailySheet');
-
+const payrollsRoutes = require('./routes/payrolls')
 app.use(cors());
 app.use(express.json());
 app.use("/api", authRouter);
@@ -29,40 +29,9 @@ app.use("/api", driverRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
 app.use('/api/dailySheets', dailySheetRoutes);
+app.use('/api' , payrollsRoutes )
 
-// Handle Socket.io connections
-io.on("connection", (socket) => {
-  console.log(`User connected: ${socket.id}`);
-  // Handle joining a room (conversation between admin and a specific staff member)
-  socket.on("joinRoom", async (roomId) => {
-    socket.join(roomId);
-    console.log(`User joined room: ${roomId}`);
 
-    // Optionally, fetch chat history from the database when joining a room
-    const messages = await Message.find({ roomId }).sort({ createdAt: 1 });
-    socket.emit("chatHistory", messages);
-  });
-
-  // Handle sending a message
-  socket.on("sendMessage", async ({ roomId, senderId, messageText }) => {
-    const message = new Message({
-      roomId,
-      senderId,
-      messageText,
-    });
-
-    // Save the message to the database
-    await message.save();
-
-    // Broadcast the message to all users in the room
-    io.to(roomId).emit("newMessage", message);
-  });
-
-  // Handle disconnection
-  socket.on("disconnect", () => {
-    console.log("User disconnected");
-  });
-});
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
