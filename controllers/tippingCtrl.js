@@ -7,7 +7,7 @@ const APIfeatures = require("../utils/APIFeatures");
 const tippingController = {
   createTippingRequest: async (req, res) => {
     const userId = req.user._id;
-    const { truckName, notes } = req.body;
+    const { truckId, notes } = req.body;
 
     try {
       const user = await User.findById(userId);
@@ -17,10 +17,12 @@ const tippingController = {
             "Unauthorized: Only drivers and helpers can make tipping requests.",
         });
       }
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await Truck.findById(truckId);
+
       if (!truck) {
         return res.status(404).json({ message: "Truck not found" });
       }
+
       const newTippingRequest = new TippingRequest({
         userId: userId,
         truckId: truck._id,
@@ -76,6 +78,19 @@ const tippingController = {
     } catch (error) {
       res.status(500).json({
         message: "Failed to retrieve tipping request",
+        error: error.message,
+      });
+    }
+  },
+
+  getTippingRequestByUserId : async (req, res) => {
+    const { userId } = req.params;
+    try {
+      const requests = await TippingRequest.findOne({ userId, isShipped: false });
+      res.status(200).json({ requests });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to retrieve tipping requests",
         error: error.message,
       });
     }

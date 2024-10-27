@@ -2,6 +2,9 @@
 const { User } = require('../models/User');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const Driver = require('../models/Driver');
+const Helper = require('../models/Helper');
+const Truck = require('../models/Truck');
 require('dotenv').config();
 
 
@@ -14,16 +17,16 @@ const generateRefreshToken = (user) => {
 };
 
 exports.userSignIn = async (req, res) => {
+  console.log("Signing in user...");
   const { email, password } = req.body;
-  console.log("Attempting sign-in for email:", email);
+
   try {
     const user = await User.findOne({ email });
+
     if (!user) {
       console.log("User not found with the given email!");
       return res.json({ success: false, message: "User not found with the given email!" });
     }
-
-    console.log("User found:", user);
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -38,11 +41,37 @@ exports.userSignIn = async (req, res) => {
     user.refreshToken = refreshToken;
     await user.save();
 
-    console.log("User signed in successfully");
+    let startTime = null;
+    let truck = null;
+
+    if (user.role[0] === 'Driver') {
+      console.log("User is a driver");
+      const driver = await Driver.findById(user._id);
+      startTime = driver ? driver.startTime : null;
+      
+      truck = await Truck.findOne({ driverId: user._id }).populate('tasks');
+    } else if (user.role[0] === 'Helper') {
+      console.log("User is a helper");
+      const helper = await Helper.findById(user._id);
+      startTime = helper ? helper.startTime : null;
+    
+      truck = await Truck.findOne({ helperId: user._id }).populate('tasks');
+    }
+
+    console.log("User signed in successfully", startTime);
 
     res.json({
       success: true,
-      user: { username: user.username, email: user.email, role: user.role },
+      user: { 
+        username: user.username, 
+        email: user.email, 
+        role: user.role, 
+        id: user._id, 
+        picture: user.picture, 
+        phoneNumber: user.phoneNumber[0], 
+        startTime,
+        truckId : truck ? truck._id : null,
+      },
       token,
       refreshToken,
     });
