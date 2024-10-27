@@ -13,7 +13,7 @@ const initSocket = (server) => {
 
   // Middleware to authenticate socket connections
   io.use((socket, next) => {
-    const token = socket.handshake.headers['authorization']?.split(" ")[1];
+    const token = socket.handshake.headers['Authorization']?.split(" ")[1];
 
     if (!token) {
       return next(new Error("Authentication error: Token not provided"));

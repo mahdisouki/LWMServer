@@ -1,11 +1,15 @@
+
 const express = require("express");
 const app = express();
 const http = require("http");
 
+const { initSocket, emitEvent } = require("./socket");
+const server = http.createServer(app);
+const io = initSocket(server);
+
 require("dotenv").config();
 require("./config/db");
-const cors = require("cors");
-const server = http.createServer(app);
+const cors = require("cors");2
 
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");

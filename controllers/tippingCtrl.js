@@ -86,7 +86,7 @@ const tippingController = {
   getTippingRequestByUserId : async (req, res) => {
     const { userId } = req.params;
     try {
-      const requests = await TippingRequest.findOne({ userId, isShipped: false });
+      const requests = await TippingRequest.findOne({ userId, isShipped: false }).sort({ createdAt: -1 });
       res.status(200).json({ requests });
     } catch (error) {
       res.status(500).json({

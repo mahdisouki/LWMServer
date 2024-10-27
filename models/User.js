@@ -20,7 +20,13 @@ const userSchema = new mongoose.Schema({
     type: [String],
     enum: ["Admin", "Helper", "Driver", "HR" ,"Manager" ,"CM" ,"IT" ,"CEO"] 
   },
-  refreshToken: { type: String }
+  refreshToken: { type: String },
+  dayOffRequests: [
+    {
+      type: mongoose.Types.ObjectId,
+      ref: 'Dayoff'
+    }
+  ]
 }, { discriminatorKey: 'roleType' });
 
 
