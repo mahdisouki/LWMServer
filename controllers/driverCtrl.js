@@ -160,13 +160,34 @@ updateTruckEnd : async (req, res) => {
       res.status(500).json({ message: "Failed to update truck end status", error: error.message });
   }
 },
-uploadInitialConditionPhotos : async (req, res) => {
+uploadInitialConditionPhotos: async (req, res) => {
     const { taskId } = req.params;
     const description = req.body.description; // Single description for all uploaded files
     const uploads = req.files.map(file => file.path); // Collecting file paths
-    console.log(req.body);
 
     try {
+        // Fetch the truck associated with the current driver
+        const truck = await Truck.findOne({ 'tasks': taskId }).populate('tasks');
+        if (!truck) {
+            return res.status(404).json({ message: "No truck found for the given task." });
+        }
+
+        // Get the current job (task)
+        const currentTask = await Task.findById(taskId);
+        if (!currentTask) {
+            return res.status(404).json({ message: "Current task not found." });
+        }
+
+        // Get the next job (next task in the list)
+        const currentTaskIndex = truck.tasks.indexOf(taskId);
+        let nextJobAddress = null;
+
+        if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.length - 1) {
+            const nextTask = await Task.findById(truck.tasks[currentTaskIndex + 1]);
+            nextJobAddress = nextTask ? nextTask.currentJobAddress : null;
+        }
+
+        // Update the task with initial condition photos
         const taskUpdate = {
             initialConditionPhotos: [{
                 items: uploads,
@@ -180,11 +201,22 @@ uploadInitialConditionPhotos : async (req, res) => {
             { new: true } // Update the task document
         );
 
+        // Update the driver's current and next job addresses
+        const driverId = truck.driverId; // Assuming you can get driverId from the truck
+        const driverUpdate = {
+            currentJobAddress: currentTask.currentJobAddress, // Current task address
+            nextJobAddress: nextJobAddress // Next task address
+        };
+
+        await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true }); // Update the driver document
+
         res.status(200).json({ message: "Initial condition photos uploaded successfully", task });
     } catch (error) {
         res.status(500).json({ message: "Failed to upload initial condition photos", error: error.message });
     }
 },
+
+
 
 uploadFinalConditionPhotos : async (req, res) => {
     const { taskId } = req.params;
