@@ -4,6 +4,7 @@ const Task = require("../models/Task");
 const Truck = require("../models/Truck");
 const TruckStatus = require("../models/TruckStatus");
 const bcrypt = require("bcrypt");
+const Driver = require("../models/Driver");
 
 const driverManagement = {
 updateDriverProfile: async (req, res) => {
@@ -256,7 +257,7 @@ updateJobStatus: async (req, res) => {
 
 rateTask: async (req, res) => {
     const { taskId } = req.params;
-    const { clientFeedback } = req.body; // Assuming satisfaction rating and feedback are sent in the body
+    const { clientFeedback, clientFeedbackScale } = req.body; // Assuming satisfaction rating and feedback are sent in the body
 
     try {
         const task = await Task.findById(taskId);
@@ -265,6 +266,7 @@ rateTask: async (req, res) => {
         }
         // Update task with the client satisfaction rating and feedback
         task.clientFeedback = clientFeedback;
+        task.clientFeedbackScale = clientFeedbackScale;
        
         await task.save();
         res.status(200).json({ message: "Task rated successfully", task });
@@ -272,8 +274,42 @@ rateTask: async (req, res) => {
         console.error("Error rating task:", error);
         res.status(500).json({ message: "Failed to rate task", error: error.message });
     }
-}
+},
 
+markDayStart: async (req, res) => {
+    const { userId: id, userType } = req.body;
+  
+    try {
+      let user;
+  
+      if (userType === 'Driver') {
+        user = await Driver.findOneAndUpdate(
+          { _id: id, role: 'Driver' },
+          { startTime: new Date() },
+          { new: true }
+        );
+      } else if (userType === 'Helper') {
+        user = await Helper.findOneAndUpdate(
+          { _id: id, role: 'Helper' },
+          { startTime: new Date() },
+          { new: true }
+        );
+      } else {
+        return res.status(400).json({ message: 'Invalid user type' });
+      }
+  
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      console.log("azeazeaz",user);
+      return res.status(200).json({ message: 'Start time updated', user });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: 'An error occurred', error });
+    }
+},
+  
 };
 
 module.exports = driverManagement;

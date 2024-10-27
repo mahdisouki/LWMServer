@@ -20,6 +20,10 @@ const tippingRequestSchema = new Schema({
         enum: ['Pending', 'Approved', 'Denied'],
         default: 'Pending'
     },
+    isShipped: {
+        type: Boolean,
+        default: false 
+    },
     createdAt: { 
         type: Date, 
         default: Date.now 

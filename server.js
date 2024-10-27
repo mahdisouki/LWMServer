@@ -18,6 +18,8 @@ const driverRouter = require("./routes/driver");
 const tippingRouter = require("./routes/tipping");
 const dayoffRouter = require("./routes/dayoff");
 const dailySheetRoutes = require('./routes/dailySheet');
+const messagesRouter = require('./routes/messages');
+const { User } = require("./models/User");
 
 const corsOptions = {
   origin: '*', 
@@ -31,10 +33,10 @@ app.use('/api',staffRouter);
 app.use('/api',taskRouter);
 app.use('/api',truckRouter);
 app.use('/api',driverRouter);
-app.use('/api',messagesRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
 app.use('/api/dailySheets', dailySheetRoutes);
+app.use('/api',messagesRouter);
 
 // Handle Socket.io connections
 io.on("connection", (socket) => {
@@ -51,9 +53,8 @@ io.on("connection", (socket) => {
 
   // Handle sending a message
   socket.on("sendMessage", async ({ roomId, senderId, messageText }) => {
-
     const user = await User.findById(senderId)
-    console.log(user);
+
     const message = new Message({
       roomId,
       senderId,

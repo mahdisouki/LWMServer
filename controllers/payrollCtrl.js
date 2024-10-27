@@ -126,6 +126,7 @@ const PayrollCtrl = {
             res.status(500).json({ message: "Failed to retrieve payroll records.", error: error.message });
         }
     },
+
     updatePayrollRecord: async (req, res) => {
         const { startTime, endTime } = req.body;
         const userId = req.user._id; // Get user ID from authenticated user
@@ -179,6 +180,7 @@ const PayrollCtrl = {
             res.status(500).json({ message: "Failed to retrieve total salary and hours worked.", error: error.message });
         }
     },
+    
     getAllWorkedHoursAndSalaryForAllUsers: async (req, res) => {
         try {
             // Fetch all users

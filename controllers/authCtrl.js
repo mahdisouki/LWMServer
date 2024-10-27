@@ -2,6 +2,9 @@
 const { User } = require('../models/User');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const Driver = require('../models/Driver');
+const Helper = require('../models/Helper');
+const Truck = require('../models/Truck');
 require('dotenv').config();
 
 
@@ -25,11 +28,6 @@ exports.userSignIn = async (req, res) => {
       return res.json({ success: false, message: "User not found with the given email!" });
     }
 
-    // user.password = await bcrypt.hash(password, 10);
-    // await user.save();
-  
-    console.log("User found:", user);
-
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       console.log("Password is incorrect!");
@@ -43,11 +41,37 @@ exports.userSignIn = async (req, res) => {
     user.refreshToken = refreshToken;
     await user.save();
 
-    console.log("User signed in successfully");
+    let startTime = null;
+    let truck = null;
+
+    if (user.role[0] === 'Driver') {
+      console.log("User is a driver");
+      const driver = await Driver.findById(user._id);
+      startTime = driver ? driver.startTime : null;
+      
+      truck = await Truck.findOne({ driverId: user._id }).populate('tasks');
+    } else if (user.role[0] === 'Helper') {
+      console.log("User is a helper");
+      const helper = await Helper.findById(user._id);
+      startTime = helper ? helper.startTime : null;
+    
+      truck = await Truck.findOne({ helperId: user._id }).populate('tasks');
+    }
+
+    console.log("User signed in successfully", startTime);
 
     res.json({
       success: true,
-      user: { username: user.username, email: user.email, role: user.role, id: user._id, picture: user.picture, phoneNumber: user.phoneNumber[0] },
+      user: { 
+        username: user.username, 
+        email: user.email, 
+        role: user.role, 
+        id: user._id, 
+        picture: user.picture, 
+        phoneNumber: user.phoneNumber[0], 
+        startTime,
+        truckId : truck ? truck._id : null,
+      },
       token,
       refreshToken,
     });

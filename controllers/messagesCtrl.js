@@ -89,7 +89,9 @@ module.exports = {
           .status(404)
           .json({ message: 'No helper assigned to this driver' });
       }
-      res.status(200).json({ helperId: truck.helperId });
+
+      const user = await User.findById(truck.helperId);
+      res.status(200).json({ user: {...user._doc, id: user._id}, });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to get assigned helper',
@@ -108,7 +110,9 @@ module.exports = {
           .status(404)
           .json({ message: 'No driver assigned to this helper' });
       }
-      res.status(200).json({ driverId: truck.driverId });
+
+     const user = await User.findById(truck.driverId);
+     res.status(200).json({ user: {...user._doc, id: user._id} });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to get assigned driver',

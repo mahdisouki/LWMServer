@@ -10,6 +10,7 @@ router.post('/create-request', isAuth, checkRole('Admin'), multer.array('clientO
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
 router.get('/tasks', isAuth, checkRole('Admin'), taskCtrl.getAllTasks);
 router.get('/task/:taskId', isAuth, taskCtrl.getTaskById);
+router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
 router.put('/task/:taskId', isAuth, checkRole('Admin'),multer.array('clientObjectPhotos'), taskCtrl.updateTask);
 
