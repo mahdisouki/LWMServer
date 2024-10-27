@@ -99,13 +99,38 @@ const dayOffController = {
 },
 
 
-    getAllDayOffRequests: async (req, res) => {
-      try {
-          const requests = await Dayoff.find({});
-          res.status(200).json({ message: "Day off requests retrieved successfully", requests });
-      } catch (error) {
-          res.status(500).json({ message: "Failed to retrieve day off requests", error: error.message });
-      }},
+getAllDayOffRequests: async (req, res) => {
+    try {
+      const { page = 1, limit = 10 } = req.query; // Default page and limit values
+  
+      const total = await Dayoff.countDocuments(); // Count total documents
+      const requests = await Dayoff.find({})
+                                    .populate({
+                                        path: 'userId',
+                                        select: 'id email username'
+                                    })
+                                   .skip((page - 1) * limit) // Skip the previous pages' documents
+                                   .limit(limit) // Limit the number of documents returned
+                                   .exec(); // Execute the query
+  
+      const currentPage = parseInt(page, 10);
+      const limitNum = parseInt(limit, 10);
+  
+      res.status(200).json({
+        message: "Day off requests retrieved successfully",
+        requests,
+        meta: {
+          currentPage,
+          limit: limitNum,
+          total,
+          count: requests.length
+        }
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to retrieve day off requests", error: error.message });
+    }
+  },
+  
 
       updateDayOffRequestStatus: async (req, res) => {
         const { id } = req.params; // Request ID
