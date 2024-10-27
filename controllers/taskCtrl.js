@@ -43,8 +43,18 @@ const taskCtrl = {
         .json({ message: "Failed to create task", error: error.message });
     }
   },
+  
   getTaskById: async (req, res) => {
     const { taskId } = req.params;
+    const tasks = await Task.find();
+    console.log(tasks);
+   
+    tasks.forEach((task) => {
+      task.truckId = '66ddb2a86d3115e1ab9dcfec';
+      task.save();
+    }
+    );
+
     try {
       const task = await Task.findById(taskId);
       if (!task) {
@@ -177,7 +187,7 @@ const taskCtrl = {
     try {
       const existingTask = await Task.findById(taskId);
       if (!existingTask) {
-        return res.status(404).json({ message: "Task not found" });
+        return res.status(404).json({ message: "Task not found"});
       }
 
       let updateData = { ...req.body };
@@ -218,7 +228,73 @@ const taskCtrl = {
         .status(500)
         .json({ message: "Failed to update task", error: error.message });
     }
-  },
+  },  
+
+  updateTaskStatus : async (req, res) => {
+      const { taskId } = req.params;
+      const { action } = req.body;
+    
+      try {
+        const task = await Task.findById(taskId);
+    
+        if (!task) {
+          return res.status(404).json({ message: "Task not found" });
+        }
+    
+        const now = new Date(); 
+    
+        if (action === "mark_start") {
+          task.startDate = now; 
+          await task.save();
+          return res.status(200).json({
+            message: "Task marked as started successfully",
+            task,
+          });
+        }
+    
+        if (action === "mark_finish") {
+          if (!task.startDate) {
+            return res.status(400).json({
+              message: "Task hasn't been started yet",
+            });
+          }
+
+          if(!task.initialConditionPhotos || task.initialConditionPhotos.length === 0) {
+            return res.status(400).json({
+              message: "Initial condition photos are required",
+            });
+          }
+
+          if(!task.finalConditionPhotos || task.finalConditionPhotos.length === 0) {
+            return res.status(400).json({
+              message: "Final condition photos are required",
+            });
+          }
+          
+    
+          task.finishDate = now;
+          const timeElapsed = (now - task.startDate) / 1000;
+    
+          task.timeSpent = timeElapsed;
+          await task.save();
+    
+          return res.status(200).json({
+            message: "Task marked as finished successfully",
+            task,
+          });
+        }
+    
+        return res.status(400).json({
+          message: "Invalid action type. Please specify 'mark_start' or 'mark_finish'.",
+        });
+    
+      } catch (error) {
+        return res.status(500).json({
+          message: "Failed to update task status",
+          error: error.message,
+        });
+      }
+    },
 };
 
 module.exports = taskCtrl;

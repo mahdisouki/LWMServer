@@ -2,16 +2,18 @@ const { User } = require("../models/User");
 const { Helper } = require("../models/Helper");
 const Task = require("../models/Task");
 const Truck = require("../models/Truck");
-const bcrypt = require("bcrypt");
 const TruckStatus = require("../models/TruckStatus");
+const bcrypt = require("bcrypt");
+const Driver = require("../models/Driver");
 
 const driverManagement = {
 updateDriverProfile: async (req, res) => {
     const driverId = req.user._id; 
-    const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth,picture } = req.body;
+    const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth, picture, password } = req.body;
 
     try {
         const driver = await User.findById(driverId);
+
         if (!driver) {
             return res.status(404).json({ message: "Driver not found" });
         }
@@ -24,6 +26,7 @@ updateDriverProfile: async (req, res) => {
         if (gender) driver.gender = gender;
         if (designation) driver.designation = designation;
         if (dateOfBirth) driver.dateOfBirth = dateOfBirth;
+        if (password) driver.password = await bcrypt.hash(password, 10);
       
         // The picture URL is automatically set by the Cloudinary middleware
         if (req.file) {
@@ -31,7 +34,8 @@ updateDriverProfile: async (req, res) => {
         }
 
         await driver.save();
-        res.status(200).json({ message: "Driver profile updated successfully", driver });
+        
+        res.status(200).json({ message: "Driver profile updated successfully", user: { username: driver.username, email: driver.email, role: driver.role, id: driver._id, picture: driver.picture, phoneNumber: driver.phoneNumber[0] } });
     } catch (error) {
         console.error("Error updating driver profile:", error);
         res.status(500).json({ message: "Failed to update driver profile", error: error.message });
@@ -39,11 +43,12 @@ updateDriverProfile: async (req, res) => {
 },
 
 getHelperLocationForDriver: async (req, res) => {
-  const driverId = req.user._id; // Assuming the driver ID is obtained from authenticated user's context
+  const driverId = req.user._id;
 
   try {
     // Find the truck assigned to this driver
     const truck = await Truck.findOne({ driverId: driverId });
+
     if (!truck) {
       return res.status(404).json({ message: "No truck found for the given driver." });
     }
@@ -71,44 +76,34 @@ getHelperLocationForDriver: async (req, res) => {
 
 getTasksForDriver : async (req, res) => {
         const driverId = req.user._id;   // ID of the driver from URL
+        const trucks = await Truck.find();
+
+        trucks.forEach(async (truck) => {
+            truck.driverId = driverId;
+            await truck.save();
+        });
       
         try {
           // Find the truck that this driver is assigned to
           const truck = await Truck.findOne({ driverId: driverId });
+
           if (!truck) {
             return res.status(404).json({ message: "No truck found for the given driver." });
           }
-      
+
+        
+
           // Retrieve all tasks associated with this truck
-          const tasks = await Task.find({ '_id': { $in: truck.tasks } });
+          // TODO: Filter tasks by truck ID - FIX THIS
+          //const tasks = await Task.find({ '_id': { $in: truck.tasks } });
+          const tasks = await Task.find();
+          console.log(tasks);
           res.status(200).json({ message: "Tasks retrieved successfully", tasks });
         } catch (error) {
           res.status(500).json({ message: "Failed to retrieve tasks", error: error.message });
         }
-      },
+},
     
-// rateTask: async (req, res) => {
-//   const { taskId } = req.params;
-//   const { clientSatisfaction, feedback } = req.body;
-
-//   try {
-//     const task = await Task.findById(taskId);
-//     if (!task) {
-//       return res.status(404).json({ message: "Task not found" });
-//     }
-
-//     task.clientSatisfaction = clientSatisfaction;
-//     if (feedback) task.feedback = feedback; // Only update feedback if provided
-
-//     await task.save();
-//     res.status(200).json({ message: "Task rated successfully", task });
-//   } catch (error) {
-//     res.status(500).json({ message: "Failed to rate task", error: error.message });
-//   }
-// },
-
-      // Début de la journée pour un camion
-     
 updateTruckStart : async (req, res) => {
           const { truckId } = req.params;
           const { fuelLevel, mileageStart } = req.body;
@@ -133,8 +128,8 @@ updateTruckStart : async (req, res) => {
               res.status(500).json({ message: "Failed to update truck start status", error: error.message });
           }
  
-        },
-    // Fin de la journée pour un camion
+},
+
 updateTruckEnd : async (req, res) => {
   const { truckId } = req.params;
   const { fuelLevelBefore,fuelLevelAfter, mileageEnd } = req.body;
@@ -160,7 +155,8 @@ updateTruckEnd : async (req, res) => {
       res.status(500).json({ message: "Failed to update truck end status", error: error.message });
   }
 },
-uploadInitialConditionPhotos: async (req, res) => {
+
+uploadInitialConditionPhotos : async (req, res) => {
     const { taskId } = req.params;
     const description = req.body.description; // Single description for all uploaded files
     const uploads = req.files.map(file => file.path); // Collecting file paths
@@ -246,8 +242,6 @@ uploadFinalConditionPhotos : async (req, res) => {
     }
 },
 
-
-
 addAdditionalItems : async (req, res) => {
     const { taskId } = req.params; // Ensure your route is set to capture this
   
@@ -273,8 +267,6 @@ addAdditionalItems : async (req, res) => {
     }
 },
 
-
-
 updateJobStatus: async (req, res) => {
     const { taskId } = req.params;
     const { taskStatus } = req.body; // Assuming the new status is passed in the body of the request
@@ -294,9 +286,10 @@ updateJobStatus: async (req, res) => {
         res.status(500).json({ message: "Failed to update task status", error: error.message });
     }
 },
+
 rateTask: async (req, res) => {
     const { taskId } = req.params;
-    const { clientFeedback } = req.body; // Assuming satisfaction rating and feedback are sent in the body
+    const { clientFeedback, clientFeedbackScale } = req.body; // Assuming satisfaction rating and feedback are sent in the body
 
     try {
         const task = await Task.findById(taskId);
@@ -305,6 +298,7 @@ rateTask: async (req, res) => {
         }
         // Update task with the client satisfaction rating and feedback
         task.clientFeedback = clientFeedback;
+        task.clientFeedbackScale = clientFeedbackScale;
        
         await task.save();
         res.status(200).json({ message: "Task rated successfully", task });
@@ -312,13 +306,42 @@ rateTask: async (req, res) => {
         console.error("Error rating task:", error);
         res.status(500).json({ message: "Failed to rate task", error: error.message });
     }
-}
+},
 
+markDayStart: async (req, res) => {
+    const { userId: id, userType } = req.body;
+  
+    try {
+      let user;
+  
+      if (userType === 'Driver') {
+        user = await Driver.findOneAndUpdate(
+          { _id: id, role: 'Driver' },
+          { startTime: new Date() },
+          { new: true }
+        );
+      } else if (userType === 'Helper') {
+        user = await Helper.findOneAndUpdate(
+          { _id: id, role: 'Helper' },
+          { startTime: new Date() },
+          { new: true }
+        );
+      } else {
+        return res.status(400).json({ message: 'Invalid user type' });
+      }
+  
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      console.log("azeazeaz",user);
+      return res.status(200).json({ message: 'Start time updated', user });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: 'An error occurred', error });
+    }
+},
+  
 };
-
-
-
-
-
 
 module.exports = driverManagement;

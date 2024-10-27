@@ -9,6 +9,8 @@ const multer = require('../middlewares/multer');
 router.get('/driver', isAuth, driverCtrl.getTasksForDriver);
 router.post('/trucks/start/:truckId', isAuth, multer.array('uploads'), driverCtrl.updateTruckStart);
 router.put('/driver', isAuth, multer.single('picture'), driverCtrl.updateDriverProfile);
+router.post('/driver/mark-day-start', isAuth, multer.none(), driverCtrl.markDayStart);
+
 //router.get('/driver/helper-location', isAuth, driverCtrl.getHelperLocationForDriver);
 router.post('/trucks/end/:truckId', isAuth, multer.array('uploads'), driverCtrl.updateTruckEnd);
 router.put('/tasks/update-status/:taskId', isAuth, driverCtrl.updateJobStatus);

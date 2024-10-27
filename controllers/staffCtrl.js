@@ -1,11 +1,11 @@
 const { User } = require("../models/User");
 const Driver = require("../models/Driver");
 const Helper = require("../models/Helper");
+const Admin = require("../models/Admin")
 const Truck = require("../models/Truck");
 const bcrypt = require("bcrypt");
 const socket = require("../socket"); // Ensure you have the correct path to your socket module
 const APIfeatures = require("../utils/APIFeatures"); // Adjust the path to where your class is located
-const Admin = require("../models/Admin")
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -24,6 +24,7 @@ const isWithinDistance = (coord1, coord2, maxDistance) => {
 
   return distance <= maxDistance;
 };
+
 
 const staffManagement = {
   addStaff: async (req, res) => {
@@ -257,6 +258,7 @@ const staffManagement = {
 
       // Find the assigned helper by the truck's helperId
       const truck = await Truck.findOne({ driverId: driverId });
+
       if (!truck || !truck.helperId) {
         return res
           .status(404)
@@ -322,6 +324,30 @@ const staffManagement = {
     }
   },
   updateAdminProfile : async (req, res) => {
+    try {
+      const adminId = req.user._id; // Get the user ID from req.user
+  
+      const updatedData = req.body; // Assuming the request body contains the profile data to update
+  
+      // Update the admin profile using the id
+      const updatedAdmin = await Admin.findByIdAndUpdate(adminId, updatedData, {
+        new: true, // Return the updated document
+      });
+  
+      if (!updatedAdmin) {
+        return res.status(404).json({ message: "Admin not found" });
+      }
+  
+      res.status(200).json({
+        message: "Admin profile updated successfully",
+        admin: updatedAdmin,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to update admin profile",
+        error: error.message,
+      });
+    }
   }
 };
 
