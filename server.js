@@ -29,7 +29,7 @@ app.use("/api", truckRouter);
 app.use("/api", driverRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
-app.use("/api/dailySheets", dailySheetRoutes);
+app.use("/api", dailySheetRoutes);
 app.use("/api", payrollRouter);
 
 // Handle Socket.io connections

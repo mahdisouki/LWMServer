@@ -253,7 +253,13 @@ const PayrollCtrl = {
   // Admin - Get all payroll records for all users
   getAllPayrolls: async (req, res) => {
     try {
-      let query = await Payroll.find({});
+      const { page, limit, filters } = req.query;
+
+      let query = Payroll.find({}).populate({
+        path: "userId",
+        select: "id email username",
+      });
+
       const features = new APIfeatures(query, req.query);
 
       if (filters) {
@@ -261,13 +267,15 @@ const PayrollCtrl = {
       }
 
       features.sorting().paginating();
+
       const payrolls = await features.query.exec();
+
       const total = await User.countDocuments(features.query);
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;
 
       res.status(200).json({
-        message: "Staff retrieved successfully",
+        message: "Payroll retrieved successfully",
         payrolls,
         meta: {
           currentPage,
@@ -276,7 +284,6 @@ const PayrollCtrl = {
           count: payrolls.length,
         },
       });
-
     } catch (error) {
       res.status(500).json({
         message: "Failed to retrieve payroll records.",
