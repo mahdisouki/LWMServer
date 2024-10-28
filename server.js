@@ -1,15 +1,16 @@
-
 const express = require("express");
 const app = express();
 const http = require("http");
 
-const { initSocket, emitEvent } = require("./socket");
+const { initSocket } = require("./socket");
+
 const server = http.createServer(app);
+
 const io = initSocket(server);
 
 require("dotenv").config();
 require("./config/db");
-const cors = require("cors");2
+const cors = require("cors");
 
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
@@ -22,7 +23,13 @@ const dailySheetRoutes = require("./routes/dailySheet");
 const payrollsRoutes = require("./routes/payrolls");
 const messageRoutes = require("./routes/messages");
 
-app.use(cors());
+const corsOptions = {
+  origin: '*', 
+  optionsSuccessStatus: 200 
+};
+
+app.use(cors(corsOptions));
+
 app.use(express.json());
 app.use('/api',authRouter);
 app.use('/api',staffRouter);

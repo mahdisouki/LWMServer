@@ -3,17 +3,25 @@ const socketIo = require("socket.io");
 const jwt = require("jsonwebtoken");
 const Message = require("./models/Message");
 const Driver = require("./models/Driver");
-const Notification = require("./models/Notification")
+const Notification = require("./models/Notification");
+const { User } = require("./models/User");
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 
 // Initialize the Socket.io server and export the io instance
 const initSocket = (server) => {
-  io = socketIo(server);
+  io = socketIo(server, {
+    cors: {
+      origin: ["http://localhost:5173", "http://localhost:5174"],
+      methods: ["GET", "POST"],
+      credentials: true,
+      allowedHeaders: ["Authorization"],
+    },
+  });
 
   // Middleware to authenticate socket connections
   io.use((socket, next) => {
-    const token = socket.handshake.headers['Authorization']?.split(" ")[1];
+    const token = socket.handshake.headers['authorization']?.split(" ")[1];
 
     if (!token) {
       return next(new Error("Authentication error: Token not provided"));
@@ -33,7 +41,7 @@ const initSocket = (server) => {
   // Handle connection and events
   io.on("connection", (socket) => {
     const userId = socket.user.userId;
-    userSocketMap[userId] = socket.id; // Map userId to socketId
+    userSocketMap[userId] = socket.id;
     console.log(`User connected: ${userId} with socket ID ${socket.id}`);
     sendOfflineNotifications(userId, socket);
 
@@ -46,7 +54,8 @@ const initSocket = (server) => {
     });
 
     socket.on("sendMessage", async ({ roomId, senderId, messageText }) => {
-      const message = new Message({ roomId, senderId, messageText });
+      const user = await User.findById(senderId);
+      const message = new Message({ roomId, senderId, messageText, image: user.picture });
 
       try {
         await message.save();
