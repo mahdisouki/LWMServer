@@ -85,11 +85,19 @@ const dailySheetController = {
   // Get all daily sheets for all drivers for a specific date
   getDailySheetsForAllDrivers: async (req, res) => {
     try {
-      const date = req.params.date;
+      const date = req.params.date; // Date should be in "YYYY-MM-DD" format
 
-      const dailySheets = await DailySheet.find({ date }).populate(
-        "driverId jobsDone jobsPending jobsCancelled tippingRequests"
-      );
+      // Parse the date and set the start and end times for the entire day
+      const startDate = new Date(date);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(date);
+      endDate.setHours(23, 59, 59, 999);
+
+      // Query for DailySheets within the specified day
+      const dailySheets = await DailySheet.find({
+        date: { $gte: startDate, $lte: endDate }
+      })
+      .populate("driverId jobsDone jobsPending jobsCancelled tippingRequests");
 
       if (!dailySheets || dailySheets.length === 0) {
         return res
@@ -103,6 +111,7 @@ const dailySheetController = {
       res.status(500).json({ message: "Error fetching daily sheets", error });
     }
   },
+
 
   // Update a daily sheet for a specific driver
   updateDailySheetForDriver: async (req, res) => {
