@@ -10,5 +10,4 @@ exports.checkRole = (role) => (req, res, next) => {
 
   next();
 };
- 
-  
+

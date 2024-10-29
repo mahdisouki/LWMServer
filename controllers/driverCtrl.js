@@ -341,7 +341,61 @@ markDayStart: async (req, res) => {
       return res.status(500).json({ message: 'An error occurred', error });
     }
 },
-  
+startBreak: async (req, res) => {
+    const driverId = req.user._id;
+
+    try {
+        const driver = await Driver.findById(driverId);
+        if (!driver) {
+            return res.status(404).json({ message: 'Driver not found' });
+        }
+
+        // Check if there's an active break
+        const activeBreak = driver.breaks.find(b => !b.endTime);
+        if (activeBreak) {
+            return res.status(400).json({ message: 'Driver is already on a break' });
+        }
+
+        // Create a new break entry
+        const newBreak = { startTime: new Date() };
+        driver.breaks.push(newBreak);
+        await driver.save();
+
+        return res.status(200).json({ message: 'Break started', newBreak });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Error starting break', error });
+    }
+},
+
+// End Break
+endBreak: async (req, res) => {
+    const driverId = req.user._id;
+
+    try {
+        const driver = await Driver.findById(driverId);
+        if (!driver || driver.breaks.length === 0) {
+            return res.status(404).json({ message: 'Driver not found or no active breaks' });
+        }
+
+        // Get the last break and update it
+        const lastBreak = driver.breaks[driver.breaks.length - 1];
+        if (lastBreak.endTime) {
+            return res.status(400).json({ message: 'Break already ended' });
+        }
+
+        lastBreak.endTime = new Date();
+        // Calculate duration in minutes
+        lastBreak.duration = Math.round((lastBreak.endTime - lastBreak.startTime) / (1000 * 60));
+        await driver.save();
+
+        return res.status(200).json({ message: 'Break ended', lastBreak });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Error ending break', error });
+    }
+}
+
 };
 
 module.exports = driverManagement;

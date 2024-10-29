@@ -20,4 +20,8 @@ router.post('/location/uploadItem/:taskId', isAuth, multer.array('uploads'), dri
 router.post('/truck/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.uploadFinalConditionPhotos);
 router.post('/additional-items/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.addAdditionalItems);
 
+router.post('/break/start', driverCtrl.startBreak);
+
+
+router.post('/break/end', driverCtrl.endBreak);
 module.exports = router;

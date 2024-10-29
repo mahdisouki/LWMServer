@@ -12,6 +12,10 @@ require("dotenv").config();
 require("./config/db");
 const cors = require("cors");
 
+require('./jobs/dailySheetCron'); 
+
+
+
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
 const taskRouter = require("./routes/task");
