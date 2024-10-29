@@ -13,5 +13,8 @@ router.put(
   "/sheets/:driverId/:date",
   dailySheetController.updateDailySheetForDriver
 );
-
+router.get(
+  "/sheets/:driverId/:date",
+  dailySheetController.getDailySheetsbyId
+);
 module.exports = router;
