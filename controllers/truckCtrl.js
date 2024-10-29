@@ -1,6 +1,6 @@
-const Task = require("../models/Task");
-const Truck = require("../models/Truck");
-const APIfeatures = require("../utils/APIFeatures");
+const Task = require('../models/Task');
+const Truck = require('../models/Truck');
+const APIfeatures = require('../utils/APIFeatures');
 
 const truckCtrl = {
   createTruck: async (req, res) => {
@@ -10,11 +10,11 @@ const truckCtrl = {
       await newTruck.save();
       res
         .status(201)
-        .json({ message: "Truck created successfully", truck: newTruck });
+        .json({ message: 'Truck created successfully', truck: newTruck });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to create truck", error: error.message });
+        .json({ message: 'Failed to create truck', error: error.message });
     }
   },
   getAllTrucks: async (req, res) => {
@@ -32,7 +32,7 @@ const truckCtrl = {
       const limitNum = parseInt(req.query.limit, 10) || 9;
 
       res.status(200).json({
-        message: "All trucks retrieved successfully",
+        message: 'All trucks retrieved successfully',
         trucks,
         meta: {
           currentPage,
@@ -43,7 +43,7 @@ const truckCtrl = {
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve trucks",
+        message: 'Failed to retrieve trucks',
         error: error.message,
       });
     }
@@ -51,15 +51,17 @@ const truckCtrl = {
 
   getAllTrucksForChat: async (req, res) => {
     try {
-      const trucks = await Truck.find();
+      const trucks = await Truck.find()
+        .populate('driverId')
+        .populate('helperId');
 
       res.status(200).json({
-        message: "All trucks retrieved successfully",
+        message: 'All trucks retrieved successfully',
         trucks,
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve trucks",
+        message: 'Failed to retrieve trucks',
         error: error.message,
       });
     }
@@ -69,13 +71,13 @@ const truckCtrl = {
     try {
       const truck = await Truck.findByIdAndDelete(id);
       if (!truck) {
-        return res.status(404).json({ message: "Truck not found" });
+        return res.status(404).json({ message: 'Truck not found' });
       }
-      res.status(200).json({ message: "Truck deleted successfully" });
+      res.status(200).json({ message: 'Truck deleted successfully' });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to delete truck", error: error.message });
+        .json({ message: 'Failed to delete truck', error: error.message });
     }
   },
 };
