@@ -15,8 +15,8 @@ const dayOffController = {
             // Create a new day-off request
             const newDayOffRequest = new Dayoff({
                 userId,
-                startDate,
-                endDate,
+                startDate: new Date(startDate), // Convert string to Date
+                endDate: new Date(endDate), // Convert string to Date
                 reason
             });
     
