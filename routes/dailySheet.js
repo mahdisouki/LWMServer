@@ -14,9 +14,4 @@ router.put(
   dailySheetController.updateDailySheetForDriver
 );
 
-router.get(
-  "/daily-sheet/:date",
-  dailySheetController.getDailySheetsForAllDrivers
-);
-
 module.exports = router;

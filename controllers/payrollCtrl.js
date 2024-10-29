@@ -388,20 +388,20 @@ const PayrollCtrl = {
       // Fetch user to get the hourly rate
       const user = await User.findById(payroll.userId);
 
-      payroll.totalHoursWorked = totalHoursWorked;
-      payroll.regularHours = regularHours;
-      payroll.extraHours = extraHours;
-      payroll.totalSalary =
-        regularHours * user.hourPrice + extraHours * user.hourPrice * 1.5;
+      //   payroll.totalHoursWorked = totalHoursWorked;
+      //   payroll.regularHours = regularHours;
+      //   payroll.extraHours = extraHours;
+      //   payroll.totalSalary =
+      //     regularHours * user.hourPrice + extraHours * user.hourPrice * 1.5;
 
       // Mark payroll as paid
-      payroll.status = "paid";
+      payroll.status = "Paid";
 
       // Save updated payroll
       await payroll.save();
 
       // Optionally reset driver's work data for the next pay period
-      await resetDriverWorkData(payroll.userId);
+    //   await resetDriverWorkData(payroll.userId);
       res
         .status(200)
         .json({ message: "Payroll record marked as paid successfully." });
