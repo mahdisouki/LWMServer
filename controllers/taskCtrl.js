@@ -30,7 +30,7 @@ const taskCtrl = {
         object,
         price,
         paymentStatus,
-        taskStatus: "Processing",
+        taskStatus: "Created",
       });
 
       await newTask.save();

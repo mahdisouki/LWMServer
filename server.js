@@ -26,7 +26,7 @@ const dayoffRouter = require("./routes/dayoff");
 const dailySheetRoutes = require("./routes/dailySheet");
 const payrollsRoutes = require("./routes/payrolls");
 const messageRoutes = require("./routes/messages");
-
+const tippingPlacesRoutes = require('./routes/tippingPlaces')
 const corsOptions = {
   origin: '*', 
   optionsSuccessStatus: 200 
@@ -45,6 +45,7 @@ app.use("/api", dayoffRouter);
 app.use("/api/dailySheets", dailySheetRoutes);
 app.use("/api", payrollsRoutes);
 app.use("/api", messageRoutes);
+app.use('/api/tippingPlaces' , tippingPlacesRoutes)
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);

@@ -2,6 +2,7 @@ const TippingRequest = require("../models/TippingRequest");
 const { User } = require("../models/User");
 const Truck = require("../models/Truck");
 const APIfeatures = require("../utils/APIFeatures");
+const { emitEvent } = require("../socket");
 
 
 const tippingController = {
@@ -169,29 +170,61 @@ const tippingController = {
     }
   },
 
-  // Update the status of a tipping request (Admin only)
-  updateTippingRequestStatus: async (req, res) => {
+   // Update the status of a tipping request (Admin only)
+   updateTippingRequestStatus: async (req, res) => {
     const { id } = req.params; // ID of the tipping request
     const { status } = req.body; // New status to be set
 
     try {
-      const request = await TippingRequest.findById(id);
-      if (!request) {
-        return res.status(404).json({ message: "Tipping request not found" });
-      }
+        const request = await TippingRequest.findById(id);
+        if (!request) {
+            return res.status(404).json({ message: "Tipping request not found" });
+        }
 
-      request.status = status; // Setting the new status
-      await request.save();
-      res.status(200).json({
-        message: "Tipping request status updated successfully",
-        request,
-      });
+        // Update status
+        request.status = status;
+        await request.save();
+
+        if (status === 'Approved') {
+            // Fetch the driver's location
+            const driver = await Driver.findById(request.userId).select('location');
+            
+            if (driver) {
+                const driverLocation = driver.location;
+                console.log("Driver Location:", driverLocation);
+
+                // Optionally, you can now find the nearest tipping place
+                const tippingPlaces = await TippingPlace.find();
+                const nearestPlace = tippingPlaces
+                    .map(place => ({
+                        ...place.toObject(),
+                        distance: calculateDistance(driverLocation.coordinates, { 
+                            latitude: place.location.coordinates[1], // Assuming [lng, lat]
+                            longitude: place.location.coordinates[0]
+                        })
+                    }))
+                    .sort((a, b) => a.distance - b.distance)
+                    .shift(); // Get the nearest place
+
+                // Emit the nearest place to the driver using Socket.IO
+                emitEvent('nearestTippingPlace' ,  {
+                  driverId: request.userId,
+                  nearestPlace
+              })
+                
+            }
+        }
+
+        res.status(200).json({
+            message: "Tipping request status updated successfully",
+            request,
+        });
     } catch (error) {
-      res.status(500).json({
-        message: "Failed to update tipping request status",
-        error: error.message,
-      });
+        res.status(500).json({
+            message: "Failed to update tipping request status",
+            error: error.message,
+        });
     }
-  },
+},
 };
 module.exports = tippingController;
