@@ -20,6 +20,7 @@ const taskCtrl = {
         object,
         price,
         paymentStatus,
+        StandardItem
       } = req.body;
 
       const clientObjectPhotos = req.files.map((file) => file.path);

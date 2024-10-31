@@ -1,6 +1,5 @@
 
 const mongoose = require('mongoose');
-const { User } = require('./User');
 
 const blockingDaysSchema = new mongoose.Schema({
     date:{
@@ -12,6 +11,6 @@ const blockingDaysSchema = new mongoose.Schema({
         default: 'dayoff'
     }
 });
-const BlockingDays = User.discriminator('blockingDays', blockingDaysSchema);
+const BlockingDays = mongoose.model('blockingDays', blockingDaysSchema);
 
 module.exports = BlockingDays;

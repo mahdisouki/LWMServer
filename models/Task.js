@@ -10,6 +10,7 @@ const taskSchema = new Schema(
     phoneNumber: { type: String, required: true },
     phoneNumber2: { type: String },
     clientObjectPhotos: [{ type: String, required: true }],
+    StandardItem :[{type:mongoose.Types.ObjectId , ref:"standardItem"}],
     initialConditionPhotos: [
       {
         items: [{ type: String }],
