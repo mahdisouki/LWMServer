@@ -72,6 +72,7 @@ const taskCtrl = {
         price,
         paymentStatus,
         clientObjectPhotos,
+        StandardItem,
         taskStatus: "Created",
       });
 
