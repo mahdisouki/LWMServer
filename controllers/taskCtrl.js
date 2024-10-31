@@ -1,3 +1,4 @@
+const BlockingDays = require("../models/BlockingDays");
 const Task = require("../models/Task");
 const Truck = require("../models/Truck");
 const APIfeatures = require("../utils/APIFeatures");
@@ -9,27 +10,69 @@ const taskCtrl = {
         firstName,
         lastName,
         phoneNumber,
+        phoneNumber2,
+        email,
+        available,
+        Objectsposition,
         location,
         date,
         hour,
         object,
         price,
         paymentStatus,
+        StandardItem
       } = req.body;
 
       const clientObjectPhotos = req.files.map((file) => file.path);
+      const taskDate = new Date(date);
+
+      const blockedDay = await BlockingDays.findOne({
+        date: taskDate
+    });
+
+    if (blockedDay) {
+        return res.status(400).json({ 
+            message: `Task date conflicts with a blocking day: ${blockedDay.type}`
+        });
+    }
+
+    const conflictingTruck = await Truck.findOne({
+      $or: [
+          {
+              'driverSpecificDays.startDate': { $lte: taskDate },
+              'driverSpecificDays.endDate': { $gte: taskDate }
+          },
+          {
+              'helperSpecificDays.startDate': { $lte: taskDate },
+              'helperSpecificDays.endDate': { $gte: taskDate }
+          }
+      ]
+  });
+
+  if (conflictingTruck) {
+      return res.status(400).json({ 
+          message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`
+      });
+  }
+
+
 
       const newTask = new Task({
         firstName,
         lastName,
         phoneNumber,
+        phoneNumber2,
+        email,
+        available,
+        Objectsposition,
         location,
-        clientObjectPhotos,
         date,
         hour,
         object,
         price,
         paymentStatus,
+        clientObjectPhotos,
+        StandardItem,
         taskStatus: "Created",
       });
 

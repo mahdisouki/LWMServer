@@ -8,8 +8,16 @@ const taskSchema = new Schema(
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
     phoneNumber: { type: String, required: true },
+    phoneNumber2: { type: String },
     clientObjectPhotos: [{ type: String, required: true }],
+    StandardItem :[{type:mongoose.Types.ObjectId , ref:"standardItem"}],
     initialConditionPhotos: [
+      {
+        items: [{ type: String }],
+        description: { type: String },
+      },
+    ],
+    intermediateConditionPhotos: [
       {
         items: [{ type: String }],
         description: { type: String },
@@ -40,7 +48,16 @@ const taskSchema = new Schema(
       address: { type: String, required: false },
     },
     date: { type: Date, required: true },
-    hour: { type: String, required: true },
+    available: { 
+      type:String,
+      enum: ["AnyTime", "7am-12pm", "12pm-5pm"],
+      default:"AnyTime"
+    },
+    Objectsposition: { 
+      type:String,
+      enum: ["Inside", "Outside", "insideWithDismantling"],
+      default:"Outside"
+    },
     object: { type: String, required: true },
     price: { type: Number, required: true },
     paymentStatus: {
@@ -53,6 +70,7 @@ const taskSchema = new Schema(
       enum: ["Created","Declined", "Processing", "Completed"],
       default: "Created",
     },
+    email:{type:String},
     additionalNotes: { type: String, required: false },
     itemDescription: { type: String, required: false },
     clientFeedback: { type: String },

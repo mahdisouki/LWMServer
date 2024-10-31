@@ -2,8 +2,16 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const truckSchema = new Schema({
-  driverId: { type: Schema.Types.ObjectId, ref: 'Driver' },  
+  driverId:  { type: Schema.Types.ObjectId, ref: 'Driver' },
+  driverSpecificDays:{
+    startDate:{type:Date , required:true},
+    endDate:{type:Date , required:true},
+  } ,
   helperId: { type: Schema.Types.ObjectId, ref: 'Helper'}, 
+  helperSpecificDays:{
+    startDate:{type:Date , required:true},
+    endDate:{type:Date , required:true},
+  } ,
   tasks: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
   name: { type: String, required: true, unique: true },
   loadCapacity:{ type:  Number},

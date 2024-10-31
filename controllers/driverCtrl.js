@@ -7,40 +7,81 @@ const bcrypt = require("bcrypt");
 const Driver = require("../models/Driver");
 
 const driverManagement = {
-updateDriverProfile: async (req, res) => {
-    const driverId = req.user._id; 
-    const { email, officialEmail, phoneNumber, username, gender, designation, dateOfBirth, picture, password } = req.body;
-
-    try {
-        const driver = await User.findById(driverId);
-
-        if (!driver) {
-            return res.status(404).json({ message: "Driver not found" });
+updateDriverProfile : async (req, res) => {
+        const driverId = req.user._id;
+        const { 
+            email, 
+            officialEmail, 
+            phoneNumber, 
+            username, 
+            gender, 
+            designation, 
+            dateOfBirth, 
+            address, 
+            CIN, 
+            DriverLicense, 
+            addressProof, 
+            NatInsurance, 
+            password 
+        } = req.body;
+    
+        try {
+            // Find driver by ID
+            const driver = await User.findById(driverId);
+    
+            if (!driver || !driver.role.includes('Driver')) {
+                return res.status(404).json({ message: "Driver not found or user is not a driver" });
+            }
+    
+            // Update fields only if they are provided
+            if (email) driver.email = email;
+            if (officialEmail) driver.officialEmail = officialEmail;
+            if (phoneNumber) driver.phoneNumber = Array.isArray(phoneNumber) ? phoneNumber : [phoneNumber];
+            if (username) driver.username = username;
+            if (gender) driver.gender = gender;
+            if (designation) driver.designation = designation;
+            if (dateOfBirth) driver.dateOfBirth = dateOfBirth;
+            if (address) driver.address = address;
+            if (CIN) driver.CIN = CIN;
+            if (DriverLicense) driver.DriverLicense = DriverLicense;
+            if (addressProof) driver.addressProof = addressProof;
+            if (NatInsurance) driver.NatInsurance = NatInsurance;
+            
+            // Hash and update password if provided
+            if (password) {
+                driver.password = await bcrypt.hash(password, 10);
+            }
+    
+            // Update picture if a new file is uploaded
+            if (req.file) {
+                driver.picture = req.file.path;
+            }
+    
+            // Save the updated driver data
+            await driver.save();
+    
+            // Respond with updated information
+            res.status(200).json({
+                message: "Driver profile updated successfully",
+                user: {
+                    username: driver.username,
+                    email: driver.email,
+                    role: driver.role,
+                    id: driver._id,
+                    picture: driver.picture,
+                    phoneNumber: driver.phoneNumber[0],
+                    address: driver.address,
+                    CIN: driver.CIN,
+                    DriverLicense: driver.DriverLicense,
+                    addressProof: driver.addressProof,
+                    NatInsurance: driver.NatInsurance
+                }
+            });
+        } catch (error) {
+            console.error("Error updating driver profile:", error);
+            res.status(500).json({ message: "Failed to update driver profile", error: error.message });
         }
-
-        // Update fields if provided
-        if (email) driver.email = email;
-        if (officialEmail) driver.officialEmail = officialEmail;
-        if (phoneNumber) driver.phoneNumber = phoneNumber;
-        if (username) driver.username = username;
-        if (gender) driver.gender = gender;
-        if (designation) driver.designation = designation;
-        if (dateOfBirth) driver.dateOfBirth = dateOfBirth;
-        if (password) driver.password = await bcrypt.hash(password, 10);
-      
-        // The picture URL is automatically set by the Cloudinary middleware
-        if (req.file) {
-            driver.picture = req.file.path;  // This should be adjusted if `req.file.path` does not correctly point to the image URL
-        }
-
-        await driver.save();
-        
-        res.status(200).json({ message: "Driver profile updated successfully", user: { username: driver.username, email: driver.email, role: driver.role, id: driver._id, picture: driver.picture, phoneNumber: driver.phoneNumber[0] } });
-    } catch (error) {
-        console.error("Error updating driver profile:", error);
-        res.status(500).json({ message: "Failed to update driver profile", error: error.message });
-    }
-},
+    },
 
 getHelperLocationForDriver: async (req, res) => {
   const driverId = req.user._id;
