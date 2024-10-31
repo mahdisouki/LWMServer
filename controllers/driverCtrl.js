@@ -91,12 +91,14 @@ getTasksForDriver : async (req, res) => {
             return res.status(404).json({ message: "No truck found for the given driver." });
           }
 
-        
+        //   const tasks = await Task.find({
+        //     '_id': { $in: truck.tasks },
+        //     $or: [
+        //       { finishDate: null },
+        //     ]
+        //   });
+        const tasks = await Task.find();
 
-          // Retrieve all tasks associated with this truck
-          // TODO: Filter tasks by truck ID - FIX THIS
-          //const tasks = await Task.find({ '_id': { $in: truck.tasks } });
-          const tasks = await Task.find();
           console.log(tasks);
           res.status(200).json({ message: "Tasks retrieved successfully", tasks });
         } catch (error) {
@@ -394,8 +396,40 @@ endBreak: async (req, res) => {
         console.error(error);
         return res.status(500).json({ message: 'Error ending break', error });
     }
-}
+},
 
+// Get current driver break timer in seconds
+getBreakTimer: async (req, res) => {
+    const driverId = req.user._id;
+  
+    try {
+      const driver = await User.findById(driverId);
+      if (!driver) {
+        return res.status(404).json({ message: 'Driver not found' });
+      }
+  
+      // Check if driver.breaks exists and is not empty
+      if (!driver.breaks || driver.breaks.length === 0) {
+        return res.status(200).json({ message: 'No breaks found', isActive: false, elapsed: 0 });
+      }
+  
+      // Get the last break and calculate the elapsed time
+      const lastBreak = driver.breaks[driver.breaks.length - 1];
+  
+      // If lastBreak is active (no endTime)
+      if (!lastBreak.endTime) {
+        const now = new Date();
+        const elapsedMilliseconds = now - lastBreak.startTime;
+        const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
+        return res.status(200).json({ message: 'Break timer', isActive: true, elapsed: elapsedSeconds });
+      }
+  
+      return res.status(200).json({ message: 'No active break', isActive: false, elapsed: 0 });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: 'Error getting break timer', error });
+    }
+  }
 };
 
 module.exports = driverManagement;

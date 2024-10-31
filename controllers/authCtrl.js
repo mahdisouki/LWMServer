@@ -21,21 +21,22 @@ exports.userSignIn = async (req, res) => {
   const { email, password } = req.body;
 
   try {
+    console.log(await User.find());
     const user = await User.findOne({ email });
-
+    
     if (!user) {
       console.log("User not found with the given email!");
-      return res.json({ success: false, message: "User not found with the given email!" });
+      return res.status(404).json({ success: false, message: "User not found with the given email!" });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       console.log("Password is incorrect!");
-      return res.json({ success: false, message: "Password is incorrect!" });
+      return res.status(401).json({ success: false, message: "Password is incorrect!" });
     }
 
     console.log("Password matched, generating tokens.");
-
+  
     const token = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
     user.refreshToken = refreshToken;
@@ -47,6 +48,7 @@ exports.userSignIn = async (req, res) => {
     if (user.role[0] === 'Driver') {
       console.log("User is a driver");
       const driver = await Driver.findById(user._id);
+      //check if driver start time have passed 9
       startTime = driver ? driver.startTime : null;
       
       truck = await Truck.findOne({ driverId: user._id }).populate('tasks');

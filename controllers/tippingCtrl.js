@@ -72,6 +72,7 @@ const tippingController = {
     const { id } = req.params;
     try {
       const request = await TippingRequest.findById(id);
+
       if (!request) {
         return res.status(404).json({ message: "Tipping request not found" });
       }
@@ -88,6 +89,7 @@ const tippingController = {
     const { userId } = req.params;
     try {
       const requests = await TippingRequest.findOne({ userId, isShipped: false }).sort({ createdAt: -1 });
+
       res.status(200).json({ requests });
     } catch (error) {
       res.status(500).json({
@@ -177,6 +179,7 @@ const tippingController = {
 
     try {
         const request = await TippingRequest.findById(id);
+        
         if (!request) {
             return res.status(404).json({ message: "Tipping request not found" });
         }
@@ -225,6 +228,30 @@ const tippingController = {
             error: error.message,
         });
     }
-},
+  },
+
+  markShipped: async (req, res) => {
+    const { truckId } = req.body;
+    try {
+      const request = await TippingRequest.findOne({ truckId, isShipped: false }).sort({ createdAt: -1 });
+      
+      if (!request) {
+        return res.status(404).json({ message: "Tipping request not found" });
+      }
+
+      request.isShipped = true;
+      await request.save();
+
+      res.status(200).json({
+        message: "Tipping request marked as shipped successfully",
+        request,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to mark tipping request as shipped",
+        error: error.message,
+      });
+    }
+  }
 };
 module.exports = tippingController;

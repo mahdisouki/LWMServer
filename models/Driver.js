@@ -2,12 +2,6 @@
 const mongoose = require("mongoose");
 const { User, userSchema } = require("./User");
 
-// Break schema to store individual break entries
-const breakSchema = new mongoose.Schema({
-  startTime: { type: Date, required: true },
-  endTime: { type: Date, required: false },
-  duration: { type: Number, required: false } // Duration in minutes
-});
 
 // Driver-specific schema fields
 const driverSchema = new mongoose.Schema({
@@ -25,8 +19,7 @@ const driverSchema = new mongoose.Schema({
     },
     currentJobAddress: { type: String, required: false },
     nextJobAddress: { type: String, required: false },
-  },
-  breaks: [breakSchema], // Array of breaks
+  }, // Array of breaks
 });
 
 // Create the Driver model using User as a discriminator

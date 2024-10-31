@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
 
+// Break schema to store individual break entries
+const breakSchema = new mongoose.Schema({
+  startTime: { type: Date, required: true },
+  endTime: { type: Date, required: false },
+  duration: { type: Number, required: false } // Duration in minutes
+});
 
 const userSchema = new mongoose.Schema({
   
@@ -26,7 +32,8 @@ const userSchema = new mongoose.Schema({
       type: mongoose.Types.ObjectId,
       ref: 'Dayoff'
     }
-  ]
+  ],
+  breaks: [breakSchema],
 }, { discriminatorKey: 'roleType' });
 
 
