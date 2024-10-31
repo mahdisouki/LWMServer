@@ -14,6 +14,9 @@ router.put('/staff/:id', isAuth, checkRole('Admin'),multer.single('picture'), st
 router.post('/assignDriver/:driverId',isAuth, checkRole('Admin'), staffCtrl.assignDriverToTruck);
 router.put('/updateDriverLocation/:driverId',isAuth, checkRole('Admin'), staffCtrl.updateDriverLocation);
 router.post('/assignHelper/:helperId',isAuth, checkRole('Admin'), staffCtrl.assignHelperToTruck);
+router.delete('/deassignHelper/:helperId', isAuth, checkRole('Admin'), staffCtrl.deassignHelperFromTruck);
+router.delete('/deassignDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl.deassignDriverFromTruck);
+// Get Tasks for Driver
 router.get('/getTasks/:id', isAuth, staffCtrl.getTasksForDriver);
 
 

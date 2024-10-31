@@ -20,6 +20,11 @@ const userSchema = new mongoose.Schema({
     type: [String],
     enum: ["Admin", "Helper", "Driver", "HR" ,"Manager" ,"CM" ,"IT" ,"CEO"] 
   },
+  address:{type:String},
+  CIN: {type:String},
+  DriverLicense:{type:String},
+  addressProof:{type:String},
+  NatInsurance:{type:String},
   refreshToken: { type: String },
   dayOffRequests: [
     {

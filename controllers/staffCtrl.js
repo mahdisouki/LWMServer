@@ -187,64 +187,145 @@ const staffManagement = {
     }
   },
 
-  assignDriverToTruck: async (req, res) => {
+assignDriverToTruck: async (req, res) => {
     const { driverId } = req.params;
-    const { truckName } = req.body;
-  
+    const { truckName, startDate, endDate } = req.body; // Accept start and end dates
+
     try {
-      const truck = await Truck.findOne({ name: truckName });
-      const driver = await Driver.findById(driverId);
-      
-      if (!truck) {
-        return res.status(404).json({ message: "Truck not found" });
-      }
-  
-      // Check if the truck already has a driver assigned
-      if (truck.driverId) {
-        return res.status(400).json({ message: "This truck already has a driver assigned" });
-      }
-  
-      // Assign driver to truck
-      truck.driverId = driverId;
-      await truck.save();
-  
-      // Update the driver's designation with the truck name
-      driver.designation = truckName; // Adjust as needed
-      await driver.save();
-  
-      res.status(200).json({ message: "Driver assigned to truck successfully", truck });
+        const truck = await Truck.findOne({ name: truckName });
+        const driver = await Driver.findById(driverId);
+        
+        if (!truck) {
+            return res.status(404).json({ message: "Truck not found" });
+        }
+
+        // Check if the truck already has a driver assigned
+        if (truck.driverId) {
+            return res.status(400).json({ message: "This truck already has a driver assigned" });
+        }
+
+        // Assign driver to truck
+        truck.driverId = driverId;
+
+        // Set the specific days for the driver
+        truck.driverSpecificDays = {
+            startDate: new Date(startDate),
+            endDate: new Date(endDate)
+        };
+
+        await truck.save();
+
+        // Update the driver's designation with the truck name
+        driver.designation = truckName; // Adjust as needed
+        await driver.save();
+
+        res.status(200).json({ message: "Driver assigned to truck successfully", truck });
     } catch (error) {
-      res.status(500).json({ message: "Failed to assign driver", error: error.message });
+        res.status(500).json({ message: "Failed to assign driver", error: error.message });
     }
 },
-  assignHelperToTruck: async (req, res) => {
+assignHelperToTruck: async (req, res) => {
+    const { helperId } = req.params;
+    const { truckName, startDate, endDate } = req.body; // Accept start and end dates
+
+    try {
+        const truck = await Truck.findOne({ name: truckName });
+        const helper = await Helper.findById(helperId);
+        
+        if (!truck) {
+            return res.status(404).json({ message: "Truck not found" });
+        }
+
+        // Check if the truck already has a helper assigned
+        if (truck.helperId) {
+            return res.status(400).json({ message: "This truck already has a helper assigned" });
+        }
+
+        // Assign helper to truck
+        truck.helperId = helperId;
+
+        // Set the specific days for the helper
+        truck.helperSpecificDays = {
+            startDate: new Date(startDate),
+            endDate: new Date(endDate)
+        };
+
+        await truck.save();
+
+        // Update the helper's designation with the truck name
+        helper.designation = truckName; // Adjust as needed
+        await helper.save();
+
+        res.status(200).json({ message: "Helper assigned to truck successfully", truck });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to assign helper", error: error.message });
+    }
+},
+
+deassignDriverFromTruck: async (req, res) => {
+  const { driverId } = req.params;
+  const { truckName } = req.body;
+
+  try {
+      const truck = await Truck.findOne({ name: truckName });
+
+      if (!truck) {
+          return res.status(404).json({ message: "Truck not found" });
+      }
+
+      if (truck.driverId.toString() !== driverId) {
+          return res.status(400).json({ message: "This driver is not assigned to the specified truck" });
+      }
+
+      truck.driverId = undefined;
+      truck.driverSpecificDays = undefined;
+
+      await truck.save();
+
+      const driver = await Driver.findById(driverId);
+      if (driver) {
+          driver.designation = undefined; 
+          await driver.save();
+      }
+
+      res.status(200).json({ message: "Driver deassigned from truck successfully", truck });
+  } catch (error) {
+      res.status(500).json({ message: "Failed to deassign driver", error: error.message });
+  }
+},
+
+deassignHelperFromTruck: async (req, res) => {
   const { helperId } = req.params;
   const { truckName } = req.body;
 
   try {
-    const truck = await Truck.findOne({ name: truckName });
-    const helper = await Helper.findById(helperId);
-    
-    if (!truck) {
-      return res.status(404).json({ message: "Truck not found" });
-    }
+      const truck = await Truck.findOne({ name: truckName });
 
-    // Check if the truck already has a helper assigned
-    if (truck.helperId) {
-      return res.status(400).json({ message: "This truck already has a helper assigned" });
-    }
+      if (!truck) {
+          return res.status(404).json({ message: "Truck not found" });
+      }
 
-    // Assign helper to truck
-    truck.helperId = helperId;
-    await truck.save();
+      
+      if (truck.helperId.toString() !== helperId) {
+          return res.status(400).json({ message: "This helper is not assigned to the specified truck" });
+      }
 
-    // Update the helper's designation with the truck name
-    helper.designation = truckName; // Adjust as needed
-    await helper.save();
+      
+      truck.helperId = undefined;
+      truck.helperSpecificDays = undefined;
 
-    res.status(200).json({ message: "Helper assigned to truck successfully", truck });
+      await truck.save();
+
+      
+      const helper = await Helper.findById(helperId);
+      if (helper) {
+          helper.designation = undefined; 
+          await helper.save();
+      }
+
+      res.status(200).json({ message: "Helper deassigned from truck successfully", truck });
   } catch (error) {
-    res.status(500).json({ message: "Failed to assign helper", error: error.message });
+      res.status(500).json({ message: "Failed to deassign helper", error: error.message });
   }
 },
 

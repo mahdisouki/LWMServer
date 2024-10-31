@@ -77,6 +77,9 @@ const initSocket = (server) => {
             driverId,
             coordinates,
             picture: driver.picture,
+            currentJobAddress : driver.currentJobAddress,
+            nextJobAddress: driver.nextJobAddress,
+            
           });
         } else {
           console.error(`Driver with ID ${driverId} not found.`);
