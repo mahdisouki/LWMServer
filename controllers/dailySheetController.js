@@ -9,7 +9,11 @@ const dailySheetController = {
     try {
       // Ensure date is a valid Date object
       const inputDate = req.body.date ? new Date(req.body.date) : new Date();
-  
+      const startOfDay = new Date(inputDate);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(inputDate);
+      endOfDay.setHours(23, 59, 59, 999);
       // If input date is invalid, respond with an error
       if (isNaN(inputDate)) {
         return res.status(400).json({ message: 'Invalid date format' });
@@ -31,19 +35,19 @@ const dailySheetController = {
         const jobsDone = await Task.find({
           _id: { $in: allTaskIds },
           taskStatus: 'Completed',
-          date: inputDate,
+          date: { $gte: startOfDay, $lt: endOfDay },
         });
   
         const jobsPending = await Task.find({
           _id: { $in: allTaskIds },
           taskStatus: 'Processing',
-          date: inputDate,
+          date: { $gte: startOfDay, $lt: endOfDay },
         });
   
         const jobsCancelled = await Task.find({
           _id: { $in: allTaskIds },
           taskStatus: 'Declined',
-          date: inputDate,
+          date: { $gte: startOfDay, $lt: endOfDay },
         });
   
         const tippingRequests = await TippingRequest.find({
