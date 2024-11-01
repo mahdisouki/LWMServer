@@ -1,7 +1,7 @@
-const BlockingDays = require("../models/BlockingDays");
-const Task = require("../models/Task");
-const Truck = require("../models/Truck");
-const APIfeatures = require("../utils/APIFeatures");
+const BlockingDays = require('../models/BlockingDays');
+const Task = require('../models/Task');
+const Truck = require('../models/Truck');
+const APIfeatures = require('../utils/APIFeatures');
 
 const taskCtrl = {
   createTask: async (req, res) => {
@@ -16,46 +16,51 @@ const taskCtrl = {
         Objectsposition,
         location,
         date,
-        hour,
         object,
         price,
         paymentStatus,
-        StandardItem
+        StandardItem,
+        cloneClientObjectPhotos,
       } = req.body;
 
-      const clientObjectPhotos = req.files.map((file) => file.path);
+      let clientObjectPhotos = [];
+
+      if (cloneClientObjectPhotos) {
+        clientObjectPhotos = cloneClientObjectPhotos;
+      } else {
+        clientObjectPhotos = req.files.map((file) => file.path);
+      }
+
       const taskDate = new Date(date);
 
       const blockedDay = await BlockingDays.findOne({
-        date: taskDate
-    });
+        date: taskDate,
+      });
 
-    if (blockedDay) {
-        return res.status(400).json({ 
-            message: `Task date conflicts with a blocking day: ${blockedDay.type}`
+      if (blockedDay) {
+        return res.status(400).json({
+          message: `Task date conflicts with a blocking day: ${blockedDay.type}`,
         });
-    }
+      }
 
-    const conflictingTruck = await Truck.findOne({
-      $or: [
+      const conflictingTruck = await Truck.findOne({
+        $or: [
           {
-              'driverSpecificDays.startDate': { $lte: taskDate },
-              'driverSpecificDays.endDate': { $gte: taskDate }
+            'driverSpecificDays.startDate': { $lte: taskDate },
+            'driverSpecificDays.endDate': { $gte: taskDate },
           },
           {
-              'helperSpecificDays.startDate': { $lte: taskDate },
-              'helperSpecificDays.endDate': { $gte: taskDate }
-          }
-      ]
-  });
-
-  if (conflictingTruck) {
-      return res.status(400).json({ 
-          message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`
+            'helperSpecificDays.startDate': { $lte: taskDate },
+            'helperSpecificDays.endDate': { $gte: taskDate },
+          },
+        ],
       });
-  }
 
-
+      if (conflictingTruck) {
+        return res.status(400).json({
+          message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`,
+        });
+      }
 
       const newTask = new Task({
         firstName,
@@ -67,47 +72,45 @@ const taskCtrl = {
         Objectsposition,
         location,
         date,
-        hour,
         object,
         price,
         paymentStatus,
         clientObjectPhotos,
         StandardItem,
-        taskStatus: "Created",
+        taskStatus: 'Created',
       });
 
       await newTask.save();
       res
         .status(201)
-        .json({ message: "Task created successfully", task: newTask });
+        .json({ message: 'Task created successfully', task: newTask });
     } catch (error) {
       res
         .status(400)
-        .json({ message: "Failed to create task", error: error.message });
+        .json({ message: 'Failed to create task', error: error.message });
     }
   },
-  
+
   getTaskById: async (req, res) => {
     const { taskId } = req.params;
     const tasks = await Task.find();
     console.log(tasks);
-   
+
     tasks.forEach((task) => {
       task.truckId = '66ddb2a86d3115e1ab9dcfec';
       task.save();
-    }
-    );
+    });
 
     try {
       const task = await Task.findById(taskId);
       if (!task) {
-        return res.status(404).json({ message: "Task not found" });
+        return res.status(404).json({ message: 'Task not found' });
       }
-      res.status(200).json({ message: "Task retrieved successfully", task });
+      res.status(200).json({ message: 'Task retrieved successfully', task });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to retrieve task", error: error.message });
+        .json({ message: 'Failed to retrieve task', error: error.message });
     }
   },
 
@@ -116,7 +119,7 @@ const taskCtrl = {
       const { page, limit, filters } = req.query;
 
       let query = Task.find();
-
+      const total = await Task.countDocuments(query);
       const features = new APIfeatures(query, req.query);
 
       if (filters) {
@@ -126,7 +129,6 @@ const taskCtrl = {
       features.sorting().paginating();
 
       let tasks = await features.query.exec();
-      const total = await Task.countDocuments(features.query);
 
       tasks = await Promise.all(
         tasks.map(async (task) => {
@@ -136,14 +138,14 @@ const taskCtrl = {
             task.truckName = truck ? truck.name : null;
           }
           return task;
-        })
+        }),
       );
 
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;
 
       res.status(200).json({
-        message: "All tasks retrieved successfully",
+        message: 'All tasks retrieved successfully',
         tasks,
         meta: {
           currentPage,
@@ -155,7 +157,7 @@ const taskCtrl = {
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to retrieve tasks", error: error.message });
+        .json({ message: 'Failed to retrieve tasks', error: error.message });
     }
   },
 
@@ -166,30 +168,30 @@ const taskCtrl = {
     try {
       const truck = await Truck.findOne({ name: truckName });
       if (!truck) {
-        return res.status(404).json({ message: "Truck not found" });
+        return res.status(404).json({ message: 'Truck not found' });
       }
 
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
         { $set: { truckId: truck._id } },
-        { new: true }
+        { new: true },
       );
 
       if (!updatedTask) {
-        return res.status(404).json({ message: "Task not found" });
+        return res.status(404).json({ message: 'Task not found' });
       }
 
       truck.tasks.push(updatedTask._id);
       await truck.save();
 
       res.status(200).json({
-        message: "Truck assigned to task successfully",
+        message: 'Truck assigned to task successfully',
         task: updatedTask,
       });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to assign truck", error: error.message });
+        .json({ message: 'Failed to assign truck', error: error.message });
     }
   },
 
@@ -198,18 +200,20 @@ const taskCtrl = {
     const { taskStatus } = req.body;
 
     try {
-      if (!["Created","Declined", "Processing", "Completed"].includes(taskStatus)) {
-        return res.status(400).json({ message: "Invalid task status" });
+      if (
+        !['Created', 'Declined', 'Processing', 'Completed'].includes(taskStatus)
+      ) {
+        return res.status(400).json({ message: 'Invalid task status' });
       }
 
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
         { $set: { taskStatus } },
-        { new: true }
+        { new: true },
       );
 
       if (!updatedTask) {
-        return res.status(404).json({ message: "Task not found" });
+        return res.status(404).json({ message: 'Task not found' });
       }
 
       res.status(200).json({
@@ -218,7 +222,7 @@ const taskCtrl = {
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to update task status",
+        message: 'Failed to update task status',
         error: error.message,
       });
     }
@@ -230,14 +234,14 @@ const taskCtrl = {
     try {
       const existingTask = await Task.findById(taskId);
       if (!existingTask) {
-        return res.status(404).json({ message: "Task not found"});
+        return res.status(404).json({ message: 'Task not found' });
       }
 
       let updateData = { ...req.body };
       if (req.body.deletedMedia && req.body.deletedMedia.length > 0) {
         existingTask.clientObjectPhotos =
           existingTask.clientObjectPhotos.filter(
-            (photo) => !req.body.deletedMedia.includes(photo)
+            (photo) => !req.body.deletedMedia.includes(photo),
           );
 
         await existingTask.save();
@@ -256,88 +260,93 @@ const taskCtrl = {
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
         { $set: updateData },
-        { new: true }
+        { new: true },
       );
 
       if (!updatedTask) {
-        return res.status(404).json({ message: "Task not found" });
+        return res.status(404).json({ message: 'Task not found' });
       }
 
       res
         .status(200)
-        .json({ message: "Task updated successfully", task: updatedTask });
+        .json({ message: 'Task updated successfully', task: updatedTask });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to update task", error: error.message });
+        .json({ message: 'Failed to update task', error: error.message });
     }
-  },  
+  },
 
-  updateTaskStatus : async (req, res) => {
-      const { taskId } = req.params;
-      const { action } = req.body;
-    
-      try {
-        const task = await Task.findById(taskId);
-    
-        if (!task) {
-          return res.status(404).json({ message: "Task not found" });
-        }
-    
-        const now = new Date(); 
-    
-        if (action === "mark_start") {
-          task.startDate = now; 
-          await task.save();
-          return res.status(200).json({
-            message: "Task marked as started successfully",
-            task,
-          });
-        }
-    
-        if (action === "mark_finish") {
-          if (!task.startDate) {
-            return res.status(400).json({
-              message: "Task hasn't been started yet",
-            });
-          }
+  updateTaskStatus: async (req, res) => {
+    const { taskId } = req.params;
+    const { action } = req.body;
 
-          if(!task.initialConditionPhotos || task.initialConditionPhotos.length === 0) {
-            return res.status(400).json({
-              message: "Initial condition photos are required",
-            });
-          }
+    try {
+      const task = await Task.findById(taskId);
 
-          if(!task.finalConditionPhotos || task.finalConditionPhotos.length === 0) {
-            return res.status(400).json({
-              message: "Final condition photos are required",
-            });
-          }
-          
-    
-          task.finishDate = now;
-          const timeElapsed = (now - task.startDate) / 1000;
-    
-          task.timeSpent = timeElapsed;
-          await task.save();
-    
-          return res.status(200).json({
-            message: "Task marked as finished successfully",
-            task,
-          });
-        }
-    
-        return res.status(400).json({
-          message: "Invalid action type. Please specify 'mark_start' or 'mark_finish'.",
-        });
-    
-      } catch (error) {
-        return res.status(500).json({
-          message: "Failed to update task status",
-          error: error.message,
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      const now = new Date();
+
+      if (action === 'mark_start') {
+        task.startDate = now;
+        await task.save();
+        return res.status(200).json({
+          message: 'Task marked as started successfully',
+          task,
         });
       }
-    },
+
+      if (action === 'mark_finish') {
+        if (!task.startDate) {
+          return res.status(400).json({
+            message: "Task hasn't been started yet",
+          });
+        }
+
+        if (
+          !task.initialConditionPhotos ||
+          task.initialConditionPhotos.length === 0
+        ) {
+          return res.status(400).json({
+            message: 'Initial condition photos are required',
+          });
+        }
+
+        if (
+          !task.finalConditionPhotos ||
+          task.finalConditionPhotos.length === 0
+        ) {
+          return res.status(400).json({
+            message: 'Final condition photos are required',
+          });
+        }
+
+        task.finishDate = now;
+        const timeElapsed = (now - task.startDate) / 1000;
+
+        task.timeSpent = timeElapsed;
+        await task.save();
+
+        return res.status(200).json({
+          message: 'Task marked as finished successfully',
+          task,
+        });
+      }
+
+      return res.status(400).json({
+        message:
+          "Invalid action type. Please specify 'mark_start' or 'mark_finish'.",
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to update task status',
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = taskCtrl;
