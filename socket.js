@@ -75,25 +75,28 @@ const initSocket = (server) => {
         console.log(`Updating location for driver ${driverId}:`, coordinates);
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
         await Driver.findByIdAndUpdate(driverId, {
-          location: { type: 'Point', coordinates: coordinatesArray},
+          location: { type: 'Point', coordinates: coordinatesArray },
         });
-        const driver = await User.findById(driverId).select('picture');
+        const driver = await User.findById(driverId);
         const activeBreak = driver.breaks.find((b) => !b.endTime);
-        let onBreak=false;
+        let onBreak = false;
         if (activeBreak) {
-          onBreak=true
-          duration = Math.round(((new Date()) - lastBreak.activeBreak) / (1000 * 60),)
+          onBreak = true;
+          duration = Math.round(
+            (new Date() - lastBreak.activeBreak) / (1000 * 60),
+          );
         }
         if (driver) {
           io.emit('driverLocationUpdate', {
             driverId,
             coordinates,
+            driverName: driver.username,
             picture: driver.picture,
-            currentJobAddress : driver.currentJobAddress,
+            currentJobAddress: driver.currentJobAddress,
             nextJobAddress: driver.nextJobAddress,
-            onBreak:onBreak,
-            duration:duration
-          }); 
+            onBreak: onBreak,
+            duration: duration,
+          });
         } else {
           console.error(`Driver with ID ${driverId} not found.`);
         }
@@ -118,7 +121,6 @@ const initSocket = (server) => {
       console.log(`User disconnected: ${userId}`);
       delete userSocketMap[userId]; // Remove user from map on disconnect
     });
-
   });
 
   return io;
