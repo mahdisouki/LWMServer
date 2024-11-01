@@ -4,13 +4,13 @@ const { Schema } = mongoose;
 const truckSchema = new Schema({
   driverId:  { type: Schema.Types.ObjectId, ref: 'Driver' },
   driverSpecificDays:{
-    startDate:{type:Date , required:true},
-    endDate:{type:Date , required:true},
+    startDate:{type:Date },
+    endDate:{type:Date },
   } ,
   helperId: { type: Schema.Types.ObjectId, ref: 'Helper'}, 
   helperSpecificDays:{
-    startDate:{type:Date , required:true},
-    endDate:{type:Date , required:true},
+    startDate:{type:Date },
+    endDate:{type:Date },
   } ,
   tasks: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
   name: { type: String, required: true, unique: true },

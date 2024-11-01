@@ -3,47 +3,57 @@ const Task = require('../models/Task');
 const TippingRequest = require('../models/TippingRequest');
 const Driver = require('../models/Driver');
 const APIfeatures = require('../utils/APIFeatures');
-
+const Truck = require('../models/Truck')
 const dailySheetController = {
   generateDailySheetsForAllDrivers: async (req, res) => {
     try {
       // Ensure date is a valid Date object
-      const inputDate = req.body.date ? new Date(req.body.date) : new Date(); // Convert input date or use current date
-
-      // If input date is invalid (e.g., an invalid date string), respond with an error
+      const inputDate = req.body.date ? new Date(req.body.date) : new Date();
+  
+      // If input date is invalid, respond with an error
       if (isNaN(inputDate)) {
         return res.status(400).json({ message: 'Invalid date format' });
       }
-
-      const drivers = await Driver.find(); // Fetch all drivers
+  
+      const drivers = await Driver.find();
       const dailySheets = [];
-
+  
       for (const driver of drivers) {
-        // Find tasks and tipping requests for the driver
+        // Find trucks associated with the current driver
+        const truck = await Truck.find({ driverId: driver._id });
+          console.log("truck",truck)
+        // Gather all task IDs from the trucks
+      const allTaskIds = truck.reduce((acc, truck) => {
+        return acc.concat(truck.tasks); // Collect task IDs from each truck
+      }, []);
+        console.log("allTaskIDS",allTaskIds)
+        // Fetch tasks associated with the trucks for the specific date and status
         const jobsDone = await Task.find({
-          truckId: driver._id,
+          _id: { $in: allTaskIds },
           taskStatus: 'Completed',
           date: inputDate,
         });
+  
         const jobsPending = await Task.find({
-          truckId: driver._id,
+          _id: { $in: allTaskIds },
           taskStatus: 'Processing',
           date: inputDate,
         });
+  
         const jobsCancelled = await Task.find({
-          truckId: driver._id,
+          _id: { $in: allTaskIds },
           taskStatus: 'Declined',
           date: inputDate,
         });
-
+  
         const tippingRequests = await TippingRequest.find({
-          truckId: driver._id,
+          userId: driver._id,
           createdAt: {
-            $gte: new Date(inputDate.setHours(0, 0, 0, 0)), // Set time to the beginning of the day
-            $lt: new Date(inputDate.setHours(23, 59, 59, 999)), // Set time to the end of the day
+            $gte: new Date(inputDate.setHours(0, 0, 0, 0)),
+            $lt: new Date(inputDate.setHours(23, 59, 59, 999)),
           },
         });
-
+  
         // Calculate cash income for the day
         let totalCashIncome = 0;
         jobsDone.forEach((job) => {
@@ -51,27 +61,27 @@ const dailySheetController = {
             totalCashIncome += job.price;
           }
         });
-
+  
         // Create or update the daily sheet for the driver
         let dailySheet = await DailySheet.findOneAndUpdate(
-          { driverId: driver._id, date: inputDate }, // Use the corrected date
+          { driverId: driver._id, date: inputDate },
           {
             driverId: driver._id,
-            jobsDone: jobsDone.map((job) => job._id),
-            jobsPending: jobsPending.map((job) => job._id),
-            jobsCancelled: jobsCancelled.map((job) => job._id),
-            tippingRequests: tippingRequests.map((tip) => tip._id),
+            jobsDone: jobsDone.map(job => job._id),
+            jobsPending: jobsPending.map(job => job._id),
+            jobsCancelled: jobsCancelled.map(job => job._id),
+            tippingRequests: tippingRequests.map(tip => tip._id),
             income: {
               cash: totalCashIncome,
               total: totalCashIncome,
             },
           },
-          { new: true, upsert: true },
+          { new: true, upsert: true }
         );
-
+  
         dailySheets.push(dailySheet);
       }
-
+  
       res.status(201).json({ message: 'Daily sheets generated', dailySheets });
     } catch (error) {
       console.error('Error generating daily sheets:', error);
@@ -81,6 +91,7 @@ const dailySheetController = {
       });
     }
   },
+  
   // Get all daily sheets for all drivers for a specific date
   getDailySheetsForAllDrivers: async (req, res) => {
     try {
