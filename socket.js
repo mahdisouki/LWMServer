@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const Message = require('./models/Message');
 const Driver = require('./models/Driver');
 const Notification = require('./models/Notification');
-const { User } = require('./models/User');
+const User = require('./models/User');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 
@@ -77,7 +77,13 @@ const initSocket = (server) => {
         await Driver.findByIdAndUpdate(driverId, {
           location: { type: 'Point', coordinates: coordinatesArray},
         });
-        const driver = await Driver.findById(driverId).select('picture');
+        const driver = await User.findById(driverId).select('picture');
+        const activeBreak = driver.breaks.find((b) => !b.endTime);
+        let onBreak=false;
+        if (activeBreak) {
+          onBreak=true
+          duration = Math.round(((new Date()) - lastBreak.activeBreak) / (1000 * 60),)
+        }
         if (driver) {
           io.emit('driverLocationUpdate', {
             driverId,
@@ -85,7 +91,8 @@ const initSocket = (server) => {
             picture: driver.picture,
             currentJobAddress : driver.currentJobAddress,
             nextJobAddress: driver.nextJobAddress,
-            
+            onBreak:onBreak,
+            duration:duration
           }); 
         } else {
           console.error(`Driver with ID ${driverId} not found.`);
