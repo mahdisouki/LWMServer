@@ -1,11 +1,11 @@
-const { User } = require("../models/User");
-const Driver = require("../models/Driver");
-const Helper = require("../models/Helper");
-const Admin = require("../models/Admin")
-const Truck = require("../models/Truck");
-const bcrypt = require("bcrypt");
-const socket = require("../socket"); // Ensure you have the correct path to your socket module
-const APIfeatures = require("../utils/APIFeatures"); // Adjust the path to where your class is located
+const { User } = require('../models/User');
+const Driver = require('../models/Driver');
+const Helper = require('../models/Helper');
+const Admin = require('../models/Admin');
+const Truck = require('../models/Truck');
+const bcrypt = require('bcrypt');
+const socket = require('../socket'); // Ensure you have the correct path to your socket module
+const APIfeatures = require('../utils/APIFeatures'); // Adjust the path to where your class is located
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -25,7 +25,6 @@ const isWithinDistance = (coord1, coord2, maxDistance) => {
   return distance <= maxDistance;
 };
 
-
 const staffManagement = {
   addStaff: async (req, res) => {
     try {
@@ -43,15 +42,15 @@ const staffManagement = {
       if (!username || !email || !password || !role || !phoneNumber) {
         return res.status(400).json({
           message:
-            "Missing required fields: username, email, password, phoneNumber, and role are required.",
+            'Missing required fields: username, email, password, phoneNumber, and role are required.',
         });
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
       let newUser;
 
-      if (role === "Driver" || role === "Helper") {
-        const Model = role === "Driver" ? Driver : Helper;
+      if (role === 'Driver' || role === 'Helper') {
+        const Model = role === 'Driver' ? Driver : Helper;
         newUser = new Model({
           username,
           email,
@@ -79,7 +78,7 @@ const staffManagement = {
         .status(201)
         .json({ message: `${role} created successfully`, user: newUser });
     } catch (error) {
-      console.error("Error in addStaff:", error);
+      console.error('Error in addStaff:', error);
       res.status(500).json({
         message: `Failed to create staff member`,
         error: error.message,
@@ -92,8 +91,9 @@ const staffManagement = {
       const { page, limit, filters } = req.query;
 
       let query = User.find({
-        role: { $in: ["Driver", "Helper"], $nin: ["Admin"] },
+        role: { $in: ['Driver', 'Helper'], $nin: ['Admin'] },
       });
+      const total = await User.countDocuments(query);
 
       const features = new APIfeatures(query, req.query);
 
@@ -103,14 +103,13 @@ const staffManagement = {
 
       features.sorting().paginating();
 
-      const users = await features.query.exec(); 
-      const total = await User.countDocuments(features.query);
+      const users = await features.query.exec();
 
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;
 
       res.status(200).json({
-        message: "Staff retrieved successfully",
+        message: 'Staff retrieved successfully',
         users,
         meta: {
           currentPage,
@@ -122,7 +121,7 @@ const staffManagement = {
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to retrieve staff", error: error.message });
+        .json({ message: 'Failed to retrieve staff', error: error.message });
     }
   },
 
@@ -131,13 +130,13 @@ const staffManagement = {
     try {
       const user = await User.findById(id);
       if (!user) {
-        return res.status(404).json({ message: "Staff not found" });
+        return res.status(404).json({ message: 'Staff not found' });
       }
-      res.status(200).json({ message: "Staff retrieved successfully", user });
+      res.status(200).json({ message: 'Staff retrieved successfully', user });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to retrieve staff", error: error.message });
+        .json({ message: 'Failed to retrieve staff', error: error.message });
     }
   },
 
@@ -146,13 +145,13 @@ const staffManagement = {
     try {
       const user = await User.findByIdAndDelete(id);
       if (!user) {
-        return res.status(404).json({ message: "Staff not found" });
+        return res.status(404).json({ message: 'Staff not found' });
       }
-      res.status(200).json({ message: "Staff deleted successfully" });
+      res.status(200).json({ message: 'Staff deleted successfully' });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to delete staff", error: error.message });
+        .json({ message: 'Failed to delete staff', error: error.message });
     }
   },
 
@@ -165,7 +164,7 @@ const staffManagement = {
     }
 
     // If password is included, hash it before updating
-    if (updateData.password && updateData.password.trim() !== "") {
+    if (updateData.password && updateData.password.trim() !== '') {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }
 
@@ -173,108 +172,124 @@ const staffManagement = {
       const user = await User.findByIdAndUpdate(
         id,
         { $set: updateData },
-        { new: true }
+        { new: true },
       );
       if (!user) {
-        return res.status(404).json({ message: "Staff not found" });
+        return res.status(404).json({ message: 'Staff not found' });
       }
-      res.status(200).json({ message: "Staff updated successfully", user });
+      res.status(200).json({ message: 'Staff updated successfully', user });
     } catch (error) {
-      console.error("Error updating staff:", error);
+      console.error('Error updating staff:', error);
       res
         .status(500)
-        .json({ message: "Failed to update staff", error: error.message });
+        .json({ message: 'Failed to update staff', error: error.message });
     }
   },
 
-assignDriverToTruck: async (req, res) => {
+  assignDriverToTruck: async (req, res) => {
     const { driverId } = req.params;
     const { truckName, startDate, endDate } = req.body; // Accept start and end dates
 
     try {
-        const truck = await Truck.findOne({ name: truckName });
-        const driver = await Driver.findById(driverId);
-        
-        if (!truck) {
-            return res.status(404).json({ message: "Truck not found" });
-        }
+      const truck = await Truck.findOne({ name: truckName });
+      const driver = await Driver.findById(driverId);
 
-        // Check if the truck already has a driver assigned
-        if (truck.driverId) {
-            return res.status(400).json({ message: "This truck already has a driver assigned" });
-        }
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
 
-        // Assign driver to truck
-        truck.driverId = driverId;
+      // Check if the truck already has a driver assigned
+      if (truck.driverId) {
+        return res
+          .status(400)
+          .json({ message: 'This truck already has a driver assigned' });
+      }
 
-        // Set the specific days for the driver
-        truck.driverSpecificDays = {
-            startDate: new Date(startDate),
-            endDate: new Date(endDate)
-        };
+      // Assign driver to truck
+      truck.driverId = driverId;
 
-        await truck.save();
+      // Set the specific days for the driver
+      truck.driverSpecificDays = {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+      };
 
-        // Update the driver's designation with the truck name
-        driver.designation = truckName; // Adjust as needed
-        await driver.save();
+      await truck.save();
 
-        res.status(200).json({ message: "Driver assigned to truck successfully", truck });
+      // Update the driver's designation with the truck name
+      driver.designation = truckName; // Adjust as needed
+      await driver.save();
+
+      res
+        .status(200)
+        .json({ message: 'Driver assigned to truck successfully', truck });
     } catch (error) {
-        res.status(500).json({ message: "Failed to assign driver", error: error.message });
+      res
+        .status(500)
+        .json({ message: 'Failed to assign driver', error: error.message });
     }
-},
-assignHelperToTruck: async (req, res) => {
+  },
+  assignHelperToTruck: async (req, res) => {
     const { helperId } = req.params;
     const { truckName, startDate, endDate } = req.body; // Accept start and end dates
 
     try {
-        const truck = await Truck.findOne({ name: truckName });
-        const helper = await Helper.findById(helperId);
-        
-        if (!truck) {
-            return res.status(404).json({ message: "Truck not found" });
-        }
+      const truck = await Truck.findOne({ name: truckName });
+      const helper = await Helper.findById(helperId);
 
-        // Check if the truck already has a helper assigned
-        if (truck.helperId) {
-            return res.status(400).json({ message: "This truck already has a helper assigned" });
-        }
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
 
-        // Assign helper to truck
-        truck.helperId = helperId;
+      // Check if the truck already has a helper assigned
+      if (truck.helperId) {
+        return res
+          .status(400)
+          .json({ message: 'This truck already has a helper assigned' });
+      }
 
-        // Set the specific days for the helper
-        truck.helperSpecificDays = {
-            startDate: new Date(startDate),
-            endDate: new Date(endDate)
-        };
+      // Assign helper to truck
+      truck.helperId = helperId;
 
-        await truck.save();
+      // Set the specific days for the helper
+      truck.helperSpecificDays = {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+      };
 
-        // Update the helper's designation with the truck name
-        helper.designation = truckName; // Adjust as needed
-        await helper.save();
+      await truck.save();
 
-        res.status(200).json({ message: "Helper assigned to truck successfully", truck });
+      // Update the helper's designation with the truck name
+      helper.designation = truckName; // Adjust as needed
+      await helper.save();
+
+      res
+        .status(200)
+        .json({ message: 'Helper assigned to truck successfully', truck });
     } catch (error) {
-        res.status(500).json({ message: "Failed to assign helper", error: error.message });
+      res
+        .status(500)
+        .json({ message: 'Failed to assign helper', error: error.message });
     }
-},
+  },
 
-deassignDriverFromTruck: async (req, res) => {
-  const { driverId } = req.params;
-  const { truckName } = req.body;
+  deassignDriverFromTruck: async (req, res) => {
+    const { driverId } = req.params;
+    const { truckName } = req.body;
 
-  try {
+    try {
       const truck = await Truck.findOne({ name: truckName });
 
       if (!truck) {
-          return res.status(404).json({ message: "Truck not found" });
+        return res.status(404).json({ message: 'Truck not found' });
       }
 
       if (truck.driverId.toString() !== driverId) {
-          return res.status(400).json({ message: "This driver is not assigned to the specified truck" });
+        return res
+          .status(400)
+          .json({
+            message: 'This driver is not assigned to the specified truck',
+          });
       }
 
       truck.driverId = undefined;
@@ -284,50 +299,59 @@ deassignDriverFromTruck: async (req, res) => {
 
       const driver = await Driver.findById(driverId);
       if (driver) {
-          driver.designation = undefined; 
-          await driver.save();
+        driver.designation = undefined;
+        await driver.save();
       }
 
-      res.status(200).json({ message: "Driver deassigned from truck successfully", truck });
-  } catch (error) {
-      res.status(500).json({ message: "Failed to deassign driver", error: error.message });
-  }
-},
+      res
+        .status(200)
+        .json({ message: 'Driver deassigned from truck successfully', truck });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: 'Failed to deassign driver', error: error.message });
+    }
+  },
 
-deassignHelperFromTruck: async (req, res) => {
-  const { helperId } = req.params;
-  const { truckName } = req.body;
+  deassignHelperFromTruck: async (req, res) => {
+    const { helperId } = req.params;
+    const { truckName } = req.body;
 
-  try {
+    try {
       const truck = await Truck.findOne({ name: truckName });
 
       if (!truck) {
-          return res.status(404).json({ message: "Truck not found" });
+        return res.status(404).json({ message: 'Truck not found' });
       }
 
-      
       if (truck.helperId.toString() !== helperId) {
-          return res.status(400).json({ message: "This helper is not assigned to the specified truck" });
+        return res
+          .status(400)
+          .json({
+            message: 'This helper is not assigned to the specified truck',
+          });
       }
 
-      
       truck.helperId = undefined;
       truck.helperSpecificDays = undefined;
 
       await truck.save();
 
-      
       const helper = await Helper.findById(helperId);
       if (helper) {
-          helper.designation = undefined; 
-          await helper.save();
+        helper.designation = undefined;
+        await helper.save();
       }
 
-      res.status(200).json({ message: "Helper deassigned from truck successfully", truck });
-  } catch (error) {
-      res.status(500).json({ message: "Failed to deassign helper", error: error.message });
-  }
-},
+      res
+        .status(200)
+        .json({ message: 'Helper deassigned from truck successfully', truck });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: 'Failed to deassign helper', error: error.message });
+    }
+  },
 
   updateDriverLocation: async (req, res) => {
     const { driverId } = req.params;
@@ -336,11 +360,11 @@ deassignHelperFromTruck: async (req, res) => {
     try {
       const driver = await Driver.findById(driverId);
       if (!driver) {
-        return res.status(404).json({ message: "Driver not found" });
+        return res.status(404).json({ message: 'Driver not found' });
       }
 
       // Update driver's current location
-      driver.location = { type: "Point", coordinates: [longitude, latitude] };
+      driver.location = { type: 'Point', coordinates: [longitude, latitude] };
 
       // Find the assigned helper by the truck's helperId
       const truck = await Truck.findOne({ driverId: driverId });
@@ -348,7 +372,7 @@ deassignHelperFromTruck: async (req, res) => {
       if (!truck || !truck.helperId) {
         return res
           .status(404)
-          .json({ message: "No helper assigned to this truck" });
+          .json({ message: 'No helper assigned to this truck' });
       }
 
       const helper = await Helper.findById(truck.helperId);
@@ -361,7 +385,7 @@ deassignHelperFromTruck: async (req, res) => {
           isWithinDistance(
             driver.location.coordinates,
             helperLocation,
-            maxDistance
+            maxDistance,
           )
         ) {
           if (!driver.startTime) {
@@ -374,17 +398,17 @@ deassignHelperFromTruck: async (req, res) => {
       await driver.save();
 
       // Emit the new driver location to all connected clients
-      socket.emitEvent("driverLocationUpdate", {
+      socket.emitEvent('driverLocationUpdate', {
         driverId,
         latitude,
         longitude,
       });
 
-      res.status(200).json({ message: "Location updated successfully" });
+      res.status(200).json({ message: 'Location updated successfully' });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to update location", error: error.message });
+        .json({ message: 'Failed to update location', error: error.message });
     }
   },
 
@@ -397,44 +421,44 @@ deassignHelperFromTruck: async (req, res) => {
       if (!truck) {
         return res
           .status(404)
-          .json({ message: "No truck found for the given driver." });
+          .json({ message: 'No truck found for the given driver.' });
       }
 
       // Retrieve all tasks associated with this truck
       const tasks = await Task.find({ _id: { $in: truck.tasks } });
-      res.status(200).json({ message: "Tasks retrieved successfully", tasks });
+      res.status(200).json({ message: 'Tasks retrieved successfully', tasks });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to retrieve tasks", error: error.message });
+        .json({ message: 'Failed to retrieve tasks', error: error.message });
     }
   },
-  updateAdminProfile : async (req, res) => {
+  updateAdminProfile: async (req, res) => {
     try {
       const adminId = req.user._id; // Get the user ID from req.user
-  
+
       const updatedData = req.body; // Assuming the request body contains the profile data to update
-  
+
       // Update the admin profile using the id
       const updatedAdmin = await Admin.findByIdAndUpdate(adminId, updatedData, {
         new: true, // Return the updated document
       });
-  
+
       if (!updatedAdmin) {
-        return res.status(404).json({ message: "Admin not found" });
+        return res.status(404).json({ message: 'Admin not found' });
       }
-  
+
       res.status(200).json({
-        message: "Admin profile updated successfully",
+        message: 'Admin profile updated successfully',
         admin: updatedAdmin,
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to update admin profile",
+        message: 'Failed to update admin profile',
         error: error.message,
       });
     }
-  }
+  },
 };
 
 module.exports = staffManagement;
