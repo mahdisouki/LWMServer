@@ -5,6 +5,7 @@ const APIfeatures = require('../utils/APIFeatures');
 const truckCtrl = {
   createTruck: async (req, res) => {
     try {
+ 
       const { name, loadCapacity, matricule } = req.body;
       const newTruck = new Truck({ name, loadCapacity, matricule });
       await newTruck.save();
