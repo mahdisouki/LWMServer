@@ -122,6 +122,7 @@ const tippingController = {
       const { page = 1, limit = 9, filters } = req.query;
 
       let query = TippingRequest.find();
+      const total = await TippingRequest.countDocuments(query);
 
       const features = new APIfeatures(query, req.query);
 
@@ -131,9 +132,6 @@ const tippingController = {
 
       features.sorting().paginating();
       let requests = await features.query.exec();
-      const total = await TippingRequest.countDocuments(
-        features.query.getFilter(),
-      );
 
       requests = await Promise.all(
         requests.map(async (request) => {
@@ -227,7 +225,6 @@ const tippingController = {
           emitEvent('driverOnTheWay', {
             helperId,
           });
-
         }
       }
 

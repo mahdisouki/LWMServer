@@ -113,6 +113,7 @@ const dailySheetController = {
       }).populate(
         'driverId jobsDone jobsPending jobsCancelled tippingRequests',
       );
+      const total = await DailySheet.countDocuments(query);
 
       const features = new APIfeatures(query, req.query);
 
@@ -120,7 +121,6 @@ const dailySheetController = {
 
       const dailySheets = await features.query.exec();
 
-      const total = await DailySheet.countDocuments(features.query);
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;
 
@@ -173,27 +173,35 @@ const dailySheetController = {
   getDailySheetsbyId: async (req, res) => {
     try {
       const { driverId, date } = req.params;
-  
+
       // Parse the date and set the start and end times for the entire day
       const startDate = new Date(date);
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
       endDate.setHours(23, 59, 59, 999);
-  
+
       // Find the daily sheet for the given driverId and within the specified day
       const dailySheet = await DailySheet.findOne({
         driverId,
-        date: { $gte: startDate, $lte: endDate }
-      }).populate("driverId jobsDone jobsPending jobsCancelled tippingRequests");
-  
+        date: { $gte: startDate, $lte: endDate },
+      }).populate(
+        'driverId jobsDone jobsPending jobsCancelled tippingRequests',
+      );
+
       if (!dailySheet) {
-        return res.status(404).json({ message: "Daily sheet not found for the specified driver and date" });
+        return res
+          .status(404)
+          .json({
+            message: 'Daily sheet not found for the specified driver and date',
+          });
       }
-  
+
       res.status(200).json(dailySheet);
     } catch (error) {
-      console.error("Error fetching daily sheet by ID:", error);
-      res.status(500).json({ message: "Error fetching daily sheet by ID", error });
+      console.error('Error fetching daily sheet by ID:', error);
+      res
+        .status(500)
+        .json({ message: 'Error fetching daily sheet by ID', error });
     }
   },
 };

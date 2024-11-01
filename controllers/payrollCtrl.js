@@ -1,6 +1,6 @@
-const { User } = require("../models/User");
-const Payroll = require("../models/Payroll");
-const APIfeatures = require("../utils/APIFeatures");
+const { User } = require('../models/User');
+const Payroll = require('../models/Payroll');
+const APIfeatures = require('../utils/APIFeatures');
 
 const PayrollCtrl = {
   // Log start time at the beginning of the day
@@ -9,7 +9,7 @@ const PayrollCtrl = {
     const userId = req.user._id;
 
     if (!startTime) {
-      return res.status(400).json({ message: "Start time is required." });
+      return res.status(400).json({ message: 'Start time is required.' });
     }
 
     try {
@@ -19,7 +19,7 @@ const PayrollCtrl = {
       if (existingPayroll) {
         return res
           .status(400)
-          .json({ message: "You have already started work for the day." });
+          .json({ message: 'You have already started work for the day.' });
       }
 
       // Create a new payroll record with the start time
@@ -31,13 +31,13 @@ const PayrollCtrl = {
       await newPayroll.save();
 
       res.status(201).json({
-        message: "Start time logged successfully.",
+        message: 'Start time logged successfully.',
         payroll: newPayroll,
       });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to log start time.", error: error.message });
+        .json({ message: 'Failed to log start time.', error: error.message });
     }
   },
 
@@ -46,7 +46,7 @@ const PayrollCtrl = {
     const userId = req.user._id;
 
     if (!endTime) {
-      return res.status(400).json({ message: "End time is required." });
+      return res.status(400).json({ message: 'End time is required.' });
     }
 
     try {
@@ -55,7 +55,7 @@ const PayrollCtrl = {
       if (!payroll) {
         return res
           .status(404)
-          .json({ message: "Start time not logged for today." });
+          .json({ message: 'Start time not logged for today.' });
       }
 
       const end = new Date(endTime);
@@ -64,14 +64,14 @@ const PayrollCtrl = {
       if (end <= start) {
         return res
           .status(400)
-          .json({ message: "End time must be after start time." });
+          .json({ message: 'End time must be after start time.' });
       }
 
       const totalHoursWorked = (end - start) / (1000 * 3600); // Convert milliseconds to hours
 
       const user = await User.findById(userId);
       if (!user) {
-        return res.status(404).json({ message: "User not found." });
+        return res.status(404).json({ message: 'User not found.' });
       }
 
       // If payroll has been reset, initialize new values
@@ -110,13 +110,13 @@ const PayrollCtrl = {
       await user.save(); // Save updated user totals
 
       res.status(200).json({
-        message: "End time logged and salary calculated successfully.",
+        message: 'End time logged and salary calculated successfully.',
         payroll,
       });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to log end time.", error: error.message });
+        .json({ message: 'Failed to log end time.', error: error.message });
     }
   },
 
@@ -129,13 +129,13 @@ const PayrollCtrl = {
       if (!payrolls || payrolls.length === 0) {
         return res
           .status(404)
-          .json({ message: "No payroll records found for this user." });
+          .json({ message: 'No payroll records found for this user.' });
       }
 
       res.status(200).json(payrolls);
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve payroll records.",
+        message: 'Failed to retrieve payroll records.',
         error: error.message,
       });
     }
@@ -151,7 +151,7 @@ const PayrollCtrl = {
       if (!payroll) {
         return res
           .status(404)
-          .json({ message: "Payroll record not found or not yours." });
+          .json({ message: 'Payroll record not found or not yours.' });
       }
 
       // Update startTime and endTime if provided
@@ -169,12 +169,12 @@ const PayrollCtrl = {
       await payroll.save();
 
       res.status(200).json({
-        message: "Payroll record updated successfully.",
+        message: 'Payroll record updated successfully.',
         payroll,
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to update payroll record.",
+        message: 'Failed to update payroll record.',
         error: error.message,
       });
     }
@@ -188,7 +188,7 @@ const PayrollCtrl = {
       const user = await User.findById(userId);
 
       if (!user) {
-        return res.status(404).json({ message: "User not found." });
+        return res.status(404).json({ message: 'User not found.' });
       }
 
       // Return total hours worked and total salary even after reset
@@ -199,7 +199,7 @@ const PayrollCtrl = {
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve total salary and hours worked.",
+        message: 'Failed to retrieve total salary and hours worked.',
         error: error.message,
       });
     }
@@ -210,7 +210,7 @@ const PayrollCtrl = {
       const users = await User.find({});
 
       if (!users || users.length === 0) {
-        return res.status(404).json({ message: "No users found." });
+        return res.status(404).json({ message: 'No users found.' });
       }
 
       // Prepare response object to store total worked hours and salary for each user
@@ -224,7 +224,7 @@ const PayrollCtrl = {
       res.status(200).json(userPayrolls);
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve worked hours and salary for all users.",
+        message: 'Failed to retrieve worked hours and salary for all users.',
         error: error.message,
       });
     }
@@ -242,51 +242,106 @@ const PayrollCtrl = {
       });
 
       res.status(200).json({
-        message: "Payroll reset successfully for future calculations.",
+        message: 'Payroll reset successfully for future calculations.',
       });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to reset payroll.", error: error.message });
+        .json({ message: 'Failed to reset payroll.', error: error.message });
     }
   },
+
   // Admin - Get all payroll records for all users
   getAllPayrolls: async (req, res) => {
     try {
-      const { page, limit, filters } = req.query;
+      const { page = 1, limit = 10, keyword } = req.query;
+      let filters = req.query.filters;
 
-      let query = Payroll.find({}).populate({
-        path: "userId",
-        select: "id email username",
-      });
+      // Parse filters if they are in JSON string format
+      filters =
+        typeof filters === 'string' ? JSON.parse(filters) : filters || [];
 
-      const features = new APIfeatures(query, req.query);
+      // Initialize the main query object
+      let payrollQuery = {};
 
-      if (filters) {
-        features.filtering();
+      //Extract Date Range from Filters
+      const startTimeFilter = filters.find(
+        (filter) => filter.name === 'startTime',
+      );
+      const endTimeFilter = filters.find((filter) => filter.name === 'endTime');
+
+      if (startTimeFilter && endTimeFilter) {
+        payrollQuery.$or = [
+          {
+            startTime: {
+              $gte: new Date(startTimeFilter.id),
+              $lte: new Date(endTimeFilter.id),
+            },
+          },
+          {
+            endTime: {
+              $gte: new Date(startTimeFilter.id),
+              $lte: new Date(endTimeFilter.id),
+            },
+          },
+        ];
+      }
+      // Handle keyword search for usernames
+      let userIds = [];
+      if (keyword) {
+        const users = await User.find(
+          { username: { $regex: keyword, $options: 'i' } },
+          '_id',
+        );
+        userIds = users.map((user) => user._id);
+
+        // If no matching users are found, return early with an empty result
+        if (userIds.length === 0) {
+          return res.status(200).json({
+            message: 'No data found',
+            payrolls: [],
+            meta: {
+              currentPage: parseInt(page, 10),
+              limit: parseInt(limit, 10),
+              total: 0,
+              count: 0,
+            },
+          });
+        }
       }
 
-      features.sorting().paginating();
+      // Add user ID filter to the payroll query if userIds were found
+      if (userIds.length > 0) {
+        payrollQuery.userId = { $in: userIds };
+      }
 
-      const payrolls = await features.query.exec();
+      // Execute the Payroll query with populated user details
+      let payrollRecordsQuery = Payroll.find(payrollQuery).populate({
+        path: 'userId',
+        select: 'username email roleType',
+      });
 
-      const total = await User.countDocuments(features.query);
-      const currentPage = parseInt(req.query.page, 10) || 1;
-      const limitNum = parseInt(req.query.limit, 10) || 9;
+      // Pagination
+      const total = await Payroll.countDocuments(payrollQuery);
+      payrollRecordsQuery = payrollRecordsQuery
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit));
+
+      const payrolls = await payrollRecordsQuery.exec();
 
       res.status(200).json({
-        message: "Payroll retrieved successfully",
+        message: 'Payroll records retrieved successfully',
         payrolls,
         meta: {
-          currentPage,
-          limit: limitNum,
+          currentPage: parseInt(page, 10),
+          limit: parseInt(limit, 10),
           total,
           count: payrolls.length,
         },
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve payroll records.",
+        message: 'Failed to retrieve payroll records.',
         error: error.message,
       });
     }
@@ -301,13 +356,13 @@ const PayrollCtrl = {
       if (!payrolls || payrolls.length === 0) {
         return res
           .status(404)
-          .json({ message: "No payroll records found for this user." });
+          .json({ message: 'No payroll records found for this user.' });
       }
 
       res.status(200).json(payrolls);
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve payroll records for user.",
+        message: 'Failed to retrieve payroll records for user.',
         error: error.message,
       });
     }
@@ -321,7 +376,7 @@ const PayrollCtrl = {
     try {
       const payroll = await Payroll.findById(payrollId);
       if (!payroll) {
-        return res.status(404).json({ message: "Payroll record not found." });
+        return res.status(404).json({ message: 'Payroll record not found.' });
       }
 
       if (startTime) payroll.startTime = new Date(startTime);
@@ -338,11 +393,11 @@ const PayrollCtrl = {
 
       res
         .status(200)
-        .json({ message: "Payroll updated successfully.", payroll });
+        .json({ message: 'Payroll updated successfully.', payroll });
     } catch (error) {
       res
         .status(500)
-        .json({ message: "Failed to update payroll.", error: error.message });
+        .json({ message: 'Failed to update payroll.', error: error.message });
     }
   },
 
@@ -353,13 +408,13 @@ const PayrollCtrl = {
     try {
       const payroll = await Payroll.findByIdAndDelete(payrollId);
       if (!payroll) {
-        return res.status(404).json({ message: "Payroll record not found." });
+        return res.status(404).json({ message: 'Payroll record not found.' });
       }
 
-      res.status(200).json({ message: "Payroll record deleted successfully." });
+      res.status(200).json({ message: 'Payroll record deleted successfully.' });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to delete payroll record.",
+        message: 'Failed to delete payroll record.',
         error: error.message,
       });
     }
@@ -371,11 +426,11 @@ const PayrollCtrl = {
       console.log(payrollId);
       const payroll = await Payroll.findById(payrollId);
 
-      if (!payroll) throw new Error("Payroll not found");
+      if (!payroll) throw new Error('Payroll not found');
 
       // Check if the payroll is already marked as paid
-      if (payroll.status === "paid") {
-        throw new Error("Payroll is already marked as paid");
+      if (payroll.status === 'paid') {
+        throw new Error('Payroll is already marked as paid');
       }
 
       // Recalculate hours worked and salary before marking as paid
@@ -395,16 +450,16 @@ const PayrollCtrl = {
       //     regularHours * user.hourPrice + extraHours * user.hourPrice * 1.5;
 
       // Mark payroll as paid
-      payroll.status = "Paid";
+      payroll.status = 'Paid';
 
       // Save updated payroll
       await payroll.save();
 
       // Optionally reset driver's work data for the next pay period
-    //   await resetDriverWorkData(payroll.userId);
+      //   await resetDriverWorkData(payroll.userId);
       res
         .status(200)
-        .json({ message: "Payroll record marked as paid successfully." });
+        .json({ message: 'Payroll record marked as paid successfully.' });
     } catch (error) {
       console.error(`Error marking payroll as paid: ${error.message}`);
     }
