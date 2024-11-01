@@ -93,13 +93,6 @@ const taskCtrl = {
 
   getTaskById: async (req, res) => {
     const { taskId } = req.params;
-    const tasks = await Task.find();
-    console.log(tasks);
-
-    tasks.forEach((task) => {
-      task.truckId = '66ddb2a86d3115e1ab9dcfec';
-      task.save();
-    });
 
     try {
       const task = await Task.findById(taskId);

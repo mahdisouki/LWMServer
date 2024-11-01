@@ -18,6 +18,7 @@ router.put('/tasks/rate/:taskId', isAuth, driverCtrl.rateTask);
 
 router.post('/location/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.uploadInitialConditionPhotos);
 router.post('/truck/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.uploadFinalConditionPhotos);
+router.post('/truck/uploadIntermediateItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.intermediateConditionPhotos);
 router.post('/additional-items/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.addAdditionalItems);
 
 router.post('/break/start', isAuth, driverCtrl.startBreak);

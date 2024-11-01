@@ -72,10 +72,11 @@ const initSocket = (server) => {
 
     socket.on('sendLocation', async ({ driverId, coordinates }) => {
       try {
+        console.log(`Updating location for driver ${driverId}:`, coordinates);
+        const coordinatesArray = [coordinates.longitude, coordinates.latitude];
         await Driver.findByIdAndUpdate(driverId, {
-          location: { type: 'Point', coordinates: coordinates },
+          location: { type: 'Point', coordinates: coordinatesArray},
         });
-
         const driver = await Driver.findById(driverId).select('picture');
         if (driver) {
           io.emit('driverLocationUpdate', {
@@ -85,7 +86,7 @@ const initSocket = (server) => {
             currentJobAddress : driver.currentJobAddress,
             nextJobAddress: driver.nextJobAddress,
             
-          });
+          }); 
         } else {
           console.error(`Driver with ID ${driverId} not found.`);
         }
@@ -111,14 +112,6 @@ const initSocket = (server) => {
       delete userSocketMap[userId]; // Remove user from map on disconnect
     });
 
-    console.log('Emitting nearest tipping place event');
-    // socket.emit('nearestTippingPlace', {
-    //   driverId: '67217350202446873bd3b5de',
-    //   nearestPlace: {
-    //     latitude: 34.3113728,
-    //     longitude: 35.7228035,
-    //   },
-    // });
   });
 
   return io;

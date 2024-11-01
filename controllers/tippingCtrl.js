@@ -1,9 +1,8 @@
-const TippingRequest = require("../models/TippingRequest");
-const { User } = require("../models/User");
-const Truck = require("../models/Truck");
-const APIfeatures = require("../utils/APIFeatures");
-const { emitEvent } = require("../socket");
-
+const TippingRequest = require('../models/TippingRequest');
+const { User } = require('../models/User');
+const Truck = require('../models/Truck');
+const APIfeatures = require('../utils/APIFeatures');
+const { emitEvent } = require('../socket');
 
 const tippingController = {
   createTippingRequest: async (req, res) => {
@@ -12,28 +11,28 @@ const tippingController = {
 
     try {
       const user = await User.findById(userId);
-      if (!user || (user.roleType !== "Driver" && user.roleType !== "Helper")) {
+      if (!user || (user.roleType !== 'Driver' && user.roleType !== 'Helper')) {
         return res.status(403).json({
           message:
-            "Unauthorized: Only drivers and helpers can make tipping requests.",
+            'Unauthorized: Only drivers and helpers can make tipping requests.',
         });
       }
       const truck = await Truck.findById(truckId);
 
       if (!truck) {
-        return res.status(404).json({ message: "Truck not found" });
+        return res.status(404).json({ message: 'Truck not found' });
       }
 
       const newTippingRequest = new TippingRequest({
         userId: userId,
         truckId: truck._id,
         notes: notes,
-        status: "Pending",
+        status: 'Pending',
       });
 
       await newTippingRequest.save();
       const response = {
-        message: "Tipping request created successfully",
+        message: 'Tipping request created successfully',
         request: {
           id: newTippingRequest._id,
           userId: newTippingRequest.userId.toString(),
@@ -48,9 +47,9 @@ const tippingController = {
 
       res.status(201).json(response);
     } catch (error) {
-      console.error("Error in creating tipping request:", error);
+      console.error('Error in creating tipping request:', error);
       res.status(500).json({
-        message: "Failed to create tipping request",
+        message: 'Failed to create tipping request',
         error: error.message,
       });
     }
@@ -62,7 +61,7 @@ const tippingController = {
       res.status(200).json({ requests });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve tipping requests",
+        message: 'Failed to retrieve tipping requests',
         error: error.message,
       });
     }
@@ -74,26 +73,29 @@ const tippingController = {
       const request = await TippingRequest.findById(id);
 
       if (!request) {
-        return res.status(404).json({ message: "Tipping request not found" });
+        return res.status(404).json({ message: 'Tipping request not found' });
       }
       res.status(200).json({ request });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve tipping request",
+        message: 'Failed to retrieve tipping request',
         error: error.message,
       });
     }
   },
 
-  getTippingRequestByUserId : async (req, res) => {
+  getTippingRequestByUserId: async (req, res) => {
     const { userId } = req.params;
     try {
-      const requests = await TippingRequest.findOne({ userId, isShipped: false }).sort({ createdAt: -1 });
+      const requests = await TippingRequest.findOne({
+        userId,
+        isShipped: false,
+      }).sort({ createdAt: -1 });
 
       res.status(200).json({ requests });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve tipping requests",
+        message: 'Failed to retrieve tipping requests',
         error: error.message,
       });
     }
@@ -104,12 +106,12 @@ const tippingController = {
     try {
       const deletedRequest = await TippingRequest.findByIdAndDelete(id);
       if (!deletedRequest) {
-        return res.status(404).json({ message: "Tipping request not found" });
+        return res.status(404).json({ message: 'Tipping request not found' });
       }
-      res.status(200).json({ message: "Tipping request deleted successfully" });
+      res.status(200).json({ message: 'Tipping request deleted successfully' });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to delete tipping request",
+        message: 'Failed to delete tipping request',
         error: error.message,
       });
     }
@@ -130,7 +132,7 @@ const tippingController = {
       features.sorting().paginating();
       let requests = await features.query.exec();
       const total = await TippingRequest.countDocuments(
-        features.query.getFilter()
+        features.query.getFilter(),
       );
 
       requests = await Promise.all(
@@ -139,23 +141,23 @@ const tippingController = {
 
           if (request.userId) {
             const user = await User.findById(request.userId);
-            requestObj.username = user ? user.username : "Unknown User";
+            requestObj.username = user ? user.username : 'Unknown User';
           }
 
           if (request.truckId) {
             const truck = await Truck.findById(request.truckId);
-            requestObj.truckName = truck ? truck.name : "Unknown Truck";
+            requestObj.truckName = truck ? truck.name : 'Unknown Truck';
           }
 
           return requestObj;
-        })
+        }),
       );
 
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;
 
       res.status(200).json({
-        message: "All tipping requests retrieved successfully",
+        message: 'All tipping requests retrieved successfully',
         requests,
         meta: {
           currentPage,
@@ -166,92 +168,106 @@ const tippingController = {
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to retrieve all tipping requests",
+        message: 'Failed to retrieve all tipping requests',
         error: error.message,
       });
     }
   },
 
-   // Update the status of a tipping request (Admin only)
-   updateTippingRequestStatus: async (req, res) => {
+  // Update the status of a tipping request (Admin only)
+  updateTippingRequestStatus: async (req, res) => {
     const { id } = req.params; // ID of the tipping request
     const { status } = req.body; // New status to be set
 
     try {
-        const request = await TippingRequest.findById(id);
-        
-        if (!request) {
-            return res.status(404).json({ message: "Tipping request not found" });
+      // Fetch the tipping request and populate truck to access helperId
+      const request = await TippingRequest.findById(id).populate({
+        path: 'truckId',
+        select: 'helperId', // Only fetch helperId from the truck
+        model: 'Truck',
+      });
+
+      if (!request) {
+        return res.status(404).json({ message: 'Tipping request not found' });
+      }
+
+      const helperId = request.truckId.helperId;
+
+      // Update status
+      request.status = status;
+      await request.save();
+
+      if (status === 'Approved') {
+        // Fetch the driver's location
+        const driver = await Driver.findById(request.userId).select('location');
+
+        if (driver) {
+          const driverLocation = driver.location;
+          console.log('Driver Location:', driverLocation);
+
+          // Find the nearest tipping place
+          const tippingPlaces = await TippingPlace.find();
+          const nearestPlace = tippingPlaces
+            .map((place) => ({
+              ...place.toObject(),
+              distance: calculateDistance(driverLocation.coordinates, {
+                latitude: place.location.coordinates[1], // Assuming [lng, lat]
+                longitude: place.location.coordinates[0],
+              }),
+            }))
+            .sort((a, b) => a.distance - b.distance)
+            .shift();
+
+          emitEvent('nearestTippingPlace', {
+            driverId: request.userId,
+            helperId,
+            nearestPlace,
+          });
+
+          emitEvent('driverOnTheWay', {
+            helperId,
+          });
+
         }
+      }
 
-        // Update status
-        request.status = status;
-        await request.save();
-
-        if (status === 'Approved') {
-            // Fetch the driver's location
-            const driver = await Driver.findById(request.userId).select('location');
-            
-            if (driver) {
-                const driverLocation = driver.location;
-                console.log("Driver Location:", driverLocation);
-
-                // Optionally, you can now find the nearest tipping place
-                const tippingPlaces = await TippingPlace.find();
-                const nearestPlace = tippingPlaces
-                    .map(place => ({
-                        ...place.toObject(),
-                        distance: calculateDistance(driverLocation.coordinates, { 
-                            latitude: place.location.coordinates[1], // Assuming [lng, lat]
-                            longitude: place.location.coordinates[0]
-                        })
-                    }))
-                    .sort((a, b) => a.distance - b.distance)
-                    .shift(); // Get the nearest place
-
-                // Emit the nearest place to the driver using Socket.IO
-                emitEvent('nearestTippingPlace' ,  {
-                  driverId: request.userId,
-                  nearestPlace
-              })
-                
-            }
-        }
-
-        res.status(200).json({
-            message: "Tipping request status updated successfully",
-            request,
-        });
+      res.status(200).json({
+        message: 'Tipping request status updated successfully',
+        request,
+      });
     } catch (error) {
-        res.status(500).json({
-            message: "Failed to update tipping request status",
-            error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to update tipping request status',
+        error: error.message,
+      });
     }
   },
 
   markShipped: async (req, res) => {
     const { truckId } = req.body;
     try {
-      const request = await TippingRequest.findOne({ truckId, isShipped: false }).sort({ createdAt: -1 });
-      
+      const request = await TippingRequest.findOne({
+        truckId,
+        isShipped: false,
+      }).sort({ createdAt: -1 });
+
       if (!request) {
-        return res.status(404).json({ message: "Tipping request not found" });
+        return res.status(404).json({ message: 'Tipping request not found' });
       }
 
       request.isShipped = true;
       await request.save();
 
       res.status(200).json({
-        message: "Tipping request marked as shipped successfully",
+        message: 'Tipping request marked as shipped successfully',
         request,
       });
     } catch (error) {
       res.status(500).json({
-        message: "Failed to mark tipping request as shipped",
+        message: 'Failed to mark tipping request as shipped',
         error: error.message,
       });
     }
-  }
+  },
 };
 module.exports = tippingController;

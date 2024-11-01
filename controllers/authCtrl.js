@@ -65,13 +65,10 @@ exports.userSignIn = async (req, res) => {
     res.json({
       success: true,
       user: { 
-        username: user.username, 
-        email: user.email, 
-        role: user.role, 
-        id: user._id, 
-        picture: user.picture, 
-        phoneNumber: user.phoneNumber[0], 
+        ...user._doc,
+        id: user._id,
         startTime,
+        phoneNumber: user.phoneNumber[0], 
         truckId : truck ? truck._id : null,
       },
       token,
