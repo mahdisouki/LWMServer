@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const Message = require('./models/Message');
 const Driver = require('./models/Driver');
 const Notification = require('./models/Notification');
-const User = require('./models/User');
+const { User } = require('./models/User');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 
@@ -75,28 +75,21 @@ const initSocket = (server) => {
         console.log(`Updating location for driver ${driverId}:`, coordinates);
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
         await Driver.findByIdAndUpdate(driverId, {
-          location: { type: 'Point', coordinates: coordinatesArray },
+          location: { type: 'Point', coordinates: coordinatesArray},
         });
-        const driver = await User.findById(driverId);
-        const activeBreak = driver.breaks.find((b) => !b.endTime);
-        let onBreak = false;
-        if (activeBreak) {
-          onBreak = true;
-          duration = Math.round(
-            (new Date() - lastBreak.activeBreak) / (1000 * 60),
-          );
-        }
+        const driver = await Driver.findById(driverId);
+        
         if (driver) {
           io.emit('driverLocationUpdate', {
             driverId,
             coordinates,
-            driverName: driver.username,
             picture: driver.picture,
-            currentJobAddress: driver.currentJobAddress,
+            currentJobAddress : driver.currentJobAddress,
             nextJobAddress: driver.nextJobAddress,
-            onBreak: onBreak,
-            duration: duration,
-          });
+            onBreak:driver.onBreak,
+            startTime: driver.breakStartTime
+            
+          }); 
         } else {
           console.error(`Driver with ID ${driverId} not found.`);
         }
@@ -121,6 +114,7 @@ const initSocket = (server) => {
       console.log(`User disconnected: ${userId}`);
       delete userSocketMap[userId]; // Remove user from map on disconnect
     });
+
   });
 
   return io;

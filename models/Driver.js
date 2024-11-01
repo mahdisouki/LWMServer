@@ -19,6 +19,8 @@ const driverSchema = new mongoose.Schema({
     },
     currentJobAddress: { type: String, required: false },
     nextJobAddress: { type: String, required: false },
+    onBreak:{type:Boolean, default:false},
+    breakStartTime:{type:Date }
   }, // Array of breaks
 });
 
