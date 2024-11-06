@@ -28,6 +28,7 @@ const payrollsRoutes = require("./routes/payrolls");
 const messageRoutes = require("./routes/messages");
 const tippingPlacesRoutes = require('./routes/tippingPlaces')
 const blockingDaysRoutes = require('./routes/blockingDays')
+const standardItemsRoutes = require('./routes/standardItems')
 const corsOptions = {
   origin: '*', 
   optionsSuccessStatus: 200 
@@ -48,6 +49,8 @@ app.use("/api", payrollsRoutes);
 app.use("/api", messageRoutes);
 app.use('/api/tippingPlaces' , tippingPlacesRoutes)
 app.use('/api/blockingDays' , blockingDaysRoutes)
+app.use('/api' , standardItemsRoutes)
+
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
 });

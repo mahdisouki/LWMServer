@@ -14,6 +14,10 @@ router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus)
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
 router.put('/task/:taskId', isAuth, checkRole('Admin'),multer.array('clientObjectPhotos'), taskCtrl.updateTask);
 
+router.post('/task/pay', taskCtrl.processTaskPayment);
 
+router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);
+
+router.post('/task/capture-paypal-payment', taskCtrl.capturePayPalTaskPayment);
 
 module.exports = router;

@@ -2,6 +2,12 @@ const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
 const APIfeatures = require('../utils/APIFeatures');
+const paypal = require('@paypal/checkout-server-sdk');
+const { PayPalClient } = require('../services/paymentService.js');
+
+const { calculateTotalPrice, createStripePaymentIntent, createPayPalOrder } = require('../services/paymentService.js');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 
 const taskCtrl = {
   createTask: async (req, res) => {
@@ -340,6 +346,107 @@ const taskCtrl = {
       });
     }
   },
+
+ 
+  processTaskPayment: async (req, res) => {
+    const { taskId, options, paymentType } = req.body;
+
+    try {
+        const amount = await calculateTotalPrice(taskId, options); // Calculate in cents
+
+        let paymentResult;
+        switch (paymentType) {
+            case 'stripe':
+                paymentResult = await createStripePaymentIntent(amount);
+                return res.json({
+                    message: 'Stripe payment initiated successfully',
+                    clientSecret: paymentResult.client_secret,
+                    paymentIntentId: paymentResult.id,
+                    amount: amount
+                });
+
+            case 'paypal':
+                paymentResult = await createPayPalOrder(amount);
+                const approvalLink = paymentResult.result.links.find(link => link.rel === 'approve');
+                return res.json({
+                    message: 'PayPal payment initiated successfully',
+                    orderID: paymentResult.result.id,
+                    approvalLink: approvalLink ? approvalLink.href : null,
+                    amount: amount
+                });
+
+            default:
+                return res.status(400).json({ message: "Invalid payment method" });
+        }
+    } catch (error) {
+        console.error('Payment Error:', error);
+        return res.status(500).json({ message: "Failed to initiate payment", error: error.message });
+    }
+},
+
+confirmStripeTaskPayment: async (req, res) => {
+    const { paymentIntentId, paymentMethodId, taskId } = req.body;
+
+    try {
+        const paymentIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
+            payment_method: paymentMethodId,
+        });
+
+        if (paymentIntent.status === 'succeeded') {
+            const task = await Task.findById(taskId);
+            if (!task) return res.status(404).json({ message: "Task not found" });
+
+            task.paymentStatus = 'Paid';
+            await task.save();
+
+            return res.status(200).json({
+                message: 'Payment confirmed successfully',
+                task,
+                
+                paymentIntent,
+            });
+        } else {
+            return res.status(400).json({
+                message: 'Payment confirmation failed',
+                status: paymentIntent.status,
+            });
+        }
+    } catch (error) {
+        console.error('Error confirming payment:', error);
+        res.status(500).json({ message: 'Error confirming payment', error: error.message });
+    }
+},
+
+capturePayPalTaskPayment: async (req, res) => {
+    const { orderID, taskId } = req.body;
+
+    try {
+        const request = new paypal.orders.OrdersCaptureRequest(orderID);
+        request.requestBody({});
+        const capture = await PayPalClient().execute(request);
+
+        if (capture.result.status === 'COMPLETED') {
+            const task = await Task.findById(taskId);
+            if (!task) return res.status(404).json({ message: "Task not found" });
+
+            task.paymentStatus = 'Paid';
+            await task.save();
+
+            res.status(200).json({
+                message: 'PayPal payment captured successfully',
+                captureDetails: capture.result,
+                task,
+            });
+        } else {
+            res.status(400).json({ message: 'Failed to capture payment', capture });
+        }
+    } catch (error) {
+        console.error('Error capturing PayPal payment:', error);
+        res.status(500).json({ message: 'Failed to capture PayPal payment', error: error.message });
+    }
+},
+  
+  
 };
 
 module.exports = taskCtrl;
