@@ -60,7 +60,7 @@ exports.userSignIn = async (req, res) => {
       truck = await Truck.findOne({ helperId: user._id }).populate('tasks');
     }
 
-    console.log("User signed in successfully", startTime);
+    console.log("User signed in successfully", user);
 
     res.json({
       success: true,
@@ -70,6 +70,7 @@ exports.userSignIn = async (req, res) => {
         startTime,
         phoneNumber: user.phoneNumber[0], 
         truckId : truck ? truck._id : null,
+        picture: user.picture || null,
       },
       token,
       refreshToken,

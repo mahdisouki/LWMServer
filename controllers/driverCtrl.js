@@ -84,12 +84,10 @@ const driverManagement = {
       });
     } catch (error) {
       console.error('Error updating driver profile:', error);
-      res
-        .status(500)
-        .json({
-          message: 'Failed to update driver profile',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to update driver profile',
+        error: error.message,
+      });
     }
   },
 
@@ -125,19 +123,15 @@ const driverManagement = {
           .json({ message: 'Location for this helper is not set' });
       }
 
-      res
-        .status(200)
-        .json({
-          message: 'Helper location retrieved successfully',
-          location: helper.location,
-        });
+      res.status(200).json({
+        message: 'Helper location retrieved successfully',
+        location: helper.location,
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: 'Failed to retrieve helper location',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to retrieve helper location',
+        error: error.message,
+      });
     }
   },
 
@@ -155,11 +149,11 @@ const driverManagement = {
           .json({ message: 'No truck found for the given driver.' });
       }
 
-      const tasks = await Task.find({
-        _id: { $in: truck.tasks },
-        $or: [{ finishDate: null }],
-      });
-      // const tasks = await Task.find();
+      // const tasks = await Task.find({
+      //   _id: { $in: truck.tasks },
+      //   $or: [{ finishDate: null }],
+      // });
+      const tasks = await Task.find();
 
       console.log(tasks);
       res.status(200).json({ message: 'Tasks retrieved successfully', tasks });
@@ -189,19 +183,15 @@ const driverManagement = {
         { new: true, upsert: true }, // Crée un nouveau document si aucun n'existe
       );
 
-      res
-        .status(200)
-        .json({
-          message: 'Truck start status updated successfully',
-          truckStatus,
-        });
+      res.status(200).json({
+        message: 'Truck start status updated successfully',
+        truckStatus,
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: 'Failed to update truck start status',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to update truck start status',
+        error: error.message,
+      });
     }
   },
 
@@ -225,19 +215,15 @@ const driverManagement = {
         { new: true },
       );
 
-      res
-        .status(200)
-        .json({
-          message: 'Truck end status updated successfully',
-          truckStatus,
-        });
+      res.status(200).json({
+        message: 'Truck end status updated successfully',
+        truckStatus,
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: 'Failed to update truck end status',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to update truck end status',
+        error: error.message,
+      });
     }
   },
 
@@ -295,19 +281,15 @@ const driverManagement = {
 
       await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true }); // Update the driver document
 
-      res
-        .status(200)
-        .json({
-          message: 'Initial condition photos uploaded successfully',
-          task,
-        });
+      res.status(200).json({
+        message: 'Initial condition photos uploaded successfully',
+        task,
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: 'Failed to upload initial condition photos',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to upload initial condition photos',
+        error: error.message,
+      });
     }
   },
 
@@ -365,19 +347,15 @@ const driverManagement = {
 
       await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true }); // Update the driver document
 
-      res
-        .status(200)
-        .json({
-          message: 'Initial condition photos uploaded successfully',
-          task,
-        });
+      res.status(200).json({
+        message: 'Initial condition photos uploaded successfully',
+        task,
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: 'Failed to upload initial condition photos',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to upload initial condition photos',
+        error: error.message,
+      });
     }
   },
 
@@ -402,19 +380,15 @@ const driverManagement = {
         new: true,
       });
 
-      res
-        .status(200)
-        .json({
-          message: 'Final condition photos uploaded successfully',
-          task,
-        });
+      res.status(200).json({
+        message: 'Final condition photos uploaded successfully',
+        task,
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: 'Failed to upload final condition photos',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to upload final condition photos',
+        error: error.message,
+      });
     }
   },
 
@@ -443,12 +417,10 @@ const driverManagement = {
         .status(200)
         .json({ message: 'Additional items added successfully', task });
     } catch (error) {
-      res
-        .status(500)
-        .json({
-          message: 'Failed to add additional items',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to add additional items',
+        error: error.message,
+      });
     }
   },
 
@@ -470,12 +442,10 @@ const driverManagement = {
         .json({ message: 'Task status updated successfully', task });
     } catch (error) {
       console.error('Error updating task status:', error);
-      res
-        .status(500)
-        .json({
-          message: 'Failed to update task status',
-          error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to update task status',
+        error: error.message,
+      });
     }
   },
 
@@ -556,7 +526,7 @@ const driverManagement = {
       const newBreak = { startTime: new Date() };
       driver.breaks.push(newBreak);
       driver.onBreak = true;
-      driver.breakStartTime = Date.now()
+      driver.breakStartTime = Date.now();
       await driver.save();
 
       return res.status(200).json({ message: 'Break started', newBreak });
@@ -589,7 +559,7 @@ const driverManagement = {
       lastBreak.duration = Math.round(
         (lastBreak.endTime - lastBreak.startTime) / (1000 * 60),
       );
-      driver.onBreak=false;
+      driver.onBreak = false;
       await driver.save();
 
       return res.status(200).json({ message: 'Break ended', lastBreak });
@@ -624,13 +594,11 @@ const driverManagement = {
         const now = new Date();
         const elapsedMilliseconds = now - lastBreak.startTime;
         const elapsedSeconds = Math.floor(elapsedMilliseconds / 1000);
-        return res
-          .status(200)
-          .json({
-            message: 'Break timer',
-            isActive: true,
-            elapsed: elapsedSeconds,
-          });
+        return res.status(200).json({
+          message: 'Break timer',
+          isActive: true,
+          elapsed: elapsedSeconds,
+        });
       }
 
       return res

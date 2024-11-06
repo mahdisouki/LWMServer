@@ -18,6 +18,8 @@ router.delete('/deassignHelper/:helperId', isAuth, checkRole('Admin'), staffCtrl
 router.delete('/deassignDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl.deassignDriverFromTruck);
 // Get Tasks for Driver
 router.get('/getTasks/:id', isAuth, staffCtrl.getTasksForDriver);
+// update admin profile
+router.put('/admin/updateProfile', isAuth, checkRole('Admin'),multer.single('picture'), staffCtrl.updateAdminProfile);
 
 
 module.exports = router;

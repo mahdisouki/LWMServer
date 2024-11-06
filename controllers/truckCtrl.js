@@ -5,7 +5,6 @@ const APIfeatures = require('../utils/APIFeatures');
 const truckCtrl = {
   createTruck: async (req, res) => {
     try {
- 
       const { name, loadCapacity, matricule } = req.body;
       const newTruck = new Truck({ name, loadCapacity, matricule });
       await newTruck.save();
@@ -27,7 +26,11 @@ const truckCtrl = {
         features.filtering();
       }
       features.sorting().paginating();
-      const trucks = await features.query.exec();
+      const trucks = await features.query
+        .populate('driverId')
+        .populate('helperId')
+        .populate('tasks')
+        .exec();
       const total = await Truck.countDocuments(features.query.getFilter());
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;

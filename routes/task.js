@@ -13,7 +13,8 @@ router.get('/task/:taskId', isAuth, taskCtrl.getTaskById);
 router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
 router.put('/task/:taskId', isAuth, checkRole('Admin'),multer.array('clientObjectPhotos'), taskCtrl.updateTask);
-
+router.put('/tasks/:taskId/moveTruck', isAuth, checkRole('Admin'), taskCtrl.moveTaskToAnotherTruck);
+router.put('/tasks/:taskId/deAssignTruck',isAuth, checkRole('Admin'), taskCtrl.deAssignTaskFromTruck);
 router.post('/task/pay', taskCtrl.processTaskPayment);
 
 router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);

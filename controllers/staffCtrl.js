@@ -88,29 +88,47 @@ const staffManagement = {
 
   getAllStaff: async (req, res) => {
     try {
-      const { page, limit, filters } = req.query;
+      const { page = 1, limit = 10, filters } = req.query;
 
+      // Define the query to retrieve drivers and helpers, excluding Admins
       let query = User.find({
         role: { $in: ['Driver', 'Helper'], $nin: ['Admin'] },
       });
+
       const total = await User.countDocuments(query);
 
+      // Apply filters, sorting, and pagination
       const features = new APIfeatures(query, req.query);
-
       if (filters) {
         features.filtering();
       }
-
       features.sorting().paginating();
 
+      // Execute the query to retrieve users
       const users = await features.query.exec();
 
-      const currentPage = parseInt(req.query.page, 10) || 1;
-      const limitNum = parseInt(req.query.limit, 10) || 9;
+      // Find trucks assigned to these users
+      const userIds = users.map((user) => user._id);
+      const trucks = await Truck.find({
+        $or: [{ driverId: { $in: userIds } }, { helperId: { $in: userIds } }],
+      }).select('name driverId helperId driverSpecificDays helperSpecificDays');
+
+      // Map trucks to their corresponding user
+      const usersWithTrucks = users.map((user) => {
+        const userTrucks = trucks.filter(
+          (truck) =>
+            truck.driverId?.toString() === user._id.toString() ||
+            truck.helperId?.toString() === user._id.toString(),
+        );
+        return { ...user.toObject(), trucks: userTrucks };
+      });
+
+      const currentPage = parseInt(page, 10);
+      const limitNum = parseInt(limit, 10);
 
       res.status(200).json({
         message: 'Staff retrieved successfully',
-        users,
+        users: usersWithTrucks,
         meta: {
           currentPage,
           limit: limitNum,
@@ -285,11 +303,9 @@ const staffManagement = {
       }
 
       if (truck.driverId.toString() !== driverId) {
-        return res
-          .status(400)
-          .json({
-            message: 'This driver is not assigned to the specified truck',
-          });
+        return res.status(400).json({
+          message: 'This driver is not assigned to the specified truck',
+        });
       }
 
       truck.driverId = undefined;
@@ -325,11 +341,9 @@ const staffManagement = {
       }
 
       if (truck.helperId.toString() !== helperId) {
-        return res
-          .status(400)
-          .json({
-            message: 'This helper is not assigned to the specified truck',
-          });
+        return res.status(400).json({
+          message: 'This helper is not assigned to the specified truck',
+        });
       }
 
       truck.helperId = undefined;
@@ -439,6 +453,18 @@ const staffManagement = {
 
       const updatedData = req.body; // Assuming the request body contains the profile data to update
 
+      if (req.file) {
+        updatedData.picture = req.file.path; // Save or update the path to the file in the database
+      }
+      console.log(req.file); // Check if the file is being uploaded and saved correctly
+
+      // If password is included, hash it before updating
+      if (updatedData.newPassword && updatedData.newPassword.trim() !== '') {
+        updatedData.newPassword = await bcrypt.hash(
+          updatedData.newPassword,
+          10,
+        );
+      }
       // Update the admin profile using the id
       const updatedAdmin = await Admin.findByIdAndUpdate(adminId, updatedData, {
         new: true, // Return the updated document

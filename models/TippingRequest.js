@@ -17,12 +17,15 @@ const tippingRequestSchema = new Schema({
     },
     status: {
         type: String,
-        enum: ['Pending', 'Approved', 'Denied'],
+        enum: ['Pending', 'GoToStorage', 'GoToTipping', 'TippingAndStorage', 'Denied'],
         default: 'Pending'
     },
     isShipped: {
         type: Boolean,
         default: false 
+    },
+    tippingProof:{
+        type:String
     },
     createdAt: { 
         type: Date, 
