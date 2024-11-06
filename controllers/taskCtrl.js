@@ -187,7 +187,96 @@ const taskCtrl = {
         .json({ message: 'Failed to assign truck', error: error.message });
     }
   },
+  deAssignTaskFromTruck: async (req, res) => {
+    const { taskId } = req.params;
 
+    try {
+      // Find the task by ID
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // Check if the task is assigned to any truck
+      if (!task.truckId) {
+        return res.status(400).json({ message: 'Task is not assigned to any truck' });
+      }
+
+      // Find the truck assigned to the task
+      const truck = await Truck.findById(task.truckId);
+      if (!truck) {
+        return res.status(404).json({ message: 'Assigned truck not found' });
+      }
+
+      // Remove the task from the truck's tasks list
+      truck.tasks = truck.tasks.filter(
+        (id) => id.toString() !== task._id.toString()
+      );
+      await truck.save();
+
+      // Remove the truck assignment from the task
+      task.truckId = null;
+      await task.save();
+
+      res.status(200).json({
+        message: 'Task de-assigned from truck successfully',
+        task,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to de-assign task from truck',
+        error: error.message,
+      });
+    }
+  },
+  moveTaskToAnotherTruck: async (req, res) => {
+    const { taskId } = req.params;
+    const { newTruckName } = req.body;
+
+    try {
+      // Find the task by ID
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // Find the current truck assigned to the task
+      const currentTruck = await Truck.findById(task.truckId);
+      if (!currentTruck) {
+        return res.status(404).json({ message: 'Current truck not found' });
+      }
+
+      // Find the new truck by name
+      const newTruck = await Truck.findOne({ name: newTruckName });
+      if (!newTruck) {
+        return res.status(404).json({ message: 'New truck not found' });
+      }
+
+      // Remove the task from the current truck's tasks list
+      currentTruck.tasks = currentTruck.tasks.filter(
+        (id) => id.toString() !== task._id.toString()
+      );
+      await currentTruck.save();
+
+      // Update the task with the new truck ID
+      task.truckId = newTruck._id;
+      await task.save();
+
+      // Add the task to the new truck's tasks list
+      newTruck.tasks.push(task._id);
+      await newTruck.save();
+
+      res.status(200).json({
+        message: 'Task moved to the new truck successfully',
+        task,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to move task to another truck',
+        error: error.message,
+      });
+    }
+  },
   traiterTask: async (req, res) => {
     const { taskId } = req.params;
     const { taskStatus } = req.body;
