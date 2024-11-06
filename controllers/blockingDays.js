@@ -18,11 +18,11 @@ const blockingDaysCtrl = {
         try {
             const { page = 1, limit = 9 } = req.query; // Support pagination
             let query = BlockingDays.find();
+            const total = await BlockingDays.countDocuments(query);
 
             const features = new APIfeatures(query, req.query);
             features.sorting().paginating();
             const blockingDays = await features.query.exec();
-            const total = await BlockingDays.countDocuments(features.query.getFilter());
             const currentPage = parseInt(req.query.page, 10) || 1;
             const limitNum = parseInt(req.query.limit, 10) || 9;
 
