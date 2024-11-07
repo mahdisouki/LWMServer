@@ -5,7 +5,7 @@ const Admin = require('../models/Admin');
 const Truck = require('../models/Truck');
 const bcrypt = require('bcrypt');
 const socket = require('../socket'); // Ensure you have the correct path to your socket module
-const APIfeatures = require('../utils/APIFeatures'); // Adjust the path to where your class is located
+const APIfeatures = require('../utils/APIFeatures');
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -88,7 +88,7 @@ const staffManagement = {
 
   getAllStaff: async (req, res) => {
     try {
-      const { page = 1, limit = 10, filters } = req.query;
+      const { page = 1, limit = 9, filters } = req.query;
 
       // Define the query to retrieve drivers and helpers, excluding Admins
       let query = User.find({
