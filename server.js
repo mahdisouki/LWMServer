@@ -53,7 +53,7 @@ app.use("/api", messageRoutes);
 app.use('/api/tippingPlaces' , tippingPlacesRoutes)
 app.use('/api/blockingDays' , blockingDaysRoutes)
 app.use('/api' , standardItemsRoutes)
-app.use('/api/upload', uploadRouter);
+app.use('/api/upload', uploadRouter)
 
 app.use('/api/gmail', gmailRoutes); // Register Gmail routes
 

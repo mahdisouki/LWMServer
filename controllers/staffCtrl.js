@@ -447,37 +447,60 @@ const staffManagement = {
         .json({ message: 'Failed to retrieve tasks', error: error.message });
     }
   },
+
   updateAdminProfile: async (req, res) => {
-    try {
-      const adminId = req.user._id; // Get the user ID from req.user
+    const adminId = req.user._id;
+    const updatedData = req.body;
+  
+    if (req.file) {
+      updatedData.picture = req.file.path;
+    }
+  
+    // Check if admin exists
+    const admin = await Admin.findById(adminId);
+    if (!admin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
 
-      const updatedData = req.body; // Assuming the request body contains the profile data to update
-
-      if (req.file) {
-        updatedData.picture = req.file.path; // Save or update the path to the file in the database
+    if (updatedData.currentPassword && updatedData.newPassword && updatedData.confirmNewPassword) {
+      if (!updatedData.currentPassword) {
+        return res.status(400).json({ message: 'Current password is required' });
       }
-      console.log(req.file); // Check if the file is being uploaded and saved correctly
-
-      // If password is included, hash it before updating
+    
+      // Compare the current password with the password in the database
+      const isMatch = await bcrypt.compare(updatedData.currentPassword, admin.password);
+      
+      if (!isMatch) {
+        return res.status(400).json({ message: 'Invalid password' });
+      }
+    
+      // Check if passwords match
+      if (updatedData.newPassword !== updatedData.confirmNewPassword) {
+        return res.status(400).json({ message: 'Passwords do not match' });
+      }
+    
+      // Update password if new password is provided
       if (updatedData.newPassword && updatedData.newPassword.trim() !== '') {
-        updatedData.newPassword = await bcrypt.hash(
-          updatedData.newPassword,
-          10,
-        );
+        updatedData.password = await bcrypt.hash(updatedData.newPassword, 10);
+        delete updatedData.newPassword;
+        delete updatedData.confirmNewPassword;
       }
-      // Update the admin profile using the id
-      const updatedAdmin = await Admin.findByIdAndUpdate(adminId, updatedData, {
-        new: true, // Return the updated document
-      });
-
-      if (!updatedAdmin) {
-        return res.status(404).json({ message: 'Admin not found' });
-      }
-
-      res.status(200).json({
-        message: 'Admin profile updated successfully',
-        admin: updatedAdmin,
-      });
+    }
+  
+    const updatedAdmin = await Admin.findByIdAndUpdate(adminId, updatedData, {
+      new: true,
+    });
+  
+    if (!updatedAdmin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+  
+    res.status(200).json({
+      message: 'Admin profile updated successfully',
+      admin: updatedAdmin,
+    });
+  
+    try {
     } catch (error) {
       res.status(500).json({
         message: 'Failed to update admin profile',
