@@ -29,6 +29,8 @@ const messageRoutes = require("./routes/messages");
 const tippingPlacesRoutes = require('./routes/tippingPlaces')
 const blockingDaysRoutes = require('./routes/blockingDays')
 const standardItemsRoutes = require('./routes/standardItems')
+const uploadRouter = require('./routes/upload');
+
 const gmailRoutes = require('./routes/gmail')
 const corsOptions = {
   origin: '*', 
@@ -51,6 +53,7 @@ app.use("/api", messageRoutes);
 app.use('/api/tippingPlaces' , tippingPlacesRoutes)
 app.use('/api/blockingDays' , blockingDaysRoutes)
 app.use('/api' , standardItemsRoutes)
+app.use('/api/upload', uploadRouter);
 
 app.use('/api/gmail', gmailRoutes); // Register Gmail routes
 

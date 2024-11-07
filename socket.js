@@ -157,8 +157,17 @@ const emitEvent = (eventName, data) => {
   }
 };
 
+const getIo = () => {
+  if (!io) {
+    throw new Error('Socket.io not initialized!');
+  }
+  return io;
+};
+
+
 module.exports = {
   initSocket,
   emitEvent,
+  getIo,
   emitNotificationToUser,
 };
