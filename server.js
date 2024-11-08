@@ -30,7 +30,7 @@ const tippingPlacesRoutes = require('./routes/tippingPlaces')
 const blockingDaysRoutes = require('./routes/blockingDays')
 const standardItemsRoutes = require('./routes/standardItems')
 const uploadRouter = require('./routes/upload');
-
+const statsRoute = require("./routes/stats");
 const gmailRoutes = require('./routes/gmail')
 const corsOptions = {
   origin: '*', 
@@ -56,7 +56,7 @@ app.use('/api' , standardItemsRoutes)
 app.use('/api/upload', uploadRouter)
 
 app.use('/api/gmail', gmailRoutes); // Register Gmail routes
-
+app.use('/api', statsRoute)
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
 });
