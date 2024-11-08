@@ -20,7 +20,81 @@ const standardItemCtrl = {
         }
     },
     
-   
+    getAllStandardItems: async (req, res) => {
+        try {
+            const items = await StandardItem.find();
+            res.status(200).json(items);
+        } catch (error) {
+            res.status(500).json({ message: "Failed to get standard items", error: error.message });
+        }
+    },
+
+    getItemsByCategory: async (req, res) => {
+        const { category } = req.params;
+        try {
+            const items = await StandardItem.find({ category: category });
+            if (items.length === 0) {
+                return res.status(404).json({ message: "No standard items found in this category" });
+            }
+            res.status(200).json(items);
+        } catch (error) {
+            res.status(500).json({ message: "Failed to fetch items by category", error: error.message });
+        }
+    },
+
+    getStandardItemById: async (req, res) => {
+        const { id } = req.params;
+        try {
+            const item = await StandardItem.findById(id);
+            if (!item) {
+                return res.status(404).json({ message: "Standard item not found" });
+            }
+            res.status(200).json(item);
+        } catch (error) {
+            res.status(500).json({ message: "Failed to get standard item", error: error.message });
+        }
+    },
+
+    updateStandardItem: async (req, res) => {
+        const { id } = req.params;
+        const { itemName, price, category, description } = req.body; 
+    
+        try {
+            const item = await StandardItem.findById(id);
+            if (!item) {
+                return res.status(404).json({ message: "Standard item not found" });
+            }
+    
+            const image = req.file ? req.file.path : item.image;
+    
+            const updatedItem = await StandardItem.findByIdAndUpdate(
+                id, 
+                { itemName, price, category, image, description },
+                { new: true }
+            );
+    
+            if (!updatedItem) {
+                return res.status(404).json({ message: "Standard item not found" });
+            }
+            res.status(200).json(updatedItem);
+        } catch (error) {
+            res.status(500).json({ message: "Failed to update standard item", error: error.message });
+        }
+    },
+    
+    deleteStandardItem: async (req, res) => {
+        const { id } = req.params;
+        try {
+            const item = await StandardItem.findByIdAndDelete(id);
+            if (!item) {
+                return res.status(404).json({ message: "Standard item not found" });
+            }
+            res.status(200).json({ message: "Standard item deleted successfully" });
+        } catch (error) {
+            res.status(500).json({ message: "Failed to delete standard item", error: error.message });
+        }
+    },
+
     // processPayment: async (req, res) => {
     //     const { itemId, options, paymentType } = req.body;
     
@@ -106,86 +180,6 @@ const standardItemCtrl = {
     //     }
     // },
     
-    
-    getAllStandardItems: async (req, res) => {
-        try {
-            const items = await StandardItem.find();
-            res.status(200).json(items);
-        } catch (error) {
-            res.status(500).json({ message: "Failed to get standard items", error: error.message });
-        }
-    },
-
-    getItemsByCategory: async (req, res) => {
-        const { category } = req.params;
-        try {
-            const items = await StandardItem.find({ category: category });
-            if (items.length === 0) {
-                return res.status(404).json({ message: "No standard items found in this category" });
-            }
-            res.status(200).json(items);
-        } catch (error) {
-            res.status(500).json({ message: "Failed to fetch items by category", error: error.message });
-        }
-    },
-
-    getStandardItemById: async (req, res) => {
-        const { id } = req.params;
-        try {
-            const item = await StandardItem.findById(id);
-            if (!item) {
-                return res.status(404).json({ message: "Standard item not found" });
-            }
-            res.status(200).json(item);
-        } catch (error) {
-            res.status(500).json({ message: "Failed to get standard item", error: error.message });
-        }
-    },
-
-    updateStandardItem: async (req, res) => {
-        const { id } = req.params;
-        const { itemName, price, category, description } = req.body; // Inclure description
-    
-        try {
-            // Récupérer d'abord l'item existant pour conserver l'image si aucune nouvelle n'est fournie
-            const item = await StandardItem.findById(id);
-            if (!item) {
-                return res.status(404).json({ message: "Standard item not found" });
-            }
-    
-            // Définir l'image à l'image existante si aucune nouvelle image n'est fournie
-            const image = req.file ? req.file.path : item.image;
-    
-            // Mise à jour de l'item avec les nouvelles valeurs, en conservant l'image existante si nécessaire
-            const updatedItem = await StandardItem.findByIdAndUpdate(
-                id, 
-                { itemName, price, category, image, description },
-                { new: true }
-            );
-    
-            if (!updatedItem) {
-                return res.status(404).json({ message: "Standard item not found" });
-            }
-            res.status(200).json(updatedItem);
-        } catch (error) {
-            res.status(500).json({ message: "Failed to update standard item", error: error.message });
-        }
-    },
-    
-    
-
-    deleteStandardItem: async (req, res) => {
-        const { id } = req.params;
-        try {
-            const item = await StandardItem.findByIdAndDelete(id);
-            if (!item) {
-                return res.status(404).json({ message: "Standard item not found" });
-            }
-            res.status(200).json({ message: "Standard item deleted successfully" });
-        } catch (error) {
-            res.status(500).json({ message: "Failed to delete standard item", error: error.message });
-        }
-    },
 };
 
 module.exports = standardItemCtrl;

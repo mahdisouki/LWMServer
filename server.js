@@ -30,6 +30,9 @@ const tippingPlacesRoutes = require('./routes/tippingPlaces')
 const blockingDaysRoutes = require('./routes/blockingDays')
 const standardItemsRoutes = require('./routes/standardItems')
 const gmailRoutes = require('./routes/gmail')
+const refundRoutes = require('./routes/refund')
+const paymentHistoRoutes = require('./routes/paymenthisto')
+
 const corsOptions = {
   origin: '*', 
   optionsSuccessStatus: 200 
@@ -50,8 +53,9 @@ app.use("/api", payrollsRoutes);
 app.use("/api", messageRoutes);
 app.use('/api/tippingPlaces' , tippingPlacesRoutes)
 app.use('/api/blockingDays' , blockingDaysRoutes)
-app.use('/api' , standardItemsRoutes)
-
+app.use('/api/standard' , standardItemsRoutes)
+app.use('/api/refund' , refundRoutes)
+app.use('/api/payment' , paymentHistoRoutes)
 app.use('/api/gmail', gmailRoutes); // Register Gmail routes
 
 server.listen(process.env.port, () => {

@@ -7,10 +7,10 @@ const standardItemSchema = new mongoose.Schema({
     category: { type: String, required: true },
     description: { type: String, required: false },
 
-    additionalFees: [{
-        condition: String,
-        amount: Number,
-    }]
+    // additionalFees: [{
+    //     condition: String,
+    //     amount: Number,
+    // }]
 });
 
 const StandardItem = mongoose.model('StandardItem', standardItemSchema);
