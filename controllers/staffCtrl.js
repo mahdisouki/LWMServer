@@ -37,18 +37,22 @@ const staffManagement = {
         gender,
         designation,
       } = req.body;
-      const pictureUrl = req.file ? req.file.path : null;
-
+      
+      // Get file paths
+      const pictureUrl = req.files['picture'] ? req.files['picture'][0].path : null;
+      const driverLicenseUrl = req.files['DriverLicense'] ? req.files['DriverLicense'][0].path : null;
+      const addressProofUrl = req.files['addressProof'] ? req.files['addressProof'][0].path : null;
+      const natInsuranceUrl = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : null;
+  
       if (!username || !email || !password || !role || !phoneNumber) {
         return res.status(400).json({
-          message:
-            'Missing required fields: username, email, password, phoneNumber, and role are required.',
+          message: 'Missing required fields: username, email, password, phoneNumber, and role are required.',
         });
       }
-
+  
       const hashedPassword = await bcrypt.hash(password, 10);
       let newUser;
-
+  
       if (role === 'Driver' || role === 'Helper') {
         const Model = role === 'Driver' ? Driver : Helper;
         newUser = new Model({
@@ -60,6 +64,9 @@ const staffManagement = {
           picture: pictureUrl,
           gender,
           designation,
+          DriverLicense: driverLicenseUrl,
+          addressProof: addressProofUrl,
+          NatInsurance: natInsuranceUrl,
         });
       } else {
         newUser = new User({
@@ -71,12 +78,14 @@ const staffManagement = {
           picture: pictureUrl,
           gender,
           designation,
+          DriverLicense: driverLicenseUrl,
+          addressProof: addressProofUrl,
+          NatInsurance: natInsuranceUrl,
         });
       }
+  
       await newUser.save();
-      res
-        .status(201)
-        .json({ message: `${role} created successfully`, user: newUser });
+      res.status(201).json({ message: `${role} created successfully`, user: newUser });
     } catch (error) {
       console.error('Error in addStaff:', error);
       res.status(500).json({
@@ -85,6 +94,7 @@ const staffManagement = {
       });
     }
   },
+  
 
   getAllStaff: async (req, res) => {
     try {

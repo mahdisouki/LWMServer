@@ -19,9 +19,6 @@ const driverManagement = {
       dateOfBirth,
       address,
       CIN,
-      DriverLicense,
-      addressProof,
-      NatInsurance,
       password,
     } = req.body;
 
@@ -48,18 +45,18 @@ const driverManagement = {
       if (dateOfBirth) driver.dateOfBirth = dateOfBirth;
       if (address) driver.address = address;
       if (CIN) driver.CIN = CIN;
-      if (DriverLicense) driver.DriverLicense = DriverLicense;
-      if (addressProof) driver.addressProof = addressProof;
-      if (NatInsurance) driver.NatInsurance = NatInsurance;
+
+      // Update files if new files are uploaded
+      if (req.files) {
+        if (req.files.picture) driver.picture = req.files.picture[0].path;
+        if (req.files.DriverLicense) driver.DriverLicense = req.files.DriverLicense[0].path;
+        if (req.files.addressProof) driver.addressProof = req.files.addressProof[0].path;
+        if (req.files.NatInsurance) driver.NatInsurance = req.files.NatInsurance[0].path;
+      }
 
       // Hash and update password if provided
       if (password) {
         driver.password = await bcrypt.hash(password, 10);
-      }
-
-      // Update picture if a new file is uploaded
-      if (req.file) {
-        driver.picture = req.file.path;
       }
 
       // Save the updated driver data

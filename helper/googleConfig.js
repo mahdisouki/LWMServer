@@ -1,4 +1,4 @@
-// config/googleConfig.js
+// googleConfig.js
 const { google } = require('googleapis');
 const OAuth2 = google.auth.OAuth2;
 
@@ -14,6 +14,7 @@ const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.g
 function getAuthUrl() {
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
+    prompt: 'consent',
     scope: SCOPES,
   });
 }
@@ -21,13 +22,37 @@ function getAuthUrl() {
 // Set the tokens once the user authenticates
 async function setCredentials(code) {
   const { tokens } = await oauth2Client.getToken(code);
+  
+  // Set the refresh token in the OAuth client
   oauth2Client.setCredentials(tokens);
+
+  // Store the refresh token securely if received
+  if (tokens.refresh_token) {
+    console.log("token exist" , tokens.refresh_token)
+    // Save refresh_token in your database or environment securely
+    process.env.GOOGLE_REFRESH_TOKEN = tokens.refresh_token;
+  }
+
   return tokens;
 }
 
-// Export both the OAuth client and functions
+// Function to ensure oauth2Client always has a valid access token
+async function refreshAccessToken() {
+  // Set the stored refresh token to the OAuth client if available
+  if (process.env.GOOGLE_REFRESH_TOKEN) {
+    oauth2Client.setCredentials({
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    });
+    
+    // Refresh the access token if expired
+    const newToken = await oauth2Client.getAccessToken();
+    oauth2Client.setCredentials({ access_token: newToken.token });
+  }
+}
+
 module.exports = {
   oauth2Client,
   getAuthUrl,
   setCredentials,
+  refreshAccessToken,
 };

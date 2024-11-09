@@ -6,7 +6,7 @@ const { checkRole } = require('../middlewares/role')
 const multer = require('../middlewares/multer');
 
 
-router.post('/create-staff', isAuth, checkRole('Admin'),  multer.single('picture'), staffCtrl.addStaff);
+router.post('/create-staff',multer.fields([{ name: 'picture', maxCount: 1 },{ name: 'DriverLicense', maxCount: 1 },{ name: 'addressProof', maxCount: 1 },{ name: 'NatInsurance', maxCount: 1 }]),staffCtrl.addStaff);
 router.get('/staff', isAuth, checkRole('Admin'), staffCtrl.getAllStaff);
 router.get('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.getStaffById);
 router.delete('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.deleteStaff);
