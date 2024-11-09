@@ -34,7 +34,16 @@ async function truncateDatabase() {
     await TruckStatus.deleteMany({});
     console.log('All data deleted.');
 }
-
+// Helper function to generate a random location within Tunisia
+function getRandomLocation() {
+    const lat = 30.0 + Math.random() * (37.5 - 30.0);
+    const lng = 7.0 + Math.random() * (12.0 - 7.0);
+    return {
+        type: "Point",
+        coordinates: [lng, lat],
+        address: `Random Location in Tunisia`
+    };
+}
 async function createAdmin() {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash('password', saltRounds);
@@ -110,6 +119,7 @@ async function createTrucks() {
             taskStatus: 'Processing',
             paymentStatus: 'Pending',
             additionalNotes: 'Handle with care.',
+            location: getRandomLocation()
         });
 
         await task.save();

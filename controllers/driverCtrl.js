@@ -238,16 +238,16 @@ if (!truck) {
 
 // Get the current job (task)
 const currentTask = await Task.findById(taskId);
-console.log('currentTaskLocation' ,currentTask.location )
+console.log('currentTaskLocation' ,currentTask )
 if (!currentTask) {
   return res.status(404).json({ message: 'Current task not found.' });
 }
 
 // Find the index of the current task in the truck's tasks array
 const currentTaskIndex = truck.tasks.findIndex(task => task._id.equals(taskId));
-console.log("tasks:", truck.tasks);
-console.log("currentTaskIndex:", currentTaskIndex);
-console.log("truck driver:", truck);
+// console.log("tasks:", truck.tasks);
+// console.log("currentTaskIndex:", currentTaskIndex);
+// console.log("truck driver:", truck);
 
 let nextJobAddress = null;
 
@@ -467,7 +467,7 @@ res.status(200).json({
       // Update task with the client satisfaction rating and feedback
       task.clientFeedback = clientFeedback;
       task.clientFeedbackScale = clientFeedbackScale;
-
+      task.taskStatus = "Completed"
       await task.save();
       res.status(200).json({ message: 'Task rated successfully', task });
     } catch (error) {
