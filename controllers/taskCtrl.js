@@ -440,9 +440,22 @@ const taskCtrl = {
 
  
   processTaskPayment: async (req, res) => {
-    const { taskId, options, paymentType } = req.body;
+    const { taskId } = req.params; // Retrieve taskId from URL parameters
+    const { paymentType } = req.body; // paymentType still comes from the body
 
     try {
+        // Fetch the task to retrieve its options
+        const task = await Task.findById(taskId);
+        if (!task) {
+            return res.status(404).json({ message: "Task not found" });
+        }
+
+        // Extract options from the task
+        const options = {
+            position: task.Objectsposition,
+            timeSlot: task.available,
+        };
+
         const amount = await calculateTotalPrice(taskId, options); // Calculate in cents
 
         let paymentResult;
