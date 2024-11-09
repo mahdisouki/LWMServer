@@ -56,7 +56,7 @@ app.use('/api/blockingDays' , blockingDaysRoutes)
 app.use('/api/standard' , standardItemsRoutes)
 app.use('/api/refund' , refundRoutes)
 app.use('/api/payment' , paymentHistoRoutes)
-app.use('/api/gmail', gmailRoutes); // Register Gmail routes
+app.use('/api/gmail', gmailRoutes);
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);

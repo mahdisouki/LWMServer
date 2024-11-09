@@ -230,58 +230,67 @@ const driverManagement = {
     const uploads = req.files.map((file) => file.path); // Collecting file paths
 
     try {
-      // Fetch the truck associated with the current driver
-      const truck = await Truck.findOne({ tasks: taskId }).populate('tasks');
-      if (!truck) {
-        return res
-          .status(404)
-          .json({ message: 'No truck found for the given task.' });
-      }
+    // Fetch the truck associated with the current task
+const truck = await Truck.findOne({ tasks: { $in: [taskId] } }).populate('tasks');
+if (!truck) {
+  return res.status(404).json({ message: 'No truck found for the given task.' });
+}
 
-      // Get the current job (task)
-      const currentTask = await Task.findById(taskId);
-      if (!currentTask) {
-        return res.status(404).json({ message: 'Current task not found.' });
-      }
+// Get the current job (task)
+const currentTask = await Task.findById(taskId);
+console.log('currentTaskLocation' ,currentTask.location )
+if (!currentTask) {
+  return res.status(404).json({ message: 'Current task not found.' });
+}
 
-      // Get the next job (next task in the list)
-      const currentTaskIndex = truck.tasks.indexOf(taskId);
-      let nextJobAddress = null;
+// Find the index of the current task in the truck's tasks array
+const currentTaskIndex = truck.tasks.findIndex(task => task._id.equals(taskId));
+console.log("tasks:", truck.tasks);
+console.log("currentTaskIndex:", currentTaskIndex);
+console.log("truck driver:", truck);
 
-      if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.length - 1) {
-        const nextTask = await Task.findById(truck.tasks[currentTaskIndex + 1]);
-        nextJobAddress = nextTask ? nextTask.currentJobAddress : null;
-      }
+let nextJobAddress = null;
 
-      // Update the task with initial condition photos
-      const taskUpdate = {
-        initialConditionPhotos: [
-          {
-            items: uploads,
-            description: description,
-          },
-        ],
-      };
+// Determine the address of the next job (if any)
+if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.length - 1) {
+  const nextTask = truck.tasks[currentTaskIndex + 1];
+  nextJobAddress = nextTask ? nextTask.location?.address : null;
+}
 
-      const task = await Task.findByIdAndUpdate(
-        taskId,
-        taskUpdate,
-        { new: true }, // Update the task document
-      );
+// Update the task with initial condition photos
+const taskUpdate = {
+  initialConditionPhotos: [
+    {
+      items: uploads, // Ensure uploads is defined in your request context
+      description: description, // Ensure description is defined in your request context
+    },
+  ],
+};
 
-      // Update the driver's current and next job addresses
-      const driverId = truck.driverId; // Assuming you can get driverId from the truck
-      const driverUpdate = {
-        currentJobAddress: currentTask.currentJobAddress, // Current task address
-        nextJobAddress: nextJobAddress, // Next task address
-      };
+const updatedTask = await Task.findByIdAndUpdate(taskId, taskUpdate, { new: true });
+if (!updatedTask) {
+  return res.status(404).json({ message: 'Failed to update the task with initial condition photos.' });
+}
 
-      await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true }); // Update the driver document
+// Update the driver's current and next job addresses
+const driverId = truck.driverId;
+if (driverId) {
+  const driverUpdate = {
+    currentJobAddress: currentTask.location?.address, // Current task address
+    nextJobAddress: nextJobAddress, // Next task address
+  };
+  console.log("driverUpdate:", driverUpdate);
+  await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true });
+} else {
+  console.warn('No driver assigned to this truck.');
+}
 
-      res.status(200).json({
-        message: 'Initial condition photos uploaded successfully',
-        task,
-      });
+// Send response
+res.status(200).json({
+  message: 'Initial condition photos uploaded successfully',
+  task: updatedTask,
+});
+
     } catch (error) {
       res.status(500).json({
         message: 'Failed to upload initial condition photos',
