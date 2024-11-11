@@ -62,10 +62,18 @@ const blogCtrl = {
     updateBlog: async (req, res) => {
         const { id } = req.params;
         const { title, description, author } = req.body;
-        const image = req.file ? req.file.path : undefined; // Use the new image if uploaded
-
+        const image = req.file ? req.file.path : undefined; // Utiliser la nouvelle image si téléchargée
+    
+        // Création d'un objet de mise à jour dynamique
+        const updates = {};
+        if (title) updates.title = title;
+        if (description) updates.description = description;
+        if (author) updates.author = author;
+        if (image) updates.image = image;
+    
         try {
-            const updatedBlog = await Blog.findByIdAndUpdate(id, { title, description, author, image }, { new: true });
+            // Mise à jour uniquement des champs présents dans `updates`
+            const updatedBlog = await Blog.findByIdAndUpdate(id, updates, { new: true });
             if (!updatedBlog) {
                 return res.status(404).json({ message: "Blog post not found" });
             }
@@ -73,7 +81,7 @@ const blogCtrl = {
         } catch (error) {
             res.status(500).json({ message: "Failed to update blog post", error: error.message });
         }
-    },
+    },    
 
     deleteBlog: async (req, res) => {
         const { id } = req.params;

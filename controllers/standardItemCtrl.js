@@ -21,26 +21,50 @@ const standardItemCtrl = {
     },
     
     getAllStandardItems: async (req, res) => {
+        const { page = 1, limit = 10 } = req.query; // Valeurs par défaut : page 1 et 10 éléments par page
         try {
-            const items = await StandardItem.find();
-            res.status(200).json(items);
+            const items = await StandardItem.find()
+                .skip((page - 1) * limit) // Sauter les éléments pour obtenir la page souhaitée
+                .limit(parseInt(limit)); // Limite de résultats par page
+            const totalItems = await StandardItem.countDocuments(); // Nombre total d'items
+    
+            res.status(200).json({
+                items,
+                pagination: {
+                    totalItems,
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil(totalItems / limit),
+                },
+            });
         } catch (error) {
             res.status(500).json({ message: "Failed to get standard items", error: error.message });
         }
     },
-
+    
     getItemsByCategory: async (req, res) => {
         const { category } = req.params;
+        const { page = 1, limit = 10 } = req.query; // Valeurs par défaut : page 1 et 10 éléments par page
         try {
-            const items = await StandardItem.find({ category: category });
+            const items = await StandardItem.find({ category: category })
+                .skip((page - 1) * limit) // Sauter les éléments pour obtenir la page souhaitée
+                .limit(parseInt(limit)); // Limite de résultats par page
+            const totalItems = await StandardItem.countDocuments({ category: category }); // Nombre total d'items dans la catégorie
+    
             if (items.length === 0) {
                 return res.status(404).json({ message: "No standard items found in this category" });
             }
-            res.status(200).json(items);
+            res.status(200).json({
+                items,
+                pagination: {
+                    totalItems,
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil(totalItems / limit),
+                },
+            });
         } catch (error) {
             res.status(500).json({ message: "Failed to fetch items by category", error: error.message });
         }
-    },
+    },    
 
     getStandardItemById: async (req, res) => {
         const { id } = req.params;

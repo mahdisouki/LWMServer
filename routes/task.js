@@ -1,3 +1,143 @@
+/**
+ * @swagger
+ * /api/task/pay/{taskId}:
+ *   post:
+ *     summary: Initiate payment for a task
+ *     tags: [Task Payments]
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the task to pay for
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               paymentType:
+ *                 type: string
+ *                 description: The type of payment (e.g., 'stripe' or 'paypal')
+ *                 example: "stripe"
+ *     responses:
+ *       200:
+ *         description: Payment initiated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 clientSecret:
+ *                   type: string
+ *                 paymentIntentId:
+ *                   type: string
+ *                 amount:
+ *                   type: integer
+ *                 paymentType:
+ *                   type: string
+ *                 options:
+ *                   type: object
+ *       404:
+ *         description: Task not found
+ *       500:
+ *         description: Failed to initiate payment
+ */
+
+/**
+ * @swagger
+ * /api/task/confirm-stripe-payment:
+ *   post:
+ *     summary: Confirm a Stripe payment for a task
+ *     tags: [Task Payments]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               paymentIntentId:
+ *                 type: string
+ *                 description: The Stripe Payment Intent ID
+ *                 example: "pi_1JyZj0K9jLsYZuk8rj2ZTxWF"
+ *               paymentMethodId:
+ *                 type: string
+ *                 description: The Stripe Payment Method ID
+ *                 example: "pm_1JyZj0K9jLsYZuk8rj2ZTxWF"
+ *               taskId:
+ *                 type: string
+ *                 description: The ID of the task
+ *                 example: "605c5fc2f7a84e3e9c43c6b2"
+ *     responses:
+ *       200:
+ *         description: Payment confirmed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 task:
+ *                   $ref: '#/components/schemas/Task'
+ *                 paymentIntent:
+ *                   type: object
+ *       400:
+ *         description: Payment confirmation failed
+ *       404:
+ *         description: Task not found
+ *       500:
+ *         description: Error confirming payment
+ */
+
+/**
+ * @swagger
+ * /api/task/capture-paypal-payment:
+ *   post:
+ *     summary: Capture a PayPal payment for a task
+ *     tags: [Task Payments]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               orderID:
+ *                 type: string
+ *                 description: The PayPal order ID
+ *                 example: "2RV02359N7899878F"
+ *               taskId:
+ *                 type: string
+ *                 description: The ID of the task
+ *                 example: "605c5fc2f7a84e3e9c43c6b2"
+ *     responses:
+ *       200:
+ *         description: PayPal payment captured successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 captureDetails:
+ *                   type: object
+ *                 task:
+ *                   $ref: '#/components/schemas/Task'
+ *       400:
+ *         description: Failed to capture payment
+ *       404:
+ *         description: Task not found
+ *       500:
+ *         description: Error capturing PayPal payment
+ */
+
 const express = require('express');
 const router = express.Router();
 const taskCtrl = require('../controllers/taskCtrl'); 

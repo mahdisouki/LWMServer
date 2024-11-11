@@ -14,7 +14,7 @@ const cors = require("cors");
 
 require('./jobs/dailySheetCron'); 
 require('./jobs/AssignedStaffCron');
-
+const setupSwagger = require('./config/swaggerConfig'); 
 
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
@@ -32,14 +32,14 @@ const standardItemsRoutes = require('./routes/standardItems')
 const gmailRoutes = require('./routes/gmail')
 const refundRoutes = require('./routes/refund')
 const paymentHistoRoutes = require('./routes/paymenthisto')
-
+const blogRoutes = require('./routes/blog')
 const corsOptions = {
   origin: '*', 
   optionsSuccessStatus: 200 
 };
 
 app.use(cors(corsOptions));
-
+setupSwagger(app); 
 app.use(express.json());
 app.use('/api',authRouter);
 app.use('/api',staffRouter);
@@ -57,6 +57,7 @@ app.use('/api/standard' , standardItemsRoutes)
 app.use('/api/refund' , refundRoutes)
 app.use('/api/payment' , paymentHistoRoutes)
 app.use('/api/gmail', gmailRoutes);
+app.use('/api/blog',blogRoutes)
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
