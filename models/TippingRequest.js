@@ -27,6 +27,10 @@ const tippingRequestSchema = new Schema({
     tippingProof:{
         type:String
     },
+    tippingPlace:{
+        type:mongoose.Types.ObjectId,
+        ref:"tippingPlace"
+    },
     createdAt: { 
         type: Date, 
         default: Date.now 

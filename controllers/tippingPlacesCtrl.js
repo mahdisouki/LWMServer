@@ -1,6 +1,6 @@
 const TippingPlace = require('../models/TippingPlaces');
 
-const tippingPlaceCtrl = {
+const tippingPlaceController = {
     createTippingPlace: async (req, res) => {
         try {
             const newTippingPlace = new TippingPlace(req.body);
@@ -60,4 +60,4 @@ const tippingPlaceCtrl = {
     },
 };
 
-module.exports = tippingPlaceCtrl;
+module.exports = tippingPlaceController;

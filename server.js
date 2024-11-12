@@ -33,6 +33,7 @@ const gmailRoutes = require('./routes/gmail')
 const refundRoutes = require('./routes/refund')
 const paymentHistoRoutes = require('./routes/paymenthisto')
 const blogRoutes = require('./routes/blog')
+const storageRoutes = require('./routes/storage')
 const corsOptions = {
   origin: '*', 
   optionsSuccessStatus: 200 
@@ -51,13 +52,14 @@ app.use("/api", dayoffRouter);
 app.use("/api/dailySheets", dailySheetRoutes);
 app.use("/api", payrollsRoutes);
 app.use("/api", messageRoutes);
-app.use('/api/tippingPlaces' , tippingPlacesRoutes)
+app.use('/api/tippingPlaces', tippingPlacesRoutes);
 app.use('/api/blockingDays' , blockingDaysRoutes)
 app.use('/api/standard' , standardItemsRoutes)
 app.use('/api/refund' , refundRoutes)
 app.use('/api/payment' , paymentHistoRoutes)
 app.use('/api/gmail', gmailRoutes);
-app.use('/api/blog',blogRoutes)
+app.use('/api/blog',blogRoutes);
+app.use('/api',storageRoutes)
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
