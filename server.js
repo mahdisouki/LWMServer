@@ -36,6 +36,7 @@ const refundRoutes = require('./routes/refund')
 const paymentHistoRoutes = require('./routes/paymenthisto')
 const blogRoutes = require('./routes/blog')
 const storageRoutes = require('./routes/storage')
+const quotationRoutes = require('./routes/quotationRoutes')
 const corsOptions = {
   origin: '*', 
   optionsSuccessStatus: 200 
@@ -58,8 +59,9 @@ app.use('/api/tippingPlaces', tippingPlacesRoutes);
 app.use('/api/blockingDays' , blockingDaysRoutes)
 app.use('/api/standard' , standardItemsRoutes)
 app.use('/api/refund' , refundRoutes)
-app.use('/api/payment' , paymentHistoRoutes)app.use('/api/upload', uploadRouter)
-
+app.use('/api/payment' , paymentHistoRoutes)
+app.use('/api/upload', uploadRouter)
+app.use('/api', quotationRoutes);
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/blog',blogRoutes);
 app.use('/api',storageRoutes)

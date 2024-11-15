@@ -1,0 +1,19 @@
+const mongoose = require('mongoose');
+const { Schema } = mongoose;
+
+const quotationRequestSchema = new Schema({
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  email: { type: String, required: true },
+  phoneNumber: { type: String, required: true },
+  doorNumberOrBuildingName: { type: String, required: true },
+  roadName: { type: String, required: true },
+  town: { type: String, required: true },
+  postcode: { type: Number, required: true },
+  comments: { type: String, required: false },
+  items: [{ type: String, required: true }], 
+  createdAt: { type: Date, default: Date.now }
+});
+
+const QuotationRequest = mongoose.model('QuotationRequest', quotationRequestSchema);
+module.exports = QuotationRequest;
