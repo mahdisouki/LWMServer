@@ -1,5 +1,4 @@
 const express = require('express');
-const multer = require('multer');
 const multer = require('../middlewares/multer');
 const serviceCategoryCtrl = require('../controllers/serviceCategoryCtrl');
 const router = express.Router();

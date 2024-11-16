@@ -117,21 +117,29 @@ const blogCtrl = {
             res.status(500).json({ message: 'Failed to fetch blogs by tag', error: error.message });
         }
     },
-    // getAllTags: async (req, res) => {
-    //     try {
-            
-    //         const tags = await Blog.distinct("tags");
-            
-    //         if (!tags || tags.length === 0) {
-    //             return res.status(404).json({ message: "No tags found" });
-    //         }
-
-    //         res.status(200).json({ message: "Tags fetched successfully", tags });
-    //     } catch (error) {
-    //         console.error("Error fetching tags:", error);
-    //         res.status(500).json({ message: "Failed to fetch tags", error: error.message });
-    //     }
-    // },
+    getAllTags: async (req, res) => {
+        try {
+            // Fetch all blogs and their tags
+            const blogs = await Blog.find().sort('tags'); // Fetch blogs sorted by tags
+    
+            // Extract all tags from the blogs and flatten the array
+            const allTags = blogs.flatMap((blog) => blog.tags || []);
+    
+            // Remove duplicates and sort tags alphabetically
+            const uniqueSortedTags = [...new Set(allTags)].sort();
+    
+            res.status(200).json({
+                message: 'All tags fetched successfully',
+                tags: uniqueSortedTags,
+            });
+        } catch (error) {
+            res.status(500).json({
+                message: 'Failed to fetch tags',
+                error: error.message,
+            });
+        }
+    },
+    
 };
 
 module.exports = blogCtrl;

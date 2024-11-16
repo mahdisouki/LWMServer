@@ -207,6 +207,6 @@ router.get('/:id', blogCtrl.getBlogById);
 router.put('/:id', isAuth, multer.single('image'), blogCtrl.updateBlog);
 router.delete('/:id', isAuth, blogCtrl.deleteBlog);
 router.get('/tag/:tag', blogCtrl.getBlogsByTag);
-//router.get('/tags', blogCtrl.getAllTags);
+router.get('/tags', blogCtrl.getAllTags);
 
 module.exports = router;
