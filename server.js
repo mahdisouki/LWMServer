@@ -37,6 +37,7 @@ const paymentHistoRoutes = require('./routes/paymenthisto')
 const blogRoutes = require('./routes/blog')
 const storageRoutes = require('./routes/storage')
 const quotationRoutes = require('./routes/quotationRoutes')
+const contactRequestRoutes = require('./routes/contactRequestRoutes');
 const corsOptions = {
   origin: '*', 
   optionsSuccessStatus: 200 
@@ -66,6 +67,7 @@ app.use('/api/gmail', gmailRoutes);
 app.use('/api/blog',blogRoutes);
 app.use('/api',storageRoutes)
 app.use('/api', statsRoute)
+app.use('/api', contactRequestRoutes);
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
 });
