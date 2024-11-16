@@ -15,6 +15,7 @@ const serviceCategoryCtrl = {
         serviceCategory: newServiceCategory,
       });
     } catch (error) {
+        console.log(error)
       res.status(500).json({
         message: 'Failed to create service category',
         error: error.message,
