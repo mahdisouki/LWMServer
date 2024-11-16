@@ -7,8 +7,9 @@ const mongoose = require('mongoose');
 const { calculateTotalPrice, createStripePaymentIntent, createPayPalOrder ,PayPalClient } = require('../services/paymentService.js');
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-
-
+const OPTIMOROUTE_API_URL = "https://api.optimoroute.com/v1/create_order";
+const OPTIMOROUTE_API_KEY = "ce7d88ce8f662247bde7c52788bf051cRRldTgaBOCk"; 
+const axios = require('axios')
 
 const taskCtrl = {
   createTask: async (req, res) => {
@@ -29,7 +30,10 @@ const taskCtrl = {
         StandardItem,
         cloneClientObjectPhotos,
       } = req.body;
-
+      const locationCoordinatesString = req.body.location.coordinates;
+      console.log(location.address) // "[40.7128, -74.0060]"
+      const locationCoordinates = JSON.parse(locationCoordinatesString); // Converts the string into [40.7128, -74.0060]
+      
       let clientObjectPhotos = [];
 
       if (cloneClientObjectPhotos) {
@@ -77,7 +81,11 @@ const taskCtrl = {
         email,
         available,
         Objectsposition,
-        location,
+        location: {
+          type: 'Point',
+          coordinates: locationCoordinates, // Now it's an actual array
+          address: location.address,
+        },
         date,
         object,
         price,
@@ -88,10 +96,38 @@ const taskCtrl = {
       });
 
       await newTask.save();
+       // Integrate with OptimoRoute API
+    const optimoRoutePayload = {
+      operation: "CREATE",
+      orderNo: newTask._id.toString(),
+      type: "D", // Delivery
+      date: taskDate.toISOString().split('T')[0], // Format as YYYY-MM-DD
+      location: {
+        address: location.address,
+        locationNo: `LOC_${newTask._id.toString()}`,
+        locationName: `${firstName} ${lastName}`,
+        latitude: 42.365142,
+        longitude: -71.052882,
+        acceptPartialMatch: true,
+      },
+      duration: 20, // Adjust based on task specifics
+      notes: `Task for ${firstName} ${lastName}, Phone: ${phoneNumber}`,
+      
+    };
+
+    const response = await axios.post(
+      `${OPTIMOROUTE_API_URL}?key=${OPTIMOROUTE_API_KEY}`,
+      optimoRoutePayload
+    );
+
+    if (!response.data.success) {
+      throw new Error(response.data.message || "Failed to create order in OptimoRoute");
+    }
       res
         .status(201)
-        .json({ message: 'Task created successfully', task: newTask });
+        .json({ message: 'Task created successfully', task: newTask , response: response.data });
     } catch (error) {
+      console.log(error)
       res
         .status(400)
         .json({ message: 'Failed to create task', error: error.message });
@@ -183,12 +219,27 @@ const taskCtrl = {
 
       truck.tasks.push(updatedTask._id);
       await truck.save();
+      const orderUpdate = {
+        orders: [
+            {
+                orderNo: updatedTask._id, // Use the task's order number
+                date: updatedTask.date.toISOString().split('T')[0], // Ensure date is in 'YYYY-MM-DD' format
+                assignedTo: { externalId: truck._id , serial: "001" }, // Ensure `externalId` maps to OptimoRoute driver/truck
+            },
+        ],
+    };
 
+   const response = await axios.post(
+        `https://api.optimoroute.com/v1/create_or_update_orders?key=${OPTIMOROUTE_API_KEY}`,
+        orderUpdate
+    );
       res.status(200).json({
         message: 'Truck assigned to task successfully',
         task: updatedTask,
+        response:response.data
       });
     } catch (error) {
+      console.log(error)
       res
         .status(500)
         .json({ message: 'Failed to assign truck', error: error.message });
