@@ -2,11 +2,10 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const quotationRequestSchema = new Schema({
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
+  line1: { type: String, required: true },
+  line2: { type: String, required: true },
   email: { type: String, required: true },
   phoneNumber: { type: String, required: true },
-  doorNumberOrBuildingName: { type: String, required: true },
   roadName: { type: String, required: true },
   town: { type: String, required: true },
   postcode: { type: Number, required: true },

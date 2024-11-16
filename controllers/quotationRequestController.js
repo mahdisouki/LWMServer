@@ -6,11 +6,10 @@ const quotationRequestController = {
         try {
             // Extract data from request body
             const {
-                firstName,
-                lastName,
+                line1,
+                line2,
                 email,
                 phoneNumber,
-                doorNumberOrBuildingName,
                 roadName,
                 town,
                 postcode,
@@ -22,11 +21,10 @@ const quotationRequestController = {
 
             // Create a new quotation request
             const newQuotation = new QuotationRequest({
-                firstName,
-                lastName,
+                line1,
+                line2,
                 email,
                 phoneNumber,
-                doorNumberOrBuildingName,
                 roadName,
                 town,
                 postcode,
