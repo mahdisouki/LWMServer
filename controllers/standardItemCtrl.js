@@ -196,7 +196,7 @@ const standardItemCtrl = {
   getStandardItemById: async (req, res) => {
     const { id } = req.params;
     try {
-      const item = await StandardItem.findById(id);
+      const item = await StandardItem.findById(id).populate('category');
       if (!item) {
         return res.status(404).json({ message: 'Standard item not found' });
       }
