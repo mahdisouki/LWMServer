@@ -6,7 +6,7 @@ const blogSchema = new mongoose.Schema({
     description: { type: String, required: true },
     image: { type: String, required: true }, // URL or path to the image
     date: { type: Date, default: Date.now }, // Automatically set to the current date
-    tags: { type: [String] }, // Array of strings for tags
+    tags: { type: [String]  , index: true}, // Array of strings for tags
 
 });
 

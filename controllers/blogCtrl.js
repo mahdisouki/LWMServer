@@ -119,13 +119,14 @@ const blogCtrl = {
     },
     getAllTags: async (req, res) => {
         try {
-            // Fetch all blogs and their tags
-            const blogs = await Blog.find().sort('tags'); // Fetch blogs sorted by tags
+            console.log("api enetrred")
+            
+            const blogs = await Blog.find({}); 
     
-            // Extract all tags from the blogs and flatten the array
+            
             const allTags = blogs.flatMap((blog) => blog.tags || []);
     
-            // Remove duplicates and sort tags alphabetically
+            
             const uniqueSortedTags = [...new Set(allTags)].sort();
     
             res.status(200).json({
@@ -133,12 +134,14 @@ const blogCtrl = {
                 tags: uniqueSortedTags,
             });
         } catch (error) {
+            console.log(error)
+            console.error("Error fetching tags:", error);
             res.status(500).json({
                 message: 'Failed to fetch tags',
                 error: error.message,
             });
         }
-    },
+    }
     
 };
 
