@@ -122,7 +122,7 @@ const standardItemCtrl = {
     try {
       const { page = 1, limit = 9 } = req.query;
 
-      let query = StandardItem.find().sort('-createdAt');
+      let query = StandardItem.find().sort('-createdAt').populate('category');
 
       const total = await StandardItem.countDocuments();
 
