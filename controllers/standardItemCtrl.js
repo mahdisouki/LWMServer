@@ -1,4 +1,6 @@
 const StandardItem = require('../models/StandardItem');
+const ServiceCategory = require('../models/ServiceCategory.js')
+const mongoose = require('mongoose')
 const {
   calculateTotalPrice,
   createStripePaymentIntent,
@@ -149,20 +151,29 @@ const standardItemCtrl = {
     const { category } = req.params;
     const page = parseInt(req.query.page, 10) || 1; 
     const limit = parseInt(req.query.limit, 10) || 9;
-
+  
+    // Validate if category is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(category)) {
+      return res.status(400).json({ message: 'Invalid category ID' });
+    }
+  
     try {
+      // Fetch items by category with pagination
       const items = await StandardItem.find({ category: category })
         .skip((page - 1) * limit)
-        .limit(limit);
-      const totalItems = await StandardItem.countDocuments({
-        category: category,
-      });
+        .limit(limit)
+        .populate('category', 'name'); // Populate category name if needed (adjust field)
+  
+      const totalItems = await StandardItem.countDocuments({ category: category });
+  
+      // Check if items are found
       if (items.length === 0) {
         return res
           .status(404)
           .json({ message: 'No standard items found in this category' });
       }
-
+  
+      // Respond with items and pagination details
       res.status(200).json({
         message: 'Standard items fetched successfully',
         items,
@@ -174,6 +185,7 @@ const standardItemCtrl = {
         },
       });
     } catch (error) {
+      console.error('Error fetching items by category:', error);
       res.status(500).json({
         message: 'Failed to fetch items by category',
         error: error.message,
@@ -244,6 +256,38 @@ const standardItemCtrl = {
       });
     }
   },
+  convertCategoryToReferences: async (req, res) => {
+    try {
+      // Fetch all service categories
+      const categories = await ServiceCategory.find({});
+  
+      // Create a mapping from category name to ObjectId
+      const categoryMap = categories.reduce((acc, category) => {
+        acc[category.name] = category._id;
+        return acc;
+      }, {});
+  
+      // Fetch all standard items that still have category names as strings
+      const standardItems = await StandardItem.find();
+  
+      // Iterate through each standard item and update category references
+      for (const item of standardItems) {
+        // Map each category name to its corresponding ObjectId
+        const updatedCategories = item.category.map(categoryName => categoryMap[categoryName]);
+  
+        // Update the standard item with the ObjectId references in the category field
+        await StandardItem.updateOne(
+          { _id: item._id },
+          { $set: { category: updatedCategories } }
+        );
+      }
+  
+      console.log('Standard items updated successfully');
+    } catch (error) {
+      console.error('Error updating categories:', error);
+    }
+  }
+  
 };
 
 module.exports = standardItemCtrl;
