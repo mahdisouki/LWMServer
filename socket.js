@@ -5,6 +5,9 @@ const Message = require('./models/Message');
 const Driver = require('./models/Driver');
 const Notification = require('./models/Notification');
 const { User } = require('./models/User');
+const Task = require('./models/Task')
+const Truck = require('./models/Truck')
+const TippingRequest = require('./models/TippingRequest')
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 
@@ -111,7 +114,19 @@ const initSocket = (server) => {
         socket.emit('error', { message: 'Failed to fetch driver locations' });
       }
     });
+    socket.on('trucksStats' , async()=>{
+      const allVehiclesCount = await Truck.countDocuments(); 
+      const onWorkCount = await Task.countDocuments({ taskStatus: "Processing" }); 
+      const tippingCount = await TippingRequest.countDocuments({ status: "GoToTipping" }); 
+      const onBreakCount = await Driver.countDocuments({ "location.onBreak": true }); 
 
+      io.emit('vehicleStats', {
+        allVehicles: allVehiclesCount,
+        onWork: onWorkCount,
+        tipping: tippingCount,
+        onBreak: onBreakCount,
+      });
+    })
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
       delete userSocketMap[userId]; // Remove user from map on disconnect

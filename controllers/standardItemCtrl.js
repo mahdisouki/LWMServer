@@ -158,22 +158,22 @@ const standardItemCtrl = {
     }
   
     try {
-      // Fetch items by category with pagination
+      
       const items = await StandardItem.find({ category: category })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('category', 'name'); // Populate category name if needed (adjust field)
+        .populate('category', 'name'); 
   
       const totalItems = await StandardItem.countDocuments({ category: category });
   
-      // Check if items are found
+      
       if (items.length === 0) {
         return res
           .status(404)
           .json({ message: 'No standard items found in this category' });
       }
   
-      // Respond with items and pagination details
+      
       res.status(200).json({
         message: 'Standard items fetched successfully',
         items,
