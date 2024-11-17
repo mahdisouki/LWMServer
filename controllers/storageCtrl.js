@@ -20,6 +20,7 @@ const storageCtrl = {
       } else {
         storageRecord = new Storage({
           driverId,
+          type:"add",
           date: storageDate,
           items: {
             fridges: items.fridges || 0,
@@ -54,7 +55,7 @@ const storageCtrl = {
       if (!storageRecord) {
         return res.status(404).json({ message: "No storage record found for the specified date and driver" });
       }
-
+      storageRecord.type= "take";
       storageRecord.items.fridges = Math.max(0, storageRecord.items.fridges - (items.fridges || 0));
       storageRecord.items.mattresses = Math.max(0, storageRecord.items.mattresses - (items.mattresses || 0));
       storageRecord.items.sofas = Math.max(0, storageRecord.items.sofas - (items.sofas || 0));
