@@ -9,8 +9,8 @@ const quotationRequestController = {
                 line2,
                 email,
                 phoneNumber,
-                roadName,
-                town,
+                
+                companyName,
                 postcode,
                 comments,
             } = req.body;
@@ -22,8 +22,8 @@ const quotationRequestController = {
                 line2,
                 email,
                 phoneNumber,
-                roadName,
-                town,
+                
+                companyName,
                 postcode,
                 comments,
                 items: items,
