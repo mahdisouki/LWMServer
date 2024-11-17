@@ -4,7 +4,6 @@ const sendQuotationEmail = require('../utils/sendQuotationEmail'); // Utility fu
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
         try {
-            // Extract data from request body
             const {
                 line1,
                 line2,
@@ -13,13 +12,11 @@ const quotationRequestController = {
                 roadName,
                 town,
                 postcode,
-                comments
+                comments,
             } = req.body;
 
-            // Get file URLs directly from req.files populated by multer
             const items = req.files.map((file) => file.path);
 
-            // Create a new quotation request
             const newQuotation = new QuotationRequest({
                 line1,
                 line2,
@@ -29,22 +26,27 @@ const quotationRequestController = {
                 town,
                 postcode,
                 comments,
-                items: items
+                items: items,
             });
 
-            // Save the quotation request to the database
             await newQuotation.save();
 
-            // Send an email notification to the responsible party
+            // Send email to the responsible party and automatic reply to the user
             await sendQuotationEmail({
-                responsibleEmail: process.env.RESPONSIBLE_EMAIL, // Responsible's email
-                quotationData: newQuotation
+                responsibleEmail: process.env.RESPONSIBLE_EMAIL,
+                quotationData: newQuotation,
             });
 
-            res.status(201).json({ message: "Quotation request submitted successfully", quotation: newQuotation });
+            res.status(201).json({
+                message: 'Quotation request submitted successfully',
+                quotation: newQuotation,
+            });
         } catch (error) {
             console.error('Error creating quotation request:', error);
-            res.status(500).json({ message: "Failed to submit quotation request", error: error.message });
+            res.status(500).json({
+                message: 'Failed to submit quotation request',
+                error: error.message,
+            });
         }
     },
 
@@ -53,7 +55,10 @@ const quotationRequestController = {
             const quotations = await QuotationRequest.find();
             res.status(200).json(quotations);
         } catch (error) {
-            res.status(500).json({ message: "Failed to retrieve quotations", error: error.message });
+            res.status(500).json({
+                message: 'Failed to retrieve quotations',
+                error: error.message,
+            });
         }
     },
 
@@ -62,13 +67,26 @@ const quotationRequestController = {
         try {
             const quotation = await QuotationRequest.findById(id);
             if (!quotation) {
-                return res.status(404).json({ message: "Quotation not found" });
+                return res
+                    .status(404)
+                    .json({ message: 'Quotation not found' });
             }
             res.status(200).json(quotation);
         } catch (error) {
-            res.status(500).json({ message: "Failed to retrieve quotation", error: error.message });
+            res.status(500).json({
+                message: 'Failed to retrieve quotation',
+                error: error.message,
+            });
         }
-    }
+    },
+    getAllQuotations: async (req, res) => {
+        try {
+            const quotations = await QuotationRequest.find();
+            res.status(200).json(quotations);
+        } catch (error) {
+            res.status(500).json({ message: "Failed to retrieve quotations", error: error.message });
+        }
+    },
 };
 
 module.exports = quotationRequestController;

@@ -6,9 +6,11 @@ const createContactRequest = async (req, res) => {
   try {
     const { fullName, email, message } = req.body;
 
+    // Save the contact request to the database
     const newContact = new ContactRequest({ fullName, email, message });
     await newContact.save();
 
+    // Send emails: to the responsible person and the user
     await sendContactEmail({
       responsibleEmail: process.env.RESPONSIBLE_EMAIL,
       contactData: newContact,
