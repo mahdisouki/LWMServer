@@ -532,7 +532,7 @@ const driverManagement = {
       // Create a new break entry
       const newBreak = { startTime: new Date() };
       driver.breaks.push(newBreak);
-      driver.onBreak = true;
+      driver.location.onBreak = true;
       driver.breakStartTime = Date.now();
       await driver.save();
 
@@ -565,7 +565,7 @@ const driverManagement = {
       lastBreak.duration = Math.round(
         (lastBreak.endTime - lastBreak.startTime) / (1000 * 60),
       );
-      driver.onBreak = false;
+      driver.location.onBreak = false;
       await driver.save();
 
       return res.status(200).json({ message: 'Break ended', lastBreak });
