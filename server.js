@@ -58,7 +58,8 @@ app.use('/api/tippingPlaces', tippingPlacesRoutes);
 app.use('/api/blockingDays' , blockingDaysRoutes)
 app.use('/api/standard' , standardItemsRoutes)
 app.use('/api/refund' , refundRoutes)
-app.use('/api/payment' , paymentHistoRoutes)app.use('/api/upload', uploadRouter)
+app.use('/api/payment' , paymentHistoRoutes)
+app.use('/api/upload', uploadRouter)
 
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/blog',blogRoutes);
