@@ -1,53 +1,30 @@
 const axios = require('axios');
 require('dotenv').config();  // To store your API key securely
 
-// Function to map Task schema fields to OptimoRoute order format
-async function createOptimoRouteOrder(task) {
-  // Destructure task fields for easy access
-  const {
-    _id,
-    firstName,
-    lastName,
-    phoneNumber,
-    email,
-    location,
-    date,
-    price,
-    additionalNotes,
-    clientFeedback,
-    available,
-  } = task;
-
-  // Prepare the payload for OptimoRoute API
-  const orderPayload = {
-    operation: "CREATE",
-    orderNo: _id.toString(),  // Convert MongoDB _id to string for orderNo
-    type: "D",  // "D" for Delivery, "P" for Pickup (adjust if needed)
-    date: date.toISOString().split("T")[0],  // Format date as YYYY-MM-DD
-    location: {
-      address: location?.address || "", // Use address if available
-      latitude: location?.coordinates[1] || 0, // Latitude from coordinates
-      longitude: location?.coordinates[0] || 0, // Longitude from coordinates
-      acceptPartialMatch: true,  // Set geocoding options if needed
-      acceptMultipleResults: true,
-    },
-    duration: 60,  // Duration in minutes (can adjust based on `timeSpent` or other logic)
-    notes: additionalNotes || clientFeedback || "No additional notes provided",
-    email: email,
-    phone: phoneNumber,
-    load1: price || 0,  // Load can be mapped to price or other fields
-    timeWindows: [{
-      twFrom: available === "AnyTime" ? "07:00" : available.split('-')[0],  // Map to time window
-      twTo: available === "AnyTime" ? "17:00" : available.split('-')[1],
-    }],
-  };
-
-  // Call OptimoRoute API to create the order
+async function createOptimoOrder(apiKey, reqBody) {
   try {
-    const response = await axios.post(`https://api.optimoroute.com/v1/create_order?key=${process.env.OPTIMOROUTE_API_KEY}`, orderPayload);
-    console.log("Order created in OptimoRoute:", response.data);
+    // Make the POST request to the API
+    const response = await axios.post('https://api.optimoroute.com/v1/create_or_update_orders', reqBody, {
+      params: {
+        key: apiKey, // API Key as a query parameter
+      },
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    // Handle the response
+    const { data } = response;
+    if (data.success) {
+      console.log('Orders processed successfully:', data.orders);
+      return data.orders;
+    } else {
+      console.error('Error occurred while processing orders:', data);
+      return null;
+    }
   } catch (error) {
-    console.error("Error creating order in OptimoRoute:", error.response ? error.response.data : error.message);
+    console.error('Error making API request:', error.message);
+    return null;
   }
 }
 
@@ -68,3 +45,4 @@ const sampleTask = {
   available: "7am-12pm",
 };
 
+module.exports={createOptimoOrder}

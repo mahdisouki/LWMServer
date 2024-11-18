@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 const { calculateTotalPrice, createStripePaymentIntent, createPayPalOrder ,PayPalClient } = require('../services/paymentService.js');
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-
+const {createOptimoOrder} = require('../helper/OpitomRoute.js')
 
 
 const taskCtrl = {
@@ -88,9 +88,40 @@ const taskCtrl = {
       });
 
       await newTask.save();
-      res
-        .status(201)
-        .json({ message: 'Task created successfully', task: newTask });
+
+
+      const orderRequestBody = {
+        orders: [
+          {
+            client: {
+              name: `${firstName} ${lastName}`,
+              phone: phoneNumber,
+              email: email,
+            },
+            location: location,
+            object: object,
+            price: price,
+            paymentStatus: paymentStatus,
+            date: taskDate.toISOString(), // assuming date needs to be in ISO format
+            photos: clientObjectPhotos,
+          },
+        ],
+      };
+  
+      const orderResponse = await createOptimoOrder(apiKey, orderRequestBody);
+  
+      if (orderResponse) {
+        res.status(201).json({ 
+          message: 'Task created and order processed successfully', 
+          task: newTask,
+          order: orderResponse
+        });
+      } else {
+        res.status(500).json({
+          message: 'Task created successfully, but failed to process the order',
+          task: newTask
+        });
+      }
     } catch (error) {
       res
         .status(400)
