@@ -32,6 +32,7 @@ const userSchema = new mongoose.Schema({
   addressProof:{type:String},
   NatInsurance:{type:String},
   refreshToken: { type: String },
+  fcmToken: { type: String },
   dayOffRequests: [
     {
       type: mongoose.Types.ObjectId,

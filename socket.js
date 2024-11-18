@@ -5,14 +5,44 @@ const Message = require('./models/Message');
 const Driver = require('./models/Driver');
 const Notification = require('./models/Notification');
 const { User } = require('./models/User');
+const Truck = require('./models/Truck');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 
+const admin = require('firebase-admin');
+const serviceAccount = require('./waste-app-10e23-firebase-adminsdk-3miif-a9179d3e0a.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+const sendNotification = async (title, textMessage, token) => {
+  console.log('Sending notification to:', token);
+  const message = {
+    notification: {
+      title,
+      body: textMessage,
+      // icon: 'https://192.168.62.131:5173/logo.png',
+    },
+    token: token,
+  };
+  
+  admin
+    .messaging()
+    .send(message)
+    .then((response) => {
+      console.log('Successfully sent message:', response);
+    })
+    .catch((error) => {
+      console.error('Error sending message:', error);
+    });
+}
+  
 // Initialize the Socket.io server and export the io instance
 const initSocket = (server) => {
   io = socketIo(server, {
     cors: {
-      origin: ['http://localhost:5173', 'http://localhost:5174'],
+      origin: ['http://localhost:5173', 'http://localhost:5174', 'https://192.168.62.131:5173'],
       methods: ['GET', 'POST'],
       credentials: true,
       allowedHeaders: ['Authorization'],
@@ -53,26 +83,77 @@ const initSocket = (server) => {
       socket.emit('chatHistory', messages);
     });
 
-    socket.on('sendMessage', async ({ roomId, senderId, messageText }) => {
-      const user = await User.findById(senderId);
-      const message = new Message({
-        roomId,
-        senderId,
-        messageText,
-        image: user.picture,
-      });
-
+    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver }) => { 
+      console.log(`Received message in room ${roomId} from user ${senderId}:`, isDriver);
       try {
+        const user = await User.findById(senderId);
+   
+        let truck;
+        
+        if (isDriver) {
+          console.log("is driver");
+          truck = await Truck.findOne({ driverId: senderId });
+        } else {
+          console.log("is helper");
+          truck = await Truck.findOne({ helperId: senderId });
+        }
+
+        console.log("eeezae", truck);
+
+        if (!truck) {
+          console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+          const message = new Message({
+            roomId,
+            senderId,
+            messageText,
+            image: user.picture,
+          });
+      
+          // Save the message to the database
+          await message.save();
+          
+          console.log(`Message saved in room ${message}`);
+          // Emit the new message to the room
+          io.to(roomId).emit('newMessage', message);
+          return;
+        }
+    
+        const relatedUserId = isDriver ? truck.helperId : truck.driverId;
+
+        const relatedUser = await User.findById(relatedUserId);
+
+        console.log("related user", relatedUser);
+
+        if(!relatedUser) {
+          console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+          return;
+        }
+
+        // Create a new message
+        const message = new Message({
+          roomId,
+          senderId,
+          messageText,
+          image: user.picture,
+        });
+    
+        // Save the message to the database
         await message.save();
+        
+        console.log(`Message saved in room ${message}`);
+        // Emit the new message to the room
         io.to(roomId).emit('newMessage', message);
+
+        sendNotification('New Message Received', `You have a new message from ${user.username}`, relatedUser.fcmToken);
+    
       } catch (error) {
-        console.error(`Error saving message in room ${roomId}:`, error);
+        console.error(`Error processing message in room ${roomId}:`, error);
       }
     });
 
     socket.on('sendLocation', async ({ driverId, coordinates }) => {
+      console.log(`Updating location for driver ${driverId}:`, coordinates);
       try {
-        // console.log(`Updating location for driver ${driverId}:`, coordinates);
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
         await Driver.findByIdAndUpdate(driverId, {
           location: { type: 'Point', coordinates: coordinatesArray },
@@ -111,6 +192,17 @@ const initSocket = (server) => {
         socket.emit('error', { message: 'Failed to fetch driver locations' });
       }
     });
+
+    socket.on('fcmToken', async (fcmToken) => {
+      const { userId , token} = fcmToken;
+      try {
+        await User.findByIdAndUpdate
+          (userId, { fcmToken: token });
+      } catch (error) {
+        console.error(`Error updating FCM token for user ${userId}:`, error);
+      }
+    }
+    );
 
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);

@@ -1,12 +1,19 @@
 const express = require("express");
 const app = express();
-const http = require("http");
+const https = require("https");
+const fs = require("fs");
+
+// SSL certificate and key
+const privateKey = fs.readFileSync("./certs/192.168.62.131-key.pem", "utf8");
+const certificate = fs.readFileSync("./certs/192.168.62.131.pem", "utf8");
+
+const credentials = { key: privateKey, cert: certificate };
 
 const { initSocket } = require("./socket");
 
-const server = http.createServer(app);
+const server = https.createServer(credentials, app); 
 
-const io = initSocket(server);
+initSocket(server);
 
 require("dotenv").config();
 require("./config/db");
@@ -60,11 +67,14 @@ app.use('/api/standard' , standardItemsRoutes)
 app.use('/api/refund' , refundRoutes)
 app.use('/api/payment' , paymentHistoRoutes)
 app.use('/api/upload', uploadRouter)
-
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/blog',blogRoutes);
 app.use('/api',storageRoutes)
 app.use('/api', statsRoute)
+
+
+
+
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
 });

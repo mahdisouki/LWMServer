@@ -152,7 +152,7 @@ const driverManagement = {
       // });
       const tasks = await Task.find();
 
-      console.log(tasks);
+     
       res.status(200).json({ message: 'Tasks retrieved successfully', tasks });
     } catch (error) {
       res
