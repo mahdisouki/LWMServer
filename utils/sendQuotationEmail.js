@@ -23,10 +23,10 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
         subject: `New Quotation Request`,
         html: `
             <p><strong>New Quotation Request</strong></p>
-            <p>From: ${quotationData.line1} ${quotationData.line2}</p>
+            <p>adress: ${quotationData.line1} ${quotationData.line2} , ${quotationData.postcode}</p>
             <p>Email: ${quotationData.email}</p>
             <p>Phone Number: ${quotationData.phoneNumber}</p>
-            <p>Address: ${quotationData.roadName}, ${quotationData.town}, ${quotationData.postcode}</p>
+            <p>Company name:  ${quotationData.companyName}</p>
             <p>Comments: ${quotationData.comments}</p>
             <p><strong>Uploaded Items:</strong></p>
             ${imagesHTML} <!-- Les images sont intégrées directement dans l'email -->

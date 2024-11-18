@@ -68,7 +68,6 @@ const taskCtrl = {
           message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`,
         });
       }
-
       const newTask = new Task({
         firstName,
         lastName,
