@@ -15,17 +15,15 @@ const gmailCtrl = {
     }
   },
 
-  // List the latest 10 emails using IMAP
-  listEmails: (req, res) => {
-    // Fetch emails using the new mailing service
-    fetchEmails((err, emails) => {
-      if (err) {
-        return res.status(500).json({ message: 'Failed to retrieve emails', error: err.message });
-      }
-      res.json({ emails });
-    });
+ 
+  listEmails: async (req, res) => {
+    try {
+      const emails = await fetchEmails(); // Await the promise returned by fetchEmails
+      res.json({ emails }); // Send the emails in the response
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to retrieve emails', error: err.message });
+    }
   },
-
   // Optionally, if you want to integrate some sort of fetching method for attachments or extra details:
   listEmailDetails: (req, res) => {
     const { emailId } = req.params;

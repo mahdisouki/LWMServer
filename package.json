@@ -30,6 +30,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.16",
     "nodemon": "^3.1.4",
+    "quoted-printable": "^1.0.1",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.8.0",
     "stripe": "^17.3.1",

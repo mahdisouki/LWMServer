@@ -1620,6 +1620,13 @@ qs@^6.11.0, qs@^6.7.0, qs@6.11.0:
   dependencies:
     side-channel "^1.0.4"
 
+quoted-printable@^1.0.1:
+  version "1.0.1"
+  resolved "https://registry.npmjs.org/quoted-printable/-/quoted-printable-1.0.1.tgz"
+  integrity sha512-cihC68OcGiQOjGiXuo5Jk6XHANTHl1K4JLk/xlEJRTIXfy19Sg6XzB95XonYgr+1rB88bCpr7WZE7D7AlZow4g==
+  dependencies:
+    utf8 "^2.1.0"
+
 range-parser@~1.2.1:
   version "1.2.1"
   resolved "https://registry.npmjs.org/range-parser/-/range-parser-1.2.1.tgz"
@@ -2025,6 +2032,11 @@ utf7@>=1.0.2:
   integrity sha512-qQrPtYLLLl12NF4DrM9CvfkxkYI97xOb5dsnGZHE3teFr0tWiEZ9UdgMPczv24vl708cYMpe6mGXGHrotIp3Bw==
   dependencies:
     semver "~5.3.0"
+
+utf8@^2.1.0:
+  version "2.1.2"
+  resolved "https://registry.npmjs.org/utf8/-/utf8-2.1.2.tgz"
+  integrity sha512-QXo+O/QkLP/x1nyi54uQiG0XrODxdysuQvE5dtVqv7F5K2Qb6FsN+qbr6KhF5wQ20tfcV3VQp0/2x1e1MRSPWg==
 
 util-deprecate@^1.0.1, util-deprecate@~1.0.1:
   version "1.0.2"
