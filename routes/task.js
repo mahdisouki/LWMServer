@@ -160,5 +160,23 @@ router.post('/task/pay/:taskId', taskCtrl.processTaskPayment);
 router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);
 
 router.post('/task/capture-paypal-payment', taskCtrl.capturePayPalTaskPayment);
+router.post('/task/sendPayement/:taskId',taskCtrl.generatePaymentLinks);
+// Stripe Webhook
+router.post('/webhooks/stripe', express.raw({ type: 'application/json' }), taskCtrl.handleStripeWebhook);
+
+// PayPal Webhook
+router.post('/webhooks/paypal', express.json(), taskCtrl.handlePaypalWebhook);
+
+
+// Route pour le succès du paiement
+router.get('/payment/success', (req, res) => {
+    res.send('<h1>Merci ! Votre paiement a été effectué avec succès !</h1>');
+});
+
+// Route pour l'annulation du paiement
+router.get('/payment/cancel', (req, res) => {
+    res.send('<h1>Paiement annulé. Vous pouvez réessayer si vous le souhaitez.</h1>');
+});
+
 
 module.exports = router;

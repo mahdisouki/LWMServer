@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 const http = require("http");
-
+const bodyParser = require('body-parser');
 const { initSocket } = require("./socket");
 
 const server = http.createServer(app);
@@ -15,7 +15,8 @@ const cors = require("cors");
 require('./jobs/dailySheetCron'); 
 require('./jobs/AssignedStaffCron');
 const setupSwagger = require('./config/swaggerConfig'); 
-
+// Apply raw body for Stripe webhook first
+app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
 const taskRouter = require("./routes/task");
@@ -44,12 +45,21 @@ const corsOptions = {
   optionsSuccessStatus: 200 
 };
 
+
+
+// Apply JSON parsing globally for other routes
+app.use(express.json());
+app.use(bodyParser.json());
+
+// Mount routes
+app.use('/api', taskRouter);
+
 app.use(cors(corsOptions));
 setupSwagger(app); 
-app.use(express.json());
+
 app.use('/api',authRouter);
 app.use('/api',staffRouter);
-app.use('/api',taskRouter);
+
 app.use('/api',truckRouter);
 app.use('/api',driverRouter);
 app.use("/api", tippingRouter);
