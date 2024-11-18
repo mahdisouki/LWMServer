@@ -1,5 +1,7 @@
 // controllers/blogController.js
 const Blog = require('../models/Blog');
+const Payroll = require('../models/Payroll');
+const Task = require('../models/Task');
 const APIfeatures = require('../utils/APIFeatures'); // If you're using a utility for API features
 
 const statsCtrl = {
