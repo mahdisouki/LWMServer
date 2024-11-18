@@ -92,7 +92,7 @@ const initSocket = (server) => {
             picture: driver.picture,
             currentJobAddress: driver.currentJobAddress,
             nextJobAddress: driver.nextJobAddress,
-            onBreak: driver.onBreak,
+            onBreak: driver.location.onBreak,
             startTime: driver.breakStartTime,
           });
         } else {

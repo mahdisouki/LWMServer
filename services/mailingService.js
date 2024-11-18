@@ -7,7 +7,7 @@ const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER, // Your Gmail address
-    pass: process.env.EMAIL_PASS, // Your app-specific password (if 2FA enabled)
+    pass: process.env.EMAIL_PASSWORD, // Your app-specific password (if 2FA enabled)
   },
 });
 
@@ -29,10 +29,13 @@ const sendEmail = async (to, subject, text) => {
 // IMAP connection configuration for Gmail
 const imapConfig = {
   user: process.env.EMAIL_USER,
-  password: process.env.EMAIL_PASS,
+  password: process.env.EMAIL_PASSWORD,
   host: 'imap.gmail.com',
   port: 993,
   tls: true,
+  tlsOptions: {
+    rejectUnauthorized: false, // Accept self-signed certificates
+  },
 };
 
 // Function to fetch emails
