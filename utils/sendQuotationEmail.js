@@ -13,8 +13,7 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
     const imagesHTML = quotationData.items
         .map(
             (item) =>
-                `<img src="${item}" style="max-width: 300px; display: block; margin-top: 10px;" alt="Uploaded Item Image" />`
-        )
+`<img src="${item}" style="max-width: 100%; height: auto; display: block; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px;" alt="Uploaded Item Image" />`        )
         .join('');
 
     const mailOptionsToResponsible = {
@@ -22,15 +21,42 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
         to: responsibleEmail, // Adresse email du responsable
         subject: `New Quotation Request`,
         html: `
-            <p><strong>New Quotation Request</strong></p>
-            <p>adress: ${quotationData.line1} ${quotationData.line2} , ${quotationData.postcode}</p>
-            <p>Email: ${quotationData.email}</p>
-            <p>Phone Number: ${quotationData.phoneNumber}</p>
-            <p>Company name:  ${quotationData.companyName}</p>
-            <p>Comments: ${quotationData.comments}</p>
-            <p><strong>Uploaded Items:</strong></p>
-            ${imagesHTML} <!-- Les images sont intégrées directement dans l'email -->
-        `,
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9; padding: 20px;">
+           <div style="text-align: center; margin-bottom: 20px;">
+          <img src="cid:logo" alt="London Waste Management" style="max-width: 150px;">
+        </div> 
+        <h2 style="text-align: center; color: #4CAF50; margin-bottom: 20px;">New Quotation Request</h2>
+            <p style="font-size: 16px; margin-bottom: 10px;">
+                <strong>Address:</strong> ${quotationData.line1} ${quotationData.line2}, ${quotationData.postcode}
+            </p>
+            <p style="font-size: 16px; margin-bottom: 10px;">
+                <strong>Email:</strong> ${quotationData.email}
+            </p>
+            <p style="font-size: 16px; margin-bottom: 10px;">
+                <strong>Phone Number:</strong> ${quotationData.phoneNumber}
+            </p>
+            <p style="font-size: 16px; margin-bottom: 10px;">
+                <strong>Company Name:</strong> ${quotationData.companyName || 'Not provided'}
+            </p>
+            <p style="font-size: 16px; margin-bottom: 10px;">
+                <strong>Comments:</strong> ${quotationData.comments || 'No additional comments'}
+            </p>
+            <h3 style="margin-top: 20px; margin-bottom: 10px; color: #4CAF50;">Uploaded Items:</h3>
+            <div>
+                ${imagesHTML} <!-- Intégration des images -->
+            </div>
+            <footer style="text-align: center; margin-top: 20px; color: #888; font-size: 14px;">
+                <p>Thank you for using London Waste Management!</p>
+            </footer>
+        </div>
+    `,
+    attachments: [
+      {
+        filename: 'Green-Log.png',
+        path: 'D:\\Users\\eya20\\LondonWaste\\LWMServer\\logo\\Green-Log.png',
+        cid: 'logo', // Content ID for the inline image
+      },
+    ],
     };
 
     // Send to responsible email

@@ -2,11 +2,22 @@ const express = require("express");
 const app = express();
 const http = require("http");
 const bodyParser = require('body-parser');
+const https = require("https");
+const fs = require("fs");
+
+// SSL certificate and key
+const privateKey = fs.readFileSync("./certs/192.168.62.131-key.pem", "utf8");
+const certificate = fs.readFileSync("./certs/192.168.62.131.pem", "utf8");
+
+const credentials = { key: privateKey, cert: certificate };
+
 const { initSocket } = require("./socket");
 
-const server = http.createServer(app);
 
-const io = initSocket(server);
+
+const server = https.createServer(credentials, app); 
+
+initSocket(server);
 
 require("dotenv").config();
 require("./config/db");
@@ -46,6 +57,7 @@ const storageRoutes = require('./routes/storage')
 const quotationRoutes = require('./routes/quotationRoutes')
 const contactRequestRoutes = require('./routes/contactRequestRoutes');
 const serviceCategoryRoutes = require('./routes/serviceCategory')
+
 
 
 

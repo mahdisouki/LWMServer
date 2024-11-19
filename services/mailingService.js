@@ -10,6 +10,7 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER, // Your Gmail address
     pass: process.env.EMAIL_PASSWORD, // Your app-specific password (if 2FA enabled)
   },
+ 
 });
 
 // Function to send an email
@@ -52,34 +53,73 @@ const fetchEmails = () => {
           return reject(err);
         }
 
-        console.log(`Total emails in inbox: ${box.messages.total}`);
+        const totalMessages = box.messages.total;
+        const fetchRangeStart = totalMessages - 19 > 0 ? totalMessages - 19 : 1;
+        const fetchRange = `${fetchRangeStart}:${totalMessages}`;
 
-        // Search for the last 10 emails (you can modify this search as needed)
-        const fetchRange = box.messages.total - 9 > 0 ? box.messages.total - 9 : 1; // Ensure not to exceed total count
-        console.log(`Fetching emails from ID: ${fetchRange} to ID: ${box.messages.total}`);
+        console.log(`Fetching emails from ID: ${fetchRangeStart} to ID: ${totalMessages}`);
 
-        // Fetch the last 10 emails
-        const f = imap.fetch(`${fetchRange}:${box.messages.total}`, { bodies: ['HEADER.FIELDS (FROM SUBJECT DATE)', 'TEXT'] });
+        const f = imap.fetch(fetchRange, {
+          bodies: '',
+          struct: true,
+          markSeen: false,
+        });
 
-        f.on('message', (msg) => {
+        f.on('message', (msg, seqno) => {
           let email = '';
+          let attributes;
+
           msg.on('body', (stream) => {
             stream.on('data', (chunk) => {
               email += chunk.toString();
             });
           });
 
+          msg.on('attributes', (attrs) => {
+            attributes = attrs;
+          });
+
           msg.once('end', () => {
             simpleParser(email)
-              .then((parsed) => {
+              .then(async (parsed) => {
+                const { from, subject, date, text, html, attachments } = parsed;
+
+                // Extract sender name and email
+                const senderName = from?.value[0]?.name || 'Unknown';
+                const senderEmail = from?.value[0]?.address || 'Unknown';
+                const timestamp = date ? date.getTime() : Date.now();
+
+                // Determine if the email is unread
+                const flags = attributes.flags;
+                const unread = !flags.includes('\\Seen');
+                const important = flags.includes('\\Flagged');
+
+                // Process attachments
+                const processedAttachments = [];
+                if (attachments && attachments.length > 0) {
+                  for (const attachment of attachments) {
+                    processedAttachments.push({
+                      id: attachment.checksum || attachment.filename,
+                      filename: attachment.filename,
+                      contentType: attachment.contentType,
+                      content: attachment.content.toString('base64'),
+                    });
+                  }
+                }
+
                 const formattedEmail = {
-                  sender: parsed.from?.text || 'Unknown',
-                  subject: parsed.subject || 'No Subject',
-                  body: parsed.text || 'No Body',
-                  attachments: parsed.attachments?.map((att) => ({
-                    filename: att.filename,
-                    contentType: att.contentType,
-                  })) || [],
+                  id: attributes.uid || seqno,
+                  category: 'inbox',
+                  senderName,
+                  senderEmail,
+                  subject: subject || 'No Subject',
+                  preview: text ? text.substring(0, 100) : '',
+                  content: html || text || 'No Content',
+                  timestamp,
+                  date: date || new Date(),
+                  unread,
+                  important,
+                  attachments: processedAttachments,
                 };
 
                 emails.push(formattedEmail);
@@ -88,6 +128,11 @@ const fetchEmails = () => {
                 console.error('Error parsing email:', err);
               });
           });
+        });
+
+        f.once('error', (err) => {
+          console.error('Fetch error: ' + err);
+          reject(err);
         });
 
         f.once('end', () => {
@@ -108,6 +153,8 @@ const fetchEmails = () => {
     imap.connect();
   });
 };
+
+
 module.exports = {
   sendEmail,
   fetchEmails,

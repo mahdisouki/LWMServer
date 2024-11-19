@@ -144,7 +144,8 @@ const taskCtrl = require('../controllers/taskCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
-
+const { getPayPalOrderDetails,capturePayPalPayment } = require('../services/paymentService.js');
+const Task = require('../models/Task');
 
 router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
@@ -169,12 +170,12 @@ router.post('/webhooks/paypal', express.json(), taskCtrl.handlePaypalWebhook);
 
 
 // Route pour le succès du paiement
-router.get('/payment/success', (req, res) => {
+router.get('/webhooks/payment/success', (req, res) => {
     res.send('<h1>Merci ! Votre paiement a été effectué avec succès !</h1>');
 });
 
 // Route pour l'annulation du paiement
-router.get('/payment/cancel', (req, res) => {
+router.get('/webhooks/payment/cancel', (req, res) => {
     res.send('<h1>Paiement annulé. Vous pouvez réessayer si vous le souhaitez.</h1>');
 });
 
