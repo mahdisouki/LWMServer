@@ -160,6 +160,7 @@ router.get('/items/category/:category', standardItemCtrl.getItemsByCategory);
 router.get('/items/:id', standardItemCtrl.getStandardItemById);
 router.put('/items/:id', isAuth, checkRole('Admin'), multer.single('image'), standardItemCtrl.updateStandardItem);
 router.delete('/items/:id', isAuth, checkRole('Admin'), standardItemCtrl.deleteStandardItem);
+router.put("/convert" , standardItemCtrl.convertCategoryToReferences)
 // router.post('/pay',    standardItemCtrl.processPayment);
 // router.post('/checkoutStripe',    standardItemCtrl.confirmStripePayment);
 // router.post('/checkoutPaypal',    standardItemCtrl.capturePayPalOrder);

@@ -6,6 +6,7 @@ const storageSchema = new Schema(
   {
     driverId: { type: Schema.Types.ObjectId, ref: "Driver", required: true },
     date: { type: Date, required: true },
+    type:{type:String , enum:["take" , "add"]},
     items: {
       fridges: { type: Number, default: 0 },
       mattresses: { type: Number, default: 0 },

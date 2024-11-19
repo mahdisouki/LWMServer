@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 const http = require("http");
-
+const bodyParser = require('body-parser');
 const { initSocket } = require("./socket");
 
 const server = http.createServer(app);
@@ -15,7 +15,14 @@ const cors = require("cors");
 require('./jobs/dailySheetCron'); 
 require('./jobs/AssignedStaffCron');
 const setupSwagger = require('./config/swaggerConfig'); 
+// Apply raw body for Stripe webhook first
+app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 
+const corsOptions = {
+  origin: '*', 
+  optionsSuccessStatus: 200 
+};
+app.use(cors(corsOptions));
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
 const taskRouter = require("./routes/task");
@@ -36,17 +43,25 @@ const refundRoutes = require('./routes/refund')
 const paymentHistoRoutes = require('./routes/paymenthisto')
 const blogRoutes = require('./routes/blog')
 const storageRoutes = require('./routes/storage')
-const corsOptions = {
-  origin: '*', 
-  optionsSuccessStatus: 200 
-};
+const quotationRoutes = require('./routes/quotationRoutes')
+const contactRequestRoutes = require('./routes/contactRequestRoutes');
+const serviceCategoryRoutes = require('./routes/serviceCategory')
 
-app.use(cors(corsOptions));
-setupSwagger(app); 
+
+
+// Apply JSON parsing globally for other routes
 app.use(express.json());
+app.use(bodyParser.json());
+
+// Mount routes
+app.use('/api', taskRouter);
+
+
+setupSwagger(app); 
+
 app.use('/api',authRouter);
 app.use('/api',staffRouter);
-app.use('/api',taskRouter);
+
 app.use('/api',truckRouter);
 app.use('/api',driverRouter);
 app.use("/api", tippingRouter);
@@ -60,11 +75,13 @@ app.use('/api/standard' , standardItemsRoutes)
 app.use('/api/refund' , refundRoutes)
 app.use('/api/payment' , paymentHistoRoutes)
 app.use('/api/upload', uploadRouter)
-
+app.use('/api', quotationRoutes);
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/blog',blogRoutes);
 app.use('/api',storageRoutes)
 app.use('/api', statsRoute)
+app.use('/api', contactRequestRoutes);
+app.use('/api' , serviceCategoryRoutes)
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
 });

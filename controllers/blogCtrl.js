@@ -5,10 +5,17 @@ const APIfeatures = require('../utils/APIFeatures'); // If you're using a utilit
 const blogCtrl = {
     createBlog: async (req, res) => {
         try {
-            const { title, author, description } = req.body;
+            const { title, author, description, tags } = req.body;
             const image = req.file.path; // Assuming the image is uploaded via Cloudinary
-
-            const newBlog = new Blog({ title, author, description, image });
+    
+            const newBlog = new Blog({
+                title,
+                author,
+                description,
+                image,
+                tags: tags ? tags.split(',').map(tag => tag.trim()) : [], // Convert comma-separated string to array
+            });
+    
             await newBlog.save();
             res.status(201).json({ message: "Blog post created successfully", blog: newBlog });
         } catch (error) {
@@ -61,18 +68,19 @@ const blogCtrl = {
 
     updateBlog: async (req, res) => {
         const { id } = req.params;
-        const { title, description, author } = req.body;
-        const image = req.file ? req.file.path : undefined; // Utiliser la nouvelle image si téléchargée
+        const { title, description, author, tags } = req.body;
+        const image = req.file ? req.file.path : undefined; // Use the new image if uploaded
     
-        // Création d'un objet de mise à jour dynamique
+        // Create a dynamic update object
         const updates = {};
         if (title) updates.title = title;
         if (description) updates.description = description;
         if (author) updates.author = author;
         if (image) updates.image = image;
+        if (tags) updates.tags = tags.split(',').map(tag => tag.trim()); // Convert comma-separated string to array
     
         try {
-            // Mise à jour uniquement des champs présents dans `updates`
+            // Update only fields present in `updates`
             const updatedBlog = await Blog.findByIdAndUpdate(id, updates, { new: true });
             if (!updatedBlog) {
                 return res.status(404).json({ message: "Blog post not found" });
@@ -81,7 +89,8 @@ const blogCtrl = {
         } catch (error) {
             res.status(500).json({ message: "Failed to update blog post", error: error.message });
         }
-    },    
+    },
+    
 
     deleteBlog: async (req, res) => {
         const { id } = req.params;
@@ -95,6 +104,45 @@ const blogCtrl = {
             res.status(500).json({ message: "Failed to delete blog post", error: error.message });
         }
     },
+    getBlogsByTag: async (req, res) => {
+        const { tag } = req.params;
+        try {
+            const blogs = await Blog.find({ tags: tag });
+            if (blogs.length === 0) {
+                return res.status(404).json({ message: `No blogs found with the tag: ${tag}` });
+            }
+            res.status(200).json(blogs);
+        } catch (error) {
+            console.error('Error fetching blogs by tag:', error);
+            res.status(500).json({ message: 'Failed to fetch blogs by tag', error: error.message });
+        }
+    },
+    getAllTags: async (req, res) => {
+        try {
+            console.log("api enetrred")
+            
+            const blogs = await Blog.find({}); 
+    
+            
+            const allTags = blogs.flatMap((blog) => blog.tags || []);
+    
+            
+            const uniqueSortedTags = [...new Set(allTags)].sort();
+    
+            res.status(200).json({
+                message: 'All tags fetched successfully',
+                tags: uniqueSortedTags,
+            });
+        } catch (error) {
+            console.log(error)
+            console.error("Error fetching tags:", error);
+            res.status(500).json({
+                message: 'Failed to fetch tags',
+                error: error.message,
+            });
+        }
+    }
+    
 };
 
 module.exports = blogCtrl;
