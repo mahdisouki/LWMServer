@@ -15,7 +15,7 @@ const userSocketMap = {}; // Stores userId:socketId mapping
 const initSocket = (server) => {
   io = socketIo(server, {
     cors: {
-      origin: ['http://localhost:5173', 'http://localhost:5174'],
+      origin: ['https://localhost:5173', 'http://localhost:5174'],
       methods: ['GET', 'POST'],
       credentials: true,
       allowedHeaders: ['Authorization'],
@@ -81,7 +81,7 @@ const initSocket = (server) => {
           location: { type: 'Point', coordinates: coordinatesArray },
         });
         const driver = await Driver.findById(driverId);
-
+        console.log("location",driver.location)
         // console.log(driver.username);
 
         if (driver) {
@@ -92,7 +92,7 @@ const initSocket = (server) => {
             picture: driver.picture,
             currentJobAddress: driver.currentJobAddress,
             nextJobAddress: driver.nextJobAddress,
-            onBreak: driver.location.onBreak,
+            onBreak:driver.onBreak,
             startTime: driver.breakStartTime,
           });
         } else {

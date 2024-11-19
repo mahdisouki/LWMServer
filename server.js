@@ -17,6 +17,12 @@ require('./jobs/AssignedStaffCron');
 const setupSwagger = require('./config/swaggerConfig'); 
 // Apply raw body for Stripe webhook first
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+
+const corsOptions = {
+  origin: '*', 
+  optionsSuccessStatus: 200 
+};
+app.use(cors(corsOptions));
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
 const taskRouter = require("./routes/task");
@@ -40,10 +46,6 @@ const storageRoutes = require('./routes/storage')
 const quotationRoutes = require('./routes/quotationRoutes')
 const contactRequestRoutes = require('./routes/contactRequestRoutes');
 const serviceCategoryRoutes = require('./routes/serviceCategory')
-const corsOptions = {
-  origin: '*', 
-  optionsSuccessStatus: 200 
-};
 
 
 
@@ -54,7 +56,7 @@ app.use(bodyParser.json());
 // Mount routes
 app.use('/api', taskRouter);
 
-app.use(cors(corsOptions));
+
 setupSwagger(app); 
 
 app.use('/api',authRouter);
