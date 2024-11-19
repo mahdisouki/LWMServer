@@ -5,9 +5,9 @@ const Message = require('./models/Message');
 const Driver = require('./models/Driver');
 const Notification = require('./models/Notification');
 const { User } = require('./models/User');
-const Task = require('./models/Task')
-const Truck = require('./models/Truck')
-const TippingRequest = require('./models/TippingRequest')
+const Task = require('./models/Task');
+const Truck = require('./models/Truck');
+const TippingRequest = require('./models/TippingRequest');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 
@@ -15,7 +15,11 @@ const userSocketMap = {}; // Stores userId:socketId mapping
 const initSocket = (server) => {
   io = socketIo(server, {
     cors: {
-      origin: ['https://localhost:5173', 'http://localhost:5174'],
+      origin: [
+        'https://localhost:5173',
+        'http://localhost:5174',
+        'https://localhost:5173',
+      ],
       methods: ['GET', 'POST'],
       credentials: true,
       allowedHeaders: ['Authorization'],
@@ -81,7 +85,7 @@ const initSocket = (server) => {
           location: { type: 'Point', coordinates: coordinatesArray },
         });
         const driver = await Driver.findById(driverId);
-        console.log("location",driver.location)
+        console.log('location', driver.location);
         // console.log(driver.username);
 
         if (driver) {
@@ -92,7 +96,7 @@ const initSocket = (server) => {
             picture: driver.picture,
             currentJobAddress: driver.currentJobAddress,
             nextJobAddress: driver.nextJobAddress,
-            onBreak:driver.onBreak,
+            onBreak: driver.onBreak,
             startTime: driver.breakStartTime,
           });
         } else {
@@ -114,11 +118,17 @@ const initSocket = (server) => {
         socket.emit('error', { message: 'Failed to fetch driver locations' });
       }
     });
-    socket.on('trucksStats' , async()=>{
-      const allVehiclesCount = await Truck.countDocuments(); 
-      const onWorkCount = await Task.countDocuments({ taskStatus: "Processing" }); 
-      const tippingCount = await TippingRequest.countDocuments({ status: "GoToTipping" }); 
-      const onBreakCount = await Driver.countDocuments({ "location.onBreak": true }); 
+    socket.on('trucksStats', async () => {
+      const allVehiclesCount = await Truck.countDocuments();
+      const onWorkCount = await Task.countDocuments({
+        taskStatus: 'Processing',
+      });
+      const tippingCount = await TippingRequest.countDocuments({
+        status: 'GoToTipping',
+      });
+      const onBreakCount = await Driver.countDocuments({
+        'location.onBreak': true,
+      });
 
       io.emit('vehicleStats', {
         allVehicles: allVehiclesCount,
@@ -126,7 +136,7 @@ const initSocket = (server) => {
         tipping: tippingCount,
         onBreak: onBreakCount,
       });
-    })
+    });
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
       delete userSocketMap[userId]; // Remove user from map on disconnect
@@ -178,7 +188,6 @@ const getIo = () => {
   }
   return io;
 };
-
 
 module.exports = {
   initSocket,
