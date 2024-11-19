@@ -4,11 +4,12 @@ const Truck = require('../models/Truck');
 const APIfeatures = require('../utils/APIFeatures');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
-const { createPaypalPaymentLink,createStripePaymentLink,calculateTotalPrice, createStripePaymentIntent, createPayPalOrder ,PayPalClient } = require('../services/paymentService.js');
+const { getPayPalOrderDetails,capturePayPalPayment ,createPaypalPaymentLink,createStripePaymentLink,calculateTotalPrice, createStripePaymentIntent, createPayPalOrder ,PayPalClient } = require('../services/paymentService.js');
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const nodemailer = require('nodemailer');
 const sendPayementEmail = require('../utils/sendPayementEmail'); 
+
 
 const taskCtrl = {
   createTask: async (req, res) => {
@@ -732,67 +733,66 @@ handleStripeWebhook: async (req, res) => {
   }
 },
 
- handlePaypalWebhook : async (req, res) => {
+handlePaypalWebhook: async (req, res) => {
   try {
-      const event = req.body;
+    const event = req.body;
 
-      console.log('Received PayPal Webhook Event:', JSON.stringify(event, null, 2));
+    // Check for payment capture completed event
+    if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+      const captureId = event.resource.id; // Capture ID
+      const orderId = event.resource.supplementary_data.related_ids.order_id; // Extract order ID
 
-      if (event.event_type === 'CHECKOUT.ORDER.APPROVED') {
-          const orderId = event.resource.id;
-          const taskId = event.resource.purchase_units[0].custom_id;
+      console.log(`Capture ID: ${captureId}, Order ID: ${orderId}`);
 
-          console.log(`Order ID: ${orderId}, Task ID: ${taskId}`);
-
-          // Capture the payment
-          const captureResponse = await capturePayPalPayment(orderId);
-
-          if (captureResponse.status === 'COMPLETED') {
-              const task = await Task.findById(taskId);
-              if (!task) {
-                  console.error(`Task not found for ID: ${taskId}`);
-                  return res.status(404).send('Task not found');
-              }
-
-              // Update task status
-              task.paymentStatus = 'Paid';
-              await task.save();
-
-              // Save payment history
-              const captureDetails = captureResponse.purchase_units[0].payments.captures[0];
-              await PaymentHistory.create({
-                  taskId: task._id,
-                  firstName: task.firstName,
-                  lastName: task.lastName,
-                  phoneNumber: task.phoneNumber,
-                  amount: captureDetails.amount.value * 100, // Convert to pence
-                  price: task.price,
-                  options: {
-                      position: task.Objectsposition,
-                      timeSlot: task.available,
-                  },
-                  paymentType: 'paypal',
-                  paymentDate: new Date(),
-                  transactionId: captureDetails.id,
-                  payerAccount: captureResponse.payer.email_address,
-              });
-
-              console.log(`Payment for Task ${taskId} completed successfully and recorded in history!`);
-          } else {
-              console.error(`PayPal payment not completed: ${captureResponse.status}`);
-              return res.status(400).send('PayPal payment not completed');
-          }
-      } else {
-          console.log('Unhandled PayPal event type:', event.event_type);
-          res.status(200).send('Event type not processed');
+      // Retrieve the task associated with the order ID
+      const task = await Task.findById(orderId);
+      if (!task) {
+        console.error(`Task not found for ID: ${orderId}`);
+        return res.status(404).send('Task not found');
       }
+
+      // Update payment status in the task
+      task.paymentStatus = 'Paid';
+      await task.save();
+
+      const payerInfo = event.resource.payer; // Payer details
+      const amount = event.resource.amount.value; // Amount paid
+      const currency = event.resource.amount.currency_code; // Currency code
+
+      // Log payer details (for debugging purposes)
+      console.log(`Payer Info: ${JSON.stringify(payerInfo, null, 2)}`);
+
+      const payerAccount =
+        payerInfo?.email_address || `PayPal Account ID: ${payerInfo?.payer_id}`;
+
+      // Record payment history
+      await PaymentHistory.create({
+        taskId: task._id,
+        firstName: task.firstName,
+        lastName: task.lastName,
+        phoneNumber: task.phoneNumber,
+        amount: parseFloat(amount), // Convert to float for better handling
+        currency,
+        price: task.price,
+        options: {
+          position: task.Objectsposition,
+          timeSlot: task.available,
+        },
+        paymentType: 'paypal', // Type of payment (PayPal)
+        paymentDate: new Date(),
+        transactionId: captureId, // Capture ID as transaction ID
+        payerAccount: payerAccount, // Email address or payer ID
+      });
+
+      console.log(`Payment for Task ${orderId} recorded successfully in history!`);
+    }
+
+    res.status(200).send('Webhook processed successfully');
   } catch (error) {
-      console.error('Error processing PayPal webhook:', error);
-      res.status(500).send('Webhook processing failed');
+    console.error('Error processing PayPal webhook:', error);
+    res.status(500).send('Webhook processing failed');
   }
 },
-
-
 
 };
 

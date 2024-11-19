@@ -4,9 +4,11 @@ const http = require("http");
 const bodyParser = require('body-parser');
 const { initSocket } = require("./socket");
 
+
 const server = http.createServer(app);
 
 const io = initSocket(server);
+
 
 require("dotenv").config();
 require("./config/db");
@@ -44,6 +46,7 @@ const corsOptions = {
   origin: '*', 
   optionsSuccessStatus: 200 
 };
+
 
 
 

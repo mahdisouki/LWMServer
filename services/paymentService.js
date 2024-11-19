@@ -1,10 +1,12 @@
 
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 const paypal = require('@paypal/checkout-server-sdk');
 const StandardItem = require('../models/StandardItem');
 const Task = require('../models/Task');
 const VAT_RATE = 0.2; // 20% VAT rate
 
+const Stripe = require('stripe');
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key here
 
 const calculateTotalPrice = async (taskId, options) => {
     const task = await Task.findById(taskId);
@@ -37,8 +39,7 @@ const calculateTotalPrice = async (taskId, options) => {
     return Math.round(totalPrice * 100); // Convert to cents for payment processing
 };
 
-console.log("PAYPAL_CLIENT_ID:", process.env.PAYPAL_CLIENT_ID);
-console.log("PAYPAL_CLIENT_SECRET:", process.env.PAYPAL_CLIENT_SECRET);
+
 
 
 const createStripePaymentIntent = async (amount) => {
@@ -67,24 +68,20 @@ const createStripePaymentLink = async (taskId, amount) => {
             {
                 price_data: {
                     currency: 'gbp',
-                    product_data: {
-                        name: `Payment for Task #${taskId}`,
-                    },
-                    unit_amount: amount, // Montant en pence
+                    product_data: { name: `Payment for Task #${taskId}` },
+                    unit_amount: amount, // amount in pence
                 },
                 quantity: 1,
             },
         ],
         mode: 'payment',
-        metadata: { taskId },
-        success_url: `http://localhost:3000/api/payment/success`,
-cancel_url: `http://localhost:3000/api/payment/cancel`,
- // Ajoutez l'ID de la tâche comme métadonnée
+        metadata: { taskId }, // Add taskId as metadata
+        success_url: 'https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/success',
+        cancel_url: 'https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/cancel',
     });
-
+    
     return session.url; // Retournez l'URL générée par Stripe pour le paiement
 };
-
 
 
 const createPaypalPaymentLink = async (taskId, amount) => {
@@ -97,38 +94,59 @@ const createPaypalPaymentLink = async (taskId, amount) => {
     const request = new paypal.orders.OrdersCreateRequest();
     request.prefer("return=representation");
     request.requestBody({
-        intent: "CAPTURE",
+        intent: "CAPTURE", // Required for capturing funds
         purchase_units: [
             {
-                custom_id: taskId,
+                custom_id: taskId, // Attach Task ID here
                 description: `Payment for Task #${taskId}`,
                 amount: {
-                    currency_code: "GBP",
+                    currency_code: "GBP", // Ensure currency matches your region
                     value: (amount / 100).toFixed(2),
                 },
             },
         ],
-        // application_context: {
-        //     return_url: `http://localhost:3000/api/payment/success`,
-        //     cancel_url: `http://localhost:3000/api/payment/cancel`,
-        // },
+        application_context: {
+            return_url: `https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/success`,
+            cancel_url: `https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/cancel`,
+          },
+          
     });
 
     const order = await client.execute(request);
-    return order.result.links.find((link) => link.rel === "approve").href;
+    return order.result.links.find((link) => link.rel === "approve").href; // Return approval URL
 };
 
 
-// Fonction pour configurer l'environnement sandbox ou live
-const environment = new paypal.core.SandboxEnvironment(
-    process.env.PAYPAL_CLIENT_ID,
-    process.env.PAYPAL_CLIENT_SECRET
-);
-const client = new paypal.core.PayPalHttpClient(environment);
+// Fetch PayPal Order Details
+const getPayPalOrderDetails = async (orderId) => {
+    const environment = new paypal.core.SandboxEnvironment(
+      process.env.PAYPAL_CLIENT_ID,
+      process.env.PAYPAL_CLIENT_SECRET
+    );
+    const client = new paypal.core.PayPalHttpClient(environment);
+  
+    const request = new paypal.orders.OrdersGetRequest(orderId);
+    const response = await client.execute(request);
+    return response.result;
+  };
+  
+  // Capture PayPal Payment
+  const capturePayPalPayment = async (orderId) => {
+    const environment = new paypal.core.SandboxEnvironment(
+      process.env.PAYPAL_CLIENT_ID,
+      process.env.PAYPAL_CLIENT_SECRET
+    );
+    const client = new paypal.core.PayPalHttpClient(environment);
+  
+    const captureRequest = new paypal.orders.OrdersCaptureRequest(orderId);
+    captureRequest.requestBody({});
+    const captureResponse = await client.execute(captureRequest);
+    return captureResponse.result;
+  };
+  
 
-
-
-
+  
+  
 function PayPalClient() {
     return new paypal.core.PayPalHttpClient(
         new paypal.core.SandboxEnvironment(
@@ -159,4 +177,4 @@ async function testPayPal() {
 
 
 
-module.exports = {calculateTotalPrice,createStripePaymentIntent ,createPayPalOrder, PayPalClient,createStripePaymentLink, createPaypalPaymentLink};
+module.exports = {getPayPalOrderDetails,calculateTotalPrice,createStripePaymentIntent,capturePayPalPayment ,createPayPalOrder, PayPalClient,createStripePaymentLink, createPaypalPaymentLink};
