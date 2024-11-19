@@ -19,7 +19,7 @@ const setupSwagger = require('./config/swaggerConfig');
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 
 const corsOptions = {
-  origin: '*', 
+  origin: ['*' , 'https://dirverapp.netlify.app'], 
   optionsSuccessStatus: 200 
 };
 app.use(cors(corsOptions));
