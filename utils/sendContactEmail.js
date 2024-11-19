@@ -14,15 +14,36 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
     from: `"London Waste Management"<${contactData.email}>`,
     to: responsibleEmail,
     subject: `New Contact Request from ${contactData.fullName}`,
-    text: `
-    You have a new contact request.
-
-    Details:
-    - Full Name: ${contactData.fullName}
-    - Email: ${contactData.email}
-    - Message: ${contactData.message}
-    `,
-  };
+    html: `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
+       <div style="text-align: center; margin-bottom: 20px;">
+          <img src="cid:logo" alt="London Waste Management" style="max-width: 150px;">
+        </div>
+    <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #4CAF50;">New Contact Request</h2>
+        <p style="font-size: 14px; color: #888;">A customer has contacted you through the system.</p>
+      </div>
+      <div style="padding: 15px; background-color: #fff; border-radius: 8px; border: 1px solid #ddd;">
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Full Name:</strong> ${contactData.fullName}</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Email:</strong> ${contactData.email}</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Message:</strong></p>
+        <p style="margin: 10px 0; font-size: 14px; background-color: #f2f2f2; padding: 10px; border-radius: 4px; font-style: italic;">
+          ${contactData.message}
+        </p>
+      </div>
+      <div style="text-align: center; margin-top: 20px;">
+        <p style="font-size: 14px; color: #888;">London Waste Management</p>
+      </div>
+    </div>
+  `,
+  attachments: [
+    {
+      filename: 'Green-Log.png',
+      path: 'D:\\Users\\eya20\\LondonWaste\\LWMServer\\logo\\Green-Log.png',
+      cid: 'logo', // Content ID for the inline image
+    },
+  ],
+};
 
   // Email to the user
   const mailOptionsToUser = {

@@ -9,6 +9,7 @@ const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const nodemailer = require('nodemailer');
 const sendPayementEmail = require('../utils/sendPayementEmail'); 
+const sendPaymentConfirmationEmail = require("../utils/sendPayementRecivedEmail");
 
 
 const taskCtrl = {
@@ -668,65 +669,66 @@ generatePaymentLinks: async (req, res) => {
 },
 
 
+
 handleStripeWebhook: async (req, res) => {
-  const sig = req.headers['stripe-signature'];
+  const sig = req.headers["stripe-signature"];
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   try {
-      // Vérification de l'intégrité de la requête Stripe
       const event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
 
-      if (event.type === 'checkout.session.completed') {
+      if (event.type === "checkout.session.completed") {
           const session = event.data.object;
-          const taskId = session.metadata.taskId; // Récupérer l'ID de la tâche depuis les métadonnées
+          const taskId = session.metadata.taskId;
 
-          // Récupérer les détails de la tâche
           const task = await Task.findById(taskId);
           if (!task) {
               console.error(`Task not found for ID: ${taskId}`);
-              return res.status(404).send('Task not found');
+              return res.status(404).send("Task not found");
           }
 
-          // Mettre à jour l'état de la tâche comme "Paid"
-          task.paymentStatus = 'Paid';
+          task.paymentStatus = "Paid";
           await task.save();
 
-          // Récupérer les détails de la charge Stripe
-          const charges = await stripe.charges.list({
-              payment_intent: session.payment_intent,
-              limit: 1, // Récupérer la charge la plus récente
-          });
+          const payerAccount = session.customer_email || "Unknown Payer (Stripe)";
+          console.log("Payer Account:", payerAccount);
 
-          const charge = charges.data[0];
-          if (!charge) {
-              console.error('Charge not found for this payment');
-              return res.status(400).send('Charge not found');
-          }
+          const paymentDate = new Date();
 
-          const payerAccount = charge.billing_details.email || charge.payment_method_details.card.last4;
-
-          // Enregistrer l'historique des paiements
           await PaymentHistory.create({
               taskId: task._id,
               firstName: task.firstName,
               lastName: task.lastName,
               phoneNumber: task.phoneNumber,
-              amount: session.amount_total, // Montant total payé
+              amount: session.amount_total / 100,
+              currency: session.currency.toUpperCase(),
               price: task.price,
               options: {
                   position: task.Objectsposition,
                   timeSlot: task.available,
               },
-              paymentType: 'stripe', // Type de paiement (Stripe)
-              paymentDate: new Date(),
-              transactionId: session.payment_intent, // Stripe paymentIntentId comme transactionId
-              payerAccount: payerAccount, // Adresse e-mail ou les 4 derniers chiffres de la carte
+              paymentType: "stripe",
+              paymentDate,
+              transactionId: session.payment_intent,
+              payerAccount,
           });
 
-          console.log(`Payment for Task ${taskId} completed successfully and recorded in history!`);
+          await sendPaymentConfirmationEmail({
+              email: task.email,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              orderId: taskId,
+              paymentDate: paymentDate.toLocaleString(),
+              amount: session.amount_total / 100,
+              currency: session.currency.toUpperCase(),
+              paymentType: "Stripe",
+              taskDetails: task,
+          });
+
+          console.log(`Payment for Task ${taskId} completed and email sent.`);
       }
 
-      res.status(200).send('Webhook received');
+      res.status(200).send("Webhook received");
   } catch (err) {
       console.error(`Webhook error: ${err.message}`);
       res.status(400).send(`Webhook Error: ${err.message}`);
@@ -735,62 +737,66 @@ handleStripeWebhook: async (req, res) => {
 
 handlePaypalWebhook: async (req, res) => {
   try {
-    const event = req.body;
+      const event = req.body;
 
-    // Check for payment capture completed event
-    if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
-      const captureId = event.resource.id; // Capture ID
-      const orderId = event.resource.supplementary_data.related_ids.order_id; // Extract order ID
+      if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
+          const captureId = event.resource.id;
+          const orderId = event.resource.supplementary_data.related_ids.order_id;
 
-      console.log(`Capture ID: ${captureId}, Order ID: ${orderId}`);
+          const task = await Task.findById(orderId);
+          if (!task) {
+              console.error(`Task not found for ID: ${orderId}`);
+              return res.status(404).send("Task not found");
+          }
 
-      // Retrieve the task associated with the order ID
-      const task = await Task.findById(orderId);
-      if (!task) {
-        console.error(`Task not found for ID: ${orderId}`);
-        return res.status(404).send('Task not found');
+          task.paymentStatus = "Paid";
+          await task.save();
+
+          const payerInfo = event.resource.payer;
+          const payerAccount = payerInfo.email_address || `PayPal ID: ${payerInfo.payer_id}` || "Unknown Payer (PayPal)";
+          console.log("Payer Account:", payerAccount);
+
+          const amount = parseFloat(event.resource.amount.value);
+          const currency = event.resource.amount.currency_code;
+          const paymentDate = new Date();
+
+          await PaymentHistory.create({
+              taskId: task._id,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              phoneNumber: task.phoneNumber,
+              amount,
+              currency,
+              price: task.price,
+              options: {
+                  position: task.Objectsposition,
+                  timeSlot: task.available,
+              },
+              paymentType: "paypal",
+              paymentDate,
+              transactionId: captureId,
+              payerAccount,
+          });
+
+          await sendPaymentConfirmationEmail({
+              email: task.email,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              orderId,
+              paymentDate: paymentDate.toLocaleString(),
+              amount,
+              currency,
+              paymentType: "PayPal",
+              taskDetails: task,
+          });
+
+          console.log(`Payment for Task ${orderId} recorded and email sent.`);
       }
 
-      // Update payment status in the task
-      task.paymentStatus = 'Paid';
-      await task.save();
-
-      const payerInfo = event.resource.payer; // Payer details
-      const amount = event.resource.amount.value; // Amount paid
-      const currency = event.resource.amount.currency_code; // Currency code
-
-      // Log payer details (for debugging purposes)
-      console.log(`Payer Info: ${JSON.stringify(payerInfo, null, 2)}`);
-
-      const payerAccount =
-        payerInfo?.email_address || `PayPal Account ID: ${payerInfo?.payer_id}`;
-
-      // Record payment history
-      await PaymentHistory.create({
-        taskId: task._id,
-        firstName: task.firstName,
-        lastName: task.lastName,
-        phoneNumber: task.phoneNumber,
-        amount: parseFloat(amount), // Convert to float for better handling
-        currency,
-        price: task.price,
-        options: {
-          position: task.Objectsposition,
-          timeSlot: task.available,
-        },
-        paymentType: 'paypal', // Type of payment (PayPal)
-        paymentDate: new Date(),
-        transactionId: captureId, // Capture ID as transaction ID
-        payerAccount: payerAccount, // Email address or payer ID
-      });
-
-      console.log(`Payment for Task ${orderId} recorded successfully in history!`);
-    }
-
-    res.status(200).send('Webhook processed successfully');
+      res.status(200).send("Webhook processed successfully");
   } catch (error) {
-    console.error('Error processing PayPal webhook:', error);
-    res.status(500).send('Webhook processing failed');
+      console.error("Error processing PayPal webhook:", error);
+      res.status(500).send("Webhook processing failed");
   }
 },
 
