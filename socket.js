@@ -79,14 +79,14 @@ const initSocket = (server) => {
 
     socket.on('sendLocation', async ({ driverId, coordinates }) => {
       try {
-        // console.log(`Updating location for driver ${driverId}:`, coordinates);
+        console.log(`Updating location for driver ${driverId}:`, coordinates);
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
         await Driver.findByIdAndUpdate(driverId, {
           location: { type: 'Point', coordinates: coordinatesArray },
         });
         const driver = await Driver.findById(driverId);
         console.log('location', driver.location);
-        // console.log(driver.username);
+        console.log(driver.startTime, 'start time');
 
         if (driver) {
           io.emit('driverLocationUpdate', {
@@ -127,7 +127,7 @@ const initSocket = (server) => {
         status: 'GoToTipping',
       });
       const onBreakCount = await Driver.countDocuments({
-        'location.onBreak': true,
+        onBreak: true,
       });
 
       io.emit('vehicleStats', {

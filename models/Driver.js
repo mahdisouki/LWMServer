@@ -8,6 +8,7 @@ const driverSchema = new mongoose.Schema({
   startTime: { type: Date, required: false },
   endTime: { type: Date, required: false },
   onBreak:{type:Boolean, default:false},
+  breakStartTime:{type:Date },
   location: {
     type: {
       type: String,
@@ -18,9 +19,7 @@ const driverSchema = new mongoose.Schema({
       type: [Number],
       required: false,
     },
-    
-    breakStartTime:{type:Date }
-  }, // Array of breaks
+  },
   currentJobAddress: { type: String, required: false },
   nextJobAddress: { type: String, required: false },
 });
