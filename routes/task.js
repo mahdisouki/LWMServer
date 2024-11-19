@@ -146,7 +146,7 @@ const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
 
 
-router.post('/create-request', isAuth, checkRole('Admin'), multer.array('clientObjectPhotos'), taskCtrl.createTask);
+router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
 router.get('/tasks', isAuth, checkRole('Admin'), taskCtrl.getAllTasks);
 router.get('/task/:taskId', isAuth, taskCtrl.getTaskById);
