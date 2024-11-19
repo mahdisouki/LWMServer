@@ -2,20 +2,14 @@ const express = require("express");
 const app = express();
 const http = require("http");
 const bodyParser = require('body-parser');
-const https = require("https");
 const fs = require("fs");
 
-// SSL certificate and key
-const privateKey = fs.readFileSync("./certs/192.168.62.131-key.pem", "utf8");
-const certificate = fs.readFileSync("./certs/192.168.62.131.pem", "utf8");
-
-const credentials = { key: privateKey, cert: certificate };
 
 const { initSocket } = require("./socket");
 
 
 
-const server = https.createServer(credentials, app); 
+const server = http.createServer(app); 
 
 initSocket(server);
 
@@ -31,7 +25,7 @@ const setupSwagger = require('./config/swaggerConfig');
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 
 const corsOptions = {
-  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app/'], 
+  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173'], 
   optionsSuccessStatus: 200 
 };
 app.use(cors(corsOptions));
