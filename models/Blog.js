@@ -2,10 +2,12 @@ const mongoose = require('mongoose');
 
 const blogSchema = new mongoose.Schema({
     title: { type: String, required: true },
-    author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Assuming you have a User model
+    author: { type: String, required: true},
     description: { type: String, required: true },
-    image: { type: String, required: true }, // URL or path to the image
-    date: { type: Date, default: Date.now }, // Automatically set to the current date
+    image: { type: String, required: true }, 
+    date: { type: Date, default: Date.now },
+    tags: { type: [String]  , index: true}, 
+
 });
 
 const Blog = mongoose.model('Blog', blogSchema);

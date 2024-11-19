@@ -1,6 +1,4 @@
-const Storage = require("../models/Storage");
-
-
+const Storage = require('../models/Storage');
 
 const storageCtrl = {
   addItems: async (req, res) => {
@@ -9,35 +7,26 @@ const storageCtrl = {
       const storageDate = new Date(date);
       storageDate.setHours(0, 0, 0, 0);
 
-      let storageRecord = await Storage.findOne({ driverId, date: storageDate });
+      const proofUrls = req.files ? req.files.map((file) => file.path) : [];
 
-      if (storageRecord) {
-        storageRecord.items.fridges += items.fridges || 0;
-        storageRecord.items.mattresses += items.mattresses || 0;
-        storageRecord.items.sofas += items.sofas || 0;
-        storageRecord.items.paint += items.paint || 0;
-        storageRecord.items.other += items.other || 0;
-      } else {
-        storageRecord = new Storage({
-          driverId,
-          date: storageDate,
-          items: {
-            fridges: items.fridges || 0,
-            mattresses: items.mattresses || 0,
-            sofas: items.sofas || 0,
-            paint: items.paint || 0,
-            other: items.other || 0,
-          }
-        });
-      }
+      const newStorageRecord = new Storage({
+        driverId,
+        type: 'add',
+        date: storageDate,
+        items: {
+          fridges: items.fridges || 0,
+          mattresses: items.mattresses || 0,
+          sofas: items.sofas || 0,
+          paint: items.paint || 0,
+          other: items.other || 0,
+        },
+        proofs: proofUrls,
+      });
 
-      if (req.files) {
-        const proofUrls = req.files.map(file => file.path);  
-        storageRecord.proofs = [...storageRecord.proofs, ...proofUrls]; 
-      }
-
-      const savedStorage = await storageRecord.save();
-      res.status(200).json({ message: "Items added to storage", storage: savedStorage });
+      const savedStorage = await newStorageRecord.save();
+      res
+        .status(201)
+        .json({ message: 'Items added to storage', storage: savedStorage });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -49,34 +38,36 @@ const storageCtrl = {
       const storageDate = new Date(date);
       storageDate.setHours(0, 0, 0, 0);
 
-      let storageRecord = await Storage.findOne({ driverId, date: storageDate });
+      const proofUrls = req.files ? req.files.map((file) => file.path) : [];
 
-      if (!storageRecord) {
-        return res.status(404).json({ message: "No storage record found for the specified date and driver" });
-      }
+      const newStorageRecord = new Storage({
+        driverId,
+        type: 'take',
+        date: storageDate,
+        items: {
+          fridges: items.fridges || 0,
+          mattresses: items.mattresses || 0,
+          sofas: items.sofas || 0,
+          paint: items.paint || 0,
+          other: items.other || 0,
+        },
+        proofs: proofUrls,
+      });
 
-      storageRecord.items.fridges = Math.max(0, storageRecord.items.fridges - (items.fridges || 0));
-      storageRecord.items.mattresses = Math.max(0, storageRecord.items.mattresses - (items.mattresses || 0));
-      storageRecord.items.sofas = Math.max(0, storageRecord.items.sofas - (items.sofas || 0));
-      storageRecord.items.paint = Math.max(0, storageRecord.items.paint - (items.paint || 0));
-      storageRecord.items.other = Math.max(0, storageRecord.items.other - (items.other || 0));
-
-      if (req.body.proofsToRemove) {
-        storageRecord.proofs = storageRecord.proofs.filter(proof => !req.body.proofsToRemove.includes(proof));
-      }
-
-      const updatedStorage = await storageRecord.save();
-      res.status(200).json({ message: "Items removed from storage", storage: updatedStorage });
+      const savedStorage = await newStorageRecord.save();
+      res
+        .status(201)
+        .json({ message: 'Items removed from storage', storage: savedStorage });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   },
   getStoragesByDate: async (req, res) => {
     try {
-      const { date, driverId } = req.query;
+      const { date, driverId, page = 1, limit = 9 } = req.query;
 
       if (!date) {
-        return res.status(400).json({ message: "Date is required" });
+        return res.status(400).json({ message: 'Date is required' });
       }
 
       const storageDate = new Date(date);
@@ -84,21 +75,42 @@ const storageCtrl = {
 
       // If a driverId is provided, filter by driverId as well
       const query = { date: storageDate };
+
       if (driverId) query.driverId = driverId;
 
-      const storages = await Storage.find(query)
-        .populate("driverId", "username email") // Populate driver info if needed
+      const storagesQuery = Storage.find(query).populate(
+        'driverId',
+        'username email',
+      ); 
+      const total = await Storage.countDocuments();
+
+      const skip = (page - 1) * limit;
+      
+      const storages = await storagesQuery
+        .skip(skip)
+        .limit(Number(limit))
         .exec();
 
       if (!storages.length) {
-        return res.status(404).json({ message: "No storage records found for the specified date" });
+        return res
+          .status(404)
+          .json({ message: 'No storage records found for the specified date' });
       }
 
-      res.status(200).json({ storages });
+      res.status(200).json({
+        message: 'All storages fetched successfully',
+        storages,
+        meta: {
+          currentPage: parseInt(page, 10),
+          limit: parseInt(limit, 10),
+          total,
+          count: storages.length,
+        },
+      });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
 };
 
 module.exports = storageCtrl;

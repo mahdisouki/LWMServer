@@ -1,11 +1,12 @@
 
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 const paypal = require('@paypal/checkout-server-sdk');
 const StandardItem = require('../models/StandardItem');
 const Task = require('../models/Task');
-
 const VAT_RATE = 0.2; // 20% VAT rate
 
+const Stripe = require('stripe');
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key here
 
 const calculateTotalPrice = async (taskId, options) => {
     const task = await Task.findById(taskId);
@@ -40,6 +41,7 @@ const calculateTotalPrice = async (taskId, options) => {
 
 
 
+
 const createStripePaymentIntent = async (amount) => {
     return stripe.paymentIntents.create({
         amount: amount, 
@@ -59,33 +61,120 @@ async function createPayPalOrder(amount) {
     return client.execute(request);
 }
 
-module.exports = { createPayPalOrder, PayPalClient };
-
-
-
-// Fonction pour configurer l'environnement sandbox ou live
-function environment() {
-    let clientId = process.env.PAYPAL_CLIENT_ID;
-    let clientSecret = process.env.PAYPAL_SECRET;
-
-    return new paypal.core.SandboxEnvironment(clientId, clientSecret); // Utilisez LiveEnvironment en production
-}
-
-
-
-
-function PayPalClient() {
-    return new paypal.core.PayPalHttpClient(new paypal.core.SandboxEnvironment(
-        process.env.PAYPAL_CLIENT_ID,
-        process.env.PAYPAL_SECRET
-    ));
-}
-
-
-
-module.exports = {
-    calculateTotalPrice,
-    createStripePaymentIntent,
-    createPayPalOrder,
-    PayPalClient
+const createStripePaymentLink = async (taskId, amount) => {
+    const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+            {
+                price_data: {
+                    currency: 'gbp',
+                    product_data: { name: `Payment for Task #${taskId}` },
+                    unit_amount: amount, // amount in pence
+                },
+                quantity: 1,
+            },
+        ],
+        mode: 'payment',
+        metadata: { taskId }, // Add taskId as metadata
+        success_url: 'https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/success',
+        cancel_url: 'https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/cancel',
+    });
+    
+    return session.url; // Retournez l'URL générée par Stripe pour le paiement
 };
+
+
+const createPaypalPaymentLink = async (taskId, amount) => {
+    const environment = new paypal.core.SandboxEnvironment(
+        process.env.PAYPAL_CLIENT_ID,
+        process.env.PAYPAL_CLIENT_SECRET
+    );
+    const client = new paypal.core.PayPalHttpClient(environment);
+
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.prefer("return=representation");
+    request.requestBody({
+        intent: "CAPTURE", // Required for capturing funds
+        purchase_units: [
+            {
+                custom_id: taskId, // Attach Task ID here
+                description: `Payment for Task #${taskId}`,
+                amount: {
+                    currency_code: "GBP", // Ensure currency matches your region
+                    value: (amount / 100).toFixed(2),
+                },
+            },
+        ],
+        application_context: {
+            return_url: `https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/success`,
+            cancel_url: `https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/cancel`,
+          },
+          
+    });
+
+    const order = await client.execute(request);
+    return order.result.links.find((link) => link.rel === "approve").href; // Return approval URL
+};
+
+
+// Fetch PayPal Order Details
+const getPayPalOrderDetails = async (orderId) => {
+    const environment = new paypal.core.SandboxEnvironment(
+      process.env.PAYPAL_CLIENT_ID,
+      process.env.PAYPAL_CLIENT_SECRET
+    );
+    const client = new paypal.core.PayPalHttpClient(environment);
+  
+    const request = new paypal.orders.OrdersGetRequest(orderId);
+    const response = await client.execute(request);
+    return response.result;
+  };
+  
+  // Capture PayPal Payment
+  const capturePayPalPayment = async (orderId) => {
+    const environment = new paypal.core.SandboxEnvironment(
+      process.env.PAYPAL_CLIENT_ID,
+      process.env.PAYPAL_CLIENT_SECRET
+    );
+    const client = new paypal.core.PayPalHttpClient(environment);
+  
+    const captureRequest = new paypal.orders.OrdersCaptureRequest(orderId);
+    captureRequest.requestBody({});
+    const captureResponse = await client.execute(captureRequest);
+    return captureResponse.result;
+  };
+  
+
+  
+  
+function PayPalClient() {
+    return new paypal.core.PayPalHttpClient(
+        new paypal.core.SandboxEnvironment(
+            process.env.PAYPAL_CLIENT_ID,
+            process.env.PAYPAL_CLIENT_SECRET
+        )
+    );
+}
+
+async function testPayPal() {
+    const client = PayPalClient();
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.requestBody({
+        intent: 'CAPTURE',
+        purchase_units: [{ amount: { currency_code: 'GBP', value: '1.00' } }]
+    });
+
+    try {
+        const response = await client.execute(request);
+        console.log('PayPal Test Successful:', response);
+    } catch (error) {
+        console.error('PayPal Test Failed:', error.message);
+    }
+}
+
+//testPayPal();
+
+
+
+
+module.exports = {getPayPalOrderDetails,calculateTotalPrice,createStripePaymentIntent,capturePayPalPayment ,createPayPalOrder, PayPalClient,createStripePaymentLink, createPaypalPaymentLink};
