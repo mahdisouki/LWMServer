@@ -27,6 +27,7 @@ require('./jobs/dailySheetCron');
 require('./jobs/AssignedStaffCron');
 const setupSwagger = require('./config/swaggerConfig'); 
 // Apply raw body for Stripe webhook first
+
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 
 const corsOptions = {

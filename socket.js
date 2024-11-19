@@ -48,7 +48,7 @@ const initSocket = (server) => {
         'https://localhost:5173',
         'http://localhost:5174',
         'https://localhost:5173',
-        'https://dirverapp.netlify.app',
+        'https://dirverapp.netlify.app', 
         'https://lwmadmin.netlify.app/'
       ],
       methods: ['GET', 'POST'],
