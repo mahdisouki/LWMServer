@@ -7,7 +7,8 @@ const mongoose = require('mongoose');
 const { createPaypalPaymentLink,createStripePaymentLink,calculateTotalPrice, createStripePaymentIntent, createPayPalOrder ,PayPalClient } = require('../services/paymentService.js');
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const {createOptimoOrder} = require('../helper/OpitomRoute.js')const nodemailer = require('nodemailer');
+const {createOptimoOrder} = require('../helper/OpitomRoute.js')
+const nodemailer = require('nodemailer');
 const sendPayementEmail = require('../utils/sendPayementEmail'); 
 
 const taskCtrl = {
