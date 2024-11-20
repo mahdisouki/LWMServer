@@ -25,7 +25,7 @@ const setupSwagger = require('./config/swaggerConfig');
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 
 const corsOptions = {
-  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173'], 
+  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' , 'https://londonwastemanagement.netlify.app'], 
   optionsSuccessStatus: 200 
 };
 app.use(cors(corsOptions));

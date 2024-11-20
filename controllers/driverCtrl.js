@@ -5,7 +5,8 @@ const Truck = require('../models/Truck');
 const TruckStatus = require('../models/TruckStatus');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
-
+const { emitNotificationToUser } = require('../socket');
+const adminId = "672fc298975e313da1eaff7f"
 const driverManagement = {
   updateDriverProfile: async (req, res) => {
     const driverId = req.user._id;
@@ -535,7 +536,7 @@ const driverManagement = {
      driver.onBreak = true;
       driver.breakStartTime = Date.now();
       await driver.save();
-
+      emitNotificationToUser(adminId , `a driver ${driver.username} is taking a break`)
       return res.status(200).json({ message: 'Break started', newBreak });
     } catch (error) {
       console.error(error);

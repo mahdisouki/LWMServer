@@ -49,7 +49,8 @@ const initSocket = (server) => {
         'http://localhost:5174',
         'https://localhost:5173',
         'https://dirverapp.netlify.app', 
-        'https://lwmadmin.netlify.app'
+        'https://lwmadmin.netlify.app',
+        'https://londonwastemanagement.netlify.app'
       ],
       methods: ['GET', 'POST'],
       credentials: true,
@@ -248,15 +249,20 @@ const emitNotificationToUser = async (userId, notificationMessage) => {
   if (socketId && io) {
     io.to(socketId).emit('notification', { message: notificationMessage });
   } else {
-    // User is offline, save notification to the database
-    await Notification.create({
-      userId,
-      message: notificationMessage,
-      read: false,
-    });
-    console.log(`Notification saved for offline user: ${userId}`);
+    try {
+      // User is offline, save notification to the database
+      const newNotification = await Notification.create({
+        userId,
+        message: notificationMessage,
+        read: false,
+      });
+      console.log(`Notification saved for offline user: ${userId}`, newNotification);
+    } catch (error) {
+      console.error(`Error saving notification for user ${userId}:`, error);
+    }
   }
 };
+
 // Function to send offline notifications to the user upon reconnecting
 const sendOfflineNotifications = async (userId, socket) => {
   //emit offline notifications to user
