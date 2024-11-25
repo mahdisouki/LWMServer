@@ -134,33 +134,48 @@ const driverManagement = {
   },
 
   getTasksForDriver: async (req, res) => {
-    const driverId = req.user._id; // ID of the driver from URL
-    const trucks = await Truck.find();
-
+    const driverId = req.user._id; // ID of the driver from the authenticated request
+  
     try {
-      // Find the truck that this driver is assigned to
-      const truck = await Truck.findOne({ driverId: driverId });
-
+      // Determine today's date range
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+  
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+  
+      const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
+  
+      // Find the truck assigned to the driver
+      const truck = await Truck.findOne({ driverId });
+  
       if (!truck) {
         return res
           .status(404)
           .json({ message: 'No truck found for the given driver.' });
       }
-
-      // const tasks = await Task.find({
-      //   _id: { $in: truck.tasks },
-      //   $or: [{ finishDate: null }],
-      // });
-      const tasks = await Task.find();
-
-     
-      res.status(200).json({ message: 'Tasks retrieved successfully', tasks });
-    } catch (error) {
+  
+      // Get the task IDs for today's date from `tasksByDate`
+      const taskIdsForToday = truck.tasksByDate?.[formattedDate] || [];
+  
+      // Fetch the tasks for the current day
+      const tasks = await Task.find({
+        _id: { $in: taskIdsForToday },
+        date: { $gte: startOfDay, $lt: endOfDay },
+      });
+  
       res
-        .status(500)
-        .json({ message: 'Failed to retrieve tasks', error: error.message });
+        .status(200)
+        .json({ message: 'Tasks for today retrieved successfully', tasks });
+    } catch (error) {
+      console.error('Error retrieving tasks for driver:', error);
+      res.status(500).json({
+        message: 'Failed to retrieve tasks',
+        error: error.message || 'Unknown error occurred',
+      });
     }
   },
+  
 
   updateTruckStart: async (req, res) => {
     const { truckId } = req.params;
