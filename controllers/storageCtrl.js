@@ -111,6 +111,87 @@ const storageCtrl = {
       res.status(500).json({ error: error.message });
     }
   },
+  getTotalItemsInStorage: async (req, res) => {
+    try {
+      const { driverId } = req.query;
+
+      // Optional filter by driverId
+      const matchStage = driverId ? { driverId } : {};
+
+      const totals = await Storage.aggregate([
+        { $match: matchStage }, // Filter by driverId if provided
+        {
+          $group: {
+            _id: null,
+            totalFridges: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "add"] },
+                  "$items.fridges",
+                  { $multiply: ["$items.fridges", -1] },
+                ],
+              },
+            },
+            totalMattresses: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "add"] },
+                  "$items.mattresses",
+                  { $multiply: ["$items.mattresses", -1] },
+                ],
+              },
+            },
+            totalSofas: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "add"] },
+                  "$items.sofas",
+                  { $multiply: ["$items.sofas", -1] },
+                ],
+              },
+            },
+            totalPaint: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "add"] },
+                  "$items.paint",
+                  { $multiply: ["$items.paint", -1] },
+                ],
+              },
+            },
+            totalOther: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "add"] },
+                  "$items.other",
+                  { $multiply: ["$items.other", -1] },
+                ],
+              },
+            },
+          },
+        },
+      ]);
+
+      if (!totals.length) {
+        return res.status(404).json({ message: "No storage records found" });
+      }
+
+      const netItems = totals[0]; // Aggregation returns an array
+
+      res.status(200).json({
+        message: "Total items in storage fetched successfully",
+        totalItems: {
+          fridges: netItems.totalFridges,
+          mattresses: netItems.totalMattresses,
+          sofas: netItems.totalSofas,
+          paint: netItems.totalPaint,
+          other: netItems.totalOther,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
 };
 
 module.exports = storageCtrl;

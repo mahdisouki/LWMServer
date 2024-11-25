@@ -186,33 +186,42 @@ const staffManagement = {
   updateStaff: async (req, res) => {
     const { id } = req.params;
     let updateData = req.body; // Take all incoming fields for potential update
-
-    if (req.file) {
-      updateData.picture = req.file.path; // Save or update the path to the file in the database
-    }
-
-    // If password is included, hash it before updating
-    if (updateData.password && updateData.password.trim() !== '') {
-      updateData.password = await bcrypt.hash(updateData.password, 10);
-    }
-
+  
     try {
+      // Check if any files are included in the request and update their respective fields
+      if (req.files) {
+        updateData.picture = req.files['picture'] ? req.files['picture'][0].path : undefined;
+        updateData.DriverLicense = req.files['DriverLicense'] ? req.files['DriverLicense'][0].path : undefined;
+        updateData.addressProof = req.files['addressProof'] ? req.files['addressProof'][0].path : undefined;
+        updateData.NatInsurance = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : undefined;
+      }
+  
+      // If password is included, hash it before updating
+      if (updateData.password && updateData.password.trim() !== '') {
+        updateData.password = await bcrypt.hash(updateData.password, 10);
+      }
+  
+      // Update the staff member in the database
       const user = await User.findByIdAndUpdate(
         id,
         { $set: updateData },
-        { new: true },
+        { new: true }, // Return the updated document
       );
+  
       if (!user) {
         return res.status(404).json({ message: 'Staff not found' });
       }
+  
       res.status(200).json({ message: 'Staff updated successfully', user });
     } catch (error) {
       console.error('Error updating staff:', error);
-      res
-        .status(500)
-        .json({ message: 'Failed to update staff', error: error.message });
+      res.status(500).json({
+        message: 'Failed to update staff',
+        error: error.message,
+      });
     }
   },
+  
 
   assignDriverToTruck: async (req, res) => {
     const { driverId } = req.params;

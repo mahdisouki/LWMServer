@@ -12,8 +12,11 @@ const truckSchema = new Schema({
     startDate:{type:Date },
     endDate:{type:Date },
   } ,
-  tasks: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
-  name: { type: String, required: true, unique: true },
+  tasks: {
+    type: Map, // Using a Map to organize tasks by date
+    of: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
+    default: {},
+  },  name: { type: String, required: true, unique: true },
   loadCapacity:{ type:  Number},
   matricule: { type: String, required: true, unique: true },
 });

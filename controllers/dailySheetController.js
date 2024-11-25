@@ -9,72 +9,72 @@ const dailySheetController = {
     try {
       // Ensure date is a valid Date object
       const inputDate = req.body.date ? new Date(req.body.date) : new Date();
-      const startOfDay = new Date(inputDate);
-      startOfDay.setHours(0, 0, 0, 0);
-
-      const endOfDay = new Date(inputDate);
-      endOfDay.setHours(23, 59, 59, 999);
-      // If input date is invalid, respond with an error
       if (isNaN(inputDate)) {
         return res.status(400).json({ message: 'Invalid date format' });
       }
+  
+      const startOfDay = new Date(inputDate);
+      startOfDay.setHours(0, 0, 0, 0);
+  
+      const endOfDay = new Date(inputDate);
+      endOfDay.setHours(23, 59, 59, 999);
+  
+      const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
   
       const drivers = await Driver.find();
       const dailySheets = [];
   
       for (const driver of drivers) {
         // Find trucks associated with the current driver
-        const truck = await Truck.find({ driverId: driver._id });
-          console.log("truck",truck)
-        // Gather all task IDs from the trucks
-      const allTaskIds = truck.reduce((acc, truck) => {
-        return acc.concat(truck.tasks); // Collect task IDs from each truck
-      }, []);
-        console.log("allTaskIDS",allTaskIds)
+        const trucks = await Truck.find({ driverId: driver._id });
+  
+        // Gather task IDs for the specific date from `tasksByDate`
+        const allTaskIdsForDate = trucks.reduce((acc, truck) => {
+          const tasksForDate = truck.tasksByDate?.[formattedDate] || [];
+          return acc.concat(tasksForDate);
+        }, []);
+  
         // Fetch tasks associated with the trucks for the specific date and status
         const jobsDone = await Task.find({
-          _id: { $in: allTaskIds },
+          _id: { $in: allTaskIdsForDate },
           taskStatus: 'Completed',
           date: { $gte: startOfDay, $lt: endOfDay },
         });
   
         const jobsPending = await Task.find({
-          _id: { $in: allTaskIds },
+          _id: { $in: allTaskIdsForDate },
           taskStatus: 'Processing',
           date: { $gte: startOfDay, $lt: endOfDay },
         });
   
         const jobsCancelled = await Task.find({
-          _id: { $in: allTaskIds },
+          _id: { $in: allTaskIdsForDate },
           taskStatus: 'Declined',
           date: { $gte: startOfDay, $lt: endOfDay },
         });
   
         const tippingRequests = await TippingRequest.find({
           userId: driver._id,
-          createdAt: {
-            $gte: new Date(inputDate.setHours(0, 0, 0, 0)),
-            $lt: new Date(inputDate.setHours(23, 59, 59, 999)),
-          },
+          createdAt: { $gte: startOfDay, $lt: endOfDay },
         });
   
         // Calculate cash income for the day
-        let totalCashIncome = 0;
-        jobsDone.forEach((job) => {
+        const totalCashIncome = jobsDone.reduce((acc, job) => {
           if (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash') {
-            totalCashIncome += job.price;
+            return acc + job.price;
           }
-        });
+          return acc;
+        }, 0);
   
         // Create or update the daily sheet for the driver
-        let dailySheet = await DailySheet.findOneAndUpdate(
-          { driverId: driver._id, date: inputDate },
+        const dailySheet = await DailySheet.findOneAndUpdate(
+          { driverId: driver._id, date: formattedDate },
           {
             driverId: driver._id,
-            jobsDone: jobsDone.map(job => job._id),
-            jobsPending: jobsPending.map(job => job._id),
-            jobsCancelled: jobsCancelled.map(job => job._id),
-            tippingRequests: tippingRequests.map(tip => tip._id),
+            jobsDone: jobsDone.map((job) => job._id),
+            jobsPending: jobsPending.map((job) => job._id),
+            jobsCancelled: jobsCancelled.map((job) => job._id),
+            tippingRequests: tippingRequests.map((tip) => tip._id),
             income: {
               cash: totalCashIncome,
               total: totalCashIncome,
@@ -95,6 +95,8 @@ const dailySheetController = {
       });
     }
   },
+  
+  
   
   // Get all daily sheets for all drivers for a specific date
   getDailySheetsForAllDrivers: async (req, res) => {

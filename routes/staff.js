@@ -10,7 +10,7 @@ router.post('/create-staff',multer.fields([{ name: 'picture', maxCount: 1 },{ na
 router.get('/staff', isAuth, checkRole('Admin'), staffCtrl.getAllStaff);
 router.get('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.getStaffById);
 router.delete('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.deleteStaff);
-router.put('/staff/:id', isAuth, checkRole('Admin'),multer.single('picture'), staffCtrl.updateStaff);
+router.put('/staff/:id', isAuth, checkRole('Admin'),multer.fields([{ name: 'picture', maxCount: 1 },{ name: 'DriverLicense', maxCount: 1 },{ name: 'addressProof', maxCount: 1 },{ name: 'NatInsurance', maxCount: 1 }]), staffCtrl.updateStaff);
 router.post('/assignDriver/:driverId',isAuth, checkRole('Admin'), staffCtrl.assignDriverToTruck);
 router.put('/updateDriverLocation/:driverId',isAuth, checkRole('Admin'), staffCtrl.updateDriverLocation);
 router.post('/assignHelper/:helperId',isAuth, checkRole('Admin'), staffCtrl.assignHelperToTruck);

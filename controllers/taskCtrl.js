@@ -197,67 +197,96 @@ const taskCtrl = {
   assignTruckToTask: async (req, res) => {
     const { taskId } = req.params;
     const { truckName } = req.body;
-
+  
     try {
       const truck = await Truck.findOne({ name: truckName });
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
-
-      const updatedTask = await Task.findByIdAndUpdate(
-        taskId,
-        { $set: { truckId: truck._id } },
-        { new: true },
-      );
-
-      if (!updatedTask) {
-        return res.status(404).json({ message: 'Task not found' });
-      }
-
-      truck.tasks.push(updatedTask._id);
-      await truck.save();
-
-      res.status(200).json({
-        message: 'Truck assigned to task successfully',
-        task: updatedTask,
-      });
-    } catch (error) {
-      res
-        .status(500)
-        .json({ message: 'Failed to assign truck', error: error.message });
-    }
-  },
-  deAssignTaskFromTruck: async (req, res) => {
-    const { taskId } = req.params;
-
-    try {
-      // Find the task by ID
+  
       const task = await Task.findById(taskId);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-
-      // Check if the task is assigned to any truck
+  
+      // Extract taskDate from the task's `date` field
+      const taskDate = task.date.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
+  
+      // Update the task with the truck ID
+      task.truckId = truck._id;
+      await task.save();
+  
+      // Ensure `tasksByDate` exists for the truck
+      if (!truck.tasksByDate) {
+        truck.tasksByDate = {};
+      }
+  
+      // Add the task ID to the specific date
+      if (!truck.tasksByDate[taskDate]) {
+        truck.tasksByDate[taskDate] = [];
+      }
+  
+      if (!truck.tasksByDate[taskDate].includes(task._id.toString())) {
+        truck.tasksByDate[taskDate].push(task._id.toString());
+      }
+  
+      await truck.save();
+  
+      res.status(200).json({
+        message: 'Truck assigned to task successfully',
+        task,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to assign truck',
+        error: error.message,
+      });
+    }
+  },
+  
+  deAssignTaskFromTruck: async (req, res) => {
+    const { taskId } = req.params;
+  
+    try {
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+  
       if (!task.truckId) {
         return res.status(400).json({ message: 'Task is not assigned to any truck' });
       }
-
-      // Find the truck assigned to the task
+  
       const truck = await Truck.findById(task.truckId);
       if (!truck) {
         return res.status(404).json({ message: 'Assigned truck not found' });
       }
-
-      // Remove the task from the truck's tasks list
-      truck.tasks = truck.tasks.filter(
-        (id) => id.toString() !== task._id.toString()
-      );
-      await truck.save();
-
+  
+      
+      const taskDate = task.date.toISOString().split('T')[0]; 
+  
+      
+      if (
+        truck.tasksByDate &&
+        truck.tasksByDate[taskDate] &&
+        truck.tasksByDate[taskDate].includes(task._id.toString())
+      ) {
+        truck.tasksByDate[taskDate] = truck.tasksByDate[taskDate].filter(
+          (id) => id !== task._id.toString()
+        );
+  
+        // Remove the date entry if it becomes empty
+        if (truck.tasksByDate[taskDate].length === 0) {
+          delete truck.tasksByDate[taskDate];
+        }
+  
+        await truck.save();
+      }
+  
       // Remove the truck assignment from the task
       task.truckId = null;
       await task.save();
-
+  
       res.status(200).json({
         message: 'Task de-assigned from truck successfully',
         task,
@@ -269,6 +298,7 @@ const taskCtrl = {
       });
     }
   },
+  
   moveTaskToAnotherTruck: async (req, res) => {
     const { taskId } = req.params;
     const { newTruckName } = req.body;
