@@ -6,6 +6,7 @@ const Truck = require('../models/Truck');
 const bcrypt = require('bcrypt');
 const socket = require('../socket'); // Ensure you have the correct path to your socket module
 const APIfeatures = require('../utils/APIFeatures');
+const { optimizeRoute } = require('../helper/OpitomRoute');
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -222,7 +223,6 @@ const staffManagement = {
     }
   },
   
-
   assignDriverToTruck: async (req, res) => {
     const { driverId } = req.params;
     const { truckName, startDate, endDate } = req.body; // Accept start and end dates
@@ -527,6 +527,18 @@ const staffManagement = {
       });
     }
   },
+  optimizeTasks: async (req,res)=>{
+    try {
+      const {truckId} = req.params;
+      const {date} = req.body; //example  "2024-12-03"
+      console.log(truckId)
+      const response = await optimizeRoute(truckId ,date);
+      res.json({response:response})
+    } catch (error) {
+      console.log(error)
+      res.json({error:error})
+    }
+  }
 };
 
 module.exports = staffManagement;

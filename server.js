@@ -51,7 +51,8 @@ const blogRoutes = require('./routes/blog')
 const storageRoutes = require('./routes/storage')
 const quotationRoutes = require('./routes/quotationRoutes')
 const contactRequestRoutes = require('./routes/contactRequestRoutes');
-const serviceCategoryRoutes = require('./routes/serviceCategory')
+const serviceCategoryRoutes = require('./routes/serviceCategory');
+const {optimizeRoute } = require("./helper/OpitomRoute");
 
 
 
@@ -89,6 +90,18 @@ app.use('/api',storageRoutes)
 app.use('/api', statsRoute)
 app.use('/api', contactRequestRoutes);
 app.use('/api' , serviceCategoryRoutes)
+
+app.post('/optimise/:truckId' , async(req,res)=>{
+  try {
+    const {truckId} = req.params;
+    console.log(truckId)
+    const response = await optimizeRoute(truckId , "2024-12-03");
+    res.json({response:response})
+  } catch (error) {
+    console.log(error)
+    res.json({error:error})
+  }
+})
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
 });

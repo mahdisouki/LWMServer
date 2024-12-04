@@ -11,7 +11,7 @@ const Dayoff = require('./models/Dayoff');
 const TruckStatus = require('./models/TruckStatus');
 const bcrypt = require('bcrypt');
 
-const mongoURI = process.env.MONGODB_URI
+const mongoURI = process.env.MONGODB_URI;
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -34,14 +34,15 @@ async function truncateDatabase() {
     await TruckStatus.deleteMany({});
     console.log('All data deleted.');
 }
-// Helper function to generate a random location within Tunisia
+
+// Helper function to generate a random location within London
 function getRandomLocation() {
-    const lat = 30.0 + Math.random() * (37.5 - 30.0);
-    const lng = 7.0 + Math.random() * (12.0 - 7.0);
+    const lat = 51.286760 + Math.random() * (51.691874 - 51.286760); // Latitude range for London
+    const lng = -0.510375 + Math.random() * (0.334015 - -0.510375); // Longitude range for London
     return {
         type: "Point",
         coordinates: [lng, lat],
-        address: `Random Location in Tunisia`
+        address: `Random Location in London`
     };
 }
 async function createAdmin() {
@@ -49,10 +50,10 @@ async function createAdmin() {
     const hashedPassword = await bcrypt.hash('password', saltRounds);
 
     const admin = new Admin({
-      email: 'admin@wp.com',
-      username: 'adminUser',
-      password: hashedPassword,
-      role: ['Admin'],
+        email: 'admin@wp.com',
+        username: 'adminUser',
+        password: hashedPassword,
+        role: ['Admin'],
     });
     await admin.save();
     console.log('Admin created');
@@ -93,36 +94,45 @@ async function createTrucks() {
         helpers.push(helper);
     }
 
-    // Create 5 trucks and assign drivers, helpers, and tasks
-    for (let i = 0; i < 5; i++) {
+    // Create 5 trucks and assign 5 tasks to each truck
+    const tasksPerTruck = 5;
+    const allTasks = [];
+
+    // Create 20 tasks
+    for (let i = 0; i < 20; i++) {
         const task = new Task({
             firstName: `ClientFirstName${i + 1}`,
             lastName: `ClientLastName${i + 1}`,
             phoneNumber: `+123456789${i + 1}`,
             clientObjectPhotos: ['https://medleyhome.com/cdn/shop/files/rio-sofa-92-texture-oyster-02.jpg?v=1683918355&width=2048', 'https://images.thdstatic.com/productImages/f219c4b4-2bde-4b99-8be2-696fc239348d/svn/platinum-steel-magic-chef-top-freezer-refrigerators-mcdr740ste-64_600.jpg'],
-            // initialConditionPhotos: [{
-            //     items: ['https://example.com/initial1.jpg', 'https://example.com/initial2.jpg'],
-            //     description: 'Initial condition of the truck.'
-            // }],
-            // finalConditionPhotos: [{
-            //     items: ['https://example.com/final1.jpg', 'https://example.com/final2.jpg'],
-            //     description: 'Final condition of the truck.'
-            // }],
-            // additionalItems: [{
-            //     items: ['Item1', 'Item2'],
-            //     description: 'Additional items in the truck.'
-            // }],
             date: new Date(),
-            hour: '14:00',
+            available: 'AnyTime',
+            location: getRandomLocation(),
             object: 'Moving objects',
             price: 500,
             taskStatus: 'Processing',
             paymentStatus: 'Pending',
             additionalNotes: 'Handle with care.',
-            location: getRandomLocation()
         });
 
         await task.save();
+        allTasks.push(task);
+    }
+
+    // Assign tasks to trucks (5 tasks per truck)
+    for (let i = 0; i < 5; i++) {
+        const truckTasks = {};
+
+        // Assign 5 tasks to each truck
+        const truckTaskSlice = allTasks.slice(i * tasksPerTruck, (i + 1) * tasksPerTruck);
+        
+        truckTaskSlice.forEach(task => {
+            const taskDate = task.date.toISOString().split('T')[0]; // Get the task date in YYYY-MM-DD format
+            if (!truckTasks[taskDate]) {
+                truckTasks[taskDate] = [];
+            }
+            truckTasks[taskDate].push(task._id);
+        });
 
         const truck = new Truck({
             driverId: drivers[i]._id,
@@ -130,14 +140,14 @@ async function createTrucks() {
             name: `Truck ${i + 1}`,
             loadCapacity: 1000 + i * 100,
             matricule: `TRUCK${i + 1}`,
-            tasks: [task._id],
+            tasks: truckTasks,  // Assign tasks by date
         });
 
         await truck.save();
         trucks.push(truck);
     }
 
-    console.log('5 trucks, drivers, helpers, and tasks created.');
+    console.log('5 trucks, drivers, helpers, and 20 tasks created.');
 }
 
 async function seedDatabase() {
@@ -158,4 +168,3 @@ function promptUser() {
         rl.close();
     });
 }
-
