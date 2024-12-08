@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
 
-const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink, totalPrice }) => {
+const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink, totalPrice , notes }) => {
     const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
@@ -22,6 +22,10 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
                 <div style="margin: 20px 0;">
                     <a href="${stripeLink}" style="background-color: #6772e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-right: 10px;">Pay with Stripe</a>
                     <a href="${paypalLink}" style="background-color: #ffc439; color: black; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Pay with PayPal</a>
+                </div>
+                <div style="margin: 20px 0;">
+                <h3>Notes:</h3>
+                <p>${notes}</p>
                 </div>
                 <p style="font-size: 14px; color: #888;">If you have any questions, feel free to contact us.</p>
             </div>

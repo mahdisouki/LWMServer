@@ -680,7 +680,7 @@ capturePayPalTaskPayment: async (req, res) => {
 
 generatePaymentLinks: async (req, res) => {
   const { taskId } = req.params;
-
+  const  {notes} = req.body
   try {
       // Retrieve task by ID
       const task = await Task.findById(taskId);
@@ -713,6 +713,7 @@ generatePaymentLinks: async (req, res) => {
           stripeLink,
           paypalLink,
           totalPrice,
+          notes
       });
 
       // Respond with both payment links (optional)
