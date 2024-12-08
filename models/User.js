@@ -33,12 +33,24 @@ const userSchema = new mongoose.Schema({
   NatInsurance:{type:String},
   refreshToken: { type: String },
   fcmToken: { type: String },
+  totalHoursWorked:{
+    type:Number,
+    default:0
+  },
+  totalSalary:{
+    type:Number,
+    default:0
+  },
   dayOffRequests: [
     {
       type: mongoose.Types.ObjectId,
       ref: 'Dayoff'
     }
   ],
+  hourPrice:{
+    type:Number,
+    default:0
+  },
   breaks: [breakSchema],
 }, { discriminatorKey: 'roleType' });
 

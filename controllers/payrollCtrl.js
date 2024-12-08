@@ -75,11 +75,11 @@ const PayrollCtrl = {
       }
 
       // If payroll has been reset, initialize new values
-      if (user.payrollReset) {
-        user.totalHoursWorked = 0;
-        user.totalSalary = 0;
-        user.payrollReset = false; // Unset the reset flag
-      }
+      // if (user.payrollReset) {
+      //   user.totalHoursWorked = 0;
+      //   user.totalSalary = 0;
+      //   user.payrollReset = false; // Unset the reset flag
+      // }
 
       const REGULAR_HOURS_LIMIT = 8; // 8 hours per day
 
@@ -99,7 +99,8 @@ const PayrollCtrl = {
       payroll.endTime = end;
       payroll.totalHoursWorked = totalHoursWorked;
       payroll.regularHours = regularHours;
-      payroll.overtimeHours = overtimeHours;
+      payroll.extraHours = overtimeHours;
+      console.log('regularSalary' , regularSalary , "overtimeSalary",overtimeSalary) , 
       payroll.totalSalary = regularSalary + overtimeSalary;
 
       // Update the user's total hours worked and total salary
@@ -236,7 +237,7 @@ const PayrollCtrl = {
     try {
       // Reset the payroll for future calculations but don't erase old payroll records
       await User.findByIdAndUpdate(userId, {
-        payrollReset: true, // Set the reset flag to true
+         
         totalHoursWorked: 0, // Reset the counters for future calculations
         totalSalary: 0,
       });
@@ -425,45 +426,51 @@ const PayrollCtrl = {
       const payrollId = req.params.payrollId;
       console.log(payrollId);
       const payroll = await Payroll.findById(payrollId);
-
+  
       if (!payroll) throw new Error('Payroll not found');
-
+  
       // Check if the payroll is already marked as paid
       if (payroll.status === 'paid') {
         throw new Error('Payroll is already marked as paid');
       }
-
+  
       // Recalculate hours worked and salary before marking as paid
       const totalHoursWorked =
         (new Date(payroll.endTime) - new Date(payroll.startTime)) /
         (1000 * 3600);
       const regularHours = Math.min(totalHoursWorked, 8);
       const extraHours = Math.max(totalHoursWorked - 8, 0);
-
+  
       // Fetch user to get the hourly rate
       const user = await User.findById(payroll.userId);
-
-      //   payroll.totalHoursWorked = totalHoursWorked;
-      //   payroll.regularHours = regularHours;
-      //   payroll.extraHours = extraHours;
-      //   payroll.totalSalary =
-      //     regularHours * user.hourPrice + extraHours * user.hourPrice * 1.5;
-
+      if (!user) throw new Error('User not found');
+  
+      // Calculate salary
+      const totalSalary =
+        regularHours * user.hourPrice + extraHours * user.hourPrice * 1.5;
+  
+      // Deduct hours and salary from user's total
+      user.totalHoursWorked = (user.totalHoursWorked || 0) - totalHoursWorked;
+      user.totalSalary = (user.totalSalary || 0) - totalSalary;
+  
       // Mark payroll as paid
       payroll.status = 'Paid';
-
-      // Save updated payroll
+  
+      // Save updated payroll and user
       await payroll.save();
-
-      // Optionally reset driver's work data for the next pay period
-      //   await resetDriverWorkData(payroll.userId);
+      await user.save();
+  
       res
         .status(200)
         .json({ message: 'Payroll record marked as paid successfully.' });
     } catch (error) {
       console.error(`Error marking payroll as paid: ${error.message}`);
+      res
+        .status(500)
+        .json({ error: `Error marking payroll as paid: ${error.message}` });
     }
   },
+  
 };
 
 module.exports = PayrollCtrl;
