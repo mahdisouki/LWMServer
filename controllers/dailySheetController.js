@@ -9,16 +9,19 @@ const dailySheetController = {
     try {
       // Ensure date is a valid Date object
       const inputDate = req.body.date ? new Date(req.body.date) : new Date();
+      console.log("input date:" , inputDate)
       if (isNaN(inputDate)) {
         return res.status(400).json({ message: 'Invalid date format' });
       }
   
       const startOfDay = new Date(inputDate);
-      startOfDay.setHours(0, 0, 0, 0);
-  
+      console.log('startOfDateBefore' ,startOfDay )
+      // startOfDay.setHours(0, 0, 0, 0);
+      console.log('startOfDateAfter' ,startOfDay )
+
       const endOfDay = new Date(inputDate);
       endOfDay.setHours(23, 59, 59, 999);
-  
+      console.log("endofDate" , endOfDay)
       const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
   
       const drivers = await Driver.find();
@@ -27,10 +30,12 @@ const dailySheetController = {
       for (const driver of drivers) {
         // Find trucks associated with the current driver
         const trucks = await Truck.find({ driverId: driver._id });
-  
+        // console.log(trucks)
         // Gather task IDs for the specific date from `tasksByDate`
         const allTaskIdsForDate = trucks.reduce((acc, truck) => {
-          const tasksForDate = truck.tasksByDate?.[formattedDate] || [];
+          const tasksForDate = truck.tasks?.get(formattedDate) || [] ;
+          console.log(tasksForDate);
+          console.log(formattedDate)
           return acc.concat(tasksForDate);
         }, []);
   
