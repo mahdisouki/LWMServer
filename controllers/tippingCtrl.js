@@ -3,6 +3,8 @@ const { User } = require('../models/User');
 const Truck = require('../models/Truck');
 const APIfeatures = require('../utils/APIFeatures');
 const { emitEvent } = require('../socket');
+const Driver = require('../models/Driver');
+const TippingPlace = require('../models/TippingPlaces');
 
 const tippingController = {
   createTippingRequest: async (req, res) => {

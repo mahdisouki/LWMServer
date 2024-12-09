@@ -7,7 +7,6 @@ const mongoose = require('mongoose');
 const { getPayPalOrderDetails,capturePayPalPayment ,createPaypalPaymentLink,createStripePaymentLink,calculateTotalPrice, createStripePaymentIntent, createPayPalOrder ,PayPalClient } = require('../services/paymentService.js');
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const {createOptimoOrder} = require('../helper/OpitomRoute.js')
 const nodemailer = require('nodemailer');
 const sendPayementEmail = require('../utils/sendPayementEmail'); 
 const sendPaymentConfirmationEmail = require("../utils/sendPayementRecivedEmail");
@@ -314,6 +313,36 @@ const taskCtrl = {
     } catch (error) {
       res.status(500).json({
         message: 'Failed to move task to another truck',
+        error: error.message,
+      });
+    }
+  },
+  updateTaskOrderInTruck : async (req, res) => {
+    const { truckId, date, reorderedTasks } = req.body;
+  
+    if (!truckId || !date || !Array.isArray(reorderedTasks)) {
+      return res.status(400).json({ message: 'Invalid request data' });
+    }
+  
+    try {
+      const updatedTruck = await Truck.findOneAndUpdate(
+        { _id: truckId }, // Query to find the truck
+        { $set: { [`tasks.${date}`]: reorderedTasks } }, // Dynamically update the tasks for the specific date
+        { new: true } // Return the updated document
+      );
+  
+      if (!updatedTruck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
+  
+      res.status(200).json({
+        message: 'Task order updated successfully',
+        tasks: updatedTruck.tasks.get(date), // Get the updated tasks for the specific date
+      });
+    } catch (error) {
+      console.error("Error updating truck:", error);
+      res.status(500).json({
+        message: 'Failed to update task order',
         error: error.message,
       });
     }

@@ -157,7 +157,7 @@ router.put('/task/:taskId', isAuth, checkRole('Admin'),multer.array('clientObjec
 router.put('/tasks/:taskId/moveTruck', isAuth, checkRole('Admin'), taskCtrl.moveTaskToAnotherTruck);
 router.put('/tasks/:taskId/deAssignTruck',isAuth, checkRole('Admin'), taskCtrl.deAssignTaskFromTruck);
 router.post('/task/pay/:taskId', taskCtrl.processTaskPayment);
-
+router.put('/tasks/order' ,isAuth, checkRole('Admin'), taskCtrl.updateTaskOrderInTruck)
 router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);
 
 router.post('/task/capture-paypal-payment', taskCtrl.capturePayPalTaskPayment);
