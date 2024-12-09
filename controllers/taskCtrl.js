@@ -91,39 +91,10 @@ const taskCtrl = {
 
       await newTask.save();
 
-
-      const orderRequestBody = {
-        orders: [
-          {
-            client: {
-              name: `${firstName} ${lastName}`,
-              phone: phoneNumber,
-              email: email,
-            },
-            location: location,
-            object: object,
-            price: price,
-            paymentStatus: paymentStatus,
-            date: taskDate.toISOString(), // assuming date needs to be in ISO format
-            photos: clientObjectPhotos,
-          },
-        ],
-      };
-  
-      const orderResponse = await createOptimoOrder(apiKey, orderRequestBody);
-  
-      if (orderResponse) {
-        res.status(201).json({ 
-          message: 'Task created and order processed successfully', 
-          task: newTask,
-          order: orderResponse
-        });
-      } else {
-        res.status(500).json({
-          message: 'Task created successfully, but failed to process the order',
+      res.status(201).json({ 
+          message: 'Task created successfully', 
           task: newTask
         });
-      }
     } catch (error) {
       res
         .status(400)
