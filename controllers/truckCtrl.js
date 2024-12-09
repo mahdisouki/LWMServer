@@ -18,6 +18,7 @@ const truckCtrl = {
     }
   },
   getAllTrucks: async (req, res) => {
+    const {dateOfTasks} = req.body
     try {
       const { page = 1, limit = 9, filters } = req.query;
       let query = Truck.find();
@@ -29,7 +30,13 @@ const truckCtrl = {
       const trucks = await features.query
         .populate('driverId')
         .populate('helperId')
-        .populate('tasks')
+        .populate({
+          path: 'tasks',
+          populate: {
+            path: dateOfTasks, // Adjust this for dynamic task dates if necessary
+            model: 'Task',      // Specify your task model name
+          },
+        })
         .exec();
       const total = await Truck.countDocuments(features.query.getFilter());
       const currentPage = parseInt(req.query.page, 10) || 1;
