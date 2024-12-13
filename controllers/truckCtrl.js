@@ -18,28 +18,26 @@ const truckCtrl = {
     }
   },
   getAllTrucks: async (req, res) => {
-    const { dateOfTasks } = req.query;
+    const {dateOfTasks} = req.query
     try {
       const { page = 1, limit = 9, filters } = req.query;
       let query = Truck.find();
       const features = new APIfeatures(query, req.query);
-
       if (filters) {
         features.filtering();
       }
-
       features.sorting().paginating();
-
       const trucks = await features.query
         .populate('driverId')
         .populate('helperId')
         .populate({
           path: 'tasks',
-          model: 'Task',
-          match: dateOfTasks ? { date: new Date(dateOfTasks) } : {},
+          populate: {
+            path: dateOfTasks, 
+            model: 'Task', 
+          },
         })
         .exec();
-
       const total = await Truck.countDocuments(features.query.getFilter());
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;
