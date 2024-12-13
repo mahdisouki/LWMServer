@@ -1,18 +1,18 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const truckCtrl = require("../controllers/truckCtrl");
-const { isAuth } = require("../middlewares/auth");
-const { checkRole } = require("../middlewares/role");
+const truckCtrl = require('../controllers/truckCtrl');
+const { isAuth } = require('../middlewares/auth');
+const { checkRole } = require('../middlewares/role');
 
-router.post("/trucks", isAuth, checkRole("Admin"), truckCtrl.createTruck);
-router.get("/trucks", isAuth, checkRole("Admin"), truckCtrl.getAllTrucks);
+router.post('/trucks', isAuth, checkRole('Admin'), truckCtrl.createTruck);
+router.get('/trucks', truckCtrl.getAllTrucks);
 router.get(
-  "/trucks-chat",
+  '/trucks-chat',
   isAuth,
-  checkRole("Admin"),
-  truckCtrl.getAllTrucksForChat
+  checkRole('Admin'),
+  truckCtrl.getAllTrucksForChat,
 );
 
-router.delete("/trucks/:id", isAuth, checkRole("Admin"), truckCtrl.deleteTruck);
+router.delete('/trucks/:id', isAuth, checkRole('Admin'), truckCtrl.deleteTruck);
 
 module.exports = router;
