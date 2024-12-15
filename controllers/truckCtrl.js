@@ -1,7 +1,13 @@
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
 const APIfeatures = require('../utils/APIFeatures');
-
+const formatDate = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0'); // Months are zero-based
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 const truckCtrl = {
   createTruck: async (req, res) => {
     try {
@@ -33,7 +39,7 @@ const truckCtrl = {
         .populate({
           path: 'tasks',
           populate: {
-            path: dateOfTasks, 
+            path: dateOfTasks ? dateOfTasks : formatDate(new Date()),
             model: 'Task', 
           },
         })
