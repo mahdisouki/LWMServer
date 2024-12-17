@@ -186,20 +186,25 @@ const taskCtrl = {
       task.truckId = truck._id;
       await task.save();
   
-      // Ensure `tasksByDate` exists for the truck
-      if (!truck.tasksByDate) {
-        truck.tasksByDate = {};
+      // Ensure `tasks` exists for the truck
+      if (!truck.tasks) {
+        truck.tasks = new Map();
       }
+  
+      // Convert `truck.tasks` to a plain object to update it
+      const tasksByDate = truck.tasks instanceof Map ? Object.fromEntries(truck.tasks) : truck.tasks;
   
       // Add the task ID to the specific date
-      if (!truck.tasksByDate[taskDate]) {
-        truck.tasksByDate[taskDate] = [];
+      if (!tasksByDate[taskDate]) {
+        tasksByDate[taskDate] = [];
       }
   
-      if (!truck.tasksByDate[taskDate].includes(task._id.toString())) {
-        truck.tasksByDate[taskDate].push(task._id.toString());
+      if (!tasksByDate[taskDate].includes(task._id.toString())) {
+        tasksByDate[taskDate].push(task._id.toString());
       }
   
+      // Save the updated `tasks` field
+      truck.tasks = new Map(Object.entries(tasksByDate));
       await truck.save();
   
       res.status(200).json({
@@ -213,6 +218,7 @@ const taskCtrl = {
       });
     }
   },
+  
   
   deAssignTaskFromTruck: async (req, res) => {
     const { taskId } = req.params;
