@@ -238,26 +238,24 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Assigned truck not found' });
       }
   
-      
-      const taskDate = task.date.toISOString().split('T')[0]; 
+      const taskDate = task.date.toISOString().split('T')[0]; // Extract the task date
   
-      
-      if (
-        truck.tasksByDate &&
-        truck.tasksByDate[taskDate] &&
-        truck.tasksByDate[taskDate].includes(task._id.toString())
-      ) {
-        truck.tasksByDate[taskDate] = truck.tasksByDate[taskDate].filter(
-          (id) => id !== task._id.toString()
-        );
+      // Convert `truck.tasks` (Map) to a plain object for manipulation
+      const tasksByDate = truck.tasks instanceof Map ? Object.fromEntries(truck.tasks) : truck.tasks;
+  
+      // Check and remove the task ID from the specified date
+      if (tasksByDate[taskDate] && tasksByDate[taskDate].includes(task._id.toString())) {
+        tasksByDate[taskDate] = tasksByDate[taskDate].filter((id) => id !== task._id.toString());
   
         // Remove the date entry if it becomes empty
-        if (truck.tasksByDate[taskDate].length === 0) {
-          delete truck.tasksByDate[taskDate];
+        if (tasksByDate[taskDate].length === 0) {
+          delete tasksByDate[taskDate];
         }
-  
-        await truck.save();
       }
+  
+      // Convert the updated tasks object back to a Map and save it
+      truck.tasks = new Map(Object.entries(tasksByDate));
+      await truck.save();
   
       // Remove the truck assignment from the task
       task.truckId = null;
@@ -274,6 +272,7 @@ const taskCtrl = {
       });
     }
   },
+  
   
   moveTaskToAnotherTruck: async (req, res) => {
     const { taskId } = req.params;
