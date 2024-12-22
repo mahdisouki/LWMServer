@@ -27,6 +27,9 @@ const tippingRequestSchema = new Schema({
     tippingProof:{
         type:String
     },
+    price:{
+        type:Number
+    },
     tippingPlace:{
         type:mongoose.Types.ObjectId,
         ref:"tippingPlace"

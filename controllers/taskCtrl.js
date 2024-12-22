@@ -277,40 +277,65 @@ const taskCtrl = {
   moveTaskToAnotherTruck: async (req, res) => {
     const { taskId } = req.params;
     const { newTruckName } = req.body;
-
+  
     try {
       // Find the task by ID
       const task = await Task.findById(taskId);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-
+  
       // Find the current truck assigned to the task
       const currentTruck = await Truck.findById(task.truckId);
       if (!currentTruck) {
         return res.status(404).json({ message: 'Current truck not found' });
       }
-
+  
       // Find the new truck by name
       const newTruck = await Truck.findOne({ name: newTruckName });
       if (!newTruck) {
         return res.status(404).json({ message: 'New truck not found' });
       }
-
+  
+      // Extract the task date
+      const taskDate = task.date.toISOString().split('T')[0];
+  
       // Remove the task from the current truck's tasks list
-      currentTruck.tasks = currentTruck.tasks.filter(
-        (id) => id.toString() !== task._id.toString()
-      );
-      await currentTruck.save();
-
+      if (currentTruck.tasks) {
+        const currentTasksByDate = Object.fromEntries(currentTruck.tasks);
+  
+        if (currentTasksByDate[taskDate]) {
+          currentTasksByDate[taskDate] = currentTasksByDate[taskDate].filter(
+            (id) => id !== task._id.toString()
+          );
+  
+          // Remove the date entry if no tasks remain
+          if (currentTasksByDate[taskDate].length === 0) {
+            delete currentTasksByDate[taskDate];
+          }
+        }
+  
+        currentTruck.tasks = new Map(Object.entries(currentTasksByDate));
+        await currentTruck.save();
+      }
+  
+      // Add the task to the new truck's tasks list
+      const newTasksByDate = newTruck.tasks ? Object.fromEntries(newTruck.tasks) : {};
+      if (!newTasksByDate[taskDate]) {
+        newTasksByDate[taskDate] = [];
+      }
+  
+      if (!newTasksByDate[taskDate].includes(task._id.toString())) {
+        newTasksByDate[taskDate].push(task._id.toString());
+      }
+  
+      newTruck.tasks = new Map(Object.entries(newTasksByDate));
+      await newTruck.save();
+  
       // Update the task with the new truck ID
       task.truckId = newTruck._id;
       await task.save();
-
-      // Add the task to the new truck's tasks list
-      newTruck.tasks.push(task._id);
-      await newTruck.save();
-
+  
       res.status(200).json({
         message: 'Task moved to the new truck successfully',
         task,
@@ -322,6 +347,7 @@ const taskCtrl = {
       });
     }
   },
+  
   updateTaskOrderInTruck : async (req, res) => {
     const { truckId, date, reorderedTasks } = req.body;
   

@@ -30,7 +30,7 @@ const dailySheetController = {
       for (const driver of drivers) {
         // Find trucks associated with the current driver
         const trucks = await Truck.find({ driverId: driver._id });
-        // console.log(trucks)
+        console.log(trucks)
         // Gather task IDs for the specific date from `tasksByDate`
         const allTaskIdsForDate = trucks.reduce((acc, truck) => {
           const tasksForDate = truck.tasks?.get(formattedDate) || [] ;
@@ -51,7 +51,7 @@ const dailySheetController = {
           taskStatus: 'Processing',
           date: { $gte: startOfDay, $lt: endOfDay },
         });
-  
+        console.log(jobsPending)
         const jobsCancelled = await Task.find({
           _id: { $in: allTaskIdsForDate },
           taskStatus: 'Declined',
@@ -62,7 +62,7 @@ const dailySheetController = {
           userId: driver._id,
           createdAt: { $gte: startOfDay, $lt: endOfDay },
         });
-  
+        console.log("tippingRequests" , tippingRequests , driver._id)
         // Calculate cash income for the day
         const totalCashIncome = jobsDone.reduce((acc, job) => {
           if (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash') {
@@ -117,9 +117,20 @@ const dailySheetController = {
       // Query for DailySheets within the specified day
       let query = DailySheet.find({
         date: { $gte: startDate, $lte: endDate },
-      }).populate(
-        'driverId jobsDone jobsPending jobsCancelled tippingRequests',
-      );
+      }).populate([
+        { path: 'driverId' },
+        { path: 'jobsDone' },
+        { path: 'jobsPending' },
+        { path: 'jobsCancelled' },
+        { 
+          path: 'tippingRequests',
+          populate: { 
+            path: 'tippingPlace', 
+            model: 'TippingPlace', // Explicitly specify the model name
+            match: {}, // Populate only if tippingPlace exists
+          },
+        },
+      ]);
       const total = await DailySheet.countDocuments(query);
 
       const features = new APIfeatures(query, req.query);
