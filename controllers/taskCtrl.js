@@ -4,13 +4,21 @@ const Truck = require('../models/Truck');
 const APIfeatures = require('../utils/APIFeatures');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
-const { getPayPalOrderDetails,capturePayPalPayment ,createPaypalPaymentLink,createStripePaymentLink,calculateTotalPrice, createStripePaymentIntent, createPayPalOrder ,PayPalClient } = require('../services/paymentService.js');
+const {
+  getPayPalOrderDetails,
+  capturePayPalPayment,
+  createPaypalPaymentLink,
+  createStripePaymentLink,
+  calculateTotalPrice,
+  createStripePaymentIntent,
+  createPayPalOrder,
+  PayPalClient,
+} = require('../services/paymentService.js');
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const nodemailer = require('nodemailer');
-const sendPayementEmail = require('../utils/sendPayementEmail'); 
-const sendPaymentConfirmationEmail = require("../utils/sendPayementRecivedEmail");
-
+const sendPayementEmail = require('../utils/sendPayementEmail');
+const sendPaymentConfirmationEmail = require('../utils/sendPayementRecivedEmail');
 
 const taskCtrl = {
   createTask: async (req, res) => {
@@ -90,10 +98,10 @@ const taskCtrl = {
 
       await newTask.save();
 
-      res.status(201).json({ 
-          message: 'Task created successfully', 
-          task: newTask
-        });
+      res.status(201).json({
+        message: 'Task created successfully',
+        task: newTask,
+      });
     } catch (error) {
       res
         .status(400)
@@ -167,46 +175,49 @@ const taskCtrl = {
   assignTruckToTask: async (req, res) => {
     const { taskId } = req.params;
     const { truckName } = req.body;
-  
+
     try {
       const truck = await Truck.findOne({ name: truckName });
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
-  
+
       const task = await Task.findById(taskId);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-  
+
       // Extract taskDate from the task's `date` field
       const taskDate = task.date.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
-  
+
       // Update the task with the truck ID
       task.truckId = truck._id;
       await task.save();
-  
+
       // Ensure `tasks` exists for the truck
       if (!truck.tasks) {
         truck.tasks = new Map();
       }
-  
+
       // Convert `truck.tasks` to a plain object to update it
-      const tasksByDate = truck.tasks instanceof Map ? Object.fromEntries(truck.tasks) : truck.tasks;
-  
+      const tasksByDate =
+        truck.tasks instanceof Map
+          ? Object.fromEntries(truck.tasks)
+          : truck.tasks;
+
       // Add the task ID to the specific date
       if (!tasksByDate[taskDate]) {
         tasksByDate[taskDate] = [];
       }
-  
+
       if (!tasksByDate[taskDate].includes(task._id.toString())) {
         tasksByDate[taskDate].push(task._id.toString());
       }
-  
+
       // Save the updated `tasks` field
       truck.tasks = new Map(Object.entries(tasksByDate));
       await truck.save();
-  
+
       res.status(200).json({
         message: 'Truck assigned to task successfully',
         task,
@@ -218,49 +229,58 @@ const taskCtrl = {
       });
     }
   },
-  
-  
+
   deAssignTaskFromTruck: async (req, res) => {
     const { taskId } = req.params;
-  
+
     try {
       const task = await Task.findById(taskId);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-  
+
       if (!task.truckId) {
-        return res.status(400).json({ message: 'Task is not assigned to any truck' });
+        return res
+          .status(400)
+          .json({ message: 'Task is not assigned to any truck' });
       }
-  
+
       const truck = await Truck.findById(task.truckId);
       if (!truck) {
         return res.status(404).json({ message: 'Assigned truck not found' });
       }
-  
+
       const taskDate = task.date.toISOString().split('T')[0]; // Extract the task date
-  
+
       // Convert `truck.tasks` (Map) to a plain object for manipulation
-      const tasksByDate = truck.tasks instanceof Map ? Object.fromEntries(truck.tasks) : truck.tasks;
-  
+      const tasksByDate =
+        truck.tasks instanceof Map
+          ? Object.fromEntries(truck.tasks)
+          : truck.tasks;
+
       // Check and remove the task ID from the specified date
-      if (tasksByDate[taskDate] && tasksByDate[taskDate].includes(task._id.toString())) {
-        tasksByDate[taskDate] = tasksByDate[taskDate].filter((id) => id !== task._id.toString());
-  
+      if (
+        tasksByDate[taskDate] &&
+        tasksByDate[taskDate].includes(task._id.toString())
+      ) {
+        tasksByDate[taskDate] = tasksByDate[taskDate].filter(
+          (id) => id !== task._id.toString(),
+        );
+
         // Remove the date entry if it becomes empty
         if (tasksByDate[taskDate].length === 0) {
           delete tasksByDate[taskDate];
         }
       }
-  
+
       // Convert the updated tasks object back to a Map and save it
       truck.tasks = new Map(Object.entries(tasksByDate));
       await truck.save();
-  
+
       // Remove the truck assignment from the task
       task.truckId = null;
       await task.save();
-  
+
       res.status(200).json({
         message: 'Task de-assigned from truck successfully',
         task,
@@ -272,15 +292,14 @@ const taskCtrl = {
       });
     }
   },
-  
-  
+
   moveTaskToAnotherTruck: async (req, res) => {
     const { taskId } = req.params;
     const { newTruckName } = req.body;
   
     try {
       // Find the task by ID
-      const task = await Task.findById(taskId);
+      const task = await Task.findById(taskId).populate('truckId');
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -350,28 +369,28 @@ const taskCtrl = {
   
   updateTaskOrderInTruck : async (req, res) => {
     const { truckId, date, reorderedTasks } = req.body;
-  
+
     if (!truckId || !date || !Array.isArray(reorderedTasks)) {
       return res.status(400).json({ message: 'Invalid request data' });
     }
-  
+
     try {
       const updatedTruck = await Truck.findOneAndUpdate(
         { _id: truckId }, // Query to find the truck
         { $set: { [`tasks.${date}`]: reorderedTasks } }, // Dynamically update the tasks for the specific date
-        { new: true } // Return the updated document
+        { new: true }, // Return the updated document
       );
-  
+
       if (!updatedTruck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
-  
+
       res.status(200).json({
         message: 'Task order updated successfully',
         tasks: updatedTruck.tasks.get(date), // Get the updated tasks for the specific date
       });
     } catch (error) {
-      console.error("Error updating truck:", error);
+      console.error('Error updating truck:', error);
       res.status(500).json({
         message: 'Failed to update task order',
         error: error.message,
@@ -454,7 +473,7 @@ const taskCtrl = {
         .status(200)
         .json({ message: 'Task updated successfully', task: updatedTask });
     } catch (error) {
-      console.log(error)
+      console.log(error);
       res
         .status(500)
         .json({ message: 'Failed to update task', error: error.message });
@@ -532,134 +551,144 @@ const taskCtrl = {
     }
   },
 
- 
   processTaskPayment: async (req, res) => {
     const { taskId } = req.params; // Retrieve taskId from URL parameters
     const { paymentType } = req.body; // paymentType still comes from the body
 
     try {
-        // Fetch the task to retrieve its options
-        const task = await Task.findById(taskId);
-        if (!task) {
-            return res.status(404).json({ message: "Task not found" });
-        }
+      // Fetch the task to retrieve its options
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
 
-        // Extract options from the task
-        const options = {
-            position: task.Objectsposition,
-            timeSlot: task.available,
-        };
+      // Extract options from the task
+      const options = {
+        position: task.Objectsposition,
+        timeSlot: task.available,
+      };
 
-        const amount = await calculateTotalPrice(taskId, options); // Calculate in cents
+      const amount = await calculateTotalPrice(taskId, options); // Calculate in cents
 
-        let paymentResult;
-        switch (paymentType) {
-            case 'stripe':
-                paymentResult = await createStripePaymentIntent(amount);
-                return res.json({
-                    message: 'Stripe payment initiated successfully',
-                    clientSecret: paymentResult.client_secret,
-                    paymentIntentId: paymentResult.id,
-                    amount: amount,
-                    paymentType, // Transmet le type de paiement
-                    options // Include options to be used later in confirmation
-                });
+      let paymentResult;
+      switch (paymentType) {
+        case 'stripe':
+          paymentResult = await createStripePaymentIntent(amount);
+          return res.json({
+            message: 'Stripe payment initiated successfully',
+            clientSecret: paymentResult.client_secret,
+            paymentIntentId: paymentResult.id,
+            amount: amount,
+            paymentType, // Transmet le type de paiement
+            options, // Include options to be used later in confirmation
+          });
 
-            case 'paypal':
-                paymentResult = await createPayPalOrder(amount);
-                const approvalLink = paymentResult.result.links.find(link => link.rel === 'approve');
-                return res.json({
-                    message: 'PayPal payment initiated successfully',
-                    orderID: paymentResult.result.id,
-                    approvalLink: approvalLink ? approvalLink.href : null,
-                    amount: amount,
-                    paymentType, // Transmet le type de paiement
-                    options // Include options to be used later in confirmation
-                });
+        case 'paypal':
+          paymentResult = await createPayPalOrder(amount);
+          const approvalLink = paymentResult.result.links.find(
+            (link) => link.rel === 'approve',
+          );
+          return res.json({
+            message: 'PayPal payment initiated successfully',
+            orderID: paymentResult.result.id,
+            approvalLink: approvalLink ? approvalLink.href : null,
+            amount: amount,
+            paymentType, // Transmet le type de paiement
+            options, // Include options to be used later in confirmation
+          });
 
-            default:
-                return res.status(400).json({ message: "Invalid payment method" });
-        }
+        default:
+          return res.status(400).json({ message: 'Invalid payment method' });
+      }
     } catch (error) {
-        console.error('Payment Error:', error);
-        return res.status(500).json({ message: "Failed to initiate payment", error: error.message });
+      console.error('Payment Error:', error);
+      return res
+        .status(500)
+        .json({ message: 'Failed to initiate payment', error: error.message });
     }
-},
+  },
 
-confirmStripeTaskPayment: async (req, res) => {
-  const { paymentIntentId, paymentMethodId, taskId } = req.body;
+  confirmStripeTaskPayment: async (req, res) => {
+    const { paymentIntentId, paymentMethodId, taskId } = req.body;
 
-  try {
+    try {
       // Confirm the payment intent
-      const paymentIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
+      const paymentIntent = await stripe.paymentIntents.confirm(
+        paymentIntentId,
+        {
           payment_method: paymentMethodId,
-      });
+        },
+      );
 
       if (paymentIntent.status === 'succeeded') {
-          const task = await Task.findById(taskId);
-          if (!task) return res.status(404).json({ message: "Task not found" });
+        const task = await Task.findById(taskId);
+        if (!task) return res.status(404).json({ message: 'Task not found' });
 
-          task.paymentStatus = 'Paid';
-          await task.save();
+        task.paymentStatus = 'Paid';
+        await task.save();
 
-          // Retrieve charge details by listing the charges for this payment intent
-          const charges = await stripe.charges.list({
-              payment_intent: paymentIntentId,
-              limit: 1, // Retrieve the most recent charge
-          });
+        // Retrieve charge details by listing the charges for this payment intent
+        const charges = await stripe.charges.list({
+          payment_intent: paymentIntentId,
+          limit: 1, // Retrieve the most recent charge
+        });
 
-          const charge = charges.data[0];
-          if (!charge) throw new Error('Charge not found for this payment');
+        const charge = charges.data[0];
+        if (!charge) throw new Error('Charge not found for this payment');
 
-          const payerAccount = charge.billing_details.email || charge.payment_method_details.card.last4;
+        const payerAccount =
+          charge.billing_details.email ||
+          charge.payment_method_details.card.last4;
 
-          // Save payment history
-          await PaymentHistory.create({
-              taskId: task._id,
-              firstName: task.firstName,
-              lastName: task.lastName,
-              phoneNumber: task.phoneNumber,
-              amount: paymentIntent.amount,
-              price: task.price,
-              options: {
-                  position: task.Objectsposition,
-                  timeSlot: task.available,
-              },
-              paymentType: 'stripe', // Save the type of payment
-              paymentDate: new Date(),
-              transactionId: paymentIntentId, // Stripe paymentIntentId as transactionId
-              payerAccount: payerAccount // Save payer's email or card last 4 digits
-          });
+        // Save payment history
+        await PaymentHistory.create({
+          taskId: task._id,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          phoneNumber: task.phoneNumber,
+          amount: paymentIntent.amount,
+          price: task.price,
+          options: {
+            position: task.Objectsposition,
+            timeSlot: task.available,
+          },
+          paymentType: 'stripe', // Save the type of payment
+          paymentDate: new Date(),
+          transactionId: paymentIntentId, // Stripe paymentIntentId as transactionId
+          payerAccount: payerAccount, // Save payer's email or card last 4 digits
+        });
 
-          return res.status(200).json({
-              message: 'Payment confirmed successfully',
-              task,
-              paymentIntent,
-          });
+        return res.status(200).json({
+          message: 'Payment confirmed successfully',
+          task,
+          paymentIntent,
+        });
       } else {
-          return res.status(400).json({
-              message: 'Payment confirmation failed',
-              status: paymentIntent.status,
-          });
+        return res.status(400).json({
+          message: 'Payment confirmation failed',
+          status: paymentIntent.status,
+        });
       }
-  } catch (error) {
+    } catch (error) {
       console.error('Error confirming payment:', error);
-      res.status(500).json({ message: 'Error confirming payment', error: error.message });
-  }
-},
+      res
+        .status(500)
+        .json({ message: 'Error confirming payment', error: error.message });
+    }
+  },
 
-capturePayPalTaskPayment: async (req, res) => {
-  const { orderID, taskId } = req.body;
+  capturePayPalTaskPayment: async (req, res) => {
+    const { orderID, taskId } = req.body;
 
-  try {
+    try {
       // Validate taskId to ensure it's a valid ObjectId
       if (!mongoose.Types.ObjectId.isValid(taskId)) {
-          return res.status(400).json({ message: "Invalid taskId format" });
+        return res.status(400).json({ message: 'Invalid taskId format' });
       }
 
       // Check if task exists
       const task = await Task.findById(taskId);
-      if (!task) return res.status(404).json({ message: "Task not found" });
+      if (!task) return res.status(404).json({ message: 'Task not found' });
 
       // Attempt to capture the PayPal order
       const request = new paypal.orders.OrdersCaptureRequest(orderID);
@@ -668,61 +697,69 @@ capturePayPalTaskPayment: async (req, res) => {
 
       // Check if the capture status is COMPLETED
       if (capture.result.status === 'COMPLETED') {
-          task.paymentStatus = 'Paid';
-          await task.save();
+        task.paymentStatus = 'Paid';
+        await task.save();
 
-          // Extract the captured amount and payer information
-          const amount = parseFloat(capture.result.purchase_units[0].payments.captures[0].amount.value) * 100; // Convert GBP to pence
-          const transactionId = capture.result.purchase_units[0].payments.captures[0].id;
-          const payerAccount = capture.result.payer.email_address;
+        // Extract the captured amount and payer information
+        const amount =
+          parseFloat(
+            capture.result.purchase_units[0].payments.captures[0].amount.value,
+          ) * 100; // Convert GBP to pence
+        const transactionId =
+          capture.result.purchase_units[0].payments.captures[0].id;
+        const payerAccount = capture.result.payer.email_address;
 
-          // Save payment history with transaction ID and payer account
-          await PaymentHistory.create({
-              taskId: task._id,
-              firstName: task.firstName,
-              lastName: task.lastName,
-              phoneNumber: task.phoneNumber,
-              amount: amount,
-              price: task.price,
-              options: {
-                  position: task.Objectsposition,
-                  timeSlot: task.available,
-              },
-              paymentType: 'paypal',
-              paymentDate: new Date(),
-              transactionId: transactionId,
-              payerAccount: payerAccount
-          });
+        // Save payment history with transaction ID and payer account
+        await PaymentHistory.create({
+          taskId: task._id,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          phoneNumber: task.phoneNumber,
+          amount: amount,
+          price: task.price,
+          options: {
+            position: task.Objectsposition,
+            timeSlot: task.available,
+          },
+          paymentType: 'paypal',
+          paymentDate: new Date(),
+          transactionId: transactionId,
+          payerAccount: payerAccount,
+        });
 
-          res.status(200).json({
-              message: 'PayPal payment captured successfully',
-              captureDetails: capture.result,
-              task,
-          });
+        res.status(200).json({
+          message: 'PayPal payment captured successfully',
+          captureDetails: capture.result,
+          task,
+        });
       } else {
-          res.status(400).json({ message: 'Failed to capture payment', capture });
+        res.status(400).json({ message: 'Failed to capture payment', capture });
       }
-  } catch (error) {
+    } catch (error) {
       console.error('Error capturing PayPal payment:', error);
-      res.status(500).json({ message: 'Failed to capture PayPal payment', error: error.message });
-  }
-},
+      res
+        .status(500)
+        .json({
+          message: 'Failed to capture PayPal payment',
+          error: error.message,
+        });
+    }
+  },
 
-
-generatePaymentLinks: async (req, res) => {
-  const { taskId } = req.params;
-  const  {notes} = req.body
-  try {
+  generatePaymentLinks: async (req, res) => {
+    const { taskId } = req.params;
+    const { notes } = req.body;
+    try {
       // Retrieve task by ID
       const task = await Task.findById(taskId);
       if (!task) {
-          return res.status(404).json({ message: 'Task not found' });
+        return res.status(404).json({ message: 'Task not found' });
       }
 
       // Extract options from the task itself
       const options = {
-          position: task.position, // Assuming task has 'position' field
-          timeSlot: task.timeSlot, // Assuming task has 'timeSlot' field
+        position: task.position, // Assuming task has 'position' field
+        timeSlot: task.timeSlot, // Assuming task has 'timeSlot' field
       };
 
       // Calculate the total price
@@ -739,161 +776,165 @@ generatePaymentLinks: async (req, res) => {
       const totalPrice = amount; // Total price in pence
 
       await sendPayementEmail({
-          customerEmail,
-          taskId,
-          stripeLink,
-          paypalLink,
-          totalPrice,
-          notes
+        customerEmail,
+        taskId,
+        stripeLink,
+        paypalLink,
+        totalPrice,
+        notes,
       });
 
       // Respond with both payment links (optional)
       res.status(200).json({
-          message: 'Payment links generated successfully and email sent',
-          stripeLink,
-          paypalLink,
+        message: 'Payment links generated successfully and email sent',
+        stripeLink,
+        paypalLink,
       });
-  } catch (error) {
+    } catch (error) {
       console.error('Error generating payment links:', error);
       res.status(500).json({
-          message: 'Failed to generate payment links',
-          error: error.message,
+        message: 'Failed to generate payment links',
+        error: error.message,
       });
-  }
-},
+    }
+  },
 
+  handleStripeWebhook: async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
+    try {
+      const event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        endpointSecret,
+      );
 
-handleStripeWebhook: async (req, res) => {
-  const sig = req.headers["stripe-signature"];
-  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object;
+        const taskId = session.metadata.taskId;
 
-  try {
-      const event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+        const task = await Task.findById(taskId);
+        if (!task) {
+          console.error(`Task not found for ID: ${taskId}`);
+          return res.status(404).send('Task not found');
+        }
 
-      if (event.type === "checkout.session.completed") {
-          const session = event.data.object;
-          const taskId = session.metadata.taskId;
+        task.paymentStatus = 'Paid';
+        await task.save();
 
-          const task = await Task.findById(taskId);
-          if (!task) {
-              console.error(`Task not found for ID: ${taskId}`);
-              return res.status(404).send("Task not found");
-          }
+        const payerAccount = session.customer_email || 'Unknown Payer (Stripe)';
+        console.log('Payer Account:', payerAccount);
 
-          task.paymentStatus = "Paid";
-          await task.save();
+        const paymentDate = new Date();
 
-          const payerAccount = session.customer_email || "Unknown Payer (Stripe)";
-          console.log("Payer Account:", payerAccount);
+        await PaymentHistory.create({
+          taskId: task._id,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          phoneNumber: task.phoneNumber,
+          amount: session.amount_total / 100,
+          currency: session.currency.toUpperCase(),
+          price: task.price,
+          options: {
+            position: task.Objectsposition,
+            timeSlot: task.available,
+          },
+          paymentType: 'stripe',
+          paymentDate,
+          transactionId: session.payment_intent,
+          payerAccount,
+        });
 
-          const paymentDate = new Date();
+        await sendPaymentConfirmationEmail({
+          email: task.email,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          orderId: taskId,
+          paymentDate: paymentDate.toLocaleString(),
+          amount: session.amount_total / 100,
+          currency: session.currency.toUpperCase(),
+          paymentType: 'Stripe',
+          taskDetails: task,
+        });
 
-          await PaymentHistory.create({
-              taskId: task._id,
-              firstName: task.firstName,
-              lastName: task.lastName,
-              phoneNumber: task.phoneNumber,
-              amount: session.amount_total / 100,
-              currency: session.currency.toUpperCase(),
-              price: task.price,
-              options: {
-                  position: task.Objectsposition,
-                  timeSlot: task.available,
-              },
-              paymentType: "stripe",
-              paymentDate,
-              transactionId: session.payment_intent,
-              payerAccount,
-          });
-
-          await sendPaymentConfirmationEmail({
-              email: task.email,
-              firstName: task.firstName,
-              lastName: task.lastName,
-              orderId: taskId,
-              paymentDate: paymentDate.toLocaleString(),
-              amount: session.amount_total / 100,
-              currency: session.currency.toUpperCase(),
-              paymentType: "Stripe",
-              taskDetails: task,
-          });
-
-          console.log(`Payment for Task ${taskId} completed and email sent.`);
+        console.log(`Payment for Task ${taskId} completed and email sent.`);
       }
 
-      res.status(200).send("Webhook received");
-  } catch (err) {
+      res.status(200).send('Webhook received');
+    } catch (err) {
       console.error(`Webhook error: ${err.message}`);
       res.status(400).send(`Webhook Error: ${err.message}`);
-  }
-},
+    }
+  },
 
-handlePaypalWebhook: async (req, res) => {
-  try {
+  handlePaypalWebhook: async (req, res) => {
+    try {
       const event = req.body;
 
-      if (event.event_type === "PAYMENT.CAPTURE.COMPLETED") {
-          const captureId = event.resource.id;
-          const orderId = event.resource.supplementary_data.related_ids.order_id;
+      if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+        const captureId = event.resource.id;
+        const orderId = event.resource.supplementary_data.related_ids.order_id;
 
-          const task = await Task.findById(orderId);
-          if (!task) {
-              console.error(`Task not found for ID: ${orderId}`);
-              return res.status(404).send("Task not found");
-          }
+        const task = await Task.findById(orderId);
+        if (!task) {
+          console.error(`Task not found for ID: ${orderId}`);
+          return res.status(404).send('Task not found');
+        }
 
-          task.paymentStatus = "Paid";
-          await task.save();
+        task.paymentStatus = 'Paid';
+        await task.save();
 
-          const payerInfo = event.resource.payer;
-          const payerAccount = payerInfo.email_address || `PayPal ID: ${payerInfo.payer_id}` || "Unknown Payer (PayPal)";
-          console.log("Payer Account:", payerAccount);
+        const payerInfo = event.resource.payer;
+        const payerAccount =
+          payerInfo.email_address ||
+          `PayPal ID: ${payerInfo.payer_id}` ||
+          'Unknown Payer (PayPal)';
+        console.log('Payer Account:', payerAccount);
 
-          const amount = parseFloat(event.resource.amount.value);
-          const currency = event.resource.amount.currency_code;
-          const paymentDate = new Date();
+        const amount = parseFloat(event.resource.amount.value);
+        const currency = event.resource.amount.currency_code;
+        const paymentDate = new Date();
 
-          await PaymentHistory.create({
-              taskId: task._id,
-              firstName: task.firstName,
-              lastName: task.lastName,
-              phoneNumber: task.phoneNumber,
-              amount,
-              currency,
-              price: task.price,
-              options: {
-                  position: task.Objectsposition,
-                  timeSlot: task.available,
-              },
-              paymentType: "paypal",
-              paymentDate,
-              transactionId: captureId,
-              payerAccount,
-          });
+        await PaymentHistory.create({
+          taskId: task._id,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          phoneNumber: task.phoneNumber,
+          amount,
+          currency,
+          price: task.price,
+          options: {
+            position: task.Objectsposition,
+            timeSlot: task.available,
+          },
+          paymentType: 'paypal',
+          paymentDate,
+          transactionId: captureId,
+          payerAccount,
+        });
 
-          await sendPaymentConfirmationEmail({
-              email: task.email,
-              firstName: task.firstName,
-              lastName: task.lastName,
-              orderId,
-              paymentDate: paymentDate.toLocaleString(),
-              amount,
-              currency,
-              paymentType: "PayPal",
-              taskDetails: task,
-          });
+        await sendPaymentConfirmationEmail({
+          email: task.email,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          orderId,
+          paymentDate: paymentDate.toLocaleString(),
+          amount,
+          currency,
+          paymentType: 'PayPal',
+          taskDetails: task,
+        });
 
-          console.log(`Payment for Task ${orderId} recorded and email sent.`);
+        console.log(`Payment for Task ${orderId} recorded and email sent.`);
       }
 
-      res.status(200).send("Webhook processed successfully");
-  } catch (error) {
-      console.error("Error processing PayPal webhook:", error);
-      res.status(500).send("Webhook processing failed");
-  }
-},
-
+      res.status(200).send('Webhook processed successfully');
+    } catch (error) {
+      console.error('Error processing PayPal webhook:', error);
+      res.status(500).send('Webhook processing failed');
+    }
+  },
 };
 
 module.exports = taskCtrl;

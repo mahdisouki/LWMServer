@@ -100,6 +100,27 @@ module.exports = {
     }
   },
 
+  // ---> get the helper assigned to a driver by driverId from params
+  getAssignedHelperByDriverId: async (req, res) => {
+    const driverId = req.params.driverId;
+    try {
+      const truck = await Truck.findOne({ driverId });
+      if (!truck || !truck.helperId) {
+        return res
+          .status(404)
+          .json({ message: 'No helper assigned to this driver' });
+      }
+
+      const user = await User.findById(truck.helperId);
+      res.status(200).json(user.username);
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to get assigned helper',
+        error: error.message,
+      });
+    }
+  },
+
   //---> get the driver assigned to a helper
   getAssignedDriver: async (req, res) => {
     const helperId = req.user.id;
