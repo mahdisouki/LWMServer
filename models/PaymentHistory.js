@@ -8,10 +8,10 @@ const paymentHistorySchema = new Schema({
     phoneNumber: { type: String, required: true },
     amount: { type: Number, required: true },
     price: { type: Number, required: true },
-    options: {
-        position: { type: String, required: true },
-        timeSlot: { type: String, required: true }
-    },
+   
+    Objectsposition: { type: String, required: true },
+    available: { type: String, required: true },
+    
     paymentType: { type: String, required: true },
     paymentDate: { type: Date, default: Date.now },
     transactionId: { type: String, required: true }, // Unique ID for the payment (Stripe or PayPal)
