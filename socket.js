@@ -47,7 +47,8 @@ const initSocket = (server) => {
       origin: [
         'https://localhost:5173',
         'http://localhost:5174',
-        'https://localhost:5173',
+        'http://localhost:5173',
+        'https://localhost:5174',
         'https://dirverapp.netlify.app', 
         'https://lwmadmin.netlify.app',
         'https://londonwastemanagement.netlify.app'

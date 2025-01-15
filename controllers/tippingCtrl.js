@@ -177,7 +177,7 @@ const tippingController = {
   // Update the status of a tipping request (Admin only)
   updateTippingRequestStatus: async (req, res) => {
     const { id } = req.params; // ID of the tipping request
-    const { status } = req.body; // New status to be set
+    const { status , tippingPlace  } = req.body; // New status to be set
 
     try {
       // Fetch the tipping request and populate truck to access helperId
@@ -195,9 +195,10 @@ const tippingController = {
 
       // Update status
       request.status = status;
+      request.tippingPlace = tippingPlace
       await request.save();
 
-      if (status === 'Approved') {
+      if (status === 'GoToTipping' || status === 'TippingAndStorage') {
         // Fetch the driver's location
         const driver = await Driver.findById(request.userId).select('location');
 

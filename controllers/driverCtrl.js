@@ -139,13 +139,14 @@ const driverManagement = {
     try {
       // Determine today's date range
       const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-  
+      console.log("startOfDayB:",startOfDay)
+      // startOfDay.setHours(0, 0, 0, 0);
+      console.log(startOfDay)
       const endOfDay = new Date();
       endOfDay.setHours(23, 59, 59, 999);
-  
+      console.log(endOfDay)
       const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
-  
+      console.log("formatted date:",formattedDate)
       // Find the truck assigned to the driver
       const truck = await Truck.findOne({ driverId });
   
@@ -156,12 +157,11 @@ const driverManagement = {
       }
   
       // Get the task IDs for today's date from `tasksByDate`
-      const taskIdsForToday = truck.tasksByDate?.[formattedDate] || [];
-  
+      const taskIdsForToday = truck.tasks.get(formattedDate);
+      console.log("taskIdsForToday:",taskIdsForToday)
       // Fetch the tasks for the current day
       const tasks = await Task.find({
-        _id: { $in: taskIdsForToday },
-        date: { $gte: startOfDay, $lt: endOfDay },
+        _id: { $in: taskIdsForToday }
       });
   
       res
@@ -240,81 +240,89 @@ const driverManagement = {
     }
   },
 
-  uploadInitialConditionPhotos: async (req, res) => {
+  uploadInitialConditionPhotos : async (req, res) => {
     const { taskId } = req.params;
     const description = req.body.description;
     const uploads = req.files.map((file) => file.path);
-  
+
     try {
-      // Fetch the truck associated with the current task
-      const truck = await Truck.findOne({ tasks: { $in: [taskId] } }).populate('tasks');
-      if (!truck) {
-        return res.status(404).json({ message: 'No truck found for the given task.' });
-      }
-  
-      // Get the current job (task)
-      const currentTask = await Task.findById(taskId);
-      if (!currentTask) {
-        return res.status(404).json({ message: 'Current task not found.' });
-      }
-  
-      // Find the index of the current task in the truck's tasks array
-      const currentTaskIndex = truck.tasks.findIndex(task => task._id.equals(taskId));
-      let nextJobAddress = null;
-      console.log("currentTaskIndex" , currentTaskIndex)
-      console.log("truck.tasks.length" , truck.tasks.length)
-      // Determine the address of the next job (if any)
-      if (currentTaskIndex >= 0 && currentTaskIndex <= truck.tasks.length - 1) {
-        const nextTask = truck.tasks[currentTaskIndex + 1];
+        // Fetch the truck containing the task
+        const truck = await Truck.findOne().populate('tasks');
+        if (!truck) {
+            return res.status(404).json({ message: 'No truck found for the given task.' });
+        }
+
+        // Find the date key that contains the task
+        let taskDate = null;
+
+        for (const [date, tasks] of truck.tasks.entries()) {
+            if (tasks.some(task => task.equals(taskId))) {
+                taskDate = date;
+                break;
+            }
+        }
+
+        if (!taskDate) {
+            return res.status(404).json({ message: 'Task not found in the truck.' });
+        }
+
+        // Get the current job (task)
+        const currentTask = await Task.findById(taskId);
+        if (!currentTask) {
+            return res.status(404).json({ message: 'Current task not found.' });
+        }
+
+        // Find the index of the current task in the tasks array for the date
+        const currentTaskIndex = truck.tasks.get(taskDate).findIndex(task => task.equals(taskId));
+        let nextJobAddress = null;
         
-        nextJobAddress = nextTask && nextTask.location ? nextTask.location.address : null;
-      }
-  
-      // Update the task with initial condition photos
-      const taskUpdate = {
-        $push: {
-          initialConditionPhotos: {
-            items: uploads,
-            description: description,
-          },
-        },
-      };
-  
-      const updatedTask = await Task.findByIdAndUpdate(taskId, taskUpdate, { new: true });
-      if (!updatedTask) {
-        return res.status(404).json({ message: 'Failed to update the task with initial condition photos.' });
-      }
-  
-      // Update the driver's current and next job addresses
-      const driverId = truck.driverId;
-      if (driverId) {
-        const driverUpdate = {
-          currentJobAddress: currentTask.location ? currentTask.location.address : null,
-          nextJobAddress: nextJobAddress,
+        // Determine the address of the next job (if any)
+        if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.get(taskDate).length - 1) {
+            const nextTask = await Task.findById(truck.tasks.get(taskDate)[currentTaskIndex + 1]);
+            nextJobAddress = nextTask && nextTask.location ? nextTask.location.address : null;
+        }
+
+        // Update the task with initial condition photos
+        const taskUpdate = {
+            $push: {
+                initialConditionPhotos: {
+                    items: uploads,
+                    description: description,
+                },
+            },
         };
-  
-        const driverU = await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true });
-        // if (!driverU) {
-        //   console.warn('Driver update failed.');
-        // } else {
-        //   console.log("Driver updated successfully:", driverU);
-        // }
-      } else {
-        console.warn('No driver assigned to this truck.');
-      }
-  
-      // Send response
-      res.status(200).json({
-        message: 'Initial condition photos uploaded successfully',
-        task: updatedTask,
-      });
+
+        const updatedTask = await Task.findByIdAndUpdate(taskId, taskUpdate, { new: true });
+        if (!updatedTask) {
+            return res.status(404).json({ message: 'Failed to update the task with initial condition photos.' });
+        }
+
+        // Update the driver's current and next job addresses
+        const driverId = truck.driverId;
+        if (driverId) {
+            const driverUpdate = {
+                currentJobAddress: currentTask.location ? currentTask.location.address : null,
+                nextJobAddress: nextJobAddress,
+            };
+
+            await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true });
+        } else {
+            console.warn('No driver assigned to this truck.');
+        }
+
+        // Send response
+        res.status(200).json({
+            message: 'Initial condition photos uploaded successfully',
+            task: updatedTask,
+        });
     } catch (error) {
-      res.status(500).json({
-        message: 'Failed to upload initial condition photos',
-        error: error.message,
-      });
+        console.error(error);
+        res.status(500).json({
+            message: 'Failed to upload initial condition photos',
+            error: error.message,
+        });
     }
-  },
+},
 
   intermediateConditionPhotos: async (req, res) => {
     const { taskId } = req.params;
