@@ -123,7 +123,7 @@ exports.updateRefundRequestStatus = async (req, res) => {
                 } else {
                     const refund = await stripe.refunds.create({
                         payment_intent: paymentHistory.transactionId,
-                        amount: paymentHistory.amount
+                        amount: Math.round(paymentHistory.amount) // Assurez-vous que le montant est un entier
                     });
                     refundVerified = await verifyStripeRefund(refund.id);
                 }
@@ -132,16 +132,19 @@ exports.updateRefundRequestStatus = async (req, res) => {
                     const request = new paypal.payments.CapturesRefundRequest(paymentHistory.transactionId);
                     request.requestBody({
                         amount: {
-                            value: (paymentHistory.amount / 100).toFixed(2),
+                            value: (paymentHistory.amount ).toFixed(2), // Convertit en format PayPal
                             currency_code: 'GBP'
                         }
                     });
                     const refund = await PayPalClient().execute(request);
                     refundVerified = await verifyPayPalRefund(refund.result.id);
                 } catch (error) {
-                    // Check if the error is because the capture has already been fully refunded
                     if (error.statusCode === 422 && error.message.includes("CAPTURE_FULLY_REFUNDED")) {
-                        refundVerified = true;
+                        console.log("Capture already fully refunded");
+                        refundVerified = true; // Considérer comme vérifié si déjà remboursé
+                    } else if (error.statusCode === 422 && error.message.includes("ORDER_ALREADY_CAPTURED")) {
+                        console.log("Order already captured but not refunded");
+                        refundVerified = false;
                     } else {
                         throw error;
                     }
@@ -164,3 +167,4 @@ exports.updateRefundRequestStatus = async (req, res) => {
         res.status(500).json({ message: "Error updating refund request", error: error.message });
     }
 };
+

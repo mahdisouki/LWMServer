@@ -158,10 +158,10 @@ router.put('/tasks/:taskId/moveTruck', isAuth, checkRole('Admin'), taskCtrl.move
 router.put('/tasks/:taskId/deAssignTruck',isAuth, checkRole('Admin'), taskCtrl.deAssignTaskFromTruck);
 
 router.put('/tasks/order' ,isAuth, checkRole('Admin'), taskCtrl.updateTaskOrderInTruck)
-// router.post('/task/pay/:taskId', taskCtrl.processTaskPayment);
-// router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);
+router.post('/task/pay/:taskId', taskCtrl.processTaskPayment);
+router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);
 
-// router.post('/task/capture-paypal-payment', taskCtrl.capturePayPalTaskPayment);
+router.post('/task/capture-paypal-payment', taskCtrl.capturePayPalTaskPayment);
 
 router.post('/task/sendPayement/:taskId',taskCtrl.generatePaymentLinks);
 // Stripe Webhook

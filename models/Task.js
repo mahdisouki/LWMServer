@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
 
 const taskSchema = new Schema(
   {
@@ -10,7 +11,19 @@ const taskSchema = new Schema(
     phoneNumber: { type: String, required: true },
     phoneNumber2: { type: String },
     clientObjectPhotos: [{ type: String, required: true }],
-    StandardItem :[{type:mongoose.Types.ObjectId , ref:"standardItem"}],
+    items: [
+      {
+        standardItemId: { type: mongoose.Types.ObjectId, ref: "StandardItem" }, 
+        object: { type: String },  // if others 
+        Objectsposition: {
+          type: String,
+          enum: ["Inside", "Outside", "InsideWithDismantling"],
+          default: "Outside",
+        },
+        quantity: { type: Number, default: 0 },
+        price: { type: Number },  
+      },
+    ],
     initialConditionPhotos: [
       {
         items: [{ type: String }],
@@ -53,13 +66,6 @@ const taskSchema = new Schema(
       enum: ["AnyTime", "7am-12pm", "12pm-5pm"],
       default:"AnyTime"
     },
-    Objectsposition: { 
-      type:String,
-      enum: ["Inside", "Outside", "insideWithDismantling"],
-      default:"Outside"
-    },
-    object: { type: String, required: true },
-    price: { type: Number, required: true },
     paymentStatus: {
       type: String,
       enum: ["Paid", "Unpaid", "Pending"],
@@ -67,8 +73,8 @@ const taskSchema = new Schema(
     },
     taskStatus: {
       type: String,
-      enum: ["Created","Declined", "Processing", "Completed"],
-      default: "Created",
+      enum: ["Declined", "Processing", "Completed"],
+      default: "Processing",
     },
     email:{type:String},
     additionalNotes: { type: String, required: false },

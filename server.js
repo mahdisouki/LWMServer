@@ -16,6 +16,8 @@ initSocket(server);
 require("dotenv").config();
 require("./config/db");
 const cors = require("cors");
+const path = require("path");
+
 
 require('./jobs/dailySheetCron'); 
 require('./jobs/AssignedStaffCron');
@@ -29,6 +31,15 @@ const corsOptions = {
   optionsSuccessStatus: 200 
 };
 
+app.use('/public', express.static(path.join(__dirname, 'public')));
+app.get('/public/:fileName', (req, res) => {
+  const filePath = path.join(__dirname, 'public', req.params.fileName);
+  if (fs.existsSync(filePath)) {
+    res.download(filePath); // Envoie le fichier au client
+  } else {
+    res.status(404).send('File not found');
+  }
+});
 
 
 // Stripe Webhook Route - Raw body middleware is applied ONLY for this route
