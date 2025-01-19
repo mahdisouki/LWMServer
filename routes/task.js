@@ -168,7 +168,7 @@ router.post('/task/sendPayement/:taskId',taskCtrl.generatePaymentLinks);
 router.post('/webhooks/stripe',express.raw({ type: 'application/json' }),  taskCtrl.handleStripeWebhook);
 
 // PayPal Webhook
-router.post('/webhooks/paypal', express.json(), taskCtrl.handlePaypalWebhook);
+router.post('/webhooks/paypal', express.json(), taskCtrl.handlePayPalWebhook);
 
 
 // Route pour le succès du paiement

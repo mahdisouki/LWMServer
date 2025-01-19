@@ -4,93 +4,137 @@ const Task = require('../models/Task');
 const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key here
 
-const VAT_RATE = 0.2; // 20% VAT rate
+const VAT_RATE = 0.2; // VAT rate (20%)
 
-const calculateTotalPrice = async (taskId) => {
+async function calculateTotalPrice(taskId) {
     const task = await Task.findById(taskId).populate("items.standardItemId");
     if (!task) throw new Error("Task not found");
 
-    let basePrice = 0; // Somme des prix des items sans frais supplémentaires
-    let additionalFees = 0; // Frais supplémentaires pour les positions "Inside" ou "InsideWithDismantling"
-    let discount = 0; // Réduction de 10% si applicable
-    const breakdown = []; // Pour stocker les détails de chaque item
+    let basePrice = 0;
+    const breakdown = [];
 
-    for (const item of task.items) {
+    task.items.forEach((item) => {
         const quantity = item.quantity || 1;
-        let itemPrice = 0;
+        const price = item.standardItemId ? item.standardItemId.price * quantity : item.price * quantity;
+        basePrice += price;
 
-        if (item.standardItemId) {
-            const standardItem = item.standardItemId;
-            itemPrice = standardItem.price * quantity;
+        const itemDescription = `${item.standardItemId ? "Standard Item - " + item.standardItemId.itemName : "Custom Item - " + item.object} (x${quantity})`;
 
-            breakdown.push({
-                itemDescription: `Standard Item - ${standardItem.itemName} (x${quantity})`,
-                price: itemPrice.toFixed(2),
-                Objectsposition: item.Objectsposition || "Outside",
-            });
+        breakdown.push({
+            itemDescription,
+            price: price.toFixed(2),
+            Objectsposition: item.Objectsposition || "Outside",
+        });
 
-            // Ajouter les frais selon la position
-            if (item.Objectsposition === "InsideWithDismantling") {
-                additionalFees += 18;
-                breakdown.push({ description: `Dismantling fee for '${standardItem.itemName}'`, amount: 18 });
-            } else if (item.Objectsposition === "Inside") {
-                additionalFees += 6;
-                breakdown.push({ description: `Inside fee for '${standardItem.itemName}'`, amount: 6 });
-            }
-
-        } else if (item.object && item.price) {
-            itemPrice = item.price * quantity;
+        // Add additional fees based on item position
+        if (["InsideWithDismantling", "Inside"].includes(item.Objectsposition)) {
+            const additionalFee = item.Objectsposition === "InsideWithDismantling" ? 18 : 6;
+            basePrice += additionalFee;
 
             breakdown.push({
-                itemDescription: `Custom Item - ${item.object} (x${quantity})`,
-                price: itemPrice.toFixed(2),
-                Objectsposition: item.Objectsposition || "Outside",
+                description: `${item.Objectsposition} fee for '${item.object || "item"}'`,
+                amount: additionalFee.toFixed(2),
             });
-
-            // Ajouter les frais selon la position pour les items personnalisés
-            if (item.Objectsposition === "InsideWithDismantling") {
-                additionalFees += 18;
-                breakdown.push({ description: `Dismantling fee for '${item.object}'`, amount: 18 });
-            } else if (item.Objectsposition === "Inside") {
-                additionalFees += 6;
-                breakdown.push({ description: `Inside fee for '${item.object}'`, amount: 6 });
-            }
         }
+    });
 
-        basePrice += itemPrice; // Ajouter le prix de l'item au prix de base
-    }
-
-    // Appliquer la réduction de 10% si applicable
-    if (task.available === "AnyTime" && task.items.every((i) => i.Objectsposition === "Outside")) {
-        discount = basePrice * 0.1;
-        breakdown.push({ description: "10% discount for 'Outside' and 'AnyTime'", amount: -discount.toFixed(2) });
-        basePrice -= discount; // Réduire le prix de base
-    }
-
-    const totalBeforeVAT = basePrice + additionalFees; // Total avant TVA
-
-    // Si le total est inférieur à £30, le fixer à £30
-    let adjustedTotal = totalBeforeVAT;
-    if (totalBeforeVAT < 30) {
-        const adjustment = 30 - totalBeforeVAT;
-        adjustedTotal = 30;
-        breakdown.push({ description: "Minimum fee adjustment to £30", amount: adjustment.toFixed(2) });
-    }
-
-    const vat = adjustedTotal * VAT_RATE; // Calcul de la TVA
-    const finalPrice = adjustedTotal + vat; // Prix final avec TVA
+    const vat = basePrice * VAT_RATE;
+    const finalPrice = basePrice + vat;
 
     breakdown.push({ description: "VAT (20%)", amount: vat.toFixed(2) });
     breakdown.push({ description: "Final total price", amount: finalPrice.toFixed(2) });
 
     return {
-        total: Math.round(finalPrice * 100), // En pence
+        total: Math.round(finalPrice * 100), // Convert to pence for Stripe
         breakdown,
     };
+}
+
+const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
+    const description = breakdown
+        .map((item) => `${item.itemDescription || item.description}: £${item.price || item.amount}`)
+        .join(", ");
+
+    const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [
+            {
+                price_data: {
+                    currency: "gbp",
+                    product_data: {
+                        name: `Payment for Task #${taskId}`,
+                        description,
+                    },
+                    unit_amount: finalAmount, // Final amount in pence
+                },
+                quantity: 1,
+            },
+        ],
+        mode: "payment", // Payment mode
+        success_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/success`,
+        cancel_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/cancel`,
+        metadata: {
+            taskId,
+            breakdown: JSON.stringify(breakdown), // Store breakdown as metadata
+        },
+    });
+
+    return session.url;
 };
 
-
-
+const createPaypalPaymentLink = async (taskId, finalAmount, breakdown) => {
+    console.log("Generating PayPal link for items:", breakdown);
+    const itemDetails = breakdown.filter(item => item.price != null && !isNaN(item.price)).map(item => ({
+      name: item.itemDescription || "Item",
+      description: `Position: ${item.Objectsposition || "Outside"} - Quantity: ${item.quantity || 1}`,
+      unit_amount: {
+        currency_code: "GBP",
+        value: parseFloat(item.price).toFixed(2),
+      },
+      quantity: (item.quantity || 1).toString(),
+    }));
+  
+    const itemTotal = itemDetails.reduce((sum, item) => sum + parseFloat(item.unit_amount.value) * parseInt(item.quantity), 0);
+    const taxTotal = finalAmount - itemTotal;
+  
+    if (taxTotal < 0) {
+      console.error("Calculated tax total is invalid.", { finalAmount, itemTotal, taxTotal });
+      throw new Error("Calculated tax total is invalid.");
+    }
+  
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.requestBody({
+      intent: "CAPTURE",
+      purchase_units: [{
+        custom_id: taskId,
+        description: `Payment for Task #${taskId}`,
+        amount: {
+          currency_code: "GBP",
+          value: finalAmount.toFixed(2),
+          breakdown: {
+            item_total: { currency_code: "GBP", value: itemTotal.toFixed(2) },
+            tax_total: { currency_code: "GBP", value: taxTotal.toFixed(2) }
+          }
+        },
+        items: itemDetails
+      }],
+      application_context: {
+        return_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/success`,
+        cancel_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/cancel`,
+      }
+    });
+  
+    try {
+      const environment = new paypal.core.SandboxEnvironment(process.env.PAYPAL_CLIENT_ID, process.env.PAYPAL_CLIENT_SECRET);
+      const client = new paypal.core.PayPalHttpClient(environment);
+      const order = await client.execute(request);
+      return order.result.links.find(link => link.rel === "approve").href;
+    } catch (error) {
+      console.error("Failed to create PayPal payment link:", error);
+      throw error;
+    }
+  };
+  
 const createStripePaymentIntent = async (amount) => {
     return stripe.paymentIntents.create({
         amount: amount, 
@@ -109,105 +153,6 @@ async function createPayPalOrder(amount) {
     });
     return client.execute(request);
 }
-
-const createStripePaymentLink = async (taskId, finalAmount, breakdown = []) => {
-    const description = breakdown.length
-        ? breakdown
-              .map(item => `${item.itemDescription || item.description }: £${item.price || item.amount }`)
-              .join(', ')
-        : `Total price: £${(finalAmount / 100).toFixed(2)}`; // En pence
-
-    const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [
-            {
-                price_data: {
-                    currency: 'gbp',
-                    product_data: {
-                        name: `Payment for Task #${taskId}`,
-                        description,
-                    },
-                    unit_amount: finalAmount, // Le montant final après calcul
-                },
-                quantity: 1,
-            },
-        ],
-        mode: 'payment',
-        metadata: {
-            taskId,
-            breakdown: JSON.stringify(breakdown || []), // Ajout du breakdown avec la TVA
-        },
-        success_url: 'https://dc2f-102-156-43-63.ngrok-free.app/api/webhooks/payment/success',
-        cancel_url: 'https://dc2f-102-156-43-63.ngrok-free.app/api/webhooks/payment/cancel',
-    });
-
-    return session.url;
-};
-
-const createPaypalPaymentLink = async (taskId, finalAmount, breakdown = [], taskDetails) => {
-    const environment = new paypal.core.SandboxEnvironment(
-        process.env.PAYPAL_CLIENT_ID,
-        process.env.PAYPAL_CLIENT_SECRET
-    );
-    const client = new paypal.core.PayPalHttpClient(environment);
-
-    // Si breakdown n'est pas un tableau, le convertir en tableau vide
-    if (!Array.isArray(breakdown)) {
-        console.error("Error: Breakdown is not an array:", breakdown);
-        breakdown = []; // Défaut à un tableau vide si ce n'est pas un tableau
-    }
-
-    const description = breakdown.length
-        ? breakdown
-              .map(item => `${item.itemDescription || item.description}: £${item.price || item.amount}`)
-              .join(', ')
-        : `Total price: £${(finalAmount / 100).toFixed(2)}`;
-
-    const itemsDetails = breakdown.map(item => ({
-        name: item.itemDescription || "Item",
-        description: `Position: ${item.Objectsposition || "Outside"} - Quantity: ${item.quantity || 1}`,
-        unit_amount: {
-            currency_code: "GBP",
-            value: item.price && !isNaN(item.price) ? (item.price / 100).toFixed(2) : "0.00",
-        },
-        quantity: (item.quantity || 1).toString(),
-    }));
-
-    const request = new paypal.orders.OrdersCreateRequest();
-    request.requestBody({
-        intent: "CAPTURE",
-        purchase_units: [
-            {
-                custom_id: taskId,
-                description: `Payment for Task #${taskId}`,
-                amount: {
-                    currency_code: "GBP",
-                    value: (finalAmount / 100).toFixed(2),
-                    breakdown: {
-                        item_total: {
-                            currency_code: "GBP",
-                            value: ((finalAmount - (finalAmount * 0.2)) / 100).toFixed(2),
-                        },
-                        tax_total: {
-                            currency_code: "GBP",
-                            value: ((finalAmount * 0.2) / 100).toFixed(2),
-                        },
-                    },
-                },
-                items: itemsDetails,
-            },
-        ],
-        application_context: {
-            return_url: 'https://dc2f-102-156-43-63.ngrok-free.app/api/webhooks/payment/success',
-            cancel_url: 'https://dc2f-102-156-43-63.ngrok-free.app/api/webhooks/payment/cancel',
-        },
-    });
-
-    const order = await client.execute(request);
-    return order.result.links.find((link) => link.rel === "approve").href;
-};
-
-
 
 // Fetch PayPal Order Details
 const getPayPalOrderDetails = async (orderId) => {

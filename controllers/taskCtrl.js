@@ -20,6 +20,16 @@ const nodemailer = require('nodemailer');
 const sendPayementEmail = require('../utils/sendPayementEmail');
 const sendPaymentConfirmationEmail = require('../utils/sendPayementRecivedEmail');
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
+function validateBreakdown(breakdown) {
+  if (!Array.isArray(breakdown) || breakdown.some(item => {
+      return isNaN(parseFloat(item.price)) && isNaN(parseFloat(item.amount));
+  })) {
+      console.error("Invalid breakdown: ", breakdown);
+      throw new Error("Breakdown is not valid or contains undefined prices or descriptions");
+  }
+}
+// Fonction auxiliaire pour traiter les événements de commande approuvés
+
 
 const taskCtrl = {
   // createTask: async (req, res) => {
@@ -811,7 +821,7 @@ confirmStripeTaskPayment: async (req, res) => {
         lastName: task.lastName,
         phoneNumber: task.phoneNumber,
         amount: amountInCents,
-        paymentType: 'stripe',
+        paymentType: 'Stripe',
         paymentDate: new Date(),
         transactionId: paymentIntentId,
         payerAccount,
@@ -877,7 +887,7 @@ capturePayPalTaskPayment: async (req, res) => {
         lastName: task.lastName,
         phoneNumber: task.phoneNumber,
         amount: amountInGBP * 100,
-        paymentType: 'paypal',
+        paymentType: 'PayPal',
         paymentDate: new Date(),
         transactionId,
         payerAccount,
@@ -906,69 +916,43 @@ capturePayPalTaskPayment: async (req, res) => {
   }
 },
 
+generatePaymentLinks: async (req, res) => {
+  const { taskId } = req.params;
+  const { notes } = req.body;
+
+  try {
+      const task = await Task.findById(taskId);
+      if (!task) {
+          return res.status(404).json({ message: 'Task not found' });
+      }
 
 
-  generatePaymentLinks: async (req, res) => {
-    const { taskId } = req.params;
-    const { notes } = req.body;
-    try {
-        // Retrieve task
-        const task = await Task.findById(taskId);
-        if (!task) {
-            return res.status(404).json({ message: 'Task not found' });
-        }
+      const { total, breakdown } = await calculateTotalPrice(taskId);
+      // Valider le breakdown avant de continuer
+      validateBreakdown(breakdown);
 
-        // Calculate total price and breakdown
-        const { total, breakdown } = await calculateTotalPrice(taskId);
+        const stripeLink = await createStripePaymentLink(taskId, total, breakdown);
+        const paypalLink = await createPaypalPaymentLink(taskId, total, breakdown);
+      await sendPayementEmail({
+        taskId,
+          customerEmail: task.email,
+          stripeLink,
+          paypalLink,
+          totalPrice: total,
+          breakdown,
+          notes,
+          taskDetails: task,
+      });
 
-        // Get the initial price in pence
-        const initialPrice = task.price * 100; // Assuming task.price is in pounds
-
-        // Prepare task details
-        const taskDetails = {
-            Objectsposition: task.Objectsposition || "N/A",
-            available: task.available || "N/A",
-        };
-
-        // Generate Stripe payment link
-        const stripeLink = await createStripePaymentLink(
-            taskId,
-            total,
-            initialPrice,
-            breakdown
-        );
-
-        // Generate PayPal payment link
-        const paypalLink = await createPaypalPaymentLink(
-            taskId,
-            total,
-            initialPrice,
-            breakdown,
-            taskDetails
-        );
-
-        // Send email
-        await sendPayementEmail({
-            customerEmail: task.email,
-            taskId,
-            stripeLink,
-            paypalLink,
-            totalPrice: total,
-            breakdown,
-            initialPrice,
-            notes,
-            taskDetails: task,
-        });
-
-        res.status(200).json({
-            message: 'Payment links generated successfully and email sent',
-            stripeLink,
-            paypalLink,
-        });
-    } catch (error) {
-        console.error('Error generating payment links:', error);
-        res.status(500).json({ message: 'Failed to generate payment links', error: error.message });
-    }
+      res.status(200).json({
+          message: 'Payment links generated successfully and email sent',
+          stripeLink,
+          paypalLink,
+      });
+  } catch (error) {
+      console.error('Error generating payment links:', error);
+      res.status(500).json({ message: 'Failed to generate payment links', error: error.message });
+  }
 },
 
 
@@ -1018,7 +1002,7 @@ handleStripeWebhook: async (req, res) => {
         phoneNumber: task.phoneNumber,
         amount: session.amount_total / 100,
         currency: session.currency.toUpperCase(),
-        paymentType: "stripe",
+        paymentType: "Stripe",
         paymentDate,
         transactionId: session.payment_intent,
         payerAccount,
@@ -1048,108 +1032,189 @@ handleStripeWebhook: async (req, res) => {
   }
 },
 
- handlePaypalWebhook : async (req, res) => {
+handlePayPalWebhook: async (req, res) => {
   try {
-      const event = req.body;
+    const event = req.body;
+    console.log("Received PayPal Webhook Event:", JSON.stringify(event));
 
-      if (event.event_type === "CHECKOUT.ORDER.APPROVED") {
-          const orderId = event.resource.id;
-          const taskId = event.resource.purchase_units[0].custom_id;
+    switch (event.event_type) {
+      case "CHECKOUT.ORDER.APPROVED":
+        console.log("Order approved. Capturing payment...");
 
-          const task = await Task.findById(taskId).populate("items.standardItemId");
-          if (!task) {
-              console.error(`Task not found for ID: ${taskId}`);
-              return res.status(404).send("Task not found");
-          }
+        const orderId = event.resource.id; // PayPal Order ID
+        const customId = event.resource.purchase_units[0]?.custom_id; // Custom Task ID
 
-          // Capture du paiement
-          const captureResponse = await capturePayPalPayment(orderId);
-
-          if (captureResponse.status === "COMPLETED") {
-            const payerInfo = captureResponse.payer;
-            const payerAccount = payerInfo.email_address || `PayPal ID: ${payerInfo.payer_id}` || "Unknown Payer (PayPal)";
-            const amount = parseFloat(captureResponse.purchase_units[0].payments.captures[0].amount.value);
-            const currency = captureResponse.purchase_units[0].payments.captures[0].amount.currency_code;
-            const paymentDate = new Date();
-        
-            // Construction du breakdown des items
-            const breakdown = task.items.map((item) => ({
-                itemDescription: item.standardItemId ? item.standardItemId.itemName : item.object,
-                quantity: item.quantity || 1,
-                price: item.standardItemId ? item.standardItemId.price : item.price || 0,
-                Objectsposition: item.Objectsposition,
-            }));
-        
-            let basePrice = breakdown.reduce((sum, item) => sum + item.price * item.quantity, 0);
-            let additionalFees = 0;
-        
-            // Ajout des frais pour la position des items
-            task.items.forEach((item) => {
-                if (item.Objectsposition === "InsideWithDismantling") additionalFees += 18;
-                else if (item.Objectsposition === "Inside") additionalFees += 6;
-            });
-        
-            let finalPrice = basePrice + additionalFees;
-        
-            if (task.available === "AnyTime" && task.items.every((i) => i.Objectsposition === "Outside")) {
-                finalPrice *= 0.9; // 10% de réduction
-            }
-        
-            if (finalPrice < 30) {
-                finalPrice = 30; // Minimum de £30
-            }
-        
-            const vat = finalPrice * 0.2; // 20% TVA
-            finalPrice += vat;
-        
-            // **Mise à jour du statut de la tâche comme "Paid"**
-            task.paymentStatus = "Paid";
-            await task.save(); // **Enregistrement de la tâche**
-        
-            await PaymentHistory.create({
-                taskId: task._id,
-                firstName: task.firstName,
-                lastName: task.lastName,
-                phoneNumber: task.phoneNumber,
-                amount: finalPrice,
-                currency,
-                paymentType: "paypal",
-                paymentDate,
-                transactionId: captureResponse.purchase_units[0].payments.captures[0].id,
-                payerAccount,
-                breakdown: [
-                    ...breakdown,
-                    { description: "VAT (20%)", amount: vat.toFixed(2) },
-                    { description: "Final Total Price", amount: finalPrice.toFixed(2) },
-                ],
-            });
-        
-            // Envoi de l'email de confirmation
-            await sendPaymentConfirmationEmail({
-                email: task.email,
-                firstName: task.firstName,
-                lastName: task.lastName,
-                orderId: taskId,
-                paymentDate: paymentDate.toLocaleString(),
-                amount: finalPrice,
-                currency,
-                paymentType: "PayPal",
-                breakdown: [
-                    ...breakdown,
-                    { description: "VAT (20%)", amount: vat.toFixed(2) },
-                    { description: "Final Total Price", amount: finalPrice.toFixed(2) },
-                ],
-            });
-        
-            console.log(`Payment for Task ${taskId} recorded, status updated to "Paid", and email sent.`);
+        if (!customId) {
+          console.error("custom_id (Task ID) is missing in the webhook event.");
+          return res.status(400).send("Task ID is required in the webhook event");
         }
-        
-      }
 
-      res.status(200).send("Webhook processed successfully");
+        try {
+          // Capture the payment
+          const captureRequest = new paypal.orders.OrdersCaptureRequest(orderId);
+          const paypalClient = new paypal.core.PayPalHttpClient(
+            new paypal.core.SandboxEnvironment(
+              process.env.PAYPAL_CLIENT_ID,
+              process.env.PAYPAL_CLIENT_SECRET
+            )
+          );
+          const captureResponse = await paypalClient.execute(captureRequest);
+
+          if (captureResponse.statusCode === 201 || captureResponse.result.status === "COMPLETED") {
+            console.log("Payment captured successfully:", captureResponse.result);
+
+            const captureDetail = captureResponse.result.purchase_units[0].payments.captures[0];
+
+            // Trouver la tâche associée
+            const task = await Task.findById(customId).populate("items.standardItemId");
+            if (!task) {
+              console.error(`Task not found for ID: ${customId}`);
+              return res.status(404).send("Task not found");
+            }
+
+            // Vérifier si la tâche est déjà payée
+            if (task.paymentStatus === "Paid") {
+              console.log(`Payment already processed for Task ID: ${customId}`);
+              return res.status(200).send("Payment already processed");
+            }
+
+            // Construire le breakdown des items
+            const breakdown = task.items.map((item) => ({
+              itemDescription: item.standardItemId ? item.standardItemId.itemName : item.object,
+              quantity: item.quantity || 1,
+              price: item.standardItemId ? item.standardItemId.price : item.price || 0,
+              Objectsposition: item.Objectsposition,
+            }));
+
+            // Mettre à jour le statut de paiement de la tâche
+            task.paymentStatus = "Paid";
+            await task.save();
+
+            const payerAccount =
+              captureDetail.payer?.email_address || `PayPal ID: ${captureDetail.payer?.payer_id}`;
+            const paymentDate = new Date(captureDetail.create_time);
+
+            // Créer une entrée dans PaymentHistory
+            await PaymentHistory.create({
+              taskId: task._id,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              phoneNumber: task.phoneNumber,
+              amount: parseFloat(captureDetail.amount.value),
+              currency: captureDetail.amount.currency_code,
+              paymentType: "PayPal",
+              paymentDate,
+              transactionId: captureDetail.id,
+              payerAccount,
+              breakdown,
+            });
+
+            // Envoyer l'email de confirmation
+            await sendPaymentConfirmationEmail({
+              email: task.email,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              orderId: customId,
+              paymentDate: paymentDate.toLocaleString(),
+              amount: parseFloat(captureDetail.amount.value),
+              currency: captureDetail.amount.currency_code,
+              paymentType: "PayPal",
+              taskDetails: task,
+              breakdown,
+            });
+
+            console.log(`Payment for Task ${customId} confirmed and email sent.`);
+            res.status(200).send("Payment captured and processed successfully");
+          } else {
+            console.error("Failed to capture payment:", captureResponse);
+            res.status(500).send("Failed to capture payment");
+          }
+        } catch (captureError) {
+          console.error("Error capturing payment:", captureError);
+          res.status(500).send("Error capturing payment");
+        }
+        break;
+
+      case "PAYMENT.CAPTURE.COMPLETED":
+        console.log("Processing completed payment...");
+        const captureDetail = event.resource;
+
+        if (!captureDetail.custom_id) {
+          console.error("custom_id (Task ID) is missing in the webhook event.");
+          return res.status(400).send("Task ID is required in the webhook event");
+        }
+
+        const taskId = captureDetail.custom_id;
+
+        // Trouver la tâche associée
+        const task = await Task.findById(taskId).populate("items.standardItemId");
+        if (!task) {
+          console.error(`Task not found for ID: ${taskId}`);
+          return res.status(404).send("Task not found");
+        }
+
+        // Vérifier si la tâche est déjà payée
+        if (task.paymentStatus === "Paid") {
+          console.log(`Payment already processed for Task ID: ${taskId}`);
+          return res.status(200).send("Payment already processed");
+        }
+
+        // Construire le breakdown des items
+        const breakdown = task.items.map((item) => ({
+          itemDescription: item.standardItemId ? item.standardItemId.itemName : item.object,
+          quantity: item.quantity || 1,
+          price: item.standardItemId ? item.standardItemId.price : item.price || 0,
+          Objectsposition: item.Objectsposition,
+        }));
+
+        // Mettre à jour le statut de paiement de la tâche
+        task.paymentStatus = "Paid";
+        await task.save();
+
+        const payerAccount =
+          captureDetail.payer?.email_address || `PayPal ID: ${captureDetail.payer?.payer_id}`;
+        const paymentDate = new Date(captureDetail.create_time);
+
+        // Créer une entrée dans PaymentHistory
+        await PaymentHistory.create({
+          taskId: task._id,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          phoneNumber: task.phoneNumber,
+          amount: parseFloat(captureDetail.amount.value),
+          currency: captureDetail.amount.currency_code,
+          paymentType: "PayPal",
+          paymentDate,
+          transactionId: captureDetail.id,
+          payerAccount,
+          breakdown,
+        });
+
+        // Envoyer l'email de confirmation
+        await sendPaymentConfirmationEmail({
+          email: task.email,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          orderId: taskId,
+          paymentDate: paymentDate.toLocaleString(),
+          amount: parseFloat(captureDetail.amount.value),
+          currency: captureDetail.amount.currency_code,
+          paymentType: "PayPal",
+          taskDetails: task,
+          breakdown,
+        });
+
+        console.log(`Payment for Task ${taskId} confirmed and email sent.`);
+        res.status(200).send("Payment processed successfully");
+        break;
+
+      default:
+        console.log(`Ignoring event type: ${event.event_type}`);
+        res.status(200).send("Event type ignored");
+    }
   } catch (error) {
-      console.error("Error processing PayPal webhook:", error);
-      res.status(500).send("Webhook processing failed");
+    console.error("Error processing PayPal webhook:", error);
+    res.status(500).send(`Webhook processing failed: ${error.message}`);
   }
 },
 };
