@@ -70,18 +70,20 @@ const storageCtrl = {
         return res.status(400).json({ message: 'Date is required' });
       }
 
-      const storageDate = new Date(date);
-      storageDate.setHours(0, 0, 0, 0); // Normalize the date to midnight
+      const inputDate = new Date(date);
+    const startOfDay = new Date(inputDate);
+    startOfDay.setHours(0, 0, 0, 0); // Set to start of the day
 
-      // If a driverId is provided, filter by driverId as well
-      const query = { date: storageDate };
+    const endOfDay = new Date(inputDate);
+    endOfDay.setHours(23, 59, 59, 999); // Set to end of the day
+
+    // Construct the query
+    const query = { date: { $gte: startOfDay, $lte: endOfDay } };
+
 
       if (driverId) query.driverId = driverId;
 
-      const storagesQuery = Storage.find(query).populate(
-        'driverId',
-        'username email',
-      ); 
+      const storagesQuery = Storage.find(query).populate('driverId'); 
       const total = await Storage.countDocuments();
 
       const skip = (page - 1) * limit;
@@ -96,7 +98,7 @@ const storageCtrl = {
           .status(404)
           .json({ message: 'No storage records found for the specified date' });
       }
-
+      console.log(storages)
       res.status(200).json({
         message: 'All storages fetched successfully',
         storages,
