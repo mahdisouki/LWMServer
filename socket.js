@@ -214,25 +214,50 @@ const initSocket = (server) => {
     }
     );
     socket.on('trucksStats', async () => {
-      const allVehiclesCount = await Truck.countDocuments();
-      const onWorkCount = await Task.countDocuments({
-        taskStatus: 'Processing',
-      });
-      const tippingCount = await TippingRequest.countDocuments({
-        status: 'GoToTipping',
-      });
-      const onBreakCount = await Driver.countDocuments({
-        onBreak: true,
-      });
-
-   
-
-      io.emit('vehicleStats', {
-        allVehicles: allVehiclesCount,
-        onWork: onWorkCount,
-        tipping: tippingCount,
-        onBreak: onBreakCount,
-      });
+      try {
+        const today = new Date();
+        const todayKey = today.toISOString().split('T')[0]; // Format date as "YYYY-MM-DD"
+    
+        const trucks = await Truck.find().populate({
+          path: `tasks.${todayKey}`, // Populate tasks for today's date
+          model: 'Task', // Specify the model being referenced
+        });
+    
+        let onWorkCount = 0;
+    
+        // Iterate over trucks to check tasks for today
+        for (const truck of trucks) {
+          
+          console.log(todayKey)
+          if (truck.tasks.has(todayKey)) {
+            // Get tasks for today's date
+            const todayTasks = truck.tasks.get(todayKey);
+            console.log("todayTasks:",todayTasks )
+            // Count tasks with "Processing" status
+            const processingTasks = todayTasks.filter((task) => task.taskStatus === 'Processing');
+            if (processingTasks.length > 0) {
+              onWorkCount += 1; // Increment count for trucks with at least one "Processing" task
+            }
+          }
+        }
+    
+        const allVehiclesCount = await Truck.countDocuments();
+        const tippingCount = await TippingRequest.countDocuments({
+          status: { $nin: ['Denied', 'Pending'] },
+          isShipped: false,
+        });
+        const onBreakCount = await Driver.countDocuments({ onBreak: true });
+    
+        // Emit the stats to the client
+        io.emit('vehicleStats', {
+          allVehicles: allVehiclesCount,
+          onWork: onWorkCount,
+          tipping: tippingCount,
+          onBreak: onBreakCount,
+        });
+      } catch (error) {
+        console.error('Error fetching truck stats:', error);
+      }
     });
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
