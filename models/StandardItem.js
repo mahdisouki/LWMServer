@@ -6,6 +6,11 @@ const standardItemSchema = new mongoose.Schema({
     price: { type: Number, required: true },
     category: [{type:mongoose.Types.ObjectId , ref:"serviceCategory"}], 
     description: { type: String, required: false },
+    Objectsposition: {
+        type: String,
+        enum: ["Inside", "Outside", "InsideWithDismantling"],
+        default: "Outside",
+      },
 });
 
 const StandardItem = mongoose.model('StandardItem', standardItemSchema);

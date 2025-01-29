@@ -1,47 +1,140 @@
-
-
 const paypal = require('@paypal/checkout-server-sdk');
 const StandardItem = require('../models/StandardItem');
 const Task = require('../models/Task');
-const VAT_RATE = 0.2; // 20% VAT rate
-
 const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key here
 
-const calculateTotalPrice = async (taskId, options) => {
-    const task = await Task.findById(taskId);
-    if (!task) throw new Error('Task not found');
+const VAT_RATE = 0.2; // VAT rate (20%)
 
-    let totalPrice = task.price || 0; // Price excluding VAT
+async function calculateTotalPrice(taskId) {
+    const task = await Task.findById(taskId).populate("items.standardItemId");
+    if (!task) throw new Error("Task not found");
 
-    // Apply additional fees based on options
-    if (options) {
-        if (options.position === "insideWithDismantling") {
-            totalPrice += 18; // £18 fee for dismantling
-        } else if (options.position === "Inside") {
-            totalPrice += 6; // £6 fee for inside without dismantling
-        } else if (options.position === "Outside") {
-            // Apply 10% discount if outside and selected "Any Time" slot
-            if (options.timeSlot === "AnyTime") {
-                totalPrice *= 0.9;
-            }
+    let basePrice = 0;
+    const breakdown = [];
+
+    task.items.forEach((item) => {
+        const quantity = item.quantity || 1;
+        const price = item.standardItemId ? item.standardItemId.price * quantity : item.price * quantity;
+        basePrice += price;
+
+        const itemDescription = `${item.standardItemId ? "Standard Item - " + item.standardItemId.itemName : "Custom Item - " + item.object} (x${quantity})`;
+
+        breakdown.push({
+            itemDescription,
+            price: price.toFixed(2),
+            Objectsposition: item.Objectsposition || "Outside",
+        });
+
+        // Add additional fees based on item position
+        if (["InsideWithDismantling", "Inside"].includes(item.Objectsposition)) {
+            const additionalFee = item.Objectsposition === "InsideWithDismantling" ? 18 : 6;
+            basePrice += additionalFee;
+
+            breakdown.push({
+                description: `${item.Objectsposition} fee for '${item.object || "item"}'`,
+                amount: additionalFee.toFixed(2),
+            });
         }
-    }
+    });
 
-    // Calculate VAT
-    totalPrice = totalPrice * (1 + VAT_RATE);
+    const vat = basePrice * VAT_RATE;
+    const finalPrice = basePrice + vat;
 
-    // Ensure minimum fee of £30 (3000 cents)
-    if (totalPrice < 30) {
-        totalPrice = 30;
-    }
+    breakdown.push({ description: "VAT (20%)", amount: vat.toFixed(2) });
+    breakdown.push({ description: "Final total price", amount: finalPrice.toFixed(2) });
 
-    return Math.round(totalPrice * 100); // Convert to cents for payment processing
+    return {
+        total: Math.round(finalPrice * 100), // Convert to pence for Stripe
+        breakdown,
+    };
+}
+
+const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
+    const description = breakdown
+        .map((item) => `${item.itemDescription || item.description}: £${item.price || item.amount}`)
+        .join(", ");
+
+    const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        line_items: [
+            {
+                price_data: {
+                    currency: "gbp",
+                    product_data: {
+                        name: `Payment for Task #${taskId}`,
+                        description,
+                    },
+                    unit_amount: finalAmount, // Final amount in pence
+                },
+                quantity: 1,
+            },
+        ],
+        mode: "payment", // Payment mode
+        success_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/success`,
+        cancel_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/cancel`,
+        metadata: {
+            taskId,
+            breakdown: JSON.stringify(breakdown), // Store breakdown as metadata
+        },
+    });
+
+    return session.url;
 };
 
-
-
-
+const createPaypalPaymentLink = async (taskId, finalAmount, breakdown) => {
+    console.log("Generating PayPal link for items:", breakdown);
+    const itemDetails = breakdown.filter(item => item.price != null && !isNaN(item.price)).map(item => ({
+      name: item.itemDescription || "Item",
+      description: `Position: ${item.Objectsposition || "Outside"} - Quantity: ${item.quantity || 1}`,
+      unit_amount: {
+        currency_code: "GBP",
+        value: parseFloat(item.price).toFixed(2),
+      },
+      quantity: (item.quantity || 1).toString(),
+    }));
+  
+    const itemTotal = itemDetails.reduce((sum, item) => sum + parseFloat(item.unit_amount.value) * parseInt(item.quantity), 0);
+    const taxTotal = finalAmount - itemTotal;
+  
+    if (taxTotal < 0) {
+      console.error("Calculated tax total is invalid.", { finalAmount, itemTotal, taxTotal });
+      throw new Error("Calculated tax total is invalid.");
+    }
+  
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.requestBody({
+      intent: "CAPTURE",
+      purchase_units: [{
+        custom_id: taskId,
+        description: `Payment for Task #${taskId}`,
+        amount: {
+          currency_code: "GBP",
+          value: finalAmount.toFixed(2),
+          breakdown: {
+            item_total: { currency_code: "GBP", value: itemTotal.toFixed(2) },
+            tax_total: { currency_code: "GBP", value: taxTotal.toFixed(2) }
+          }
+        },
+        items: itemDetails
+      }],
+      application_context: {
+        return_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/success`,
+        cancel_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/cancel`,
+      }
+    });
+  
+    try {
+      const environment = new paypal.core.SandboxEnvironment(process.env.PAYPAL_CLIENT_ID, process.env.PAYPAL_CLIENT_SECRET);
+      const client = new paypal.core.PayPalHttpClient(environment);
+      const order = await client.execute(request);
+      return order.result.links.find(link => link.rel === "approve").href;
+    } catch (error) {
+      console.error("Failed to create PayPal payment link:", error);
+      throw error;
+    }
+  };
+  
 const createStripePaymentIntent = async (amount) => {
     return stripe.paymentIntents.create({
         amount: amount, 
@@ -61,62 +154,6 @@ async function createPayPalOrder(amount) {
     return client.execute(request);
 }
 
-const createStripePaymentLink = async (taskId, amount) => {
-    const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [
-            {
-                price_data: {
-                    currency: 'gbp',
-                    product_data: { name: `Payment for Task #${taskId}` },
-                    unit_amount: amount, // amount in pence
-                },
-                quantity: 1,
-            },
-        ],
-        mode: 'payment',
-        metadata: { taskId }, // Add taskId as metadata
-        success_url: 'https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/success',
-        cancel_url: 'https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/cancel',
-    });
-    
-    return session.url; // Retournez l'URL générée par Stripe pour le paiement
-};
-
-
-const createPaypalPaymentLink = async (taskId, amount) => {
-    const environment = new paypal.core.SandboxEnvironment(
-        process.env.PAYPAL_CLIENT_ID,
-        process.env.PAYPAL_CLIENT_SECRET
-    );
-    const client = new paypal.core.PayPalHttpClient(environment);
-
-    const request = new paypal.orders.OrdersCreateRequest();
-    request.prefer("return=representation");
-    request.requestBody({
-        intent: "CAPTURE", // Required for capturing funds
-        purchase_units: [
-            {
-                custom_id: taskId, // Attach Task ID here
-                description: `Payment for Task #${taskId}`,
-                amount: {
-                    currency_code: "GBP", // Ensure currency matches your region
-                    value: (amount / 100).toFixed(2),
-                },
-            },
-        ],
-        application_context: {
-            return_url: `https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/success`,
-            cancel_url: `https://efde-197-2-100-22.ngrok-free.app/api/webhooks/payment/cancel`,
-          },
-          
-    });
-
-    const order = await client.execute(request);
-    return order.result.links.find((link) => link.rel === "approve").href; // Return approval URL
-};
-
-
 // Fetch PayPal Order Details
 const getPayPalOrderDetails = async (orderId) => {
     const environment = new paypal.core.SandboxEnvironment(
@@ -133,19 +170,24 @@ const getPayPalOrderDetails = async (orderId) => {
   // Capture PayPal Payment
   const capturePayPalPayment = async (orderId) => {
     const environment = new paypal.core.SandboxEnvironment(
-      process.env.PAYPAL_CLIENT_ID,
-      process.env.PAYPAL_CLIENT_SECRET
+        process.env.PAYPAL_CLIENT_ID,
+        process.env.PAYPAL_CLIENT_SECRET
     );
     const client = new paypal.core.PayPalHttpClient(environment);
-  
-    const captureRequest = new paypal.orders.OrdersCaptureRequest(orderId);
-    captureRequest.requestBody({});
-    const captureResponse = await client.execute(captureRequest);
-    return captureResponse.result;
-  };
-  
 
-  
+    const request = new paypal.orders.OrdersCaptureRequest(orderId);
+    request.requestBody({}); // PayPal requires an empty request body for capture
+
+    try {
+        const captureResponse = await client.execute(request);
+        return captureResponse.result;
+    } catch (error) {
+        console.error("Error capturing PayPal payment:", error);
+        throw error;
+    }
+};
+
+
   
 function PayPalClient() {
     return new paypal.core.PayPalHttpClient(

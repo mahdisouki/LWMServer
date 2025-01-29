@@ -16,22 +16,47 @@ initSocket(server);
 require("dotenv").config();
 require("./config/db");
 const cors = require("cors");
+const path = require("path");
+
 
 require('./jobs/dailySheetCron'); 
 require('./jobs/AssignedStaffCron');
 const setupSwagger = require('./config/swaggerConfig'); 
 // Apply raw body for Stripe webhook first
 
-app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
+
 
 const corsOptions = {
   origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5173'  ,'http://localhost:5174', 'https://londonwastemanagement.netlify.app' , "https://192.168.100.23:5173"], 
   optionsSuccessStatus: 200 
 };
+
+app.use('/public', express.static(path.join(__dirname, 'public')));
+app.get('/public/:fileName', (req, res) => {
+  const filePath = path.join(__dirname, 'public', req.params.fileName);
+  if (fs.existsSync(filePath)) {
+    res.download(filePath); // Envoie le fichier au client
+  } else {
+    res.status(404).send('File not found');
+  }
+});
+
+
+// Stripe Webhook Route - Raw body middleware is applied ONLY for this route
+app.use(
+  "/api/webhooks/stripe",
+  express.raw({ type: "application/json" }) // Required for Stripe signature verification
+);
 app.use(cors(corsOptions));
+// Apply JSON parsing for all other routes
+app.use(express.json());
+app.use(bodyParser.json());
+
+// Import routes
+const taskRouter = require("./routes/task");
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
-const taskRouter = require("./routes/task");
+
 const truckRouter = require("./routes/truck");
 const driverRouter = require("./routes/driver");
 const tippingRouter = require("./routes/tipping");
@@ -55,18 +80,8 @@ const serviceCategoryRoutes = require('./routes/serviceCategory');
 const {optimizeRoute } = require("./helper/OpitomRoute");
 
 
-
-
-// Apply JSON parsing globally for other routes
-app.use(express.json());
-app.use(bodyParser.json());
-
-// Mount routes
-app.use('/api', taskRouter);
-
-
 setupSwagger(app); 
-
+app.use("/api", taskRouter);
 app.use('/api',authRouter);
 app.use('/api',staffRouter);
 
