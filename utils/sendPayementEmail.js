@@ -51,7 +51,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         attachments: [
             {
                 filename: 'Green-Log.png',
-                path: 'D:\\Users\\eya20\\LondonWaste\\LWMServer\\logo\\Green-Log.png',
+                path: 'C:\\Users\\souki\\OneDrive\\Documents\\GitHub\\LWMServer\\logo\\Green-Log.png',
                 cid: 'logo',
             },
         ],

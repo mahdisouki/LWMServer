@@ -269,5 +269,38 @@ const tippingController = {
       });
     }
   },
+  uploadTippingProof: async (req, res) => {
+    const { id } = req.params; // Tipping request ID
+    try {
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ message: 'No files uploaded' });
+        }
+
+        const request = await TippingRequest.findById(id);
+        if (!request) {
+            return res.status(404).json({ message: 'Tipping request not found' });
+        }
+
+        // Extract Cloudinary URLs from uploaded files
+        const proofUrls = req.files.map(file => file.path);
+
+        // Append new proof files to existing ones
+        request.tippingProof = [...(request.tippingProof || []), ...proofUrls];
+
+        await request.save();
+
+        res.status(200).json({
+            message: 'Tipping proof uploaded successfully',
+            proofUrls,
+            request
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: 'Failed to upload tipping proof',
+            error: error.message,
+        });
+    }
+},
+
 };
 module.exports = tippingController;
