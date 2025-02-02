@@ -33,212 +33,142 @@ function validateBreakdown(breakdown) {
 
 
 const taskCtrl = {
-  // createTask: async (req, res) => {
-  //   try {
-  //     const {
-  //       firstName,
-  //       lastName,
-  //       phoneNumber,
-  //       phoneNumber2,
-  //       email,
-  //       available,
-  //       Objectsposition,
-  //       location,
-  //       date,
-  //       object,
-  //       price,
-  //       paymentStatus,
-  //       StandardItem,
-  //       cloneClientObjectPhotos,
-  //     } = req.body;
-
-  //     let clientObjectPhotos = [];
-
-  //     if (cloneClientObjectPhotos) {
-  //       clientObjectPhotos = cloneClientObjectPhotos;
-  //     } else {
-  //       clientObjectPhotos = req.files.map((file) => file.path);
-  //     }
-
-  //     const taskDate = new Date(date);
-
-  //     const blockedDay = await BlockingDays.findOne({
-  //       date: taskDate,
-  //     });
-
-  //     if (blockedDay) {
-  //       return res.status(400).json({
-  //         message: `Task date conflicts with a blocking day: ${blockedDay.type}`,
-  //       });
-  //     }
-
-  //     const conflictingTruck = await Truck.findOne({
-  //       $or: [
-  //         {
-  //           'driverSpecificDays.startDate': { $lte: taskDate },
-  //           'driverSpecificDays.endDate': { $gte: taskDate },
-  //         },
-  //         {
-  //           'helperSpecificDays.startDate': { $lte: taskDate },
-  //           'helperSpecificDays.endDate': { $gte: taskDate },
-  //         },
-  //       ],
-  //     });
-
-  //     if (conflictingTruck) {
-  //       return res.status(400).json({
-  //         message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`,
-  //       });
-  //     }
-  //     const newTask = new Task({
-  //       firstName,
-  //       lastName,
-  //       phoneNumber,
-  //       phoneNumber2,
-  //       email,
-  //       available,
-  //       Objectsposition,
-  //       location,
-  //       date,
-  //       object,
-  //       price,
-  //       paymentStatus,
-  //       clientObjectPhotos,
-  //       StandardItem,
-  //       taskStatus: 'Created',
-  //     });
-
-  //     await newTask.save();
-
-  //     res.status(201).json({
-  //       message: 'Task created successfully',
-  //       task: newTask,
-  //     });
-  //   } catch (error) {
-  //     res
-  //       .status(400)
-  //       .json({ message: 'Failed to create task', error: error.message });
-  //   }
-  // },
-
   createTask: async (req, res) => {
     try {
       const {
-        firstName,
-        lastName,
-        phoneNumber,
-        phoneNumber2,
-        email,
-        available,
-        location,
-        date,
-        objects, // Tableau pour les objets personnalisés
-        standardItems, // Tableau d'ID de StandardItem avec quantité et position
-        paymentStatus,
-        cloneClientObjectPhotos,
-        price,
+          firstName,
+          lastName,
+          phoneNumber,
+          phoneNumber2,
+          email,
+          available,
+          location,
+          date,
+          objects, // Custom items
+          standardItems, // Standard items with quantity and position
+          paymentStatus,
+          cloneClientObjectPhotos,
       } = req.body;
 
       let clientObjectPhotos = [];
 
-      // Gestion des photos
+      // Handle Photos
       if (cloneClientObjectPhotos) {
-        clientObjectPhotos = cloneClientObjectPhotos;
+          clientObjectPhotos = cloneClientObjectPhotos;
       } else if (req.files && req.files.length > 0) {
-        clientObjectPhotos = req.files.map((file) => file.path);
+          clientObjectPhotos = req.files.map((file) => file.path);
       }
 
       const taskDate = new Date(date);
 
-      // Vérification des jours bloqués
+      // Check for blocked days
       const blockedDay = await BlockingDays.findOne({ date: taskDate });
-
-
       if (blockedDay) {
-        return res.status(400).json({
-          message: `Task date conflicts with a blocking day: ${blockedDay.type}`,
-        });
+          return res.status(400).json({
+              message: `Task date conflicts with a blocking day: ${blockedDay.type}`,
+          });
       }
 
-
-      // Vérification de la disponibilité du camion
+      // Check truck availability
       const conflictingTruck = await Truck.findOne({
-        $or: [
-          {
-            'driverSpecificDays.startDate': { $lte: taskDate },
-            'driverSpecificDays.endDate': { $gte: taskDate },
-          },
-          {
-            'helperSpecificDays.startDate': { $lte: taskDate },
-            'helperSpecificDays.endDate': { $gte: taskDate },
-          },
-        ],
+          $or: [
+              {
+                  'driverSpecificDays.startDate': { $lte: taskDate },
+                  'driverSpecificDays.endDate': { $gte: taskDate },
+              },
+              {
+                  'helperSpecificDays.startDate': { $lte: taskDate },
+                  'helperSpecificDays.endDate': { $gte: taskDate },
+              },
+          ],
       });
       if (conflictingTruck) {
-        return res.status(400).json({
-          message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`,
-        });
+          return res.status(400).json({
+              message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`,
+          });
       }
 
-      // Construction des items pour la tâche
+      // Initialize price calculation
+      let totalPrice = 0;
       const items = [];
 
-      // Ajout des objets personnalisés
+      // Add custom objects
       if (objects && Array.isArray(objects)) {
-        objects.forEach((customObject) => {
-          if (customObject.object && customObject.price) {
-            items.push({
-              object: customObject.object,
-              price: customObject.price,
-              Objectsposition: customObject.Objectsposition || "Outside", // Position par défaut
-              quantity: customObject.quantity || 1, // Quantité par défaut
-            });
-          }
-        });
-      }
+          objects.forEach((customObject) => {
+              if (customObject.object && customObject.price) {
+                  const itemTotal = customObject.price * (customObject.quantity || 1);
+                  totalPrice += itemTotal;
 
-      // Ajout des StandardItems
-      if (standardItems && Array.isArray(standardItems)) {
-        for (const item of standardItems) {
-          console.log('standardItems:', item);
-          console.log('Incoming item.standardItemId:', item.standardItem);
-          const standardItem = await StandardItem.findById(item.standardItemId);
-          if (!standardItem) {
-            return res.status(404).json({ message: `Standard item not found for ID: ${item.standardItemId}` });
-          }
-          items.push({
-            standardItemId: standardItem._id,
-            quantity: item.quantity || 1,
-            Objectsposition: item.Objectsposition || "Outside", // Position par défaut
+                  items.push({
+                      object: customObject.object,
+                      price: customObject.price,
+                      quantity: customObject.quantity || 1,
+                      Objectsposition: customObject.Objectsposition || "Outside",
+                  });
+              }
           });
-        }
       }
 
+      // Add standard items
+      if (standardItems && Array.isArray(standardItems)) {
+          for (const item of standardItems) {
+              console.log('standardItems:', item);
+              const standardItem = await StandardItem.findById(item.standardItemId);
+              if (!standardItem) {
+                  return res.status(404).json({ message: `Standard item not found for ID: ${item.standardItemId}` });
+              }
+
+              const itemTotal = standardItem.price * (item.quantity || 1);
+              totalPrice += itemTotal;
+
+              items.push({
+                  standardItemId: standardItem._id,
+                  quantity: item.quantity || 1,
+                  Objectsposition: item.Objectsposition || "Outside",
+              });
+          }
+      }
+
+      // Apply Discounts or Additional Fees
+      if (available === "AnyTime" && items.every((i) => i.Objectsposition === "Outside")) {
+          totalPrice *= 0.9; // 10% discount
+      }
+
+      // Minimum price enforcement
+      if (totalPrice < 30) {
+          totalPrice = 30;
+      }
+
+      // Add VAT (20%)
+      const vat = totalPrice * 0.2;
+      totalPrice += vat;
+
+      // Create the task
       const newTask = new Task({
-        firstName,
-        lastName,
-        phoneNumber,
-        phoneNumber2,
-        email,
-        available,
-        location,
-        date: taskDate,
-        paymentStatus,
-        clientObjectPhotos,
-        price,
-        items,
-        taskStatus: 'Processing',
+          firstName,
+          lastName,
+          phoneNumber,
+          phoneNumber2,
+          email,
+          available,
+          location,
+          date: taskDate,
+          paymentStatus,
+          clientObjectPhotos,
+          totalPrice, // Save total price
+          items,
+          taskStatus: 'Processing',
       });
 
       await newTask.save();
 
       res.status(201).json({
-        message: 'Task created successfully',
-        task: newTask,
+          message: 'Task created successfully',
+          task: newTask,
       });
-    } catch (error) {
+  } catch (error) {
       res.status(400).json({ message: 'Failed to create task', error: error.message });
-    }
+  }
   },
 
   getTaskById: async (req, res) => {
@@ -566,51 +496,62 @@ const taskCtrl = {
     const { taskId } = req.params;
 
     try {
-      const existingTask = await Task.findById(taskId);
-      if (!existingTask) {
-        return res.status(404).json({ message: 'Task not found' });
-      }
+        // Retrieve the existing task
+        const existingTask = await Task.findById(taskId).populate("items.standardItemId");
+        if (!existingTask) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
 
-      let updateData = { ...req.body };
-      if (req.body.deletedMedia && req.body.deletedMedia.length > 0) {
-        existingTask.clientObjectPhotos =
-          existingTask.clientObjectPhotos.filter(
-            (photo) => !req.body.deletedMedia.includes(photo),
-          );
+        let updateData = { ...req.body };
 
-        await existingTask.save();
-      }
+        // Handle media deletions
+        if (req.body.deletedMedia && Array.isArray(req.body.deletedMedia) && req.body.deletedMedia.length > 0) {
+            existingTask.clientObjectPhotos = existingTask.clientObjectPhotos.filter(
+                (photo) => !req.body.deletedMedia.includes(photo)
+            );
+        }
 
-      if (req.files) {
-        const newClientObjectPhotos = req.files.map((file) => file.path);
+        // Handle new file uploads
+        if (req.files && req.files.length > 0) {
+            const newClientObjectPhotos = req.files.map((file) => file.path);
+            existingTask.clientObjectPhotos = [
+                ...existingTask.clientObjectPhotos,
+                ...newClientObjectPhotos
+            ];
+        }
 
-        const updatedClientObjectPhotos = existingTask.clientObjectPhotos
-          ? existingTask.clientObjectPhotos.concat(newClientObjectPhotos)
-          : newClientObjectPhotos;
+        updateData.clientObjectPhotos = existingTask.clientObjectPhotos;
 
-        updateData.clientObjectPhotos = updatedClientObjectPhotos;
-      }
+        // Update items if provided in the request
+        if (updateData.items) {
+            existingTask.items = updateData.items.map((item) => ({
+                standardItemId: item.standardItemId || null,
+                object: item.object || null,
+                quantity: item.quantity || 1,
+                price: item.price || 0,
+                Objectsposition: item.Objectsposition || "Outside"
+            }));
+        }
 
-      const updatedTask = await Task.findByIdAndUpdate(
-        taskId,
-        { $set: updateData },
-        { new: true },
-      );
+        // Recalculate total price if items are updated
+        const { total } = await calculateTotalPrice(existingTask._id);
+        updateData.totalPrice = total;
 
-      if (!updatedTask) {
-        return res.status(404).json({ message: 'Task not found' });
-      }
+        // Update the task with the new data
+        const updatedTask = await Task.findByIdAndUpdate(taskId, { $set: updateData }, { new: true });
 
-      res
-        .status(200)
-        .json({ message: 'Task updated successfully', task: updatedTask });
+        if (!updatedTask) {
+            return res.status(404).json({ message: 'Task not found' });
+        }
+
+        res.status(200).json({ message: 'Task updated successfully', task: updatedTask });
+
     } catch (error) {
-      console.log(error);
-      res
-        .status(500)
-        .json({ message: 'Failed to update task', error: error.message });
+        console.error("Error updating task:", error);
+        res.status(500).json({ message: 'Failed to update task', error: error.message });
     }
-  },
+},
+
 
   updateTaskStatus: async (req, res) => {
     const { taskId } = req.params;

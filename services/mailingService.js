@@ -153,9 +153,32 @@ const fetchEmails = () => {
     imap.connect();
   });
 };
+// Function to reply to an email
+const replyToEmail = async (emailId, text) => {
+  try {
+    // Fetch the original email to get necessary headers
+    const originalEmail = await fetchEmailById(emailId);
 
+    const replyOptions = {
+      from: process.env.EMAIL_USER,
+      to: originalEmail.from, // Replying to sender
+      subject: `Re: ${originalEmail.subject}`, // Keeping the subject line
+      text: `${text}\n\nOn ${originalEmail.subject}, ${originalEmail.from} wrote:\n${originalEmail.text}`,
+      html: `<p>${text}</p><br><blockquote>${originalEmail.html}</blockquote>`, // Threaded reply in HTML
+      inReplyTo: originalEmail.messageId,
+      references: `${originalEmail.references} ${originalEmail.messageId}`,
+    };
+
+    const info = await transporter.sendMail(replyOptions);
+    return info.response;
+  } catch (err) {
+    throw new Error(`Error replying to email: ${err.message}`);
+  }
+};
 
 module.exports = {
   sendEmail,
   fetchEmails,
+  replyToEmail,
+  
 };

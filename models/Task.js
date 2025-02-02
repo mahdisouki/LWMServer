@@ -11,7 +11,7 @@ const taskSchema = new Schema(
     phoneNumber: { type: String, required: true },
     phoneNumber2: { type: String },
     clientObjectPhotos: [{ type: String, required: true }],
-    price: { type: Number, required: true },
+    totalPrice: { type: Number, required: true },
     
     items: [
       {

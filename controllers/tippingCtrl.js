@@ -123,7 +123,7 @@ const tippingController = {
     try {
       const { page = 1, limit = 9, filters } = req.query;
 
-      let query = TippingRequest.find();
+      let query = TippingRequest.find().populate('userId');
       const total = await TippingRequest.countDocuments(query);
 
       const features = new APIfeatures(query, req.query);
