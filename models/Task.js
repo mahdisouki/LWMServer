@@ -11,9 +11,11 @@ const taskSchema = new Schema(
     phoneNumber: { type: String, required: true },
     phoneNumber2: { type: String },
     clientObjectPhotos: [{ type: String, required: true }],
+    price: { type: Number, required: true },
+    
     items: [
       {
-        standardItemId: { type: mongoose.Types.ObjectId, ref: "StandardItem" }, 
+        standardItemId: { type: mongoose.Types.ObjectId, ref: "StandardItem" },
         object: { type: String },  // if others 
         Objectsposition: {
           type: String,
@@ -21,7 +23,7 @@ const taskSchema = new Schema(
           default: "Outside",
         },
         quantity: { type: Number, default: 0 },
-        price: { type: Number },  
+        price: { type: Number },
       },
     ],
     initialConditionPhotos: [
@@ -61,10 +63,10 @@ const taskSchema = new Schema(
       address: { type: String, required: false },
     },
     date: { type: Date, required: true },
-    available: { 
-      type:String,
+    available: {
+      type: String,
       enum: ["AnyTime", "7am-12pm", "12pm-5pm"],
-      default:"AnyTime"
+      default: "AnyTime"
     },
     paymentStatus: {
       type: String,
@@ -76,7 +78,7 @@ const taskSchema = new Schema(
       enum: ["Declined", "Processing", "Completed"],
       default: "Processing",
     },
-    email:{type:String},
+    email: { type: String },
     additionalNotes: { type: String, required: false },
     itemDescription: { type: String, required: false },
     clientFeedback: { type: String },
