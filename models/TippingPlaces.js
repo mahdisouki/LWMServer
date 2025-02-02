@@ -37,7 +37,18 @@ const TippingPlaceSchema = new Schema({
     },
     additionalSofaCharge: {
         type: Number
-    }
+    },
+    location: {
+        type: {
+          type: String,
+          enum: ["Point"],
+          required: false,
+        },
+        coordinates: {
+          type: [Number],
+          required: false,
+        },
+      },
 }, { timestamps: true });
 
 const TippingPlace = mongoose.model('TippingPlace', TippingPlaceSchema);

@@ -301,6 +301,50 @@ const tippingController = {
         });
     }
 },
+getTippingRequestLocations: async (req, res) => {
+  const { tippingRequestId } = req.params; // Get tipping request ID from URL params
 
+  try {
+    // Find the tipping request
+    const tippingRequest = await TippingRequest.findById(tippingRequestId).populate('userId');
+    if (!tippingRequest) {
+      return res.status(404).json({ message: 'Tipping request not found' });
+    }
+
+    // Retrieve the driver associated with the truck
+    const truck = tippingRequest.userId;
+    console.log(tippingRequest)
+    if (!truck ) {
+      return res.status(404).json({ message: 'Driver not found for this truck' });
+    }
+
+  
+
+    // Fetch all tipping places with their locations
+    const tippingPlaces = await TippingPlace.find().select('name location');
+
+    // Format the response
+    const response = {
+      driverLocation: {
+        latitude: truck.location.coordinates[1], // Assuming [lng, lat]
+        longitude: truck.location.coordinates[0],
+      },
+      tippingPlaces: tippingPlaces.map(place => ({
+        id: place._id,
+        name: place.name,
+        latitude: place.location.coordinates[1], // Assuming [lng, lat]
+        longitude: place.location.coordinates[0],
+      })),
+    };
+
+    res.status(200).json({
+      message: 'Driver and tipping places locations retrieved successfully',
+      data: response,
+    });
+  } catch (error) {
+    console.error('Error retrieving tipping request locations:', error);
+    res.status(500).json({ message: 'Failed to retrieve locations', error: error.message });
+  }
+},
 };
 module.exports = tippingController;

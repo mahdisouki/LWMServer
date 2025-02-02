@@ -3,8 +3,8 @@ const app = express();
 const http = require("http");
 const bodyParser = require('body-parser');
 const fs = require("fs");
-
-
+const TippingPlace = require('./models/TippingPlaces')
+const mongoose=require('mongoose')
 const { initSocket } = require("./socket");
 
 
@@ -118,6 +118,8 @@ app.post('/optimise/:truckId' , async(req,res)=>{
     res.json({error:error})
   }
 })
+
+
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
 });
