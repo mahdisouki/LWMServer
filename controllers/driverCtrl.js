@@ -160,9 +160,10 @@ const driverManagement = {
       const taskIdsForToday = truck.tasks.get(formattedDate);
       console.log("taskIdsForToday:",taskIdsForToday)
       // Fetch the tasks for the current day
-      const tasks = await Task.find({
-        _id: { $in: taskIdsForToday }
-      });
+      // const tasks = await Task.find({
+      //   _id: { $in: taskIdsForToday }
+      // });
+         const tasks = await Task.find();
   
       res
         .status(200)
