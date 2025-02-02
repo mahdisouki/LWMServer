@@ -1,5 +1,6 @@
 const QuotationRequest = require('../models/QuotationRequest');
 const sendQuotationEmail = require('../utils/sendQuotationEmail'); // Utility function to send email notifications
+const APIfeatures = require('../utils/APIFeatures');
 
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
@@ -9,7 +10,7 @@ const quotationRequestController = {
                 line2,
                 email,
                 phoneNumber,
-                
+
                 companyName,
                 postcode,
                 comments,
@@ -22,7 +23,7 @@ const quotationRequestController = {
                 line2,
                 email,
                 phoneNumber,
-                
+
                 companyName,
                 postcode,
                 comments,
@@ -50,17 +51,46 @@ const quotationRequestController = {
         }
     },
 
+    // getAllQuotations: async (req, res) => {
+    //     try {
+    //         const quotations = await QuotationRequest.find();
+    //         res.status(200).json(quotations);
+    //     } catch (error) {
+    //         res.status(500).json({
+    //             message: 'Failed to retrieve quotations',
+    //             error: error.message,
+    //         });
+    //     }
+    // },
     getAllQuotations: async (req, res) => {
         try {
-            const quotations = await QuotationRequest.find();
-            res.status(200).json(quotations);
+            const { page = 1, limit = 10 } = req.query;
+
+            let query = QuotationRequest.find();
+            const features = new APIfeatures(query, req.query);
+            features.sorting().paginating();
+
+            const quotations = await features.query.exec();
+            const total = await QuotationRequest.countDocuments(features.query.getFilter());
+
+            res.status(200).json({
+                message: "All quotations retrieved successfully",
+                quotations,  // <== Now it's inside an object
+                meta: {
+                    currentPage: parseInt(page, 10),
+                    limit: parseInt(limit, 10),
+                    total,
+                    count: quotations.length,
+                },
+            });
         } catch (error) {
             res.status(500).json({
-                message: 'Failed to retrieve quotations',
+                message: "Failed to retrieve quotations",
                 error: error.message,
             });
         }
     },
+
 
     getQuotationById: async (req, res) => {
         const { id } = req.params;
@@ -79,14 +109,14 @@ const quotationRequestController = {
             });
         }
     },
-    getAllQuotations: async (req, res) => {
-        try {
-            const quotations = await QuotationRequest.find();
-            res.status(200).json(quotations);
-        } catch (error) {
-            res.status(500).json({ message: "Failed to retrieve quotations", error: error.message });
-        }
-    },
+    // getAllQuotations: async (req, res) => {
+    //     try {
+    //         const quotations = await QuotationRequest.find();
+    //         res.status(200).json(quotations);
+    //     } catch (error) {
+    //         res.status(500).json({ message: "Failed to retrieve quotations", error: error.message });
+    //     }
+    // },
 };
 
 module.exports = quotationRequestController;
