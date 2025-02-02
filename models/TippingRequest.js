@@ -25,7 +25,7 @@ const tippingRequestSchema = new Schema({
         default: false 
     },
     tippingProof:{
-        type:String
+        type:[String]
     },
     price:{
         type:Number
