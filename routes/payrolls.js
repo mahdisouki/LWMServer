@@ -27,7 +27,7 @@ router.get('/payroll/all-users', isAuth, PayrollCtrl.getAllWorkedHoursAndSalaryF
 router.put('/payroll/reset/:userId', isAuth, PayrollCtrl.resetPayroll);
 
 // Admin - Get all payroll records
-router.get('/payroll/admin/all', isAuth, PayrollCtrl.getAllPayrolls);
+router.get('/payroll/admin/all',  PayrollCtrl.getAllPayrolls);
 
 // Admin - Get payroll records for a specific user by user ID
 router.get('/payroll/admin/user/:userId', isAuth, PayrollCtrl.getPayrollsByUserId);

@@ -1,6 +1,7 @@
 const { User } = require('../models/User');
 const Payroll = require('../models/Payroll');
 const APIfeatures = require('../utils/APIFeatures');
+const Truck = require('../models/Truck');
 
 const PayrollCtrl = {
   // Log start time at the beginning of the day
@@ -21,11 +22,12 @@ const PayrollCtrl = {
           .status(400)
           .json({ message: 'You have already started work for the day.' });
       }
-
+      const truck = await Truck.findOne({driverId : req.user._id})
       // Create a new payroll record with the start time
       const newPayroll = new Payroll({
         userId,
         startTime: new Date(startTime),
+        truckId: truck._id
       });
 
       await newPayroll.save();

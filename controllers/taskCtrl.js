@@ -44,6 +44,7 @@ const taskCtrl = {
           available,
           location,
           date,
+          billingAddress,
           objects, // Custom items
           standardItems, // Standard items with quantity and position
           paymentStatus,
@@ -154,6 +155,7 @@ const taskCtrl = {
           location,
           date: taskDate,
           paymentStatus,
+          billingAddress,
           clientObjectPhotos,
           totalPrice, // Save total price
           items,

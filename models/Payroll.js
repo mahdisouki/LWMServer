@@ -9,6 +9,9 @@ const payrollSchema = new Schema({
     },
     startTime: { type: Date },
     endTime: { type: Date },
+    truckId:{ type: Schema.Types.ObjectId,
+        ref: 'Truck',
+        required: true},
     totalHoursWorked: { type: Number, default: 0 }, // Total hours worked
     regularHours: { type: Number, default: 0 }, // Regular hours (up to 8h)
     extraHours: { type: Number, default: 0 }, // Extra hours (after 8h)

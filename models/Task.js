@@ -7,6 +7,7 @@ const taskSchema = new Schema(
     clientId: { type: Schema.Types.ObjectId, ref: "Client", required: false },
     truckId: { type: Schema.Types.ObjectId, ref: "Truck", required: false },
     firstName: { type: String, required: true },
+    billingAddress: {type:String },
     lastName: { type: String, required: true },
     phoneNumber: { type: String, required: true },
     phoneNumber2: { type: String },
