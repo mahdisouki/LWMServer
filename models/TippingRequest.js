@@ -12,8 +12,8 @@ const tippingRequestSchema = new Schema({
         ref: 'Truck',
         required: true
     },
-    notes: { 
-        type: String 
+    notes: {
+        type: String
     },
     status: {
         type: String,
@@ -22,21 +22,21 @@ const tippingRequestSchema = new Schema({
     },
     isShipped: {
         type: Boolean,
-        default: false 
+        default: false
     },
-    tippingProof:{
-        type:[String]
+    tippingProof: {
+        type: [String]
     },
-    price:{
-        type:Number
+    price: {
+        type: Number
     },
-    tippingPlace:{
-        type:mongoose.Types.ObjectId,
-        ref:"tippingPlace"
+    tippingPlace: {
+        type: Schema.Types.ObjectId,
+        ref: "TippingPlace"
     },
-    createdAt: { 
-        type: Date, 
-        default: Date.now 
+    createdAt: {
+        type: Date,
+        default: Date.now
     }
 }, { timestamps: true });
 

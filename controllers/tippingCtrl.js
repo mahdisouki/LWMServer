@@ -123,7 +123,9 @@ const tippingController = {
     try {
       const { page = 1, limit = 9, filters } = req.query;
 
-      let query = TippingRequest.find().populate('userId');
+      let query = TippingRequest.find().populate('userId')
+        .populate('truckId')
+        .populate('tippingPlace');
       const total = await TippingRequest.countDocuments(query);
 
       const features = new APIfeatures(query, req.query);
@@ -177,7 +179,7 @@ const tippingController = {
   // Update the status of a tipping request (Admin only)
   updateTippingRequestStatus: async (req, res) => {
     const { id } = req.params; // ID of the tipping request
-    const { status , tippingPlace  } = req.body; // New status to be set
+    const { status, tippingPlace } = req.body; // New status to be set
 
     try {
       // Fetch the tipping request and populate truck to access helperId
@@ -208,22 +210,22 @@ const tippingController = {
 
           // Find the nearest tipping place
           const tippingPlaces = await TippingPlace.find();
-          const nearestPlace = tippingPlaces
-            .map((place) => ({
-              ...place.toObject(),
-              distance: calculateDistance(driverLocation.coordinates, {
-                latitude: place.location.coordinates[1], // Assuming [lng, lat]
-                longitude: place.location.coordinates[0],
-              }),
-            }))
-            .sort((a, b) => a.distance - b.distance)
-            .shift();
+          // const nearestPlace = tippingPlaces
+          //   .map((place) => ({
+          //     ...place.toObject(),
+          //     distance: calculateDistance(driverLocation.coordinates, {
+          //       latitude: place.location.coordinates[1], // Assuming [lng, lat]
+          //       longitude: place.location.coordinates[0],
+          //     }),
+          //   }))
+          //   .sort((a, b) => a.distance - b.distance)
+          //   .shift();
 
-          emitEvent('nearestTippingPlace', {
-            driverId: request.userId,
-            helperId,
-            nearestPlace,
-          });
+          // emitEvent('nearestTippingPlace', {
+          //   driverId: request.userId,
+          //   helperId,
+          //   nearestPlace,
+          // });
 
           emitEvent('driverOnTheWay', {
             helperId,
@@ -272,79 +274,79 @@ const tippingController = {
   uploadTippingProof: async (req, res) => {
     const { id } = req.params; // Tipping request ID
     try {
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).json({ message: 'No files uploaded' });
-        }
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ message: 'No files uploaded' });
+      }
 
-        const request = await TippingRequest.findById(id);
-        if (!request) {
-            return res.status(404).json({ message: 'Tipping request not found' });
-        }
+      const request = await TippingRequest.findById(id);
+      if (!request) {
+        return res.status(404).json({ message: 'Tipping request not found' });
+      }
 
-        // Extract Cloudinary URLs from uploaded files
-        const proofUrls = req.files.map(file => file.path);
+      // Extract Cloudinary URLs from uploaded files
+      const proofUrls = req.files.map(file => file.path);
 
-        // Append new proof files to existing ones
-        request.tippingProof = [...(request.tippingProof || []), ...proofUrls];
+      // Append new proof files to existing ones
+      request.tippingProof = [...(request.tippingProof || []), ...proofUrls];
 
-        await request.save();
+      await request.save();
 
-        res.status(200).json({
-            message: 'Tipping proof uploaded successfully',
-            proofUrls,
-            request
-        });
+      res.status(200).json({
+        message: 'Tipping proof uploaded successfully',
+        proofUrls,
+        request
+      });
     } catch (error) {
-        res.status(500).json({
-            message: 'Failed to upload tipping proof',
-            error: error.message,
-        });
+      res.status(500).json({
+        message: 'Failed to upload tipping proof',
+        error: error.message,
+      });
     }
-},
-getTippingRequestLocations: async (req, res) => {
-  const { tippingRequestId } = req.params; // Get tipping request ID from URL params
+  },
+  getTippingRequestLocations: async (req, res) => {
+    const { tippingRequestId } = req.params; // Get tipping request ID from URL params
 
-  try {
-    // Find the tipping request
-    const tippingRequest = await TippingRequest.findById(tippingRequestId).populate('userId');
-    if (!tippingRequest) {
-      return res.status(404).json({ message: 'Tipping request not found' });
+    try {
+      // Find the tipping request
+      const tippingRequest = await TippingRequest.findById(tippingRequestId).populate('userId');
+      if (!tippingRequest) {
+        return res.status(404).json({ message: 'Tipping request not found' });
+      }
+
+      // Retrieve the driver associated with the truck
+      const truck = tippingRequest.userId;
+      console.log(tippingRequest)
+      if (!truck) {
+        return res.status(404).json({ message: 'Driver not found for this truck' });
+      }
+
+
+
+      // Fetch all tipping places with their locations
+      const tippingPlaces = await TippingPlace.find().select('name location');
+
+      // Format the response
+      const response = {
+        driverLocation: {
+          latitude: truck.location.coordinates[1], // Assuming [lng, lat]
+          longitude: truck.location.coordinates[0],
+        },
+        tippingPlaces: tippingPlaces.map(place => ({
+          id: place._id,
+          name: place.name,
+          latitude: place.location.coordinates[1], // Assuming [lng, lat]
+          longitude: place.location.coordinates[0],
+        })),
+      };
+
+      res.status(200).json({
+        message: 'Driver and tipping places locations retrieved successfully',
+        data: response,
+      });
+    } catch (error) {
+      console.error('Error retrieving tipping request locations:', error);
+      res.status(500).json({ message: 'Failed to retrieve locations', error: error.message });
     }
-
-    // Retrieve the driver associated with the truck
-    const truck = tippingRequest.userId;
-    console.log(tippingRequest)
-    if (!truck ) {
-      return res.status(404).json({ message: 'Driver not found for this truck' });
-    }
-
-  
-
-    // Fetch all tipping places with their locations
-    const tippingPlaces = await TippingPlace.find().select('name location');
-
-    // Format the response
-    const response = {
-      driverLocation: {
-        latitude: truck.location.coordinates[1], // Assuming [lng, lat]
-        longitude: truck.location.coordinates[0],
-      },
-      tippingPlaces: tippingPlaces.map(place => ({
-        id: place._id,
-        name: place.name,
-        latitude: place.location.coordinates[1], // Assuming [lng, lat]
-        longitude: place.location.coordinates[0],
-      })),
-    };
-
-    res.status(200).json({
-      message: 'Driver and tipping places locations retrieved successfully',
-      data: response,
-    });
-  } catch (error) {
-    console.error('Error retrieving tipping request locations:', error);
-    res.status(500).json({ message: 'Failed to retrieve locations', error: error.message });
-  }
-},
+  },
 };
 module.exports = tippingController;
