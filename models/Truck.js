@@ -16,7 +16,8 @@ const truckSchema = new Schema({
     type: Map, // Using a Map to organize tasks by date
     of: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
     default: {},
-  },  name: { type: String, required: true, unique: true },
+  },
+  name: { type: String, required: true, unique: true },
   loadCapacity:{ type:  Number},
   matricule: { type: String, required: true, unique: true },
 });
