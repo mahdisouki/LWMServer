@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const path = require('path');
 
 const VAT_RATE = 0.2; // 20% TVA
 
@@ -51,7 +52,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         attachments: [
             {
                 filename: 'Green-Log.png',
-                path: 'C:\\Users\\souki\\OneDrive\\Documents\\GitHub\\LWMServer\\logo\\Green-Log.png',
+                path: path.join(__dirname, '../logo/Green-Log.png'),
                 cid: 'logo',
             },
         ],

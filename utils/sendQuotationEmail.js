@@ -53,7 +53,7 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
     attachments: [
       {
         filename: 'Green-Log.png',
-        path: 'D:\\Users\\eya20\\LondonWaste\\LWMServer\\logo\\Green-Log.png',
+        path: path.join(__dirname, '../logo/Green-Log.png'),
         cid: 'logo', // Content ID for the inline image
       },
     ],
@@ -85,7 +85,7 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
     attachments: [
       {
         filename: 'Green-Log.png',
-        path: 'D:\\Users\\eya20\\LondonWaste\\LWMServer\\logo\\Green-Log.png',
+        path: path.join(__dirname, '../logo/Green-Log.png'),
         cid: 'logo', // Content ID for the inline image
       },
     ],

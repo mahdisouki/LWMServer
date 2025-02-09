@@ -23,7 +23,7 @@ const sendPaymentConfirmationEmail = async ({
     });
 
     // Logo Path
-    const logoPath = "D:\\Users\\eya20\\LondonWaste\\LWMServer\\logo\\Green-Log.png";
+    const logoPath = "../logo/Green-Log.png";
     if (!fs.existsSync(logoPath)) {
         console.error("Logo file not found. Ensure the path is correct.");
         return;
