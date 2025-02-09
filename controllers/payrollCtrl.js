@@ -22,7 +22,7 @@ const PayrollCtrl = {
           .status(400)
           .json({ message: 'You have already started work for the day.' });
       }
-      const truck = await Truck.findOne({driverId : req.user._id})
+      const truck = await Truck.findOne({ driverId: req.user._id })
       // Create a new payroll record with the start time
       const newPayroll = new Payroll({
         userId,
@@ -102,8 +102,8 @@ const PayrollCtrl = {
       payroll.totalHoursWorked = totalHoursWorked;
       payroll.regularHours = regularHours;
       payroll.extraHours = overtimeHours;
-      console.log('regularSalary' , regularSalary , "overtimeSalary",overtimeSalary) , 
-      payroll.totalSalary = regularSalary + overtimeSalary;
+      console.log('regularSalary', regularSalary, "overtimeSalary", overtimeSalary),
+        payroll.totalSalary = regularSalary + overtimeSalary;
 
       // Update the user's total hours worked and total salary
       user.totalHoursWorked += totalHoursWorked;
@@ -239,7 +239,7 @@ const PayrollCtrl = {
     try {
       // Reset the payroll for future calculations but don't erase old payroll records
       await User.findByIdAndUpdate(userId, {
-         
+
         totalHoursWorked: 0, // Reset the counters for future calculations
         totalSalary: 0,
       });
@@ -322,7 +322,11 @@ const PayrollCtrl = {
       let payrollRecordsQuery = Payroll.find(payrollQuery).populate({
         path: 'userId',
         select: 'username email roleType',
-      });
+      })
+        .populate({
+          path: 'truckId',
+          select: 'name',
+        });
 
       // Pagination
       const total = await Payroll.countDocuments(payrollQuery);
@@ -428,40 +432,40 @@ const PayrollCtrl = {
       const payrollId = req.params.payrollId;
       console.log(payrollId);
       const payroll = await Payroll.findById(payrollId);
-  
+
       if (!payroll) throw new Error('Payroll not found');
-  
+
       // Check if the payroll is already marked as paid
       if (payroll.status === 'paid') {
         throw new Error('Payroll is already marked as paid');
       }
-  
+
       // Recalculate hours worked and salary before marking as paid
       const totalHoursWorked =
         (new Date(payroll.endTime) - new Date(payroll.startTime)) /
         (1000 * 3600);
       const regularHours = Math.min(totalHoursWorked, 8);
       const extraHours = Math.max(totalHoursWorked - 8, 0);
-  
+
       // Fetch user to get the hourly rate
       const user = await User.findById(payroll.userId);
       if (!user) throw new Error('User not found');
-  
+
       // Calculate salary
       const totalSalary =
         regularHours * user.hourPrice + extraHours * user.hourPrice * 1.5;
-  
+
       // Deduct hours and salary from user's total
       user.totalHoursWorked = (user.totalHoursWorked || 0) - totalHoursWorked;
       user.totalSalary = (user.totalSalary || 0) - totalSalary;
-  
+
       // Mark payroll as paid
       payroll.status = 'Paid';
-  
+
       // Save updated payroll and user
       await payroll.save();
       await user.save();
-  
+
       res
         .status(200)
         .json({ message: 'Payroll record marked as paid successfully.' });
@@ -472,7 +476,7 @@ const PayrollCtrl = {
         .json({ error: `Error marking payroll as paid: ${error.message}` });
     }
   },
-  
+
 };
 
 module.exports = PayrollCtrl;

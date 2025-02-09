@@ -109,7 +109,7 @@ async function createTrucks() {
             available: 'AnyTime',
             location: getRandomLocation(),
             object: 'Moving objects',
-            price: 500,
+            totalPrice: 500,
             taskStatus: 'Processing',
             paymentStatus: 'Pending',
             additionalNotes: 'Handle with care.',
