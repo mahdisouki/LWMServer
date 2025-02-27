@@ -120,7 +120,10 @@ const standardItemCtrl = {
 
   getAllStandardItems: async (req, res) => {
     try {
-      const { page = 1, limit = 9 } = req.query;
+      const { page = '1', limit = '9', pagination } = req.query;
+      const pageNum = parseInt(page, 10);
+      const limitNum = parseInt(limit, 10);
+      const isPaginationDisabled = (pagination === 'false');
 
       let query = StandardItem.find()
         .sort('-createdAt _id')
@@ -128,23 +131,37 @@ const standardItemCtrl = {
 
       const total = await StandardItem.countDocuments();
 
-      const skip = (page - 1) * limit;
-      const items = await query.skip(skip).limit(Number(limit)).exec();
-
-      res.status(200).json({
-        message: 'All standard items fetched successfully',
-        items,
-        meta: {
-          currentPage: parseInt(page, 10),
-          limit: parseInt(limit, 10),
-          total,
-          count: items.length,
-        },
-      });
+      let items;
+      if (isPaginationDisabled) {
+        items = await query.exec();
+        return res.status(200).json({
+          message: 'All standard items fetched successfully',
+          items,
+          meta: {
+            currentPage: 1,
+            limit: total,
+            total,
+            count: items.length
+          }
+        });
+      } else {
+        const skip = (pageNum - 1) * limitNum;
+        items = await query.skip(skip).limit(limitNum).exec();
+        return res.status(200).json({
+          message: 'All standard items fetched successfully',
+          items,
+          meta: {
+            currentPage: pageNum,
+            limit: limitNum,
+            total,
+            count: items.length
+          }
+        });
+      }
     } catch (error) {
       res.status(500).json({
         message: 'Failed to get standard items',
-        error: error.message,
+        error: error.message
       });
     }
   },
