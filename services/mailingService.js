@@ -153,6 +153,86 @@ const fetchEmails = () => {
     imap.connect();
   });
 };
+const fetchEmailById = (emailId) => {
+  return new Promise((resolve, reject) => {
+    const imap = new Imap(imapConfig);
+
+    imap.once('ready', () => {
+      imap.openBox('INBOX', false, (err, box) => {
+        if (err) {
+          return reject(err);
+        }
+
+        // Fetch the email with the specific UID
+        const f = imap.fetch(emailId, {
+          bodies: '',
+          struct: true,
+          markSeen: false,
+        });
+
+        f.on('message', (msg, seqno) => {
+          let email = '';
+          let attributes;
+
+          msg.on('body', (stream) => {
+            stream.on('data', (chunk) => {
+              email += chunk.toString();
+            });
+          });
+
+          msg.on('attributes', (attrs) => {
+            attributes = attrs;
+          });
+
+          msg.once('end', () => {
+            simpleParser(email)
+              .then((parsed) => {
+                const { from, subject, date, text, html, messageId, references } = parsed;
+
+                const formattedEmail = {
+                  id: attributes.uid || seqno,
+                  from: from?.value[0]?.address || 'Unknown',
+                  senderName: from?.value[0]?.name || 'Unknown',
+                  subject: subject || 'No Subject',
+                  text: text || '',
+                  html: html || '',
+                  date: date || new Date(),
+                  messageId: messageId || '',
+                  references: references || '',
+                };
+
+                resolve(formattedEmail);
+              })
+              .catch((err) => {
+                console.error('Error parsing email:', err);
+                reject(err);
+              });
+          });
+        });
+
+        f.once('error', (err) => {
+          console.error('Fetch error:', err);
+          reject(err);
+        });
+
+        f.once('end', () => {
+          imap.end();
+        });
+      });
+    });
+
+    imap.once('error', (err) => {
+      reject(err);
+    });
+
+    imap.once('end', () => {
+      console.log('Connection ended');
+    });
+
+    imap.connect();
+  });
+};
+
 // Function to reply to an email
 const replyToEmail = async (emailId, text) => {
   try {

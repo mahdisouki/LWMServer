@@ -4,7 +4,7 @@ const Truck = require('../models/Truck');
 const APIfeatures = require('../utils/APIFeatures');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
-
+const {emitNotificationToUser} = require('../socket.js')
 const {
   getPayPalOrderDetails,
   capturePayPalPayment,
@@ -14,6 +14,7 @@ const {
   createStripePaymentIntent,
   createPayPalOrder,
   PayPalClient,
+  calculateTotalPriceUpdate,
 } = require('../services/paymentService.js');
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -83,11 +84,11 @@ const taskCtrl = {
               },
           ],
       });
-      if (conflictingTruck) {
-          return res.status(400).json({
-              message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`,
-          });
-      }
+      // if (conflictingTruck) {
+      //     return res.status(400).json({
+      //         message: `Task date conflicts with the blocking days for truck: ${conflictingTruck.name}`,
+      //     });
+      // }
 
       // Initialize price calculation
       let totalPrice = 0;
@@ -163,7 +164,7 @@ const taskCtrl = {
       });
 
       await newTask.save();
-
+      emitNotificationToUser('677d414cd9a5d9785cdde97b','TASK_CREATION' , "YOU have a new task created!!!" )
       res.status(201).json({
           message: 'Task created successfully',
           task: newTask,
@@ -524,29 +525,52 @@ const taskCtrl = {
 
         updateData.clientObjectPhotos = existingTask.clientObjectPhotos;
 
-        // Update items if provided in the request
-        if (updateData.items) {
-            existingTask.items = updateData.items.map((item) => ({
-                standardItemId: item.standardItemId || null,
-                object: item.object || null,
-                quantity: item.quantity || 1,
-                price: item.price || 0,
-                Objectsposition: item.Objectsposition || "Outside"
-            }));
+        //  Merge standardItems and objects into items array
+        let updatedItems = [];
+
+        if (req.body.standardItems) {
+            updatedItems.push(
+                ...req.body.standardItems.map((item) => ({
+                    standardItemId: item.standardItemId || null,
+                    Objectsposition: item.Objectsposition || "Outside",
+                    quantity: Number(item.quantity) || 1,
+                    price: 0, // Standard items might not have price in request
+                }))
+            );
         }
 
-        // Recalculate total price if items are updated
-        const { total } = await calculateTotalPrice(existingTask._id);
-        updateData.totalPrice = total;
-
-        // Update the task with the new data
-        const updatedTask = await Task.findByIdAndUpdate(taskId, { $set: updateData }, { new: true });
-
-        if (!updatedTask) {
-            return res.status(404).json({ message: 'Task not found' });
+        if (req.body.objects) {
+            updatedItems.push(
+                ...req.body.objects.map((item) => ({
+                    object: item.object || null,
+                    Objectsposition: item.Objectsposition || "Outside",
+                    quantity: Number(item.quantity) || 1,
+                    price: Number(item.price) || 0,
+                }))
+            );
         }
 
-        res.status(200).json({ message: 'Task updated successfully', task: updatedTask });
+        // Update items array in existing task
+        existingTask.items = updatedItems;
+
+        //  Dynamically update other fields
+        for (const [key, value] of Object.entries(updateData)) {
+          if (key !== "items" && key !== "standardItems" && key !== "objects" && key !== "totalPrice") {
+              existingTask[key] = value;
+          }
+      }
+
+        // Save the updated task first
+        await existingTask.save();
+        console.log("existingTaskMod:", existingTask)
+        // Recalculate total price based on the updated items
+        const { total } = await calculateTotalPriceUpdate(existingTask._id);
+        existingTask.totalPrice = total;
+
+        // Save again after updating totalPrice
+        await existingTask.save();
+
+        res.status(200).json({ message: 'Task updated successfully', task: existingTask });
 
     } catch (error) {
         console.error("Error updating task:", error);

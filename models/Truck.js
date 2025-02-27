@@ -6,7 +6,7 @@ const truckSchema = new Schema({
   driverSpecificDays:{
     startDate:{type:Date },
     endDate:{type:Date },
-  } ,
+  },
   helperId: { type: Schema.Types.ObjectId, ref: 'Helper'}, 
   helperSpecificDays:{
     startDate:{type:Date },

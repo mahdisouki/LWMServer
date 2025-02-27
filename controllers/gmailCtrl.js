@@ -1,5 +1,5 @@
 
-const { sendEmail, fetchEmails } = require('../services/mailingService'); 
+const { sendEmail, fetchEmails , replyToEmail } = require('../services/mailingService'); 
 
 const gmailCtrl = {
   // Send an email using Nodemailer
@@ -43,6 +43,18 @@ const gmailCtrl = {
       res.json({ email });
     });
   },
+   // Reply to an email
+   replyToEmail: async (req, res) => {
+    const { emailId } = req.params;
+    const { text } = req.body;
+
+    try {
+      const result = await replyToEmail(emailId, text);
+      res.json({ message: 'Reply sent successfully', result });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to send reply', error: error.message });
+    }
+  }
 };
 
 module.exports = gmailCtrl;

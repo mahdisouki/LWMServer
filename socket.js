@@ -83,6 +83,7 @@ const initSocket = (server) => {
     const userId = socket.user.userId;
     userSocketMap[userId] = socket.id;
     console.log(`User connected: ${userId} with socket ID ${socket.id}`);
+    console.log(userSocketMap)
     sendOfflineNotifications(userId, socket);
 
     socket.on('joinRoom', async (roomId) => {
@@ -269,16 +270,17 @@ const initSocket = (server) => {
 };
 
 // Function to emit a notification to a specific user by userId
-const emitNotificationToUser = async (userId, notificationMessage) => {
+const emitNotificationToUser = async (userId,type ,notificationMessage) => {
   const socketId = userSocketMap[userId];
 
   if (socketId && io) {
-    io.to(socketId).emit('notification', { message: notificationMessage });
+    io.to(socketId).emit('notification', {userId:userId,type:type, message: notificationMessage,read: false });
   } else {
     try {
       // User is offline, save notification to the database
       const newNotification = await Notification.create({
         userId,
+        type,
         message: notificationMessage,
         read: false,
       });
@@ -292,9 +294,11 @@ const emitNotificationToUser = async (userId, notificationMessage) => {
 // Function to send offline notifications to the user upon reconnecting
 const sendOfflineNotifications = async (userId, socket) => {
   //emit offline notifications to user
+  console.log(socket.id)
   console.log(`Sending offline notifications to user: ${userId}`);
   const offlineNotifications = await Notification.find({ userId, read: false });
-  offlineNotifications.forEach((notification) => {
+  console.log(offlineNotifications)
+  offlineNotifications?.forEach((notification) => {
     socket.emit('notification', { message: notification.message });
   });
 

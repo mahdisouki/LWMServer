@@ -560,7 +560,7 @@ const driverManagement = {
      driver.onBreak = true;
       driver.breakStartTime = Date.now();
       await driver.save();
-      emitNotificationToUser(adminId , `a driver ${driver.username} is taking a break`)
+      emitNotificationToUser(adminId , 'Driver_TRACK',`a driver ${driver.username} is taking a break`)
       return res.status(200).json({ message: 'Break started', newBreak });
     } catch (error) {
       console.error(error);

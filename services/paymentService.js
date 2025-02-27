@@ -9,7 +9,7 @@ const VAT_RATE = 0.2; // VAT rate (20%)
 async function calculateTotalPrice(taskId) {
     const task = await Task.findById(taskId).populate("items.standardItemId");
     if (!task) throw new Error("Task not found");
-
+    console.log('taskDB:' , task)
     let basePrice = 0;
     const breakdown = [];
 
@@ -49,6 +49,50 @@ async function calculateTotalPrice(taskId) {
         breakdown,
     };
 }
+const calculateTotalPriceUpdate = async (taskId) => {
+    const task = await Task.findById(taskId).populate("items.standardItemId");
+    if (!task) throw new Error("Task not found");
+
+    let basePrice = 0;
+    let allOutside = true; // To check discount eligibility
+
+    for (const item of task.items) {
+        const quantity = Number(item.quantity) || 1;
+        let price = 0;
+
+        if (item.standardItemId) {
+            const standardItem = await StandardItem.findById(item.standardItemId);
+            if (standardItem) {
+                price = standardItem.price * quantity;
+            }
+        } else if (item.price) {
+            price = Number(item.price) * quantity;
+        }
+
+        basePrice += price;
+
+        if (item.Objectsposition !== "Outside") {
+            allOutside = false;
+        }
+    }
+
+    // Apply Discount for "AnyTime" and "Outside" only
+    if (task.available === "AnyTime" && allOutside) {
+        basePrice *= 0.9; // 10% discount
+    }
+
+    // Minimum Price Enforced
+    if (basePrice < 30) {
+        basePrice = 30;
+    }
+
+    // Apply VAT
+    const VAT_RATE = 0.2;
+    const vat = basePrice * VAT_RATE;
+    const finalPrice = basePrice + vat;
+
+    return { total: finalPrice };
+};
 
 const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
     const description = breakdown
@@ -219,4 +263,4 @@ async function testPayPal() {
 
 
 
-module.exports = {getPayPalOrderDetails,calculateTotalPrice,createStripePaymentIntent,capturePayPalPayment ,createPayPalOrder, PayPalClient,createStripePaymentLink, createPaypalPaymentLink};
+module.exports = {getPayPalOrderDetails,calculateTotalPrice,createStripePaymentIntent,capturePayPalPayment ,createPayPalOrder, PayPalClient,createStripePaymentLink, createPaypalPaymentLink , calculateTotalPriceUpdate};
