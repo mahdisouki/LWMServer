@@ -56,6 +56,68 @@ const tippingController = {
       });
     }
   },
+  createTippingRequestByAdmin: async (req, res) => {
+    const adminId = req.user._id;
+    const { driverId, truckId, tippingPlace, notes } = req.body;
+
+    try {
+        // Ensure the user making the request is an admin
+        const admin = await User.findById(adminId);
+        if (!admin || admin.roleType !== 'Admin') {
+            return res.status(403).json({
+                message: 'Unauthorized: Only admins can create tipping requests.',
+            });
+        }
+
+        // Find the driver
+        const driver = await User.findById(driverId);
+        if (!driver || driver.roleType !== 'Driver') {
+            return res.status(404).json({ message: 'Driver not found' });
+        }
+
+        // Find the truck
+        const truck = await Truck.findById(truckId);
+        if (!truck) {
+            return res.status(404).json({ message: 'Truck not found' });
+        }
+
+        // Create the tipping request
+        const newTippingRequest = new TippingRequest({
+            userId: driver._id, // Assigning the tipping request to the driver
+            truckId: truck._id,
+            tippingPlace: tippingPlace, // New field for tipping place
+            notes: notes,
+            status: 'Pending',
+            createdBy: admin._id, // Storing the admin who created the request
+        });
+
+        await newTippingRequest.save();
+
+        const response = {
+            message: 'Tipping request created successfully by admin',
+            request: {
+                id: newTippingRequest._id,
+                driverId: newTippingRequest.userId.toString(),
+                truckId: newTippingRequest.truckId.toString(),
+                tippingPlace: newTippingRequest.tippingPlace,
+                notes: newTippingRequest.notes,
+                status: newTippingRequest.status,
+                createdAt: newTippingRequest.createdAt,
+                createdBy: admin.username, // Admin's name
+                driverName: driver.username, // Driver's name
+                truckName: truck.name, // Truck's name
+            },
+        };
+
+        res.status(201).json(response);
+    } catch (error) {
+        console.error('Error in creating tipping request by admin:', error);
+        res.status(500).json({
+            message: 'Failed to create tipping request',
+            error: error.message,
+        });
+    }
+  },
   getAllTippingRequestsForUser: async (req, res) => {
     const userId = req.user._id;
     try {

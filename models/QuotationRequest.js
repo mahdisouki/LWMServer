@@ -9,6 +9,7 @@ const quotationRequestSchema = new Schema({
   phoneNumber: { type: String, required: true },
   companyName: { type: String},
   postcode: { type: Number, required: true },
+  estimatedPrices : [{name:{type:String} , price:{type:String}}],
   comments: { type: String, required: false },
   items: [{ type: String, required: true }], 
   createdAt: { type: Date, default: Date.now }

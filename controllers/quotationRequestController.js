@@ -51,17 +51,7 @@ const quotationRequestController = {
         }
     },
 
-    // getAllQuotations: async (req, res) => {
-    //     try {
-    //         const quotations = await QuotationRequest.find();
-    //         res.status(200).json(quotations);
-    //     } catch (error) {
-    //         res.status(500).json({
-    //             message: 'Failed to retrieve quotations',
-    //             error: error.message,
-    //         });
-    //     }
-    // },
+ 
     getAllQuotations: async (req, res) => {
         try {
             const { page = 1, limit = 10 } = req.query;

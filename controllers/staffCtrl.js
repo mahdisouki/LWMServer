@@ -29,70 +29,86 @@ const isWithinDistance = (coord1, coord2, maxDistance) => {
 const staffManagement = {
   addStaff: async (req, res) => {
     try {
-      const {
-        password,
-        role,
-        username,
-        email,
-        phoneNumber,
-        gender,
-        designation,
-      } = req.body;
-      
-      // Get file paths
-      const pictureUrl = req.files['picture'] ? req.files['picture'][0].path : null;
-      const driverLicenseUrl = req.files['DriverLicense'] ? req.files['DriverLicense'][0].path : null;
-      const addressProofUrl = req.files['addressProof'] ? req.files['addressProof'][0].path : null;
-      const natInsuranceUrl = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : null;
-  
-      if (!username || !email || !password || !role || !phoneNumber) {
-        return res.status(400).json({
-          message: 'Missing required fields: username, email, password, phoneNumber, and role are required.',
-        });
-      }
-  
-      const hashedPassword = await bcrypt.hash(password, 10);
-      let newUser;
-  
-      if (role === 'Driver' || role === 'Helper') {
-        const Model = role === 'Driver' ? Driver : Helper;
-        newUser = new Model({
-          username,
-          email,
-          phoneNumber,
-          password: hashedPassword,
-          role: [role],
-          picture: pictureUrl,
-          gender,
-          designation,
-          DriverLicense: driverLicenseUrl,
-          addressProof: addressProofUrl,
-          NatInsurance: natInsuranceUrl,
-        });
-      } else {
-        newUser = new User({
-          username,
-          email,
-          phoneNumber,
-          password: hashedPassword,
-          role: [role],
-          picture: pictureUrl,
-          gender,
-          designation,
-          DriverLicense: driverLicenseUrl,
-          addressProof: addressProofUrl,
-          NatInsurance: natInsuranceUrl,
-        });
-      }
-  
-      await newUser.save();
-      res.status(201).json({ message: `${role} created successfully`, user: newUser });
+        const {
+            password,
+            role,
+            username,
+            email,
+            phoneNumber,
+            gender,
+            designation,
+            permissions, 
+        } = req.body;
+
+        // Get file paths
+        const pictureUrl = req.files['picture'] ? req.files['picture'][0].path : null;
+        const driverLicenseUrl = req.files['DriverLicense'] ? req.files['DriverLicense'][0].path : null;
+        const addressProofUrl = req.files['addressProof'] ? req.files['addressProof'][0].path : null;
+        const natInsuranceUrl = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : null;
+
+        if (!username || !email || !password || !role || !phoneNumber) {
+            return res.status(400).json({
+                message: 'Missing required fields: username, email, password, phoneNumber, and role are required.',
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        let newUser;
+
+        if (role === 'Driver' || role === 'Helper') {
+            const Model = role === 'Driver' ? Driver : Helper;
+            newUser = new Model({
+                username,
+                email,
+                phoneNumber,
+                password: hashedPassword,
+                role: [role],
+                picture: pictureUrl,
+                gender,
+                designation,
+                DriverLicense: driverLicenseUrl,
+                addressProof: addressProofUrl,
+                NatInsurance: natInsuranceUrl,
+            });
+        } else if (role === 'Admin') {
+            newUser = new Admin({
+                username,
+                email,
+                phoneNumber,
+                password: hashedPassword,
+                role: [role],
+                picture: pictureUrl,
+                gender,
+                designation,
+                DriverLicense: driverLicenseUrl,
+                addressProof: addressProofUrl,
+                NatInsurance: natInsuranceUrl,
+                permissions: permissions || {}, 
+            });
+        } else {
+            newUser = new User({
+                username,
+                email,
+                phoneNumber,
+                password: hashedPassword,
+                role: [role],
+                picture: pictureUrl,
+                gender,
+                designation,
+                DriverLicense: driverLicenseUrl,
+                addressProof: addressProofUrl,
+                NatInsurance: natInsuranceUrl,
+            });
+        }
+
+        await newUser.save();
+        res.status(201).json({ message: `${role} created successfully`, user: newUser });
     } catch (error) {
-      console.error('Error in addStaff:', error);
-      res.status(500).json({
-        message: `Failed to create staff member`,
-        error: error.message,
-      });
+        console.error('Error in addStaff:', error);
+        res.status(500).json({
+            message: `Failed to create staff member`,
+            error: error.message,
+        });
     }
   },
   
