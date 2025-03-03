@@ -4,7 +4,7 @@ const Truck = require('../models/Truck');
 const APIfeatures = require('../utils/APIFeatures');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
-const {emitNotificationToUser} = require('../socket.js')
+const { emitNotificationToUser } = require('../socket.js')
 const {
   getPayPalOrderDetails,
   capturePayPalPayment,
@@ -37,28 +37,29 @@ const taskCtrl = {
   createTask: async (req, res) => {
     try {
       const {
-          firstName,
-          lastName,
-          phoneNumber,
-          phoneNumber2,
-          email,
-          available,
-          location,
-          date,
-          billingAddress,
-          objects, // Custom items
-          standardItems, // Standard items with quantity and position
-          paymentStatus,
-          cloneClientObjectPhotos,
+        firstName,
+        lastName,
+        phoneNumber,
+        phoneNumber2,
+        email,
+        available,
+        location,
+        date,
+        billingAddress,
+        objects, // Custom items
+        standardItems, // Standard items with quantity and position
+        paymentStatus,
+        cloneClientObjectPhotos,
+        postcode,
       } = req.body;
 
       let clientObjectPhotos = [];
 
       // Handle Photos
       if (cloneClientObjectPhotos) {
-          clientObjectPhotos = cloneClientObjectPhotos;
+        clientObjectPhotos = cloneClientObjectPhotos;
       } else if (req.files && req.files.length > 0) {
-          clientObjectPhotos = req.files.map((file) => file.path);
+        clientObjectPhotos = req.files.map((file) => file.path);
       }
 
       const taskDate = new Date(date);
@@ -66,23 +67,23 @@ const taskCtrl = {
       // Check for blocked days
       const blockedDay = await BlockingDays.findOne({ date: taskDate });
       if (blockedDay) {
-          return res.status(400).json({
-              message: `Task date conflicts with a blocking day: ${blockedDay.type}`,
-          });
+        return res.status(400).json({
+          message: `Task date conflicts with a blocking day: ${blockedDay.type}`,
+        });
       }
 
       // Check truck availability
       const conflictingTruck = await Truck.findOne({
-          $or: [
-              {
-                  'driverSpecificDays.startDate': { $lte: taskDate },
-                  'driverSpecificDays.endDate': { $gte: taskDate },
-              },
-              {
-                  'helperSpecificDays.startDate': { $lte: taskDate },
-                  'helperSpecificDays.endDate': { $gte: taskDate },
-              },
-          ],
+        $or: [
+          {
+            'driverSpecificDays.startDate': { $lte: taskDate },
+            'driverSpecificDays.endDate': { $gte: taskDate },
+          },
+          {
+            'helperSpecificDays.startDate': { $lte: taskDate },
+            'helperSpecificDays.endDate': { $gte: taskDate },
+          },
+        ],
       });
       // if (conflictingTruck) {
       //     return res.status(400).json({
@@ -96,82 +97,97 @@ const taskCtrl = {
 
       // Add custom objects
       if (objects && Array.isArray(objects)) {
-          objects.forEach((customObject) => {
-              if (customObject.object && customObject.price) {
-                  const itemTotal = customObject.price * (customObject.quantity || 1);
-                  totalPrice += itemTotal;
+        objects.forEach((customObject) => {
+          if (customObject.object && customObject.price) {
+            const itemTotal = customObject.price * (customObject.quantity || 1);
+            totalPrice += itemTotal;
 
-                  items.push({
-                      object: customObject.object,
-                      price: customObject.price,
-                      quantity: customObject.quantity || 1,
-                      Objectsposition: customObject.Objectsposition || "Outside",
-                  });
-              }
-          });
+            items.push({
+              object: customObject.object,
+              price: customObject.price,
+              quantity: customObject.quantity || 1,
+              Objectsposition: customObject.Objectsposition || "Outside",
+            });
+          }
+        });
       }
 
       // Add standard items
       if (standardItems && Array.isArray(standardItems)) {
-          for (const item of standardItems) {
-              console.log('standardItems:', item);
-              const standardItem = await StandardItem.findById(item.standardItemId);
-              if (!standardItem) {
-                  return res.status(404).json({ message: `Standard item not found for ID: ${item.standardItemId}` });
-              }
-
-              const itemTotal = standardItem.price * (item.quantity || 1);
-              totalPrice += itemTotal;
-
-              items.push({
-                  standardItemId: standardItem._id,
-                  quantity: item.quantity || 1,
-                  Objectsposition: item.Objectsposition || "Outside",
-              });
+        for (const item of standardItems) {
+          console.log('standardItems:', item);
+          const standardItem = await StandardItem.findById(item.standardItemId);
+          if (!standardItem) {
+            return res.status(404).json({ message: `Standard item not found for ID: ${item.standardItemId}` });
           }
+
+          const itemTotal = standardItem.price * (item.quantity || 1);
+          totalPrice += itemTotal;
+
+          items.push({
+            standardItemId: standardItem._id,
+            quantity: item.quantity || 1,
+            Objectsposition: item.Objectsposition || "Outside",
+          });
+        }
       }
 
       // Apply Discounts or Additional Fees
       if (available === "AnyTime" && items.every((i) => i.Objectsposition === "Outside")) {
-          totalPrice *= 0.9; // 10% discount
+        totalPrice *= 0.9; // 10% discount
       }
+
+      // Additional fees for Inside or InsideWithDismantling
+      items.forEach((item) => {
+        if (item.Objectsposition === "InsideWithDismantling") {
+          totalPrice += 18;
+        } else if (item.Objectsposition === "Inside") {
+          totalPrice += 6;
+        }
+      });
 
       // Minimum price enforcement
       if (totalPrice < 30) {
-          totalPrice = 30;
+        totalPrice = 30;
       }
+      console.log("⚠️ After Minimum Price Enforcement:", totalPrice.toFixed(2));
 
       // Add VAT (20%)
       const vat = totalPrice * 0.2;
+      console.log("🔹 VAT Calculated:", vat.toFixed(2));
       totalPrice += vat;
+
+      console.log("🚀 Final Backend Price:", totalPrice.toFixed(2));
+
 
       // Create the task
       const newTask = new Task({
-          firstName,
-          lastName,
-          phoneNumber,
-          phoneNumber2,
-          email,
-          available,
-          location,
-          date: taskDate,
-          paymentStatus,
-          billingAddress,
-          clientObjectPhotos,
-          totalPrice, // Save total price
-          items,
-          taskStatus: 'Processing',
+        firstName,
+        lastName,
+        phoneNumber,
+        phoneNumber2,
+        email,
+        available,
+        location,
+        date: taskDate,
+        paymentStatus,
+        billingAddress,
+        clientObjectPhotos,
+        totalPrice, // Save total price
+        items,
+        taskStatus: 'Processing',
+        postcode,
       });
 
       await newTask.save();
-      emitNotificationToUser('677d414cd9a5d9785cdde97b','TASK_CREATION' , "YOU have a new task created!!!" )
+      emitNotificationToUser('677d414cd9a5d9785cdde97b', 'TASK_CREATION', "YOU have a new task created!!!")
       res.status(201).json({
-          message: 'Task created successfully',
-          task: newTask,
+        message: 'Task created successfully',
+        task: newTask,
       });
-  } catch (error) {
+    } catch (error) {
       res.status(400).json({ message: 'Failed to create task', error: error.message });
-  }
+    }
   },
 
   getTaskById: async (req, res) => {
@@ -499,84 +515,84 @@ const taskCtrl = {
     const { taskId } = req.params;
 
     try {
-        // Retrieve the existing task
-        const existingTask = await Task.findById(taskId).populate("items.standardItemId");
-        if (!existingTask) {
-            return res.status(404).json({ message: 'Task not found' });
-        }
-
-        let updateData = { ...req.body };
-
-        // Handle media deletions
-        if (req.body.deletedMedia && Array.isArray(req.body.deletedMedia) && req.body.deletedMedia.length > 0) {
-            existingTask.clientObjectPhotos = existingTask.clientObjectPhotos.filter(
-                (photo) => !req.body.deletedMedia.includes(photo)
-            );
-        }
-
-        // Handle new file uploads
-        if (req.files && req.files.length > 0) {
-            const newClientObjectPhotos = req.files.map((file) => file.path);
-            existingTask.clientObjectPhotos = [
-                ...existingTask.clientObjectPhotos,
-                ...newClientObjectPhotos
-            ];
-        }
-
-        updateData.clientObjectPhotos = existingTask.clientObjectPhotos;
-
-        //  Merge standardItems and objects into items array
-        let updatedItems = [];
-
-        if (req.body.standardItems) {
-            updatedItems.push(
-                ...req.body.standardItems.map((item) => ({
-                    standardItemId: item.standardItemId || null,
-                    Objectsposition: item.Objectsposition || "Outside",
-                    quantity: Number(item.quantity) || 1,
-                    price: 0, // Standard items might not have price in request
-                }))
-            );
-        }
-
-        if (req.body.objects) {
-            updatedItems.push(
-                ...req.body.objects.map((item) => ({
-                    object: item.object || null,
-                    Objectsposition: item.Objectsposition || "Outside",
-                    quantity: Number(item.quantity) || 1,
-                    price: Number(item.price) || 0,
-                }))
-            );
-        }
-
-        // Update items array in existing task
-        existingTask.items = updatedItems;
-
-        //  Dynamically update other fields
-        for (const [key, value] of Object.entries(updateData)) {
-          if (key !== "items" && key !== "standardItems" && key !== "objects" && key !== "totalPrice") {
-              existingTask[key] = value;
-          }
+      // Retrieve the existing task
+      const existingTask = await Task.findById(taskId).populate("items.standardItemId");
+      if (!existingTask) {
+        return res.status(404).json({ message: 'Task not found' });
       }
 
-        // Save the updated task first
-        await existingTask.save();
-        console.log("existingTaskMod:", existingTask)
-        // Recalculate total price based on the updated items
-        const { total } = await calculateTotalPriceUpdate(existingTask._id);
-        existingTask.totalPrice = total;
+      let updateData = { ...req.body };
 
-        // Save again after updating totalPrice
-        await existingTask.save();
+      // Handle media deletions
+      if (req.body.deletedMedia && Array.isArray(req.body.deletedMedia) && req.body.deletedMedia.length > 0) {
+        existingTask.clientObjectPhotos = existingTask.clientObjectPhotos.filter(
+          (photo) => !req.body.deletedMedia.includes(photo)
+        );
+      }
 
-        res.status(200).json({ message: 'Task updated successfully', task: existingTask });
+      // Handle new file uploads
+      if (req.files && req.files.length > 0) {
+        const newClientObjectPhotos = req.files.map((file) => file.path);
+        existingTask.clientObjectPhotos = [
+          ...existingTask.clientObjectPhotos,
+          ...newClientObjectPhotos
+        ];
+      }
+
+      updateData.clientObjectPhotos = existingTask.clientObjectPhotos;
+
+      //  Merge standardItems and objects into items array
+      let updatedItems = [];
+
+      if (req.body.standardItems) {
+        updatedItems.push(
+          ...req.body.standardItems.map((item) => ({
+            standardItemId: item.standardItemId || null,
+            Objectsposition: item.Objectsposition || "Outside",
+            quantity: Number(item.quantity) || 1,
+            price: 0, // Standard items might not have price in request
+          }))
+        );
+      }
+
+      if (req.body.objects) {
+        updatedItems.push(
+          ...req.body.objects.map((item) => ({
+            object: item.object || null,
+            Objectsposition: item.Objectsposition || "Outside",
+            quantity: Number(item.quantity) || 1,
+            price: Number(item.price) || 0,
+          }))
+        );
+      }
+
+      // Update items array in existing task
+      existingTask.items = updatedItems;
+
+      //  Dynamically update other fields
+      for (const [key, value] of Object.entries(updateData)) {
+        if (key !== "items" && key !== "standardItems" && key !== "objects" && key !== "totalPrice") {
+          existingTask[key] = value;
+        }
+      }
+
+      // Save the updated task first
+      await existingTask.save();
+      console.log("existingTaskMod:", existingTask)
+      // Recalculate total price based on the updated items
+      const { total } = await calculateTotalPriceUpdate(existingTask._id);
+      existingTask.totalPrice = total;
+
+      // Save again after updating totalPrice
+      await existingTask.save();
+
+      res.status(200).json({ message: 'Task updated successfully', task: existingTask });
 
     } catch (error) {
-        console.error("Error updating task:", error);
-        res.status(500).json({ message: 'Failed to update task', error: error.message });
+      console.error("Error updating task:", error);
+      res.status(500).json({ message: 'Failed to update task', error: error.message });
     }
-},
+  },
 
 
   updateTaskStatus: async (req, res) => {

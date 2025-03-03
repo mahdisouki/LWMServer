@@ -7,13 +7,13 @@ const taskSchema = new Schema(
     clientId: { type: Schema.Types.ObjectId, ref: "Client", required: false },
     truckId: { type: Schema.Types.ObjectId, ref: "Truck", required: false },
     firstName: { type: String, required: true },
-    billingAddress: {type:String },
+    billingAddress: { type: String },
     lastName: { type: String, required: true },
     phoneNumber: { type: String, required: true },
     phoneNumber2: { type: String },
     clientObjectPhotos: [{ type: String, required: true }],
     totalPrice: { type: Number, required: true },
-    
+    postcode: { type: String, required: true },
     items: [
       {
         standardItemId: { type: mongoose.Types.ObjectId, ref: "StandardItem" },
