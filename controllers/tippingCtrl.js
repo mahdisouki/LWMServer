@@ -58,7 +58,7 @@ const tippingController = {
   },
   createTippingRequestByAdmin: async (req, res) => {
     const adminId = req.user._id;
-    const { driverId, truckId, tippingPlace, notes } = req.body;
+    const { driverId, truckId, tippingPlace, notes , status } = req.body;
 
     try {
         // Ensure the user making the request is an admin
@@ -87,7 +87,7 @@ const tippingController = {
             truckId: truck._id,
             tippingPlace: tippingPlace, // New field for tipping place
             notes: notes,
-            status: 'Pending',
+            status: status,
             createdBy: admin._id, // Storing the admin who created the request
         });
 
@@ -385,8 +385,8 @@ const tippingController = {
 
 
       // Fetch all tipping places with their locations
-      const tippingPlaces = await TippingPlace.find().select('name location');
-
+      const tippingPlaces = await TippingPlace.find();
+      
       // Format the response
       const response = {
         driverLocation: {
@@ -398,6 +398,10 @@ const tippingController = {
           name: place.name,
           latitude: place.location.coordinates[1], // Assuming [lng, lat]
           longitude: place.location.coordinates[0],
+          operatingHours:place.operatingHours,
+          itemsAllowed:place.itemsAllowed,
+          itemsNotAllowed:place.itemsNotAllowed,
+          daysClosed:place.daysClosed
         })),
       };
 
