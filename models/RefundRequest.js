@@ -8,9 +8,11 @@ const refundRequestSchema = new Schema(
     reason: { type: String, required: true },
     status: {
       type: String,
-      enum: ["created", "declined", "refunded"],
+      enum: ["created", "declined", "refunded", "partially_refunded"],
       default: "created"
     },
+    refundedAmount: { type: Number, default: 0 }, // Tracks how much has been refunded
+    remainingAmount: { type: Number, required: true }, // Amount left to refund
   },
   { timestamps: true }
 );
