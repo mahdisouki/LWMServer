@@ -27,7 +27,7 @@ const setupSwagger = require('./config/swaggerConfig');
 
 
 const corsOptions = {
-  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5173'  ,'http://localhost:5174', 'https://londonwastemanagement.netlify.app' , "https://192.168.100.23:5173" , "http://localhost:3001"], 
+  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5173'  ,'http://localhost:3001/'], 
   optionsSuccessStatus: 200 
 };
 
@@ -51,7 +51,17 @@ app.use(cors(corsOptions));
 // Apply JSON parsing for all other routes
 app.use(express.json());
 app.use(bodyParser.json());
-
+app.use((req, res, next) => {
+  res.setHeader("Content-Security-Policy",
+    "default-src 'self'; " +
+    "script-src 'self' https://*.stripe.com https://*.paypal.com https://*.paypalobjects.com 'unsafe-inline' 'unsafe-eval' blob:; " +
+    "style-src 'self' https://*.paypal.com https://*.paypalobjects.com 'unsafe-inline'; " +
+    "img-src 'self' data: https://*.paypal.com https://*.paypalobjects.com; " +
+    "frame-src https://*.stripe.com https://*.paypal.com; " +
+    "connect-src 'self' https://*.stripe.com https://*.paypal.com;"
+  );
+  next();
+});
 // Import routes
 const taskRouter = require("./routes/task");
 const authRouter = require("./routes/auth");

@@ -180,7 +180,7 @@ const taskCtrl = {
       });
 
       await newTask.save();
-      emitNotificationToUser('677d414cd9a5d9785cdde97b', 'TASK_CREATION', "YOU have a new task created!!!")
+      emitNotificationToUser('677d414cd9a5d9785cdde97b', 'Orders', "YOU have a new task created!!!")
       res.status(201).json({
         message: 'Task created successfully',
         task: newTask,
@@ -735,14 +735,34 @@ const taskCtrl = {
       let paymentResult;
       switch (paymentType) {
         case 'stripe':
-          paymentResult = await createStripePaymentIntent(finalAmountInPence, taskId, fullBreakdown);
+          const paymentResult = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            mode: 'payment',
+            line_items: [
+              {
+                price_data: {
+                  currency: 'GBP',
+                  product_data: {
+                    name: `Payment for Task ${taskId}`,
+                  },
+                  unit_amount: finalAmountInPence,
+                },
+                quantity: 1,
+              },
+            ],
+            success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
+            metadata: {
+              taskId,
+            },
+          });
+          
           return res.json({
             message: 'Stripe payment initiated successfully',
-            clientSecret: paymentResult.client_secret,
-            paymentIntentId: paymentResult.id,
+            redirectUrl: paymentResult.url,
+            paymentIntentId: paymentResult.payment_intent,
             amount: finalAmountInPence,
-            paymentType,
-            breakdown: fullBreakdown,
+            paymentType: 'stripe',
           });
 
         case 'paypal':
