@@ -25,33 +25,56 @@ const blogCtrl = {
     
     getAllBlogs: async (req, res) => {
         try {
-            const { page = 1, limit = 9, filters } = req.query; // Support pagination and filtering
-            let query = Blog.find().populate('author', 'name'); // Populating author name
-
-            const features = new APIfeatures(query, req.query);
-            if (filters) {
-                features.filtering(); // Implement filtering if applicable
+          const { page = 1, limit = 9, search } = req.query;
+      
+          let filters = {};
+          if (req.query.filters) {
+            try {
+              filters = JSON.parse(req.query.filters);
+            } catch (parseError) {
+              return res.status(400).json({
+                message: "Invalid JSON format in filters",
+                error: parseError.message,
+              });
             }
-            features.sorting().paginating();
-            const blogs = await features.query.exec();
-            const total = await Blog.countDocuments(features.query.getFilter());
-            const currentPage = parseInt(req.query.page, 10) || 1;
-            const limitNum = parseInt(req.query.limit, 10) || 9;
-
-            res.status(200).json({
-                message: "All blogs retrieved successfully",
-                blogs,
-                meta: {
-                    currentPage,
-                    limit: limitNum,
-                    total,
-                    count: blogs.length,
-                },
-            });
+          }
+      
+          // Add search logic
+          if (search) {
+            filters = {
+              ...filters,
+              $or: [
+                { title: { $regex: search, $options: 'i' } },
+                { description: { $regex: search, $options: 'i' } },
+              ],
+            };
+          }
+      
+          const query = Blog.find(filters).populate('author', 'name');
+          
+          const features = new APIfeatures(query, req.query)
+            .sorting()
+            .paginating();
+      
+          const blogs = await features.query.exec();
+          const total = await Blog.countDocuments(filters);
+      
+          res.status(200).json({
+            message: "All blogs retrieved successfully",
+            blogs,
+            meta: {
+              currentPage: parseInt(page, 10),
+              limit: parseInt(limit, 10),
+              total,
+              count: blogs.length,
+            },
+          });
+      
         } catch (error) {
-            res.status(500).json({ message: "Failed to retrieve blogs", error: error.message });
+          res.status(500).json({ message: "Failed to retrieve blogs", error: error.message });
         }
-    },
+      },
+      
 
     getBlogById: async (req, res) => {
         const { id } = req.params;
