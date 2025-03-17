@@ -120,26 +120,34 @@ const standardItemCtrl = {
 
   getAllStandardItems: async (req, res) => {
     try {
-      const { page = '1', limit = '9', pagination, category } = req.query; // Get category from query
+      const { page = '1', limit = '9', pagination, category, search = '' } = req.query;
       const pageNum = parseInt(page, 10);
       const limitNum = parseInt(limit, 10);
       const isPaginationDisabled = (pagination === 'false');
   
       // Build the query object
-      let query = StandardItem.find()
-        .sort('-createdAt _id')
-        .populate('category');
+      let query = StandardItem.find();
   
-      // If a category is provided, add it to the query
+      // 🔍 Add search condition if provided
+      if (search) {
+        query = query.find({
+          itemName: { $regex: search, $options: 'i' } // Case-insensitive search
+        });
+      }
+  
+      // Filter by Category if provided
       if (category) {
-        // Validate if category is a valid ObjectId
         if (!mongoose.Types.ObjectId.isValid(category)) {
           return res.status(400).json({ message: 'Invalid category ID' });
         }
-        query = query.where('category').equals(category); // Filter by category
+        query = query.where('category').equals(category);
       }
   
-      const total = await StandardItem.countDocuments(query); // Count documents based on the query
+      // Populate category and sort results
+      query = query.sort('-createdAt _id').populate('category');
+  
+      // Count total matching items
+      const total = await StandardItem.countDocuments(query);
   
       let items;
       if (isPaginationDisabled) {
@@ -174,7 +182,8 @@ const standardItemCtrl = {
         error: error.message
       });
     }
-  },  
+  },
+  
 
   getItemsByCategory: async (req, res) => {
     const { category } = req.params; // Category parameter from the route

@@ -735,35 +735,42 @@ const taskCtrl = {
       let paymentResult;
       switch (paymentType) {
         case 'stripe':
-          const paymentResult = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
-            mode: 'payment',
-            line_items: [
-              {
-                price_data: {
-                  currency: 'GBP',
-                  product_data: {
-                    name: `Payment for Task ${taskId}`,
+          try {
+            const session = await stripe.checkout.sessions.create({
+              payment_method_types: ['card'],
+              mode: 'payment',
+              line_items: [
+                {
+                  price_data: {
+                    currency: 'GBP',
+                    product_data: {
+                      name: `Payment for Task ${taskId}`,
+                    },
+                    unit_amount: finalAmountInPence,
                   },
-                  unit_amount: finalAmountInPence,
+                  quantity: 1,
                 },
-                quantity: 1,
+              ],
+              success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+              cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
+              metadata: {
+                taskId: taskId,
               },
-            ],
-            success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
-            metadata: {
-              taskId,
-            },
-          });
+            });
           
-          return res.json({
-            message: 'Stripe payment initiated successfully',
-            redirectUrl: paymentResult.url,
-            paymentIntentId: paymentResult.payment_intent,
-            amount: finalAmountInPence,
-            paymentType: 'stripe',
-          });
+            return res.json({
+              message: 'Stripe payment initiated successfully',
+              redirectUrl: session.url,
+              paymentIntentId: session.payment_intent,
+            });
+          
+          } catch (error) {
+            console.error('Stripe Error:', error);
+            return res.status(500).json({
+              message: 'Failed to initiate payment',
+              error: error.message,
+            });
+          }
 
         case 'paypal':
           paymentResult = await createPayPalOrder(finalAmountInPence, taskId, fullBreakdown, task);

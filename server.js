@@ -27,7 +27,7 @@ const setupSwagger = require('./config/swaggerConfig');
 
 
 const corsOptions = {
-  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5173'  ,'http://localhost:3001/'], 
+  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5173'  ,'http://localhost:3001'], 
   optionsSuccessStatus: 200 
 };
 
