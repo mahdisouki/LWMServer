@@ -6,6 +6,7 @@ const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
 
 router.post('/create-tipping', isAuth, checkRole('Driver', 'Helper'), tippingCtrl.createTippingRequest);
+router.post('/create-tipping/admin', isAuth, checkRole('Admin'), tippingCtrl.createTippingRequestByAdmin);
 router.post('/ship-tipping', isAuth, checkRole('Driver', 'Helper'), tippingCtrl.markShipped);
 router.get('/tipping-driver', isAuth, checkRole('Driver', 'Helper'), tippingCtrl.getAllTippingRequestsForUser);
 router.get('/tipping-driver/:id', isAuth, checkRole('Driver', 'Helper'), tippingCtrl.getTippingRequestById);
