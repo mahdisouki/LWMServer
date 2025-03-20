@@ -100,7 +100,7 @@ async function verifyPayPalRefund(refundId) {
 
 exports.updateRefundRequestStatus = async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body; // "refunded" or "declined"
+    const { status, refundAmount , reason } = req.body; // Add refundAmount for partial refund
 
     try {
         const refundRequest = await RefundRequest.findById(id);
@@ -110,29 +110,28 @@ exports.updateRefundRequestStatus = async (req, res) => {
             const paymentHistory = await PaymentHistory.findById(refundRequest.paymentHistoryId);
             if (!paymentHistory) return res.status(404).json({ message: "Payment history not found" });
 
+            // Validate refund amount
+            if (!refundAmount || refundAmount <= 0) {
+                return res.status(400).json({ message: "Invalid refund amount" });
+            }
+            if (refundAmount > paymentHistory.amount) {
+                return res.status(400).json({ message: "Refund amount exceeds payment amount" });
+            }
+
             let refundVerified = false;
 
             if (paymentHistory.paymentType === 'stripe') {
-                const refunds = await stripe.refunds.list({
+                const refund = await stripe.refunds.create({
                     payment_intent: paymentHistory.transactionId,
+                    amount: Math.round(refundAmount * 100) // Convert to cents
                 });
-                const existingRefund = refunds.data.find(refund => refund.status === 'succeeded');
-
-                if (existingRefund) {
-                    refundVerified = true;
-                } else {
-                    const refund = await stripe.refunds.create({
-                        payment_intent: paymentHistory.transactionId,
-                        amount: Math.round(paymentHistory.amount) // Assurez-vous que le montant est un entier
-                    });
-                    refundVerified = await verifyStripeRefund(refund.id);
-                }
+                refundVerified = await verifyStripeRefund(refund.id);
             } else if (paymentHistory.paymentType === 'paypal') {
                 try {
                     const request = new paypal.payments.CapturesRefundRequest(paymentHistory.transactionId);
                     request.requestBody({
                         amount: {
-                            value: (paymentHistory.amount ).toFixed(2), // Convertit en format PayPal
+                            value: refundAmount.toFixed(2), // Ensure proper format
                             currency_code: 'GBP'
                         }
                     });
@@ -141,10 +140,7 @@ exports.updateRefundRequestStatus = async (req, res) => {
                 } catch (error) {
                     if (error.statusCode === 422 && error.message.includes("CAPTURE_FULLY_REFUNDED")) {
                         console.log("Capture already fully refunded");
-                        refundVerified = true; // Considérer comme vérifié si déjà remboursé
-                    } else if (error.statusCode === 422 && error.message.includes("ORDER_ALREADY_CAPTURED")) {
-                        console.log("Order already captured but not refunded");
-                        refundVerified = false;
+                        refundVerified = true;
                     } else {
                         throw error;
                     }
@@ -152,8 +148,13 @@ exports.updateRefundRequestStatus = async (req, res) => {
             }
 
             if (refundVerified) {
-                await Task.findByIdAndUpdate(paymentHistory.taskId, { paymentStatus: 'Refunded' });
                 refundRequest.status = "refunded";
+                refundRequest.refundedAmount = refundAmount;
+                refundRequest.remainingAmount = paymentHistory.amount - refundAmount;
+                refundRequest.reason = reason;
+                if (refundRequest.remainingAmount <= 0) {
+                    await Task.findByIdAndUpdate(paymentHistory.taskId, { paymentStatus: 'Refunded' });
+                }
             } else {
                 return res.status(400).json({ message: "Refund verification failed" });
             }
@@ -167,4 +168,5 @@ exports.updateRefundRequestStatus = async (req, res) => {
         res.status(500).json({ message: "Error updating refund request", error: error.message });
     }
 };
+
 

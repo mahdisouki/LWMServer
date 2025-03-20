@@ -120,17 +120,35 @@ const standardItemCtrl = {
 
   getAllStandardItems: async (req, res) => {
     try {
-      const { page = '1', limit = '9', pagination } = req.query;
+      const { page = '1', limit = '9', pagination, category, search = '' } = req.query;
       const pageNum = parseInt(page, 10);
       const limitNum = parseInt(limit, 10);
       const isPaginationDisabled = (pagination === 'false');
-
-      let query = StandardItem.find()
-        .sort('-createdAt _id')
-        .populate('category');
-
-      const total = await StandardItem.countDocuments();
-
+  
+      // Build the query object
+      let query = StandardItem.find();
+  
+      // 🔍 Add search condition if provided
+      if (search) {
+        query = query.find({
+          itemName: { $regex: search, $options: 'i' } // Case-insensitive search
+        });
+      }
+  
+      // Filter by Category if provided
+      if (category) {
+        if (!mongoose.Types.ObjectId.isValid(category)) {
+          return res.status(400).json({ message: 'Invalid category ID' });
+        }
+        query = query.where('category').equals(category);
+      }
+  
+      // Populate category and sort results
+      query = query.sort('-createdAt _id').populate('category');
+  
+      // Count total matching items
+      const total = await StandardItem.countDocuments(query);
+  
       let items;
       if (isPaginationDisabled) {
         items = await query.exec();
@@ -165,34 +183,39 @@ const standardItemCtrl = {
       });
     }
   },
+  
 
   getItemsByCategory: async (req, res) => {
-    const { category } = req.params;
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 9;
-
-    // Validate if category is a valid ObjectId
-    if (!mongoose.Types.ObjectId.isValid(category)) {
-      return res.status(400).json({ message: 'Invalid category ID' });
-    }
-
+    const { category } = req.params; // Category parameter from the route
+    const page = parseInt(req.query.page, 10) || 1; // Default page is 1
+    const limit = parseInt(req.query.limit, 10) || 9; // Default limit is 9
+    console.log('entered')
     try {
-
-      const items = await StandardItem.find({ category: category })
+      // Define the query dynamically
+      let query = {};
+      if (category) {
+        
+        // Validate category only if it's provided
+        if (!mongoose.Types.ObjectId.isValid(category)) {
+          return res.status(400).json({ message: 'Invalid category ID' });
+        }
+        query.category = category; // Add category filter to the query
+      }
+  
+      // Fetch items based on the query
+      const items = await StandardItem.find(query)
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('category', 'name');
-
-      const totalItems = await StandardItem.countDocuments({ category: category });
-
-
+        .populate('category', 'name'); // Populate category details
+  
+      // Count total items based on the query
+      const totalItems = await StandardItem.countDocuments(query);
+  
       if (items.length === 0) {
-        return res
-          .status(404)
-          .json({ message: 'No standard items found in this category' });
+        return res.status(404).json({ message: 'No standard items found' });
       }
-
-
+  
+      // Return paginated response
       res.status(200).json({
         message: 'Standard items fetched successfully',
         items,
@@ -204,13 +227,15 @@ const standardItemCtrl = {
         },
       });
     } catch (error) {
-      console.error('Error fetching items by category:', error);
+      console.error('Error fetching items:', error);
       res.status(500).json({
-        message: 'Failed to fetch items by category',
+        message: 'Failed to fetch items',
         error: error.message,
       });
     }
   },
+  
+  
 
   getStandardItemById: async (req, res) => {
     const { id } = req.params;

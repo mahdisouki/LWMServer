@@ -1,36 +1,48 @@
 const QuotationRequest = require('../models/QuotationRequest');
 const sendQuotationEmail = require('../utils/sendQuotationEmail'); // Utility function to send email notifications
 const APIfeatures = require('../utils/APIFeatures');
+const FormData = require('form-data')
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const axios = require('axios')
+
 const quotationRequestController = {
-    createQuotationRequest: async (req, res) => {
+    createQuotationRequest : async (req, res) => {
         try {
             const {
-                line1,
-                line2,
+                firstName,
+                lastName,
+                DoorNumber,
+                RoadName,
                 email,
                 phoneNumber,
-                companyName,
+                Town,
                 postcode,
-                comments
+                comments,
             } = req.body;
     
             if (!req.files || req.files.length === 0) {
                 return res.status(400).json({ message: "No files uploaded" });
             }
     
-            const items = req.files.map(file => file.path);
+            const items = req.files.map((file) => file.path);
             const predictions = [];
     
-            // Send images to AI model API
+            // Download the image from Cloudinary and send it to the Flask API
             for (const file of req.files) {
-                const formData = new FormData();
-                formData.append('file', file.buffer, file.originalname);
+                const response = await fetch(file.path); // Download the file from Cloudinary
+                const arrayBuffer = await response.arrayBuffer(); // Convert to ArrayBuffer
+                const buffer = Buffer.from(arrayBuffer); // Convert to Buffer for formData
     
-                const aiResponse = await axios.post('http://localhost:5000/predict', formData, {
+                const formData = new FormData();
+                formData.append('file', buffer, {
+                    filename: file.originalname,
+                    contentType: file.mimetype,
+                });
+    
+                const aiResponse = await axios.post('http://127.0.0.1:5000/predict', formData, {
                     headers: {
-                        'Content-Type': 'multipart/form-data'
-                    }
+                        ...formData.getHeaders(),
+                    },
                 });
     
                 if (aiResponse.data && aiResponse.data.predictions) {
@@ -41,42 +53,39 @@ const quotationRequestController = {
             // Transform AI predictions into estimatedPrices format
             const estimatedPrices = predictions.map(pred => ({
                 name: pred.classe,
-                price: pred.price_inc_vat.toString()
+                price: pred.price_inc_vat.toString(),
             }));
     
             const newQuotation = new QuotationRequest({
-                line1,
-                line2,
+                Name: `${firstName} ${lastName}`,
+                DoorNumber,
+                RoadName,
+                Town,
                 email,
                 phoneNumber,
-                companyName,
                 postcode,
                 comments,
-                items: items,
-                estimatedPrices: estimatedPrices
+                items,
+                estimatedPrices,
             });
     
             await newQuotation.save();
     
-            // Send email notification
-            await sendQuotationEmail({
-                responsibleEmail: process.env.RESPONSIBLE_EMAIL,
-                quotationData: newQuotation
-            });
     
             res.status(201).json({
                 message: 'Quotation request submitted successfully',
-                quotation: newQuotation
+                quotation: newQuotation,
             });
     
         } catch (error) {
             console.error('Error creating quotation request:', error);
             res.status(500).json({
                 message: 'Failed to submit quotation request',
-                error: error.message
+                error: error.message,
             });
         }
     },
+      
 
  
     getAllQuotations: async (req, res) => {

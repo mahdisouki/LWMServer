@@ -180,7 +180,7 @@ const taskCtrl = {
       });
 
       await newTask.save();
-      emitNotificationToUser('677d414cd9a5d9785cdde97b', 'TASK_CREATION', "YOU have a new task created!!!")
+      emitNotificationToUser('677d414cd9a5d9785cdde97b', 'Orders', "YOU have a new task created!!!")
       res.status(201).json({
         message: 'Task created successfully',
         task: newTask,
@@ -735,15 +735,42 @@ const taskCtrl = {
       let paymentResult;
       switch (paymentType) {
         case 'stripe':
-          paymentResult = await createStripePaymentIntent(finalAmountInPence, taskId, fullBreakdown);
-          return res.json({
-            message: 'Stripe payment initiated successfully',
-            clientSecret: paymentResult.client_secret,
-            paymentIntentId: paymentResult.id,
-            amount: finalAmountInPence,
-            paymentType,
-            breakdown: fullBreakdown,
-          });
+          try {
+            const session = await stripe.checkout.sessions.create({
+              payment_method_types: ['card'],
+              mode: 'payment',
+              line_items: [
+                {
+                  price_data: {
+                    currency: 'GBP',
+                    product_data: {
+                      name: `Payment for Task ${taskId}`,
+                    },
+                    unit_amount: finalAmountInPence,
+                  },
+                  quantity: 1,
+                },
+              ],
+              success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+              cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
+              metadata: {
+                taskId: taskId,
+              },
+            });
+          
+            return res.json({
+              message: 'Stripe payment initiated successfully',
+              redirectUrl: session.url,
+              paymentIntentId: session.payment_intent,
+            });
+          
+          } catch (error) {
+            console.error('Stripe Error:', error);
+            return res.status(500).json({
+              message: 'Failed to initiate payment',
+              error: error.message,
+            });
+          }
 
         case 'paypal':
           paymentResult = await createPayPalOrder(finalAmountInPence, taskId, fullBreakdown, task);

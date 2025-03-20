@@ -6,8 +6,24 @@ const notificationSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
-  type:{
-    type:String
+  type: {
+    type: String,
+    enum: [
+      "Staff",
+      "Orders",
+      "Driver_Tracking",
+      "Payroll",
+      "Chat",
+      "Standard_Items",
+      "Tipping",
+      "Storage",
+      "Truck",
+      "Day_Off",
+      "Busy_Days",
+      "Emails",
+      "Quotations",
+    ],
+    required: true,
   },
   message: {
     type: String,
@@ -23,5 +39,5 @@ const notificationSchema = new mongoose.Schema({
   },
 });
 
-const Notification  = mongoose.model("Notification", notificationSchema);
-module.exports = Notification
+const Notification = mongoose.model("Notification", notificationSchema);
+module.exports = Notification;
