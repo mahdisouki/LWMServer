@@ -8,6 +8,7 @@ const taskSchema = new Schema(
     truckId: { type: Schema.Types.ObjectId, ref: "Truck", required: false },
     firstName: { type: String, required: true },
     billingAddress: { type: String },
+    collectionAddress: {type:String},
     lastName: { type: String, required: true },
     phoneNumber: { type: String, required: true },
     phoneNumber2: { type: String },
@@ -71,8 +72,8 @@ const taskSchema = new Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["Paid", "Unpaid", "Pending"],
-      default: "Pending",
+      enum: ["partial_Paid","Paid","partial_Refunded", "refunded", "Unpaid"],
+      default: "Unpaid",
     },
     taskStatus: {
       type: String,

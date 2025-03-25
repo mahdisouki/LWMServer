@@ -42,11 +42,11 @@ app.get('/public/:fileName', (req, res) => {
 });
 
 
-// Stripe Webhook Route - Raw body middleware is applied ONLY for this route
-app.use(
-  "/api/webhooks/stripe",
-  express.raw({ type: "application/json" }) // Required for Stripe signature verification
-);
+// // Stripe Webhook Route - Raw body middleware is applied ONLY for this route
+// app.use(
+//   "/api/webhooks/stripe",
+//   express.raw({ type: "application/json" }) // Required for Stripe signature verification
+// );
 app.use(cors(corsOptions));
 // Apply JSON parsing for all other routes
 app.use(express.json());

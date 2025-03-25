@@ -115,8 +115,8 @@ const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
             },
         ],
         mode: "payment", // Payment mode
-        success_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/success`,
-        cancel_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/cancel`,
+        success_url: `https://londonwaste.duckdns.org/api/webhooks/payment/success`,
+        cancel_url: `https://londonwaste.duckdns.org/api/webhooks/payment/cancel`,
         metadata: {
             taskId,
             breakdown: JSON.stringify(breakdown), // Store breakdown as metadata
@@ -163,8 +163,8 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown) => {
         items: itemDetails
       }],
       application_context: {
-        return_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/success`,
-        cancel_url: `https://7026-197-0-13-187.ngrok-free.app/api/webhooks/payment/cancel`,
+        return_url: `https://londonwaste.duckdns.org/api/webhooks/payment/success`,
+        cancel_url: `https://londonwaste.duckdns.org/api/webhooks/payment/cancel`,
       }
     });
   
