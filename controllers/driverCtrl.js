@@ -491,15 +491,29 @@ const driverManagement = {
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
+      // Prevent multiple feedback submissions
+    if (task.clientFeedback || task.clientFeedbackScale) {
+      return res.status(400).json({ message: 'Feedback has already been submitted for this task.' });
+    }
       // Update task with the client satisfaction rating and feedback
       task.clientFeedback = clientFeedback;
       task.clientFeedbackScale = clientFeedbackScale;
       task.taskStatus = "Completed"
+      // Check if this is the first task completed by this client (using email)
+    const previousCompletedTasks = await Task.find({
+      email: task.email,
+      taskStatus: "Completed",
+      _id: { $ne: task._id } // Exclude current task
+    });
+
+    // If no previous completed tasks, it's a new client — send review email
+    if (previousCompletedTasks.length === 0) {
       await sendReviewRequestEmail({
         email: task.email,
         firstName: task.firstName,
         orderId: task._id,
       });
+    }
       await task.save();
       res.status(200).json({ message: 'Task rated successfully', task });
     } catch (error) {

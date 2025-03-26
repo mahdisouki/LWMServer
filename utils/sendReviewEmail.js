@@ -32,7 +32,7 @@ Kind regards,</p>
     <table width="100%" cellpadding="10" cellspacing="0" style="text-align: center; margin: 30px 0;">
       <tr>
         <td>
-          <a href="${internalReviewBase}&rating=1">
+          <a href="${internalReviewBase}">
             <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742958518/tkhlpz8mjob3ulpbhmli.webp" width="30" />
             <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742958518/jfwffhogxomlk1z8wrbi.webp" width="30" />
             <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742958518/jfwffhogxomlk1z8wrbi.webp" width="30" />
