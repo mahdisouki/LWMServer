@@ -6,6 +6,7 @@ const TruckStatus = require('../models/TruckStatus');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser } = require('../socket');
+const sendReviewRequestEmail = require('../utils/sendReviewEmail');
 const adminId = "677d414cd9a5d9785cdde97b"
 const driverManagement = {
   updateDriverProfile: async (req, res) => {
@@ -494,6 +495,11 @@ const driverManagement = {
       task.clientFeedback = clientFeedback;
       task.clientFeedbackScale = clientFeedbackScale;
       task.taskStatus = "Completed"
+      await sendReviewRequestEmail({
+        email: task.email,
+        firstName: task.firstName,
+        orderId: task._id,
+      });
       await task.save();
       res.status(200).json({ message: 'Task rated successfully', task });
     } catch (error) {
