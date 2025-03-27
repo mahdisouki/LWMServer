@@ -23,10 +23,14 @@ async function verifyPayPalRefund(refundId) {
 }
 
 exports.processRefund = async (req, res) => {
-    const { paymentHistoryId, refundAmount } = req.body;
+    const { taskId, refundAmount } = req.body;
 
+    console.log("Refund request:", taskId, refundAmount);
     try {
-        const paymentHistory = await PaymentHistory.findById(paymentHistoryId);
+        const task = await Task.findById(taskId);
+        if (!task) return res.status(404).json({ message: "Task not found" });
+
+        const paymentHistory = await PaymentHistory.findOne({ taskId });
         if (!paymentHistory) return res.status(404).json({ message: "Payment history not found" });
         console.log(paymentHistory)
         if (!refundAmount || refundAmount <= 0) {
@@ -38,7 +42,7 @@ exports.processRefund = async (req, res) => {
         }
 
         let refundVerified = false;
-
+        console.log("Payment History:", paymentHistory.paymentType);
         if (paymentHistory.paymentType === 'Stripe') {
             const refund = await stripe.refunds.create({
                 payment_intent: paymentHistory.transactionId,
@@ -69,7 +73,7 @@ exports.processRefund = async (req, res) => {
             const task = await Task.findById(paymentHistory.taskId);
             const totalPaid = paymentHistory.amount;
             const remainingAmount = totalPaid - refundAmount;
-            console.log("totalPaid",totalPaid,"remainingAmount",remainingAmount,"refundAmount",refundAmount)
+            console.log("totalPaid", totalPaid, "remainingAmount", remainingAmount, "refundAmount", refundAmount)
             if (remainingAmount <= 0) {
                 task.paymentStatus = 'refunded';
             } else {

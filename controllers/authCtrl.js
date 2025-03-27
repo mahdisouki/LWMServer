@@ -71,6 +71,7 @@ exports.userSignIn = async (req, res) => {
         phoneNumber: user.phoneNumber[0], 
         truckId : truck ? truck._id : null,
         picture: user.picture || null,
+        permissions: user.permissions || null,
       },
       token,
       refreshToken,

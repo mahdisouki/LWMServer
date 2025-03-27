@@ -17,9 +17,9 @@ const isWithinDistance = (coord1, coord2, maxDistance) => {
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c; // Distance in kilometers
 
@@ -29,89 +29,91 @@ const isWithinDistance = (coord1, coord2, maxDistance) => {
 const staffManagement = {
   addStaff: async (req, res) => {
     try {
-        const {
-            password,
-            role,
-            username,
-            email,
-            phoneNumber,
-            gender,
-            designation,
-            permissions, 
-        } = req.body;
+      const {
+        password,
+        role,
+        username,
+        email,
+        phoneNumber,
+        gender,
+        designation,
+        permissions,
+      } = req.body;
 
-        // Get file paths
-        const pictureUrl = req.files['picture'] ? req.files['picture'][0].path : null;
-        const driverLicenseUrl = req.files['DriverLicense'] ? req.files['DriverLicense'][0].path : null;
-        const addressProofUrl = req.files['addressProof'] ? req.files['addressProof'][0].path : null;
-        const natInsuranceUrl = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : null;
+      // Get file paths
+      const pictureUrl = req.files['picture'] ? req.files['picture'][0].path : null;
+      const driverLicenseUrl = req.files['DriverLicense'] ? req.files['DriverLicense'][0].path : null;
+      const addressProofUrl = req.files['addressProof'] ? req.files['addressProof'][0].path : null;
+      const natInsuranceUrl = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : null;
 
-        if (!username || !email || !password || !role || !phoneNumber) {
-            return res.status(400).json({
-                message: 'Missing required fields: username, email, password, phoneNumber, and role are required.',
-            });
-        }
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-        let newUser;
-
-        if (role === 'Driver' || role === 'Helper') {
-            const Model = role === 'Driver' ? Driver : Helper;
-            newUser = new Model({
-                username,
-                email,
-                phoneNumber,
-                password: hashedPassword,
-                role: [role],
-                picture: pictureUrl,
-                gender,
-                designation,
-                DriverLicense: driverLicenseUrl,
-                addressProof: addressProofUrl,
-                NatInsurance: natInsuranceUrl,
-            });
-        } else if (role === 'Admin') {
-            newUser = new Admin({
-                username,
-                email,
-                phoneNumber,
-                password: hashedPassword,
-                role: [role],
-                picture: pictureUrl,
-                gender,
-                designation,
-                DriverLicense: driverLicenseUrl,
-                addressProof: addressProofUrl,
-                NatInsurance: natInsuranceUrl,
-                permissions: permissions || {}, 
-            });
-        } else {
-            newUser = new User({
-                username,
-                email,
-                phoneNumber,
-                password: hashedPassword,
-                role: [role],
-                picture: pictureUrl,
-                gender,
-                designation,
-                DriverLicense: driverLicenseUrl,
-                addressProof: addressProofUrl,
-                NatInsurance: natInsuranceUrl,
-            });
-        }
-
-        await newUser.save();
-        res.status(201).json({ message: `${role} created successfully`, user: newUser });
-    } catch (error) {
-        console.error('Error in addStaff:', error);
-        res.status(500).json({
-            message: `Failed to create staff member`,
-            error: error.message,
+      if (!username || !email || !password || !role || !phoneNumber) {
+        return res.status(400).json({
+          message: 'Missing required fields: username, email, password, phoneNumber, and role are required.',
         });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 10);
+      let newUser;
+
+      if (role === 'Driver' || role === 'Helper') {
+        const Model = role === 'Driver' ? Driver : Helper;
+        newUser = new Model({
+          username,
+          email,
+          phoneNumber,
+          password: hashedPassword,
+          role: [role],
+          picture: pictureUrl,
+          gender,
+          designation,
+          DriverLicense: driverLicenseUrl,
+          addressProof: addressProofUrl,
+          NatInsurance: natInsuranceUrl,
+        });
+      } else if (role === 'Admin') {
+        const parsedPermissions =
+          typeof permissions === 'string' ? JSON.parse(permissions) : permissions;
+        newUser = new Admin({
+          username,
+          email,
+          phoneNumber,
+          password: hashedPassword,
+          role: [role],
+          picture: pictureUrl,
+          gender,
+          designation,
+          DriverLicense: driverLicenseUrl,
+          addressProof: addressProofUrl,
+          NatInsurance: natInsuranceUrl,
+          permissions: parsedPermissions || {},
+        });
+      } else {
+        newUser = new User({
+          username,
+          email,
+          phoneNumber,
+          password: hashedPassword,
+          role: [role],
+          picture: pictureUrl,
+          gender,
+          designation,
+          DriverLicense: driverLicenseUrl,
+          addressProof: addressProofUrl,
+          NatInsurance: natInsuranceUrl,
+        });
+      }
+
+      await newUser.save();
+      res.status(201).json({ message: `${role} created successfully`, user: newUser });
+    } catch (error) {
+      console.error('Error in addStaff:', error);
+      res.status(500).json({
+        message: `Failed to create staff member`,
+        error: error.message,
+      });
     }
   },
-  
+
 
   getAllStaff: async (req, res) => {
     try {
@@ -203,7 +205,7 @@ const staffManagement = {
   updateStaff: async (req, res) => {
     const { id } = req.params;
     let updateData = req.body; // Take all incoming fields for potential update
-  
+
     try {
       // Check if any files are included in the request and update their respective fields
       if (req.files) {
@@ -212,23 +214,23 @@ const staffManagement = {
         updateData.addressProof = req.files['addressProof'] ? req.files['addressProof'][0].path : undefined;
         updateData.NatInsurance = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : undefined;
       }
-  
+
       // If password is included, hash it before updating
       if (updateData.password && updateData.password.trim() !== '') {
         updateData.password = await bcrypt.hash(updateData.password, 10);
       }
-  
+
       // Update the staff member in the database
       const user = await User.findByIdAndUpdate(
         id,
         { $set: updateData },
         { new: true }, // Return the updated document
       );
-  
+
       if (!user) {
         return res.status(404).json({ message: 'Staff not found' });
       }
-  
+
       res.status(200).json({ message: 'Staff updated successfully', user });
     } catch (error) {
       console.error('Error updating staff:', error);
@@ -238,7 +240,7 @@ const staffManagement = {
       });
     }
   },
-  
+
   assignDriverToTruck: async (req, res) => {
     const { driverId } = req.params;
     const { truckName, startDate, endDate } = req.body; // Accept start and end dates
@@ -486,11 +488,11 @@ const staffManagement = {
   updateAdminProfile: async (req, res) => {
     const adminId = req.user._id;
     const updatedData = req.body;
-  
+
     if (req.file) {
       updatedData.picture = req.file.path;
     }
-  
+
     // Check if admin exists
     const admin = await Admin.findById(adminId);
     if (!admin) {
@@ -501,19 +503,19 @@ const staffManagement = {
       if (!updatedData.currentPassword) {
         return res.status(400).json({ message: 'Current password is required' });
       }
-    
+
       // Compare the current password with the password in the database
       const isMatch = await bcrypt.compare(updatedData.currentPassword, admin.password);
-      
+
       if (!isMatch) {
         return res.status(400).json({ message: 'Invalid password' });
       }
-    
+
       // Check if passwords match
       if (updatedData.newPassword !== updatedData.confirmNewPassword) {
         return res.status(400).json({ message: 'Passwords do not match' });
       }
-    
+
       // Update password if new password is provided
       if (updatedData.newPassword && updatedData.newPassword.trim() !== '') {
         updatedData.password = await bcrypt.hash(updatedData.newPassword, 10);
@@ -521,20 +523,20 @@ const staffManagement = {
         delete updatedData.confirmNewPassword;
       }
     }
-  
+
     const updatedAdmin = await Admin.findByIdAndUpdate(adminId, updatedData, {
       new: true,
     });
-  
+
     if (!updatedAdmin) {
       return res.status(404).json({ message: 'Admin not found' });
     }
-  
+
     res.status(200).json({
       message: 'Admin profile updated successfully',
       admin: updatedAdmin,
     });
-  
+
     try {
     } catch (error) {
       res.status(500).json({
@@ -543,16 +545,16 @@ const staffManagement = {
       });
     }
   },
-  optimizeTasks: async (req,res)=>{
+  optimizeTasks: async (req, res) => {
     try {
-      const {truckId} = req.params;
-      const {date} = req.body; //example  "2024-12-03"
+      const { truckId } = req.params;
+      const { date } = req.body; //example  "2024-12-03"
       console.log(truckId)
-      const response = await optimizeRoute(truckId ,date);
-      res.json({response:response})
+      const response = await optimizeRoute(truckId, date);
+      res.json({ response: response })
     } catch (error) {
       console.log(error)
-      res.json({error:error})
+      res.json({ error: error })
     }
   }
 };
