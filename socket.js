@@ -18,42 +18,34 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-const sendNotification = async (title, textMessage, token) => {
-  console.log('Sending notification to:', token);
-  const message = {
-    notification: {
-      title,
-      body: textMessage,
-      // icon: 'https://192.168.62.131:5173/logo.png',
-    },
-    token: token,
-  };
+// const sendNotification = async (title, textMessage, token) => {
+//   console.log('Sending notification to:', token);
+//   const message = {
+//     notification: {
+//       title,
+//       body: textMessage,
+//       // icon: 'https://192.168.62.131:5173/logo.png',
+//     },
+//     token: token,
+//   };
   
-  admin
-    .messaging()
-    .send(message)
-    .then((response) => {
-      console.log('Successfully sent message:', response);
-    })
-    .catch((error) => {
-      console.error('Error sending message:', error);
-    });
-}
+//   admin
+//     .messaging()
+//     .send(message)
+//     .then((response) => {
+//       console.log('Successfully sent message:', response);
+//     })
+//     .catch((error) => {
+//       console.error('Error sending message:', error);
+//     });
+// }
   
 // Initialize the Socket.io server and export the io instance
 const initSocket = (server) => {
   io = socketIo(server, {
     cors: {
-      origin: [
-        'https://localhost:5173',
-        'http://localhost:5174',
-        'http://localhost:3001',
-        'http://localhost:5173',
-        'https://localhost:5174',
-        'https://dirverapp.netlify.app', 
-        'https://lwmadmin.netlify.app',
-        'https://londonwastemanagement.netlify.app'
-      ],
+      origin: ['https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5174'  ,'http://localhost:3001'], 
+
       methods: ['GET', 'POST'],
       credentials: true,
       allowedHeaders: ['Authorization'],
@@ -155,8 +147,20 @@ const initSocket = (server) => {
         console.log(`Message saved in room ${message}`);
         // Emit the new message to the room
         io.to(roomId).emit('newMessage', message);
-
-        sendNotification('New Message Received', `You have a new message from ${user.username}`, relatedUser.fcmToken);
+ // Get all socket connections in the room
+ const roomSockets = await io.in(roomId).fetchSockets();
+        console.log("roomSockets",roomSockets)
+ for (const s of roomSockets) {
+   const receiverId = s.user?.userId;
+   if (receiverId && receiverId !== senderId) {
+     emitNotificationToUser(
+       receiverId,
+       'Chat',
+       `New message from ${user.username}`
+     );
+   }
+          }        
+    // sendNotification('New Message Received', `You have a new message from ${user.username}`, relatedUser.fcmToken);
     
       } catch (error) {
         console.error(`Error processing message in room ${roomId}:`, error);
@@ -273,7 +277,7 @@ const initSocket = (server) => {
 // Function to emit a notification to a specific user by userId
 const emitNotificationToUser = async (userId,type ,notificationMessage) => {
   const socketId = userSocketMap[userId];
-
+  console.log('entredred to not fun')
   if (socketId && io) {
     io.to(socketId).emit('notification', {userId:userId,type:type, message: notificationMessage,read: false });
   } else {

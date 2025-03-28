@@ -211,19 +211,28 @@ const taskCtrl = {
   getAllTasks: async (req, res) => {
     try {
       const { page, limit, filters } = req.query;
-
+  
+      // 👇 Handle filtering for specific day
+      if (req.query.date) {
+        const selectedDate = new Date(req.query.date);
+        const nextDay = new Date(selectedDate);
+        nextDay.setDate(selectedDate.getDate() + 1);
+  
+        req.query.date = {
+          gte: selectedDate.toISOString(),
+          lt: nextDay.toISOString(),
+        };
+      }
+  
       let query = Task.find();
       const total = await Task.countDocuments(query);
       const features = new APIfeatures(query, req.query);
-
-      
-        await features.filtering();
-      
-
+  
+      await features.filtering();
       features.sorting().paginating();
-
+  
       let tasks = await features.query.exec();
-
+  
       tasks = await Promise.all(
         tasks.map(async (task) => {
           if (task.truckId) {
@@ -234,10 +243,10 @@ const taskCtrl = {
           return task;
         }),
       );
-
+  
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;
-
+  
       res.status(200).json({
         message: 'All tasks retrieved successfully',
         tasks,
@@ -249,11 +258,13 @@ const taskCtrl = {
         },
       });
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: 'Failed to retrieve tasks', error: error.message });
+      res.status(500).json({
+        message: 'Failed to retrieve tasks',
+        error: error.message,
+      });
     }
   },
+  
 
   assignTruckToTask: async (req, res) => {
     const { taskId } = req.params;
