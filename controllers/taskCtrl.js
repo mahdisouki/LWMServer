@@ -216,9 +216,9 @@ const taskCtrl = {
       const total = await Task.countDocuments(query);
       const features = new APIfeatures(query, req.query);
 
-      if (filters) {
-        features.filtering();
-      }
+      
+        await features.filtering();
+      
 
       features.sorting().paginating();
 

@@ -149,11 +149,11 @@ const Task = require('../models/Task');
 
 router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
-router.get('/tasks', isAuth, checkRole('Admin'), taskCtrl.getAllTasks);
+router.get('/tasks', taskCtrl.getAllTasks);
 router.get('/task/:taskId', isAuth, taskCtrl.getTaskById);
 router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
-router.put('/task/:taskId',multer.array('clientObjectPhotos'), taskCtrl.updateTask);
+router.put('/task/:taskId', isAuth, checkRole('Admin'),multer.array('clientObjectPhotos'), taskCtrl.updateTask);
 router.put('/tasks/:taskId/moveTruck', isAuth, checkRole('Admin'), taskCtrl.moveTaskToAnotherTruck);
 router.put('/tasks/:taskId/deAssignTruck',isAuth, checkRole('Admin'), taskCtrl.deAssignTaskFromTruck);
 
