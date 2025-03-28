@@ -13,6 +13,9 @@ const userSchema = new mongoose.Schema({
   officialEmail: { type: String},
   phoneNumber: [{ type: String, required: true }],
   username: { type: String , required: true },
+  firstName:{type:String},
+  lastName:{type:String},
+
   gender: {
     type: String,
     enum: ["Female", "Male", "Other"],
@@ -29,6 +32,8 @@ const userSchema = new mongoose.Schema({
   address:{type:String},
   CIN: {type:String},
   DriverLicense:{type:String},
+  AccountName:{type:String},
+  SortNumber:{type:String},
   addressProof:{type:String},
   NatInsurance:{type:String},
   refreshToken: { type: String },

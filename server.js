@@ -27,7 +27,7 @@ const setupSwagger = require('./config/swaggerConfig');
 
 
 const corsOptions = {
-  origin: ['*' , 'https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5174'  ,'http://localhost:3001'], 
+  origin: ['https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5174'  ,'http://localhost:3001'], 
   optionsSuccessStatus: 200 
 };
 
@@ -87,7 +87,8 @@ const storageRoutes = require('./routes/storage')
 const quotationRoutes = require('./routes/quotationRoutes')
 const contactRequestRoutes = require('./routes/contactRequestRoutes');
 const serviceCategoryRoutes = require('./routes/serviceCategory');
-const notificationRoutes = require('./routes/notification')
+const notificationRoutes = require('./routes/notification');
+const emailTemplateRoutes = require('./routes/emailTemplate')
 const {optimizeRoute } = require("./helper/OpitomRoute");
 
 
@@ -117,6 +118,7 @@ app.use('/api', statsRoute)
 app.use('/api', contactRequestRoutes);
 app.use('/api' , serviceCategoryRoutes);
 app.use('/api' , notificationRoutes);
+app.use('/api' , emailTemplateRoutes)
 app.post('/optimise/:truckId' , async(req,res)=>{
   try {
     const {truckId} = req.params;

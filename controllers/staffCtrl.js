@@ -32,6 +32,11 @@ const staffManagement = {
       const {
         password,
         role,
+        firstName,
+        lastName,
+        dateOfBirth,
+        AccountName,
+        SortNumber,
         username,
         email,
         phoneNumber,
@@ -58,6 +63,11 @@ const staffManagement = {
       if (role === 'Driver' || role === 'Helper') {
         const Model = role === 'Driver' ? Driver : Helper;
         newUser = new Model({
+          firstName,
+          lastName,
+          dateOfBirth,
+          AccountName,
+          SortNumber,
           username,
           email,
           phoneNumber,
