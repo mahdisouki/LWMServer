@@ -5,6 +5,7 @@ const APIfeatures = require('../utils/APIFeatures');
 const { emitEvent } = require('../socket');
 const Driver = require('../models/Driver');
 const TippingPlace = require('../models/TippingPlaces');
+const paginateQuery = require('../utils/paginationHelper');
 
 const tippingController = {
   createTippingRequest: async (req, res) => {
@@ -183,51 +184,49 @@ const tippingController = {
 
   getAllTippingRequestsForAdmin: async (req, res) => {
     try {
-      const { page = 1, limit = 9, filters } = req.query;
+      const { keyword } = req.query;
 
-      let query = TippingRequest.find().populate('userId')
-        .populate('truckId')
-        .populate('tippingPlace');
-      const total = await TippingRequest.countDocuments(query);
-
-      const features = new APIfeatures(query, req.query);
-
-      if (filters) {
-        features.filtering();
-      }
-
-      features.sorting().paginating();
-      let requests = await features.query.exec();
-
-      requests = await Promise.all(
-        requests.map(async (request) => {
-          const requestObj = request.toObject();
-
-          if (request.userId) {
-            const user = await User.findById(request.userId);
-            requestObj.username = user ? user.username : 'Unknown User';
-          }
-
-          if (request.truckId) {
-            const truck = await Truck.findById(request.truckId);
-            requestObj.truckName = truck ? truck.name : 'Unknown Truck';
-          }
-
-          return requestObj;
-        }),
+      const { data, meta } = await paginateQuery(
+        TippingRequest,
+        req.query,
+        ['collectionDate', 'paymentStatus'],
+        [],
       );
 
-      const currentPage = parseInt(req.query.page, 10) || 1;
-      const limitNum = parseInt(req.query.limit, 10) || 9;
+      const populatedData = await TippingRequest.populate(data, [
+        { path: 'truckId', select: 'name' },
+        { path: 'userId', select: 'username' },
+        { path: 'tippingPlace', select: 'name' },
+      ]);
+
+      let filteredData = populatedData;
+      if (keyword) {
+        const lowerKeyword = keyword.toLowerCase();
+        filteredData = populatedData.filter((req) => {
+          const truckName = req.truckId?.name?.toLowerCase() || '';
+          const username = req.userId?.username?.toLowerCase() || '';
+          const tippingPlace = req.tippingPlace?.name?.toLowerCase() || '';
+          return (
+            truckName.includes(lowerKeyword) ||
+            username.includes(lowerKeyword) ||
+            tippingPlace.includes(lowerKeyword)
+          );
+        });
+      }
+
+      const enrichedRequests = filteredData.map((req) => {
+        const obj = req.toObject();
+        obj.username = req.userId?.username ?? 'Unknown User';
+        obj.truckName = req.truckId?.name ?? 'Unknown Truck';
+        return obj;
+      });
 
       res.status(200).json({
         message: 'All tipping requests retrieved successfully',
-        requests,
+        requests: enrichedRequests,
         meta: {
-          currentPage,
-          limit: limitNum,
-          total,
-          count: requests.length,
+          ...meta,
+          count: enrichedRequests.length,
         },
       });
     } catch (error) {

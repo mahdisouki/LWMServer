@@ -8,43 +8,44 @@ const breakSchema = new mongoose.Schema({
 });
 
 const userSchema = new mongoose.Schema({
-  
+
   email: { type: String, required: true, unique: true },
-  officialEmail: { type: String},
+  officialEmail: { type: String },
   phoneNumber: [{ type: String, required: true }],
-  username: { type: String , required: true },
-  firstName:{type:String},
-  lastName:{type:String},
+  username: { type: String, required: true },
+  firstName: { type: String },
+  lastName: { type: String },
 
   gender: {
     type: String,
     enum: ["Female", "Male", "Other"],
     default: "Other",
   },
-  designation:{ type: String},
+  designation: { type: String },
   dateOfBirth: { type: Date },
   picture: { type: String },
   password: { type: String, required: true },
   role: {
     type: [String],
-    enum: ["Admin", "Helper", "Driver", "HR" ,"Manager" ,"CM" ,"IT" ,"CEO"] 
+    enum: ["Admin", "Helper", "Driver", "HR", "Manager", "CM", "IT", "CEO"]
   },
-  address:{type:String},
-  CIN: {type:String},
-  DriverLicense:{type:String},
-  AccountName:{type:String},
-  SortNumber:{type:String},
-  addressProof:{type:String},
-  NatInsurance:{type:String},
+  address: { type: String },
+  CIN: { type: String },
+  DriverLicense: { type: String },
+  AccountNumber: { type: String },
+  AccountName: { type: String },
+  SortNumber: { type: String },
+  addressProof: { type: String },
+  NatInsurance: { type: String },
   refreshToken: { type: String },
   fcmToken: { type: String },
-  totalHoursWorked:{
-    type:Number,
-    default:0
+  totalHoursWorked: {
+    type: Number,
+    default: 0
   },
-  totalSalary:{
-    type:Number,
-    default:0
+  totalSalary: {
+    type: Number,
+    default: 0
   },
   dayOffRequests: [
     {
@@ -52,9 +53,9 @@ const userSchema = new mongoose.Schema({
       ref: 'Dayoff'
     }
   ],
-  hourPrice:{
-    type:Number,
-    default:0
+  hourPrice: {
+    type: Number,
+    default: 0
   },
   breaks: [breakSchema],
 }, { discriminatorKey: 'roleType' });
@@ -62,4 +63,4 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-module.exports =  {User};
+module.exports = { User };

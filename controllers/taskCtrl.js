@@ -1,10 +1,10 @@
 const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
-const APIfeatures = require('../utils/APIFeatures');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
 const { emitNotificationToUser } = require('../socket.js')
+const paginateQuery = require('../utils/paginationHelper');
 const {
   getPayPalOrderDetails,
   capturePayPalPayment,
@@ -210,52 +210,29 @@ const taskCtrl = {
 
   getAllTasks: async (req, res) => {
     try {
-      const { page, limit, filters } = req.query;
-  
-      // 👇 Handle filtering for specific day
-      if (req.query.date) {
-        const selectedDate = new Date(req.query.date);
-        const nextDay = new Date(selectedDate);
-        nextDay.setDate(selectedDate.getDate() + 1);
-  
-        req.query.date = {
-          gte: selectedDate.toISOString(),
-          lt: nextDay.toISOString(),
-        };
-      }
-  
-      let query = Task.find();
-      const total = await Task.countDocuments(query);
-      const features = new APIfeatures(query, req.query);
-  
-      await features.filtering();
-      features.sorting().paginating();
-  
-      let tasks = await features.query.exec();
-  
-      tasks = await Promise.all(
+      const { data: tasks, meta } = await paginateQuery(
+        Task,
+        req.query,
+        ['paymentStatus', 'date'], // filters
+        ['firstName', 'lastName', 'email', 'username', 'phoneNumber', 'postcode'] // searchable fields
+      );
+
+
+      const tasksWithTrucks = await Promise.all(
         tasks.map(async (task) => {
           if (task.truckId) {
             const truck = await Truck.findById(task.truckId);
             task = task.toObject();
-            task.truckName = truck ? truck.name : null;
+            task.truckName = truck?.name ?? null;
           }
           return task;
-        }),
+        })
       );
-  
-      const currentPage = parseInt(req.query.page, 10) || 1;
-      const limitNum = parseInt(req.query.limit, 10) || 9;
-  
+
       res.status(200).json({
         message: 'All tasks retrieved successfully',
-        tasks,
-        meta: {
-          currentPage,
-          limit: limitNum,
-          total,
-          count: tasks.length,
-        },
+        tasks: tasksWithTrucks,
+        meta: meta,
       });
     } catch (error) {
       res.status(500).json({
@@ -264,7 +241,8 @@ const taskCtrl = {
       });
     }
   },
-  
+
+
 
   assignTruckToTask: async (req, res) => {
     const { taskId } = req.params;
@@ -770,13 +748,13 @@ const taskCtrl = {
                 taskId: taskId,
               },
             });
-          
+
             return res.json({
               message: 'Stripe payment initiated successfully',
               redirectUrl: session.url,
               paymentIntentId: session.payment_intent,
             });
-          
+
           } catch (error) {
             console.error('Stripe Error:', error);
             return res.status(500).json({
