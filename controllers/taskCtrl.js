@@ -99,6 +99,8 @@ const taskCtrl = {
       // Add custom objects
       if (objects && Array.isArray(objects)) {
         objects.forEach((customObject) => {
+          const position = customObject.Objectsposition || "Outside";
+
           if (customObject.object && customObject.price) {
             const itemTotal = customObject.price * (customObject.quantity || 1);
             totalPrice += itemTotal;
@@ -107,7 +109,7 @@ const taskCtrl = {
               object: customObject.object,
               price: customObject.price,
               quantity: customObject.quantity || 1,
-              Objectsposition: customObject.Objectsposition || "Outside",
+              Objectsposition: position,
             });
           }
         });
@@ -116,6 +118,7 @@ const taskCtrl = {
       // Add standard items
       if (standardItems && Array.isArray(standardItems)) {
         for (const item of standardItems) {
+
           console.log('standardItems:', item);
           const standardItem = await StandardItem.findById(item.standardItemId);
           if (!standardItem) {
@@ -124,11 +127,13 @@ const taskCtrl = {
 
           const itemTotal = standardItem.price * (item.quantity || 1);
           totalPrice += itemTotal;
+          const position = item.Objectsposition || "Outside";
+
 
           items.push({
             standardItemId: standardItem._id,
             quantity: item.quantity || 1,
-            Objectsposition: item.Objectsposition || "Outside",
+            Objectsposition: position,
           });
         }
       }

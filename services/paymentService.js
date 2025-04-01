@@ -9,7 +9,7 @@ const VAT_RATE = 0.2; // VAT rate (20%)
 async function calculateTotalPrice(taskId) {
     const task = await Task.findById(taskId).populate("items.standardItemId");
     if (!task) throw new Error("Task not found");
-    console.log('taskDB:' , task)
+    console.log('taskDB:', task)
     let basePrice = 0;
     const breakdown = [];
 
@@ -54,7 +54,7 @@ const calculateTotalPriceUpdate = async (taskId) => {
     if (!task) throw new Error("Task not found");
 
     let basePrice = 0;
-    let allOutside = true; // To check discount eligibility
+    let allOutside = true;
 
     for (const item of task.items) {
         const quantity = Number(item.quantity) || 1;
@@ -71,28 +71,34 @@ const calculateTotalPriceUpdate = async (taskId) => {
 
         basePrice += price;
 
-        if (item.Objectsposition !== "Outside") {
+        // Add extra fee
+        if (item.Objectsposition === "InsideWithDismantling") {
+            basePrice += 18;
+            allOutside = false;
+        } else if (item.Objectsposition === "Inside") {
+            basePrice += 6;
+            allOutside = false;
+        } else if (item.Objectsposition !== "Outside") {
             allOutside = false;
         }
     }
 
-    // Apply Discount for "AnyTime" and "Outside" only
+    // Apply Discount if all items are "Outside" and time is "AnyTime"
     if (task.available === "AnyTime" && allOutside) {
-        basePrice *= 0.9; // 10% discount
+        basePrice *= 0.9;
     }
 
-    // Minimum Price Enforced
     if (basePrice < 30) {
         basePrice = 30;
     }
 
-    // Apply VAT
     const VAT_RATE = 0.2;
     const vat = basePrice * VAT_RATE;
     const finalPrice = basePrice + vat;
 
-    return { total: finalPrice };
+    return { total: Math.round(finalPrice * 100) / 100 };
 };
+
 
 const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
     const description = breakdown
@@ -129,59 +135,59 @@ const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
 const createPaypalPaymentLink = async (taskId, finalAmount, breakdown) => {
     console.log("Generating PayPal link for items:", breakdown);
     const itemDetails = breakdown.filter(item => item.price != null && !isNaN(item.price)).map(item => ({
-      name: item.itemDescription || "Item",
-      description: `Position: ${item.Objectsposition || "Outside"} - Quantity: ${item.quantity || 1}`,
-      unit_amount: {
-        currency_code: "GBP",
-        value: parseFloat(item.price).toFixed(2),
-      },
-      quantity: (item.quantity || 1).toString(),
+        name: item.itemDescription || "Item",
+        description: `Position: ${item.Objectsposition || "Outside"} - Quantity: ${item.quantity || 1}`,
+        unit_amount: {
+            currency_code: "GBP",
+            value: parseFloat(item.price).toFixed(2),
+        },
+        quantity: (item.quantity || 1).toString(),
     }));
-  
+
     const itemTotal = itemDetails.reduce((sum, item) => sum + parseFloat(item.unit_amount.value) * parseInt(item.quantity), 0);
     const taxTotal = finalAmount - itemTotal;
-  
+
     if (taxTotal < 0) {
-      console.error("Calculated tax total is invalid.", { finalAmount, itemTotal, taxTotal });
-      throw new Error("Calculated tax total is invalid.");
+        console.error("Calculated tax total is invalid.", { finalAmount, itemTotal, taxTotal });
+        throw new Error("Calculated tax total is invalid.");
     }
-  
+
     const request = new paypal.orders.OrdersCreateRequest();
     request.requestBody({
-      intent: "CAPTURE",
-      purchase_units: [{
-        custom_id: taskId,
-        description: `Payment for Task #${taskId}`,
-        amount: {
-          currency_code: "GBP",
-          value: finalAmount.toFixed(2),
-          breakdown: {
-            item_total: { currency_code: "GBP", value: itemTotal.toFixed(2) },
-            tax_total: { currency_code: "GBP", value: taxTotal.toFixed(2) }
-          }
-        },
-        items: itemDetails
-      }],
-      application_context: {
-        return_url: `https://londonwaste.duckdns.org/api/webhooks/payment/success`,
-        cancel_url: `https://londonwaste.duckdns.org/api/webhooks/payment/cancel`,
-      }
+        intent: "CAPTURE",
+        purchase_units: [{
+            custom_id: taskId,
+            description: `Payment for Task #${taskId}`,
+            amount: {
+                currency_code: "GBP",
+                value: finalAmount.toFixed(2),
+                breakdown: {
+                    item_total: { currency_code: "GBP", value: itemTotal.toFixed(2) },
+                    tax_total: { currency_code: "GBP", value: taxTotal.toFixed(2) }
+                }
+            },
+            items: itemDetails
+        }],
+        application_context: {
+            return_url: `https://londonwaste.duckdns.org/api/webhooks/payment/success`,
+            cancel_url: `https://londonwaste.duckdns.org/api/webhooks/payment/cancel`,
+        }
     });
-  
+
     try {
-      const environment = new paypal.core.SandboxEnvironment(process.env.PAYPAL_CLIENT_ID, process.env.PAYPAL_CLIENT_SECRET);
-      const client = new paypal.core.PayPalHttpClient(environment);
-      const order = await client.execute(request);
-      return order.result.links.find(link => link.rel === "approve").href;
+        const environment = new paypal.core.SandboxEnvironment(process.env.PAYPAL_CLIENT_ID, process.env.PAYPAL_CLIENT_SECRET);
+        const client = new paypal.core.PayPalHttpClient(environment);
+        const order = await client.execute(request);
+        return order.result.links.find(link => link.rel === "approve").href;
     } catch (error) {
-      console.error("Failed to create PayPal payment link:", error);
-      throw error;
+        console.error("Failed to create PayPal payment link:", error);
+        throw error;
     }
-  };
-  
+};
+
 const createStripePaymentIntent = async (amount) => {
     return stripe.paymentIntents.create({
-        amount: amount, 
+        amount: amount,
         currency: 'gbp',
         payment_method_types: ['card'],
     });
@@ -201,18 +207,18 @@ async function createPayPalOrder(amount) {
 // Fetch PayPal Order Details
 const getPayPalOrderDetails = async (orderId) => {
     const environment = new paypal.core.SandboxEnvironment(
-      process.env.PAYPAL_CLIENT_ID,
-      process.env.PAYPAL_CLIENT_SECRET
+        process.env.PAYPAL_CLIENT_ID,
+        process.env.PAYPAL_CLIENT_SECRET
     );
     const client = new paypal.core.PayPalHttpClient(environment);
-  
+
     const request = new paypal.orders.OrdersGetRequest(orderId);
     const response = await client.execute(request);
     return response.result;
-  };
-  
-  // Capture PayPal Payment
-  const capturePayPalPayment = async (orderId) => {
+};
+
+// Capture PayPal Payment
+const capturePayPalPayment = async (orderId) => {
     const environment = new paypal.core.SandboxEnvironment(
         process.env.PAYPAL_CLIENT_ID,
         process.env.PAYPAL_CLIENT_SECRET
@@ -232,7 +238,7 @@ const getPayPalOrderDetails = async (orderId) => {
 };
 
 
-  
+
 function PayPalClient() {
     return new paypal.core.PayPalHttpClient(
         new paypal.core.SandboxEnvironment(
@@ -263,4 +269,4 @@ async function testPayPal() {
 
 
 
-module.exports = {getPayPalOrderDetails,calculateTotalPrice,createStripePaymentIntent,capturePayPalPayment ,createPayPalOrder, PayPalClient,createStripePaymentLink, createPaypalPaymentLink , calculateTotalPriceUpdate};
+module.exports = { getPayPalOrderDetails, calculateTotalPrice, createStripePaymentIntent, capturePayPalPayment, createPayPalOrder, PayPalClient, createStripePaymentLink, createPaypalPaymentLink, calculateTotalPriceUpdate };
