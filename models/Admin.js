@@ -4,6 +4,7 @@ const { User } = require('./User');
 
 const adminSchema = new mongoose.Schema({
     permissions: {
+        Dashboard: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
         Staff: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
         Orders: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
         Driver_Tracking: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },

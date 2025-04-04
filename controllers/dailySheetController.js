@@ -7,82 +7,92 @@ const Truck = require('../models/Truck')
 const dailySheetController = {
   generateDailySheetsForAllDrivers: async (req, res) => {
     try {
-      // Ensure date is a valid Date object
+      // Parse and validate input date
       const inputDate = req.body.date ? new Date(req.body.date) : new Date();
-      console.log("input date:" , inputDate)
       if (isNaN(inputDate)) {
         return res.status(400).json({ message: 'Invalid date format' });
       }
   
+      // Start and end of the day
       const startOfDay = new Date(inputDate);
-      console.log('startOfDateBefore' ,startOfDay )
-      // startOfDay.setHours(0, 0, 0, 0);
-      console.log('startOfDateAfter' ,startOfDay )
-
+      startOfDay.setHours(0, 0, 0, 0);
+  
       const endOfDay = new Date(inputDate);
       endOfDay.setHours(23, 59, 59, 999);
-      console.log("endofDate" , endOfDay)
-      const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
   
+      const formattedDate = req.body.date || new Date().toISOString().split('T')[0];
+      
       const drivers = await Driver.find();
       const dailySheets = [];
   
       for (const driver of drivers) {
-        // Find trucks associated with the current driver
         const trucks = await Truck.find({ driverId: driver._id });
-        console.log(trucks)
-        // Gather task IDs for the specific date from `tasksByDate`
-        const allTaskIdsForDate = trucks.reduce((acc, truck) => {
-          const tasksForDate = truck.tasks?.get(formattedDate) || [] ;
-          console.log(tasksForDate);
-          console.log(formattedDate)
-          return acc.concat(tasksForDate);
-        }, []);
+        const allTaskIdsForDate = [];
   
-        // Fetch tasks associated with the trucks for the specific date and status
+        for (const truck of trucks) {
+          if (!truck.tasks || !(truck.tasks instanceof Map || typeof truck.tasks.get === 'function')) {
+            console.log(`Truck ${truck.name} has no valid tasks map`);
+            continue;
+          }
+  
+          const taskKeys = Array.from(truck.tasks.keys());
+          console.log(`Truck ${truck.name} task keys:`, taskKeys);
+          if (!taskKeys.includes(formattedDate)) {
+            console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
+          }
+          const tasksForDate = truck.tasks?.get(formattedDate) || [];
+          console.log(truck.tasks)
+          console.log(`Tasks for ${formattedDate} in truck ${truck.name}:`, tasksForDate);
+  
+          allTaskIdsForDate.push(...tasksForDate);
+        }
+  
+        // Fetch jobs based on task IDs and status
         const jobsDone = await Task.find({
           _id: { $in: allTaskIdsForDate },
           taskStatus: 'Completed',
-          date: { $gte: startOfDay, $lt: endOfDay },
+          
         });
   
         const jobsPending = await Task.find({
           _id: { $in: allTaskIdsForDate },
           taskStatus: 'Processing',
-          date: { $gte: startOfDay, $lt: endOfDay },
+          
         });
-        console.log(jobsPending)
+  
         const jobsCancelled = await Task.find({
           _id: { $in: allTaskIdsForDate },
           taskStatus: 'Declined',
-          date: { $gte: startOfDay, $lt: endOfDay },
+          
         });
   
+        // Fetch tipping requests made on that day
         const tippingRequests = await TippingRequest.find({
           userId: driver._id,
           createdAt: { $gte: startOfDay, $lt: endOfDay },
         });
-        console.log("tippingRequests" , tippingRequests , driver._id)
-        // Calculate cash income for the day
+  
+        // Calculate income
         const totalCashIncome = jobsDone.reduce((acc, job) => {
           if (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash') {
-            return acc + job.price;
+            return acc + job.totalPrice;
           }
           return acc;
         }, 0);
   
-        // Create or update the daily sheet for the driver
+        // Upsert daily sheet
         const dailySheet = await DailySheet.findOneAndUpdate(
           { driverId: driver._id, date: formattedDate },
           {
             driverId: driver._id,
-            jobsDone: jobsDone.map((job) => job._id),
-            jobsPending: jobsPending.map((job) => job._id),
-            jobsCancelled: jobsCancelled.map((job) => job._id),
-            tippingRequests: tippingRequests.map((tip) => tip._id),
+            date: new Date(formattedDate), // ensure correct format
+            jobsDone: jobsDone.map(job => job._id),
+            jobsPending: jobsPending.map(job => job._id),
+            jobsCancelled: jobsCancelled.map(job => job._id),
+            tippingRequests: tippingRequests.map(tip => tip._id),
             income: {
               cash: totalCashIncome,
-              total: totalCashIncome,
+              total: totalCashIncome, // You can extend this if you have card income, etc.
             },
           },
           { new: true, upsert: true }
@@ -100,6 +110,7 @@ const dailySheetController = {
       });
     }
   },
+  
   
   
   
@@ -204,7 +215,13 @@ const dailySheetController = {
         date: { $gte: startDate, $lte: endDate },
       }).populate(
         'driverId jobsDone jobsPending jobsCancelled tippingRequests',
-      );
+      ).populate({
+        path: 'tippingRequests',
+        populate: {
+          path: 'tippingPlace',
+          model: 'TippingPlace',
+        },
+      });
 
       if (!dailySheet) {
         return res

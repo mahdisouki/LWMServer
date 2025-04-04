@@ -80,7 +80,7 @@ const initSocket = (server) => {
     sendOfflineNotifications(userId, socket);
 
     socket.on('joinRoom', async (roomId) => {
-      socket.join(roomId);
+      
       console.log(`User joined room: ${roomId}`);
 
       const messages = await Message.find({ roomId }).sort({ createdAt: 1 });
@@ -99,10 +99,10 @@ const initSocket = (server) => {
           truck = await Truck.findOne({ driverId: senderId });
         } else {
           console.log("is helper");
-          truck = await Truck.findOne({ helperId: senderId });
+          truck = await Truck.findById(roomId);        
         }
 
-        console.log("eeezae", truck);
+        
 
         if (!truck) {
           console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
@@ -126,7 +126,7 @@ const initSocket = (server) => {
 
         const relatedUser = await User.findById(relatedUserId);
 
-        console.log("related user", relatedUser);
+       
 
         if(!relatedUser) {
           console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
@@ -148,18 +148,19 @@ const initSocket = (server) => {
         // Emit the new message to the room
         io.to(roomId).emit('newMessage', message);
  // Get all socket connections in the room
- const roomSockets = await io.in(roomId).fetchSockets();
-        console.log("roomSockets",roomSockets)
- for (const s of roomSockets) {
-   const receiverId = s.user?.userId;
-   if (receiverId && receiverId !== senderId) {
-     emitNotificationToUser(
-       receiverId,
-       'Chat',
-       `New message from ${user.username}`
-     );
-   }
-          }        
+
+ const allUserIds = [
+  truck.driverId?.toString(),
+  truck.helperId?.toString(),
+  '67cb6810c9e768ec25d39523' // Replace with actual admin user ID if known
+];
+
+for (const receiverId of allUserIds) {
+  console.log("receiverId",receiverId)
+  if (receiverId && receiverId !== senderId) {
+    emitNotificationToUser(receiverId, 'Chat', `New message from ${user.username}`);
+  }
+}      
     // sendNotification('New Message Received', `You have a new message from ${user.username}`, relatedUser.fcmToken);
     
       } catch (error) {
