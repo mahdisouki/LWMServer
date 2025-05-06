@@ -2,6 +2,8 @@ const { User } = require('../models/User');
 const Payroll = require('../models/Payroll');
 const APIfeatures = require('../utils/APIFeatures');
 const Truck = require('../models/Truck');
+const Task = require('../models/Task');
+const DailySheet = require('../models/DailySheet');
 
 const PayrollCtrl = {
   // Log start time at the beginning of the day
@@ -98,12 +100,42 @@ const PayrollCtrl = {
       const regularSalary = regularHours * user.hourPrice;
       const overtimeSalary = overtimeHours * user.hourPrice * 1.5; // 1.5x for overtime
 
+      // Get today's tasks and expenses for the user
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
+
+      // Get all tasks for today where the user received cash
+      const tasks = await Task.find({
+        date: { $gte: today, $lt: tomorrow },
+        cashReceivedBy: user.username,
+      });
+
+      // Get all expenses for today by this user
+      const dailySheet = await DailySheet.findOne({
+        driverId: userId,
+        date: { $gte: today, $lt: tomorrow }
+      });
+
+      // Calculate total cash received from tasks
+      const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+
+      // Calculate total expenses
+      const totalExpenses = dailySheet ? dailySheet.expenses.reduce((sum, expense) => {
+        if (expense.addedBy === user.username) {
+          return sum + expense.amount;
+        }
+        return sum;
+      }, 0) : 0;
+
       payroll.endTime = end;
       payroll.totalHoursWorked = totalHoursWorked;
       payroll.regularHours = regularHours;
       payroll.extraHours = overtimeHours;
-      console.log('regularSalary', regularSalary, "overtimeSalary", overtimeSalary),
-        payroll.totalSalary = regularSalary + overtimeSalary;
+      payroll.totalSalary = regularSalary + overtimeSalary;
+      payroll.totalExpenses = totalExpenses;
+      payroll.totalCash = totalCash;
 
       // Update the user's total hours worked and total salary
       user.totalHoursWorked += totalHoursWorked;
@@ -357,9 +389,14 @@ const PayrollCtrl = {
   // Admin - Get payroll records for a specific user
   getPayrollsByUserId: async (req, res) => {
     const { userId } = req.params;
+    const { startDate, endDate } = req.query;
 
     try {
-      const payrolls = await Payroll.find({ userId });
+      const query = { userId: userId };
+    if (startDate && endDate) {
+      query.startTime = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    }
+      const payrolls = await Payroll.find(query).populate('userId', 'username email roleType truckId');
       if (!payrolls || payrolls.length === 0) {
         return res
           .status(404)
@@ -476,7 +513,127 @@ const PayrollCtrl = {
         .json({ error: `Error marking payroll as paid: ${error.message}` });
     }
   },
-
+  getTopExtraHoursThisWeek: async (req, res) => {
+    try {
+      // Calculate current week's Monday to Sunday range
+      const now = new Date();
+      const day = now.getDay(); // 0 (Sun) to 6 (Sat)
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+  
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() + diffToMonday);
+      startOfWeek.setHours(0, 0, 0, 0);
+  
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23, 59, 59, 999);
+  
+      const topStaff = await Payroll.aggregate([
+        {
+          $match: {
+            startTime: { $gte: startOfWeek, $lte: endOfWeek },
+          },
+        },
+        {
+          $group: {
+            _id: "$userId",
+            totalExtraHours: { $sum: "$extraHours" },
+          },
+        },
+        {
+          $sort: { totalExtraHours: -1 },
+        },
+        {
+          $limit: 10, // Change this if you want top 5, etc.
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "_id",
+            foreignField: "_id",
+            as: "user",
+          },
+        },
+        {
+          $unwind: "$user",
+        },
+        {
+          $project: {
+            _id: 0,
+            username: "$user.username",
+            totalExtraHours: 1,
+          },
+        },
+      ]);
+  
+      res.status(200).json({
+        message: "Top staff with extra hours this week",
+        staff: topStaff,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to retrieve top extra hours staff",
+        error: error.message,
+      });
+    }
+  },
+  getTopExtraHoursThisMonth: async (req, res) => {
+    try {
+      const now = new Date();
+  
+      // First day of the month
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      startOfMonth.setHours(0, 0, 0, 0);
+  
+      // Last day of the month
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      endOfMonth.setHours(23, 59, 59, 999);
+  
+      const topStaff = await Payroll.aggregate([
+        {
+          $match: {
+            startTime: { $gte: startOfMonth, $lte: endOfMonth },
+          },
+        },
+        {
+          $group: {
+            _id: "$userId",
+            totalExtraHours: { $sum: "$extraHours" },
+          },
+        },
+        { $sort: { totalExtraHours: -1 } },
+        { $limit: 10 },
+        {
+          $lookup: {
+            from: "users",
+            localField: "_id",
+            foreignField: "_id",
+            as: "user",
+          },
+        },
+        { $unwind: "$user" },
+        {
+          $project: {
+            _id: 0,
+            username: "$user.username",
+            totalExtraHours: 1,
+          },
+        },
+      ]);
+  
+      res.status(200).json({
+        message: "Top staff with extra hours this month",
+        staff: topStaff,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: "Failed to retrieve top extra hours staff for this month",
+        error: error.message,
+      });
+    }
+  },
+  
+  
 };
 
 module.exports = PayrollCtrl;

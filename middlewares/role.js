@@ -4,7 +4,7 @@ exports.checkRole = (role) => (req, res, next) => {
   }
 
 
-  if (!req.user.role.includes(role)) {
+  if (!req.user.roleType.includes(role)) {
     return res.status(403).json({ success: false, message: "Forbidden: Insufficient permissions" });
   }
 

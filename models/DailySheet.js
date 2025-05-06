@@ -12,7 +12,27 @@ const dailySheetSchema = new Schema({
 
   // Tipping requests for the day
   tippingRequests: [{ type: Schema.Types.ObjectId, ref: 'TippingRequest' }], 
-
+  fuelLogs: [
+    {
+      amount: Number,         // price paid for fuel (e.g., 60.00)
+      litres: Number,         // optional: litres of fuel
+      time: { type: Date, default: Date.now },  // time of refueling
+      station: String,        // optional: station name
+      addedBy: {
+        type: String,
+      },
+    }
+  ],
+  expenses: [
+    {
+      reason: { type: String, required: true },       // e.g., "Parking", "Toll"
+      amount: { type: Number, required: true },       // e.g., 12.5
+      location: { type: String },                     // Where the expense happened
+      receiptUrl: { type: String },                   // URL to uploaded receipt (e.g., from Cloudinary/S3)
+      addedBy: { type: String },                      // User name or ID
+      time: { type: Date, default: Date.now },        // Time of the expense
+    }
+  ],
   // Incomes, either from cash or other payment methods
   income: {
     cash: { type: Number, default: 0 },     // Cash amount received

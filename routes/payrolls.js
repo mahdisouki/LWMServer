@@ -30,9 +30,10 @@ router.put('/payroll/reset/:userId', isAuth, PayrollCtrl.resetPayroll);
 router.get('/payroll/admin/all',  PayrollCtrl.getAllPayrolls);
 
 // Admin - Get payroll records for a specific user by user ID
-router.get('/payroll/admin/user/:userId', isAuth, PayrollCtrl.getPayrollsByUserId);
+router.get('/payroll/admin/user/:userId',PayrollCtrl.getPayrollsByUserId);
 
-// Admin - Update a payroll record for a user by payroll ID
+// Admin - Update 
+// a payroll record for a user by payroll ID
 router.put('/payroll/admin/update/:payrollId', isAuth, PayrollCtrl.updatePayrollAdmin);
 
 // Admin - Delete a payroll record for a user by payroll ID
@@ -40,5 +41,6 @@ router.delete('/payroll/admin/delete/:payrollId', isAuth, PayrollCtrl.deletePayr
 
 // Mark payroll as paid
 router.put('/payroll/mark-paid/:payrollId', isAuth, PayrollCtrl.markPayrollAsPaid);
-
+router.get('/payroll/topExtra', PayrollCtrl.getTopExtraHoursThisWeek);
+router.get('/payroll/topExtraMonth', PayrollCtrl.getTopExtraHoursThisMonth);
 module.exports = router;

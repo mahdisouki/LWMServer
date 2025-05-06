@@ -20,6 +20,7 @@ const truckSchema = new Schema({
   name: { type: String, required: true, unique: true },
   loadCapacity:{ type:  Number},
   matricule: { type: String, required: true, unique: true },
+  
 });
 
 const Truck = mongoose.model('Truck', truckSchema);

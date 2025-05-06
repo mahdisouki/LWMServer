@@ -7,7 +7,7 @@ const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser } = require('../socket');
 const sendReviewRequestEmail = require('../utils/sendReviewEmail');
-const adminId = "677d414cd9a5d9785cdde97b"
+const adminId = "67cb6810c9e768ec25d39523"
 const driverManagement = {
   updateDriverProfile: async (req, res) => {
     const driverId = req.user._id;
@@ -28,10 +28,8 @@ const driverManagement = {
       // Find driver by ID
       const driver = await User.findById(driverId);
 
-      if (!driver || !driver.role.includes('Driver')) {
-        return res
-          .status(404)
-          .json({ message: 'Driver not found or user is not a driver' });
+      if (!driver || (!driver.role.includes('Driver') && !driver.role.includes('Helper'))) {
+        return res.status(404).json({ message: 'User not found or not authorized' });
       }
 
       // Update fields only if they are provided

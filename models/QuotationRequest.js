@@ -3,8 +3,8 @@ const { Schema } = mongoose;
 
 const quotationRequestSchema = new Schema({
   Name: {type:String , required: true }, 
-  DoorNumber: { type: String, required: true },
-  RoadName: { type: String, required: true },
+  line1: { type: String, required: true },
+  line2: { type: String, required: true },
   email: { type: String, required: true },
   phoneNumber: { type: String, required: true },
   Town: { type: String},

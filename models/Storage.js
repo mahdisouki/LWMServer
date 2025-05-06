@@ -16,6 +16,7 @@ const storageSchema = new Schema(
     },
     proofs:[{type:String}],
     notes: { type: String }, 
+    storagePlace: { type: Schema.Types.ObjectId, ref: "StoragePlace", },
   },
   { timestamps: true }
 );

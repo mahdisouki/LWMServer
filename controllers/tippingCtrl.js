@@ -271,22 +271,7 @@ const tippingController = {
 
           // Find the nearest tipping place
           const tippingPlaces = await TippingPlace.find();
-          // const nearestPlace = tippingPlaces
-          //   .map((place) => ({
-          //     ...place.toObject(),
-          //     distance: calculateDistance(driverLocation.coordinates, {
-          //       latitude: place.location.coordinates[1], // Assuming [lng, lat]
-          //       longitude: place.location.coordinates[0],
-          //     }),
-          //   }))
-          //   .sort((a, b) => a.distance - b.distance)
-          //   .shift();
-
-          // emitEvent('nearestTippingPlace', {
-          //   driverId: request.userId,
-          //   helperId,
-          //   nearestPlace,
-          // });
+          
 
           emitEvent('driverOnTheWay', {
             helperId,
@@ -349,7 +334,7 @@ const tippingController = {
 
       // Append new proof files to existing ones
       request.tippingProof = [...(request.tippingProof || []), ...proofUrls];
-
+      request.isShipped = true;
       await request.save();
 
       res.status(200).json({
