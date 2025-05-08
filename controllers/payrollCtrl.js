@@ -85,7 +85,7 @@ const PayrollCtrl = {
       //   user.payrollReset = false; // Unset the reset flag
       // }
 
-      const REGULAR_HOURS_LIMIT = 8; // 8 hours per day
+      const REGULAR_HOURS_LIMIT = user.regularHours; // 8 hours per day
 
       // Calculate regular and overtime hours
       let regularHours = totalHoursWorked;
@@ -98,7 +98,7 @@ const PayrollCtrl = {
 
       // Calculate salary: regular hours + overtime hours
       const regularSalary = regularHours * user.hourPrice;
-      const overtimeSalary = overtimeHours * user.hourPrice * 1.5; // 1.5x for overtime
+      const overtimeSalary = overtimeHours * user.extraHourPrice; // 1.5x for overtime
 
       // Get today's tasks and expenses for the user
       const today = new Date();

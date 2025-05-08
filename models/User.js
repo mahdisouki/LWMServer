@@ -57,6 +57,14 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  extraHourPrice: {
+    type: Number,
+    default: 0
+  },
+  regularHours: {
+    type: Number,
+    default: 0
+  },
   breaks: [breakSchema],
 }, { discriminatorKey: 'roleType' });
 

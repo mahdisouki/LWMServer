@@ -168,7 +168,7 @@ for (const receiverId of allUserIds) {
       }
     });
 
-    socket.on('sendLocation', async ({ driverId, coordinates }) => {
+    socket.on('sendLocation', async ({ driverId, coordinates , role }) => {
       console.log(`Updating location for driver ${driverId}:`, coordinates);
       try {
         console.log(`Updating location for driver ${driverId}:`, coordinates);

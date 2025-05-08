@@ -5,6 +5,8 @@ const { Schema } = mongoose;
 const storageSchema = new Schema(
   {
     driverId: { type: Schema.Types.ObjectId, ref: "Driver", required: true },
+    helperId: { type: Schema.Types.ObjectId, ref: "Helper", required: true },
+    truckId: { type: Schema.Types.ObjectId, ref: "Truck", required: true },
     date: { type: Date, required: true },
     type:{type:String , enum:["take" , "add"]},
     items: {

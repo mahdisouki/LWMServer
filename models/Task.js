@@ -141,5 +141,28 @@ taskSchema.pre('save', async function(next) {
   }
 });
 
+// Add post-save middleware to update DailySheet's totalCash
+taskSchema.post('save', async function() {
+  try {
+    const DailySheet = mongoose.model('DailySheet');
+    
+    // Find all daily sheets that contain this task
+    const dailySheets = await DailySheet.find({
+      $or: [
+        { jobsDone: this._id },
+        { jobsPending: this._id },
+        { jobsCancelled: this._id }
+      ]
+    });
+
+    // Update each daily sheet's totalCash
+    for (const dailySheet of dailySheets) {
+      await dailySheet.save(); // This will trigger the pre-save hook to recalculate totalCash
+    }
+  } catch (error) {
+    console.error('Error updating DailySheet totalCash:', error);
+  }
+});
+
 const Task = mongoose.model("Task", taskSchema);
 module.exports = Task;

@@ -33,18 +33,35 @@ const dailySheetSchema = new Schema({
       time: { type: Date, default: Date.now },        // Time of the expense
     }
   ],
-  // Incomes, either from cash or other payment methods
-  income: {
-    cash: { type: Number, default: 0 },     // Cash amount received
-    card: { type: Number, default: 0 },     // Card payments (if needed)
-    total: { type: Number, default: 0 },    // Total income
-  },
+  // Total cash received from all tasks paid in cash
+  totalCash: { type: Number, default: 0 }
 }, { timestamps: true });
 
-// Add any pre-save hooks or methods if needed
-dailySheetSchema.pre('save', function(next) {
-  this.income.total = this.income.cash + this.income.card;
-  next();
+// Pre-save hook to calculate total cash from all tasks
+dailySheetSchema.pre('save', async function(next) {
+  try {
+    // Combine all job IDs from different statuses
+    const allJobIds = [
+      ...(this.jobsDone || []),
+      ...(this.jobsPending || []),
+      ...(this.jobsCancelled || [])
+    ];
+
+    // Only calculate if we have any jobs
+    if (allJobIds.length > 0) {
+      const Task = mongoose.model('Task');
+      const tasks = await Task.find({
+        _id: { $in: allJobIds },
+        paymentMethod: 'cash'
+      });
+      
+      // Sum up cash received from all cash-paid tasks
+      this.totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 const DailySheet = mongoose.model('DailySheet', dailySheetSchema);

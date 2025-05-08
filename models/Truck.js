@@ -20,6 +20,7 @@ const truckSchema = new Schema({
   name: { type: String, required: true, unique: true },
   loadCapacity:{ type:  Number},
   matricule: { type: String, required: true, unique: true },
+  fuelNumber: { type: String, required: true, unique: true },
   
 });
 

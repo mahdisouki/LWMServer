@@ -1,16 +1,25 @@
 const Storage = require('../models/Storage');
 const StoragePlace = require('../models/StroragePlace');
+const Truck = require('../models/Truck');
 const storageCtrl = {
   addItems: async (req, res) => {
     try {
-      const { driverId, date, items , storagePlace  } = req.body;
+      const { driverId, date, items, storagePlace } = req.body;
       const storageDate = new Date(date);
       storageDate.setHours(0, 0, 0, 0);
+
+      // Find the truck assigned to this driver
+      const truck = await Truck.findOne({ driverId });
+      if (!truck) {
+        return res.status(404).json({ message: 'No truck assigned to this driver' });
+      }
 
       const proofUrls = req.files ? req.files.map((file) => file.path) : [];
 
       const newStorageRecord = new Storage({
         driverId,
+        helperId: truck.helperId,
+        truckId: truck._id,
         type: 'add',
         date: storageDate,
         items: {
@@ -20,7 +29,7 @@ const storageCtrl = {
           paint: items.paint || 0,
           other: items.other || 0,
         },
-        storagePlace ,
+        storagePlace,
         proofs: proofUrls,
       });
 
@@ -39,10 +48,18 @@ const storageCtrl = {
       const storageDate = new Date(date);
       storageDate.setHours(0, 0, 0, 0);
 
+      // Find the truck assigned to this driver
+      const truck = await Truck.findOne({ driverId });
+      if (!truck) {
+        return res.status(404).json({ message: 'No truck assigned to this driver' });
+      }
+
       const proofUrls = req.files ? req.files.map((file) => file.path) : [];
 
       const newStorageRecord = new Storage({
         driverId,
+        helperId: truck.helperId,
+        truckId: truck._id,
         type: 'take',
         date: storageDate,
         items: {
@@ -132,7 +149,7 @@ if (Object.keys(items).length > 0) {
 
       if (driverId) query.driverId = driverId;
       if (storagePlace) query.storagePlace = storagePlace;
-      const storagesQuery = Storage.find(query).populate('driverId storagePlace'); 
+      const storagesQuery = Storage.find(query).populate('driverId storagePlace truckId helperId'); 
       const total = await Storage.countDocuments();
 
       const skip = (page - 1) * limit;

@@ -6,6 +6,7 @@ const fs = require("fs");
 const TippingPlace = require('./models/TippingPlaces')
 const mongoose=require('mongoose')
 const { initSocket } = require("./socket");
+const { startMailListener } = require('./mailListener');
 
 
 
@@ -131,6 +132,7 @@ app.post('/optimise/:truckId' , async(req,res)=>{
   }
 })
 
+// startMailListener();
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
