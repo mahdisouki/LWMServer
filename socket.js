@@ -13,6 +13,7 @@ const userSocketMap = {}; // Stores userId:socketId mapping
 
 const admin = require('firebase-admin');
 const serviceAccount = require('./waste-app-10e23-firebase-adminsdk-3miif-a9179d3e0a.json');
+const Helper = require('./models/Helper');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -170,13 +171,18 @@ for (const receiverId of allUserIds) {
 
     socket.on('sendLocation', async ({ driverId, coordinates , role }) => {
       console.log(`Updating location for driver ${driverId}:`, coordinates);
+      console.log(role)
       try {
         console.log(`Updating location for driver ${driverId}:`, coordinates);
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
-        await Driver.findByIdAndUpdate(driverId, {
+        role==="Driver"?await Driver.findByIdAndUpdate(driverId, {
           location: { type: 'Point', coordinates: coordinatesArray },
-        });
-        const driver = await Driver.findById(driverId);
+        }) : await Helper.findByIdAndUpdate(driverId, {
+          location: { type: 'Point', coordinates: coordinatesArray },
+        })
+        
+        const driver = role=="Driver"? await Driver.findById(driverId) : await Helper.findById(driverId);
+        
         console.log('location', driver.location);
         console.log(driver.startTime, 'start time');
 
