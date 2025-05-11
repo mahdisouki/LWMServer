@@ -2,7 +2,46 @@ const Blog = require('../models/Blog');
 const Payroll = require('../models/Payroll');
 const Task = require('../models/Task');
 const APIfeatures = require('../utils/APIFeatures'); // If you're using a utility for API features
-
+const calculateIncomeForDate = async (startDate, endDate) => {
+    const stats = await Task.aggregate([
+      {
+        $match: {
+          date: { $gte: new Date(startDate), $lt: new Date(endDate) },
+          paymentStatus: { $in: ['Paid', 'Unpaid', 'partial_Paid'] }
+        }
+      },
+      {
+        $group: {
+          _id: "$paymentStatus",
+          total: { $sum: "$totalPrice" },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+  
+    let paidTotal = 0;
+    let paidTasksCount = 0;
+    let pendingTotal = 0;
+    let pendingTasksCount = 0;
+  
+    stats.forEach(stat => {
+      if (stat._id === "Paid") {
+        paidTotal = stat.total;
+        paidTasksCount = stat.count;
+      } else {
+        pendingTotal += stat.total;
+        pendingTasksCount += stat.count;
+      }
+    });
+  
+    return {
+      paidTotal,
+      paidTasksCount,
+      pendingTotal,
+      pendingTasksCount
+    };
+  };
+  
 const statsCtrl = {
     getAnnualPayrollSummary: async (req, res) => {
         try {
@@ -134,6 +173,36 @@ const statsCtrl = {
             });
         }
     },
+    getIncomeStats: async (req, res) => {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setUTCDate(today.getUTCDate() + 1);
+        const afterTomorrow = new Date(today);
+        afterTomorrow.setUTCDate(today.getUTCDate() + 2);
+      
+        const afterTomorrowDate = req.query.afterTomorrowDate
+          ? new Date(req.query.afterTomorrowDate)
+          : afterTomorrow;
+        const afterTomorrowEnd = new Date(afterTomorrowDate);
+        afterTomorrowEnd.setUTCDate(afterTomorrowDate.getUTCDate() + 1);
+      
+        try {
+          const incomeToday = await calculateIncomeForDate(today, tomorrow);
+          const incomeTomorrow = await calculateIncomeForDate(tomorrow, afterTomorrowDate);
+          const incomeAfterTomorrow = await calculateIncomeForDate(afterTomorrowDate, afterTomorrowEnd);
+      
+          res.json({
+            today: incomeToday,
+            tomorrow: incomeTomorrow,
+            afterTomorrow: incomeAfterTomorrow,
+            status: "success"
+          });
+        } catch (err) {
+          res.status(500).json({ status: "error", error: err.message });
+        }
+      }
+      
 };
 
 module.exports = statsCtrl;

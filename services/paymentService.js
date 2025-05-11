@@ -189,7 +189,7 @@ const createStripePaymentIntent = async (amount) => {
     return stripe.paymentIntents.create({
         amount: amount,
         currency: 'gbp',
-        payment_method_types: ['card'],
+        payment_method_types: ['card', 'paypal'],
     });
 };
 

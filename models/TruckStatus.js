@@ -11,7 +11,12 @@ const truckStatusSchema = new Schema({
   mileageStart: { type: Number },
   mileageEnd: { type: Number },
   conditionReport: { type: String },
-});
+},
+{
+  timestamps: true
+}
+
+);
 
 
 

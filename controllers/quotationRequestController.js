@@ -11,8 +11,8 @@ const quotationRequestController = {
             const {
                 firstName,
                 lastName,
-                DoorNumber,
-                RoadName,
+                line1,
+                line2,
                 email,
                 phoneNumber,
                 Town,
@@ -58,8 +58,8 @@ const quotationRequestController = {
     
             const newQuotation = new QuotationRequest({
                 Name: `${firstName} ${lastName}`,
-                DoorNumber,
-                RoadName,
+                line1,
+                line2,
                 Town,
                 email,
                 phoneNumber,

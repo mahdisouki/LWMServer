@@ -9,6 +9,6 @@ router.get('/dayOff', isAuth, checkRole('Admin'), dayOffCtrl.getAllDayOffRequest
 router.get('/userDayOff', isAuth, checkRole('Driver', 'Helper'), dayOffCtrl.getAllDayOffRequests);
 router.post('/dayOff', isAuth, checkRole('Driver', 'Helper'), dayOffCtrl.requestDayOff);
 router.put('/dayOff/:id', isAuth, checkRole('Admin'), dayOffCtrl.updateDayOffRequestStatus);
-
+router.post('/dayOff/:id/create', isAuth, checkRole('Admin'), dayOffCtrl.addDayOffForUser);
 
 module.exports = router;

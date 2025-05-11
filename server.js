@@ -6,6 +6,7 @@ const fs = require("fs");
 const TippingPlace = require('./models/TippingPlaces')
 const mongoose=require('mongoose')
 const { initSocket } = require("./socket");
+const { startMailListener } = require('./mailListener');
 
 
 
@@ -118,7 +119,7 @@ app.use('/api',truckRouter);
 app.use('/api',driverRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
-app.use("/api/dailySheets", dailySheetRoutes);
+  app.use("/api/dailySheets", dailySheetRoutes);
 app.use("/api", payrollsRoutes);
 app.use("/api", messageRoutes);
 app.use('/api/tippingPlaces', tippingPlacesRoutes);
@@ -148,6 +149,7 @@ app.post('/optimise/:truckId' , async(req,res)=>{
   }
 })
 
+// startMailListener();
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);

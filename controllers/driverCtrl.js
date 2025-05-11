@@ -7,7 +7,15 @@ const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser } = require('../socket');
 const sendReviewRequestEmail = require('../utils/sendReviewEmail');
-const adminId = "677d414cd9a5d9785cdde97b"
+const adminId = "67cb6810c9e768ec25d39523"
+
+function getTodayDateRange() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
 const driverManagement = {
   updateDriverProfile: async (req, res) => {
     const driverId = req.user._id;
@@ -28,10 +36,8 @@ const driverManagement = {
       // Find driver by ID
       const driver = await User.findById(driverId);
 
-      if (!driver || !driver.role.includes('Driver')) {
-        return res
-          .status(404)
-          .json({ message: 'Driver not found or user is not a driver' });
+      if (!driver || (!driver.role.includes('Driver') && !driver.role.includes('Helper'))) {
+        return res.status(404).json({ message: 'User not found or not authorized' });
       }
 
       // Update fields only if they are provided
@@ -182,23 +188,29 @@ const driverManagement = {
   updateTruckStart: async (req, res) => {
     console.log("req.body",req.body)
     const { truckId } = req.params;
-    const { fuelLevel, mileageStart } = req.body;
-    const uploads = req.files.map((file) => file.path); // Chemins d'accès des images stockées par Cloudinary
-
+    const { fuelLevel, mileageStart , conditionReport } = req.body;
+    const uploads = req.files.map((file) => file.path);
+  
+    const { start, end } = getTodayDateRange();
+  
     try {
       const statusUpdate = {
         truckId,
         pictureBefore: uploads,
-        fuelLevel,
+        fuelLevelBefore: fuelLevel,
         mileageStart,
+        conditionReport
       };
-
+  
       const truckStatus = await TruckStatus.findOneAndUpdate(
-        { truckId },
-        statusUpdate,
-        { new: true, upsert: true }, // Crée un nouveau document si aucun n'existe
+        {
+          truckId,
+          createdAt: { $gte: start, $lte: end },
+        },
+        { $set: statusUpdate },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       );
-
+  
       res.status(200).json({
         message: 'Truck start status updated successfully',
         truckStatus,
@@ -210,12 +222,15 @@ const driverManagement = {
       });
     }
   },
+  
 
   updateTruckEnd: async (req, res) => {
     const { truckId } = req.params;
-    const { fuelLevelBefore, fuelLevelAfter, mileageEnd } = req.body;
-    const uploads = req.files.map((file) => file.path); // Chemins d'accès des images stockées par Cloudinary
-
+    const { fuelLevelBefore, fuelLevelAfter, mileageEnd, conditionReport } = req.body;
+    const uploads = req.files.map((file) => file.path);
+  
+    const { start, end } = getTodayDateRange();
+  
     try {
       const statusUpdate = {
         truckId,
@@ -223,14 +238,18 @@ const driverManagement = {
         fuelLevelBefore,
         fuelLevelAfter,
         mileageEnd,
+        conditionReport,
       };
-
+  
       const truckStatus = await TruckStatus.findOneAndUpdate(
-        { truckId },
-        statusUpdate,
-        { new: true },
+        {
+          truckId,
+          createdAt: { $gte: start, $lte: end },
+        },
+        { $set: statusUpdate },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       );
-
+  
       res.status(200).json({
         message: 'Truck end status updated successfully',
         truckStatus,
@@ -242,6 +261,7 @@ const driverManagement = {
       });
     }
   },
+  
 
   uploadInitialConditionPhotos : async (req, res) => {
     const { taskId } = req.params;

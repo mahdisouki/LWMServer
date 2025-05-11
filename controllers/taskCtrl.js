@@ -39,12 +39,15 @@ const taskCtrl = {
       const {
         firstName,
         lastName,
+        bussinessName,
         phoneNumber,
         phoneNumber2,
         email,
         available,
         location,
         date,
+        createdBy,
+        createdByType,
         billingAddress,
         collectionAddress,
         objects, // Custom items
@@ -165,17 +168,21 @@ const taskCtrl = {
 
       console.log("🚀 Final Backend Price:", totalPrice.toFixed(2));
 
+      
 
       // Create the task
       const newTask = new Task({
         firstName,
         lastName,
+        bussinessName,
         phoneNumber,
         phoneNumber2,
         email,
         available,
         location,
         date: taskDate,
+        createdBy,
+        createdByType,
         paymentStatus,
         billingAddress,
         collectionAddress,
@@ -187,7 +194,7 @@ const taskCtrl = {
       });
 
       await newTask.save();
-      emitNotificationToUser('677d414cd9a5d9785cdde97b', 'Orders', "YOU have a new task created!!!")
+      emitNotificationToUser('67cb6810c9e768ec25d39523', 'Orders', "YOU have a new task created!!!")
       res.status(201).json({
         message: 'Task created successfully',
         task: newTask,
@@ -201,7 +208,7 @@ const taskCtrl = {
     const { taskId } = req.params;
 
     try {
-      const task = await Task.findById(taskId);
+      const task = await Task.findById(taskId).populate('createdBy', 'email name'); // optional fields;
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -218,10 +225,9 @@ const taskCtrl = {
       const { data: tasks, meta } = await paginateQuery(
         Task,
         req.query,
-        ['paymentStatus', 'date'], // filters
-        ['firstName', 'lastName', 'email', 'username', 'phoneNumber', 'postcode'] // searchable fields
+        ['paymentStatus', 'date', 'orderNumber'], // filters
+        ['firstName', 'lastName', 'email', 'username', 'phoneNumber', 'postcode', 'orderNumber'] // searchable fields
       );
-
 
       const tasksWithTrucks = await Promise.all(
         tasks.map(async (task) => {
@@ -509,16 +515,18 @@ const taskCtrl = {
 
   updateTask: async (req, res) => {
     const { taskId } = req.params;
-
+    console.log(req.body.taskDate)
     try {
       // Retrieve the existing task
       const existingTask = await Task.findById(taskId).populate("items.standardItemId");
       if (!existingTask) {
         return res.status(404).json({ message: 'Task not found' });
       }
-
+      req.body.taskDate = new Date(req.body.taskDate)
       let updateData = { ...req.body };
-
+      if (req.body['paidAmount[method]']) {
+        existingTask.paidAmount.method = req.body['paidAmount[method]'];
+      }
       // Handle media deletions
       if (req.body.deletedMedia && Array.isArray(req.body.deletedMedia) && req.body.deletedMedia.length > 0) {
         existingTask.clientObjectPhotos = existingTask.clientObjectPhotos.filter(
