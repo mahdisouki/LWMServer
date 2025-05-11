@@ -180,6 +180,7 @@ const driverManagement = {
   
 
   updateTruckStart: async (req, res) => {
+    console.log("req.body",req.body)
     const { truckId } = req.params;
     const { fuelLevel, mileageStart } = req.body;
     const uploads = req.files.map((file) => file.path); // Chemins d'accès des images stockées par Cloudinary

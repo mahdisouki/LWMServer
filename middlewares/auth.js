@@ -3,6 +3,7 @@ const { User } = require('../models/User');
 
 
 exports.isAuth = async (req, res, next) => {
+  console.log("Authorization middleware triggered");
   if (req.headers && req.headers.authorization) {
     const token = req.headers.authorization.split(' ')[1]; 
 

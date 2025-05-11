@@ -22,12 +22,29 @@ const path = require("path");
 require('./jobs/dailySheetCron'); 
 require('./jobs/AssignedStaffCron');
 const setupSwagger = require('./config/swaggerConfig'); 
-// Apply raw body for Stripe webhook first
-
-
 
 const corsOptions = {
-  origin: ['https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5174'  ,'http://localhost:3001'], 
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      'https://dirverapp.netlify.app',
+      'https://lwmadmin.netlify.app',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:3001',
+      'http://localhost:8083',
+      'https://4185-197-240-249-27.ngrok-free.app',
+      'https://localhost:5173',
+    ];
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
   optionsSuccessStatus: 200 
 };
 

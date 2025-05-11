@@ -122,7 +122,8 @@ const tippingController = {
   getAllTippingRequestsForUser: async (req, res) => {
     const userId = req.user._id;
     try {
-      const requests = await TippingRequest.find({ userId });
+      const requests = await TippingRequest.find({ userId })
+      .populate('tippingPlace');
       res.status(200).json({ requests });
     } catch (error) {
       res.status(500).json({

@@ -44,8 +44,20 @@ admin.initializeApp({
 const initSocket = (server) => {
   io = socketIo(server, {
     cors: {
-      origin: ['https://dirverapp.netlify.app' , 'https://lwmadmin.netlify.app', 'https://localhost:5173' ,'http://localhost:5174'  ,'http://localhost:3001'], 
-
+      origin: [
+        'https://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:3001',
+        'http://localhost:5173',
+        'https://localhost:5174',
+        'http://localhost:8081',
+        'https://dirverapp.netlify.app', 
+        'https://lwmadmin.netlify.app',
+        'https://londonwastemanagement.netlify.app',
+        'https://4185-197-240-249-27.ngrok-free.app',
+        'https://localhost:5173'
+        
+      ],
       methods: ['GET', 'POST'],
       credentials: true,
       allowedHeaders: ['Authorization'],
