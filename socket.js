@@ -92,6 +92,11 @@ const initSocket = (server) => {
     console.log(userSocketMap)
     sendOfflineNotifications(userId, socket);
 
+     socket.on('disconnect', (reason) => {
+        console.log(`🔌 User disconnected: ${userId}. Reason: ${reason}`);
+        delete userSocketMap[socket.userId];
+      });
+
     socket.on('joinRoom', async (roomId) => {
       
       console.log(`User joined room: ${roomId}`);
@@ -184,8 +189,9 @@ for (const receiverId of allUserIds) {
     socket.on('sendLocation', async ({ driverId, coordinates , role }) => {
       console.log(`Updating location for driver ${driverId}:`, coordinates);
       console.log(role)
-      try {
+      try { 
         console.log(`Updating location for driver ${driverId}:`, coordinates);
+        console.log(role) 
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
         role==="Driver"?await Driver.findByIdAndUpdate(driverId, {
           location: { type: 'Point', coordinates: coordinatesArray },
@@ -195,7 +201,7 @@ for (const receiverId of allUserIds) {
         
         const driver = role=="Driver"? await Driver.findById(driverId) : await Helper.findById(driverId);
         
-        console.log('location', driver.location);
+        console.log('location', driver);
         console.log(driver.startTime, 'start time');
 
         if (driver) {

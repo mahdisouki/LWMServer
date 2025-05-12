@@ -6,7 +6,7 @@ const fs = require("fs");
 const TippingPlace = require('./models/TippingPlaces')
 const mongoose=require('mongoose')
 const { initSocket } = require("./socket");
-const { startMailListener } = require('./mailListener');
+// const { startMailListener } = require('./mailListener');
 
 
 

@@ -7,7 +7,7 @@ const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser } = require('../socket');
 const sendReviewRequestEmail = require('../utils/sendReviewEmail');
-const adminId = "67cb6810c9e768ec25d39523"
+const adminId = '67cb6810c9e768ec25d39523';
 
 function getTodayDateRange() {
   const start = new Date();
@@ -36,8 +36,13 @@ const driverManagement = {
       // Find driver by ID
       const driver = await User.findById(driverId);
 
-      if (!driver || (!driver.role.includes('Driver') && !driver.role.includes('Helper'))) {
-        return res.status(404).json({ message: 'User not found or not authorized' });
+      if (
+        !driver ||
+        (!driver.role.includes('Driver') && !driver.role.includes('Helper'))
+      ) {
+        return res
+          .status(404)
+          .json({ message: 'User not found or not authorized' });
       }
 
       // Update fields only if they are provided
@@ -57,9 +62,12 @@ const driverManagement = {
       // Update files if new files are uploaded
       if (req.files) {
         if (req.files.picture) driver.picture = req.files.picture[0].path;
-        if (req.files.DriverLicense) driver.DriverLicense = req.files.DriverLicense[0].path;
-        if (req.files.addressProof) driver.addressProof = req.files.addressProof[0].path;
-        if (req.files.NatInsurance) driver.NatInsurance = req.files.NatInsurance[0].path;
+        if (req.files.DriverLicense)
+          driver.DriverLicense = req.files.DriverLicense[0].path;
+        if (req.files.addressProof)
+          driver.addressProof = req.files.addressProof[0].path;
+        if (req.files.NatInsurance)
+          driver.NatInsurance = req.files.NatInsurance[0].path;
       }
 
       // Hash and update password if provided
@@ -141,76 +149,75 @@ const driverManagement = {
   },
 
   getTasksForDriver: async (req, res) => {
-    const driverId = req.user._id; // ID of the driver from the authenticated request
-  
+    const driverId = req.user._id;
+    const { page = 1, limit = 10 } = req.query;
+    const parsedPage = parseInt(page, 10);
+    const parsedLimit = parseInt(limit, 10);
+    
     try {
-      // Determine today's date range
       const startOfDay = new Date();
-      console.log("startOfDayB:",startOfDay)
-      // startOfDay.setHours(0, 0, 0, 0);
-      console.log(startOfDay)
+      startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date();
       endOfDay.setHours(23, 59, 59, 999);
-      console.log(endOfDay)
-      const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
-      console.log("formatted date:",formattedDate)
-      // Find the truck assigned to the driver
+      const formattedDate = startOfDay.toISOString().split('T')[0];
+
       const truck = await Truck.findOne({ driverId });
-  
       if (!truck) {
         return res
           .status(404)
-          .json({ message: 'No truck found for the given driver.' });
+          .json({ message: 'No truck found for the driver.' });
       }
-  
-      // Get the task IDs for today's date from `tasksByDate`
-      const taskIdsForToday = truck.tasks.get(formattedDate);
-      console.log("taskIdsForToday:",taskIdsForToday)
-      // Fetch the tasks for the current day
-      // const tasks = await Task.find({
-      //   _id: { $in: taskIdsForToday }
-      // });
-         const tasks = await Task.find();
-  
-      res
-        .status(200)
-        .json({ message: 'Tasks for today retrieved successfully', tasks });
-    } catch (error) {
-      console.error('Error retrieving tasks for driver:', error);
-      res.status(500).json({
-        message: 'Failed to retrieve tasks',
-        error: error.message || 'Unknown error occurred',
+
+      const taskIdsForToday = await Task.find();
+      const totalTasks = taskIdsForToday.length;
+      const totalPages = Math.ceil(totalTasks / parsedLimit);
+      const startIndex = (parsedPage - 1) * parsedLimit;
+      const endIndex = startIndex + parsedLimit;
+      const paginatedTaskIds = taskIdsForToday.slice(startIndex, endIndex);
+
+      const tasks = await Task.find({ _id: { $in: paginatedTaskIds } });
+
+      res.status(200).json({
+        message: 'Tasks retrieved successfully',
+        tasks,
+        totalTasks,
+        totalPages,
+        currentPage: parsedPage,
       });
+    } catch (error) {
+      console.error('Error retrieving tasks:', error);
+      res
+        .status(500)
+        .json({ message: 'Failed to retrieve tasks', error: error.message });
     }
   },
-  
 
   updateTruckStart: async (req, res) => {
-    console.log("req.body",req.body)
+    console.log('req.body', req.body);
     const { truckId } = req.params;
-    const { fuelLevel, mileageStart , conditionReport } = req.body;
+    const { fuelLevel, mileageStart, conditionReport } = req.body;
     const uploads = req.files.map((file) => file.path);
-  
+
     const { start, end } = getTodayDateRange();
-  
+
     try {
       const statusUpdate = {
         truckId,
         pictureBefore: uploads,
         fuelLevelBefore: fuelLevel,
         mileageStart,
-        conditionReport
+        conditionReport,
       };
-  
+
       const truckStatus = await TruckStatus.findOneAndUpdate(
         {
           truckId,
           createdAt: { $gte: start, $lte: end },
         },
         { $set: statusUpdate },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
+        { new: true, upsert: true, setDefaultsOnInsert: true },
       );
-  
+
       res.status(200).json({
         message: 'Truck start status updated successfully',
         truckStatus,
@@ -222,15 +229,15 @@ const driverManagement = {
       });
     }
   },
-  
 
   updateTruckEnd: async (req, res) => {
     const { truckId } = req.params;
-    const { fuelLevelBefore, fuelLevelAfter, mileageEnd, conditionReport } = req.body;
+    const { fuelLevelBefore, fuelLevelAfter, mileageEnd, conditionReport } =
+      req.body;
     const uploads = req.files.map((file) => file.path);
-  
+
     const { start, end } = getTodayDateRange();
-  
+
     try {
       const statusUpdate = {
         truckId,
@@ -240,16 +247,16 @@ const driverManagement = {
         mileageEnd,
         conditionReport,
       };
-  
+
       const truckStatus = await TruckStatus.findOneAndUpdate(
         {
           truckId,
           createdAt: { $gte: start, $lte: end },
         },
         { $set: statusUpdate },
-        { new: true, upsert: true, setDefaultsOnInsert: true }
+        { new: true, upsert: true, setDefaultsOnInsert: true },
       );
-  
+
       res.status(200).json({
         message: 'Truck end status updated successfully',
         truckStatus,
@@ -261,91 +268,108 @@ const driverManagement = {
       });
     }
   },
-  
 
-  uploadInitialConditionPhotos : async (req, res) => {
+  uploadInitialConditionPhotos: async (req, res) => {
     const { taskId } = req.params;
     const description = req.body.description;
     const uploads = req.files.map((file) => file.path);
 
     try {
-        // Fetch the truck containing the task
-        const truck = await Truck.findOne().populate('tasks');
-        if (!truck) {
-            return res.status(404).json({ message: 'No truck found for the given task.' });
+      // Fetch the truck containing the task
+      const truck = await Truck.findOne().populate('tasks');
+      if (!truck) {
+        return res
+          .status(404)
+          .json({ message: 'No truck found for the given task.' });
+      }
+
+      // Find the date key that contains the task
+      let taskDate = null;
+
+      for (const [date, tasks] of truck.tasks.entries()) {
+        if (tasks.some((task) => task.equals(taskId))) {
+          taskDate = date;
+          break;
         }
+      }
 
-        // Find the date key that contains the task
-        let taskDate = null;
+      if (!taskDate) {
+        return res
+          .status(404)
+          .json({ message: 'Task not found in the truck.' });
+      }
 
-        for (const [date, tasks] of truck.tasks.entries()) {
-            if (tasks.some(task => task.equals(taskId))) {
-                taskDate = date;
-                break;
-            }
-        }
+      // Get the current job (task)
+      const currentTask = await Task.findById(taskId);
+      if (!currentTask) {
+        return res.status(404).json({ message: 'Current task not found.' });
+      }
 
-        if (!taskDate) {
-            return res.status(404).json({ message: 'Task not found in the truck.' });
-        }
+      // Find the index of the current task in the tasks array for the date
+      const currentTaskIndex = truck.tasks
+        .get(taskDate)
+        .findIndex((task) => task.equals(taskId));
+      let nextJobAddress = null;
 
-        // Get the current job (task)
-        const currentTask = await Task.findById(taskId);
-        if (!currentTask) {
-            return res.status(404).json({ message: 'Current task not found.' });
-        }
+      // Determine the address of the next job (if any)
+      if (
+        currentTaskIndex >= 0 &&
+        currentTaskIndex < truck.tasks.get(taskDate).length - 1
+      ) {
+        const nextTask = await Task.findById(
+          truck.tasks.get(taskDate)[currentTaskIndex + 1],
+        );
+        nextJobAddress =
+          nextTask && nextTask.location ? nextTask.location.address : null;
+      }
 
-        // Find the index of the current task in the tasks array for the date
-        const currentTaskIndex = truck.tasks.get(taskDate).findIndex(task => task.equals(taskId));
-        let nextJobAddress = null;
-        
-        // Determine the address of the next job (if any)
-        if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.get(taskDate).length - 1) {
-            const nextTask = await Task.findById(truck.tasks.get(taskDate)[currentTaskIndex + 1]);
-            nextJobAddress = nextTask && nextTask.location ? nextTask.location.address : null;
-        }
+      // Update the task with initial condition photos
+      const taskUpdate = {
+        $push: {
+          initialConditionPhotos: {
+            items: uploads,
+            description: description,
+          },
+        },
+      };
 
-        // Update the task with initial condition photos
-        const taskUpdate = {
-            $push: {
-                initialConditionPhotos: {
-                    items: uploads,
-                    description: description,
-                },
-            },
+      const updatedTask = await Task.findByIdAndUpdate(taskId, taskUpdate, {
+        new: true,
+      });
+      if (!updatedTask) {
+        return res.status(404).json({
+          message: 'Failed to update the task with initial condition photos.',
+        });
+      }
+
+      // Update the driver's current and next job addresses
+      const driverId = truck.driverId;
+      if (driverId) {
+        const driverUpdate = {
+          currentJobAddress: currentTask.location
+            ? currentTask.location.address
+            : null,
+          nextJobAddress: nextJobAddress,
         };
 
-        const updatedTask = await Task.findByIdAndUpdate(taskId, taskUpdate, { new: true });
-        if (!updatedTask) {
-            return res.status(404).json({ message: 'Failed to update the task with initial condition photos.' });
-        }
+        await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true });
+      } else {
+        console.warn('No driver assigned to this truck.');
+      }
 
-        // Update the driver's current and next job addresses
-        const driverId = truck.driverId;
-        if (driverId) {
-            const driverUpdate = {
-                currentJobAddress: currentTask.location ? currentTask.location.address : null,
-                nextJobAddress: nextJobAddress,
-            };
-
-            await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true });
-        } else {
-            console.warn('No driver assigned to this truck.');
-        }
-
-        // Send response
-        res.status(200).json({
-            message: 'Initial condition photos uploaded successfully',
-            task: updatedTask,
-        });
+      // Send response
+      res.status(200).json({
+        message: 'Initial condition photos uploaded successfully',
+        task: updatedTask,
+      });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            message: 'Failed to upload initial condition photos',
-            error: error.message,
-        });
+      console.error(error);
+      res.status(500).json({
+        message: 'Failed to upload initial condition photos',
+        error: error.message,
+      });
     }
-},
+  },
 
   intermediateConditionPhotos: async (req, res) => {
     const { taskId } = req.params;
@@ -513,28 +537,30 @@ const driverManagement = {
         return res.status(404).json({ message: 'Task not found' });
       }
       // Prevent multiple feedback submissions
-    if (task.clientFeedback || task.clientFeedbackScale) {
-      return res.status(400).json({ message: 'Feedback has already been submitted for this task.' });
-    }
+      if (task.clientFeedback || task.clientFeedbackScale) {
+        return res.status(400).json({
+          message: 'Feedback has already been submitted for this task.',
+        });
+      }
       // Update task with the client satisfaction rating and feedback
       task.clientFeedback = clientFeedback;
       task.clientFeedbackScale = clientFeedbackScale;
-      task.taskStatus = "Completed"
+      task.taskStatus = 'Completed';
       // Check if this is the first task completed by this client (using email)
-    const previousCompletedTasks = await Task.find({
-      email: task.email,
-      taskStatus: "Completed",
-      _id: { $ne: task._id } // Exclude current task
-    });
-
-    // If no previous completed tasks, it's a new client — send review email
-    if (previousCompletedTasks.length === 0) {
-      await sendReviewRequestEmail({
+      const previousCompletedTasks = await Task.find({
         email: task.email,
-        firstName: task.firstName,
-        orderId: task._id,
+        taskStatus: 'Completed',
+        _id: { $ne: task._id }, // Exclude current task
       });
-    }
+
+      // If no previous completed tasks, it's a new client — send review email
+      if (previousCompletedTasks.length === 0) {
+        await sendReviewRequestEmail({
+          email: task.email,
+          firstName: task.firstName,
+          orderId: task._id,
+        });
+      }
       await task.save();
       res.status(200).json({ message: 'Task rated successfully', task });
     } catch (error) {
@@ -598,10 +624,14 @@ const driverManagement = {
       // Create a new break entry
       const newBreak = { startTime: new Date() };
       driver.breaks.push(newBreak);
-     driver.onBreak = true;
+      driver.onBreak = true;
       driver.breakStartTime = Date.now();
       await driver.save();
-      emitNotificationToUser(adminId , 'Driver_Tracking',`a driver ${driver.username} is taking a break`)
+      emitNotificationToUser(
+        adminId,
+        'Driver_Tracking',
+        `a driver ${driver.username} is taking a break`,
+      );
       return res.status(200).json({ message: 'Break started', newBreak });
     } catch (error) {
       console.error(error);
@@ -631,7 +661,7 @@ const driverManagement = {
       lastBreak.duration = Math.round(
         (lastBreak.endTime - lastBreak.startTime) / (1000 * 60),
       );
-     driver.onBreak = false;
+      driver.onBreak = false;
       await driver.save();
 
       return res.status(200).json({ message: 'Break ended', lastBreak });
