@@ -181,5 +181,7 @@ router.get('/webhooks/payment/cancel', (req, res) => {
     res.send('<h1>Paiement annulé. Vous pouvez réessayer si vous le souhaitez.</h1>');
 });
 
+router.post('/task/:taskId/send-booking-confirmation', taskCtrl.sendBookingConfirmation);
+router.post('/task/:taskId/send-invoice', taskCtrl.sendInvoice);
 
 module.exports = router;

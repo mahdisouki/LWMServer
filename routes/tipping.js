@@ -18,4 +18,5 @@ router.get('/tipping/:id', isAuth, checkRole('Admin'), tippingCtrl.getTippingReq
 router.delete('/tipping/:id', isAuth, checkRole('Admin'), tippingCtrl.deleteTippingRequest);
 router.put('/tipping/:id/validate', isAuth, checkRole('Admin'), tippingCtrl.updateTippingRequestStatus);
 router.get('/tipping/getLocations/:tippingRequestId', tippingCtrl.getTippingRequestLocations)
+router.put('/tipping/:id', isAuth, checkRole('Admin'), tippingCtrl.updateTippingRequest);
 module.exports = router;

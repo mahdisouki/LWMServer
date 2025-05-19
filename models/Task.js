@@ -2,11 +2,12 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
 const Counter = require('./Counter');
+const DailySheet = require('./DailySheet');
 
 const taskSchema = new Schema(
   {
     orderNumber: { type: String, unique: true },
-    clientId: { type: Schema.Types.ObjectId, ref: "Client", required: false },
+    // clientId: { type: Schema.Types.ObjectId, ref: "Client", required: false },
     truckId: { type: Schema.Types.ObjectId, ref: "Truck", required: false },
     firstName: { type: String, required: true },
     billingAddress: { type: String },
@@ -29,6 +30,7 @@ const taskSchema = new Schema(
         },
         quantity: { type: Number, default: 0 },
         price: { type: Number },
+        customPrice: { type: Number },
       },
     ],
     initialConditionPhotos: [
@@ -85,13 +87,13 @@ const taskSchema = new Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["partial_Paid","Paid","partial_Refunded", "refunded", "Unpaid"],
+      enum: ["partial_Paid","Paid","partial_Refunded", "refunded", "Unpaid" ,"Failed"],
       default: "Unpaid",
     },
     taskStatus: {
       type: String,
-      enum: ["Declined", "Processing", "Completed"],
-      default: "Processing",
+      enum: ["Not_Completed", "Completed" ,"Cancelled" ,"On_Hold" ,"Processing"],
+      default: "Not_Completed",
     },
     paymentMethod: {
       type: String,
@@ -102,11 +104,27 @@ const taskSchema = new Schema(
       amount: { type: Number},
       method: {
       type: String,
-      enum: ["BankTransfer", "payment_link", "online"],
-    }
+      enum: ["BankTransfer", "payment_link", "online" , "cash"],
     },
-    remainingAmount: { type: Number },
-
+    status: {
+      type: String,
+      enum: ["Paid", "Not_Paid"],
+      default: "Not_Paid",
+    },
+    },
+    remainingAmount: {
+      amount: { type: Number },
+      method: {
+        type: String,
+        enum: ["BankTransfer", "payment_link", "online" , "cash"],
+      },
+      status: {
+        type: String,
+        enum: ["Paid", "Not_Paid"],
+        default: "Not_Paid",
+      },
+    },
+    customDiscountPercent: { type: Number, default: 0 },
     email: { type: String },
     additionalNotes: { type: String, required: false },
     itemDescription: { type: String, required: false },
@@ -117,6 +135,8 @@ const taskSchema = new Schema(
     timeSpent: { type: Number },
     cashReceived: { type: Number },
     cashReceivedBy: { type: String },
+    repeatCustomer: { type: Number, default: 0 },
+    reviewRequestSent: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -141,26 +161,99 @@ taskSchema.pre('save', async function(next) {
   }
 });
 
-// Add post-save middleware to update DailySheet's totalCash
-taskSchema.post('save', async function() {
+// Post-save hook to update DailySheet when task is assigned to a truck
+taskSchema.post('save', async function(doc) {
   try {
-    const DailySheet = mongoose.model('DailySheet');
-    
-    // Find all daily sheets that contain this task
-    const dailySheets = await DailySheet.find({
-      $or: [
-        { jobsDone: this._id },
-        { jobsPending: this._id },
-        { jobsCancelled: this._id }
-      ]
+    // Only proceed if the task has a truckId
+    if (!doc.truckId) return;
+
+    // Get the truck to find the driver
+    const Truck = mongoose.model('Truck');
+    const truck = await Truck.findById(doc.truckId);
+    if (!truck || !truck.driverId) return;
+
+    // Get the task date in YYYY-MM-DD format
+    const taskDate = doc.date.toISOString().split('T')[0];
+
+    // Find or create a DailySheet for this driver and date
+    let dailySheet = await DailySheet.findOne({
+      driverId: truck.driverId,
+      date: {
+        $gte: new Date(taskDate + 'T00:00:00.000Z'),
+        $lt: new Date(taskDate + 'T23:59:59.999Z')
+      }
     });
 
-    // Update each daily sheet's totalCash
-    for (const dailySheet of dailySheets) {
-      await dailySheet.save(); // This will trigger the pre-save hook to recalculate totalCash
+    if (!dailySheet) {
+      dailySheet = new DailySheet({
+        driverId: truck.driverId,
+        date: doc.date,
+        jobsPending: [doc._id]
+      });
+    } else {
+      // Add task to jobsPending if not already in any of the job arrays
+      if (!dailySheet.jobsDone.includes(doc._id) && 
+          !dailySheet.jobsPending.includes(doc._id) && 
+          !dailySheet.jobsCancelled.includes(doc._id)) {
+        dailySheet.jobsPending.push(doc._id);
+      }
     }
+
+    await dailySheet.save();
   } catch (error) {
-    console.error('Error updating DailySheet totalCash:', error);
+    console.error('Error updating DailySheet:', error);
+  }
+});
+
+// Pre-save hook to handle task status changes
+taskSchema.pre('save', async function(next) {
+  try {
+    // Only proceed if taskStatus is being modified
+    if (!this.isModified('taskStatus')) {
+      return next();
+    }
+
+    // Get the truck to find the driver
+    const Truck = mongoose.model('Truck');
+    const truck = await Truck.findById(this.truckId);
+    if (!truck || !truck.driverId) return next();
+
+    // Get the task date in YYYY-MM-DD format
+    const taskDate = this.date.toISOString().split('T')[0];
+
+    // Find the DailySheet for this driver and date
+    const dailySheet = await DailySheet.findOne({
+      driverId: truck.driverId,
+      date: {
+        $gte: new Date(taskDate + 'T00:00:00.000Z'),
+        $lt: new Date(taskDate + 'T23:59:59.999Z')
+      }
+    });
+
+    if (dailySheet) {
+      // Remove task from all job arrays
+      dailySheet.jobsDone = dailySheet.jobsDone.filter(id => !id.equals(this._id));
+      dailySheet.jobsPending = dailySheet.jobsPending.filter(id => !id.equals(this._id));
+      dailySheet.jobsCancelled = dailySheet.jobsCancelled.filter(id => !id.equals(this._id));
+
+      // Add task to appropriate array based on new status
+      switch (this.taskStatus) {
+        case 'Completed':
+          dailySheet.jobsDone.push(this._id);
+          break;
+        case 'Processing':
+          dailySheet.jobsPending.push(this._id);
+          break;
+        case 'Declined':
+          dailySheet.jobsCancelled.push(this._id);
+          break;
+      }
+
+      await dailySheet.save();
+    }
+    next();
+  } catch (error) {
+    next(error);
   }
 });
 

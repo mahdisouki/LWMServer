@@ -21,6 +21,6 @@ router.delete('/deassignDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl
 router.get('/getTasks/:id', isAuth, staffCtrl.getTasksForDriver);
 // update admin profile
 router.put('/admin/updateProfile', isAuth, checkRole('Admin'), multer.single('picture'), staffCtrl.updateAdminProfile);
-router.post('/optimise/:truckId' ,isAuth , checkRole("Admin") , staffCtrl.optimizeTasks )
+router.post('/optimise/:truckId' , staffCtrl.optimizeTasks )
 
 module.exports = router;

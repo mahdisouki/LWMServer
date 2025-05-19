@@ -7,7 +7,7 @@ const calculateIncomeForDate = async (startDate, endDate) => {
       {
         $match: {
           date: { $gte: new Date(startDate), $lt: new Date(endDate) },
-          paymentStatus: { $in: ['Paid', 'Unpaid', 'partial_Paid'] }
+          paymentStatus: { $in: ['Paid', 'Unpaid', 'partial_Paid' , 'cancelled' , 'On_Hold' , 'Failed'] }
         }
       },
       {
@@ -23,12 +23,13 @@ const calculateIncomeForDate = async (startDate, endDate) => {
     let paidTasksCount = 0;
     let pendingTotal = 0;
     let pendingTasksCount = 0;
-  
+    console.log(stats)
     stats.forEach(stat => {
-      if (stat._id === "Paid") {
-        paidTotal = stat.total;
-        paidTasksCount = stat.count;
-      } else {
+      if (stat._id === "Paid" || stat._id === "partial_Paid" || stat._id === "Unpaid"  || stat._id === "On_Hold") {
+        paidTotal += stat.total;
+        paidTasksCount += stat.count;
+      }
+       if (stat._id === "Unpaid" || stat._id === "cancelled" || stat._id === "Failed") {
         pendingTotal += stat.total;
         pendingTasksCount += stat.count;
       }

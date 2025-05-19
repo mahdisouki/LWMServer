@@ -24,6 +24,8 @@ const standardItemCtrl = {
         price,
         category,
         description,
+        insidePrice,
+        insideWithDismantlingPrice,
       });
       await newStandardItem.save();
       res.status(201).json(newStandardItem);
@@ -254,7 +256,7 @@ const standardItemCtrl = {
 
   updateStandardItem: async (req, res) => {
     const { id } = req.params;
-    const { itemName, price, category, description } = req.body; // Inclure description
+    const { itemName, price, category, description , insidePrice , insideWithDismantlingPrice } = req.body; // Inclure description
 
     try {
       // Récupérer d'abord l'item existant pour conserver l'image si aucune nouvelle n'est fournie
@@ -269,7 +271,7 @@ const standardItemCtrl = {
       // Mise à jour de l'item avec les nouvelles valeurs, en conservant l'image existante si nécessaire
       const updatedItem = await StandardItem.findByIdAndUpdate(
         id,
-        { itemName, price, category, image, description },
+        { itemName, price, category, image, description , insidePrice , insideWithDismantlingPrice },
         { new: true },
       );
 

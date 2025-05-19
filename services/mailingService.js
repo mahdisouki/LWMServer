@@ -40,104 +40,112 @@ const imapConfig = {
   },
 };
 
-
-
 const fetchEmails = () => {
+  console.log(process.env.EMAIL_USER, process.env.EMAIL_PASSWORD)
   return new Promise((resolve, reject) => {
     const imap = new Imap(imapConfig);
     const emails = [];
 
     imap.once('ready', () => {
       imap.openBox('INBOX', false, (err, box) => {
-        if (err) {
-          return reject(err);
-        }
+        if (err) return reject(err);
 
-        const totalMessages = box.messages.total;
-        const fetchRangeStart = totalMessages - 19 > 0 ? totalMessages - 19 : 1;
-        const fetchRange = `${fetchRangeStart}:${totalMessages}`;
+        // Search for only Primary category emails
+        imap.search([['X-GM-RAW', 'category:primary']], (err, results) => {
+          if (err) return reject(err);
 
-        console.log(`Fetching emails from ID: ${fetchRangeStart} to ID: ${totalMessages}`);
+          // Get the last 20 UIDs
+          const lastUIDs = results.slice(-20);
 
-        const f = imap.fetch(fetchRange, {
-          bodies: '',
-          struct: true,
-          markSeen: false,
-        });
+          if (lastUIDs.length === 0) {
+            imap.end();
+            return resolve([]);
+          }
 
-        f.on('message', (msg, seqno) => {
-          let email = '';
-          let attributes;
+          let parsedCount = 0;
 
-          msg.on('body', (stream) => {
-            stream.on('data', (chunk) => {
-              email += chunk.toString();
+          const f = imap.fetch(lastUIDs, {
+            bodies: '',
+            struct: true,
+            markSeen: false,
+          });
+
+          f.on('message', (msg, seqno) => {
+            let email = '';
+            let attributes;
+
+            msg.on('body', (stream) => {
+              stream.on('data', (chunk) => {
+                email += chunk.toString();
+              });
+            });
+
+            msg.on('attributes', (attrs) => {
+              attributes = attrs;
+            });
+
+            msg.once('end', () => {
+              simpleParser(email)
+                .then(async (parsed) => {
+                  const { from, subject, date, text, html, attachments } = parsed;
+                  const senderName = from?.value[0]?.name || 'Unknown';
+                  const senderEmail = from?.value[0]?.address || 'Unknown';
+                  const timestamp = date ? date.getTime() : Date.now();
+                  const flags = attributes.flags;
+                  const unread = !flags.includes('\\Seen');
+                  const important = flags.includes('\\Flagged');
+                  const processedAttachments = [];
+                  if (attachments && attachments.length > 0) {
+                    for (const attachment of attachments) {
+                      processedAttachments.push({
+                        id: attachment.checksum || attachment.filename,
+                        filename: attachment.filename,
+                        contentType: attachment.contentType,
+                        content: attachment.content.toString('base64'),
+                      });
+                    }
+                  }
+                  const formattedEmail = {
+                    id: attributes.uid || seqno,
+                    category: 'inbox',
+                    senderName,
+                    senderEmail,
+                    subject: subject || 'No Subject',
+                    preview: text ? text.substring(0, 100) : '',
+                    content: html || text || 'No Content',
+                    timestamp,
+                    date: date || new Date(),
+                    unread,
+                    important,
+                    attachments: processedAttachments,
+                  };
+                  emails.push(formattedEmail);
+                  parsedCount++;
+                  if (parsedCount === lastUIDs.length) {
+                    imap.end();
+                    // Sort emails by date in descending order (most recent first)
+                    const sortedEmails = emails.sort((a, b) => b.timestamp - a.timestamp);
+                    resolve(sortedEmails);
+                  }
+                })
+                .catch((err) => {
+                  console.error('Error parsing email:', err);
+                  parsedCount++;
+                  if (parsedCount === lastUIDs.length) {
+                    imap.end();
+                    const sortedEmails = emails.sort((a, b) => b.timestamp - a.timestamp);
+                    resolve(sortedEmails);
+                  }
+                });
             });
           });
 
-          msg.on('attributes', (attrs) => {
-            attributes = attrs;
+          f.once('error', (err) => {
+            console.error('Fetch error: ' + err);
+            reject(err);
           });
 
-          msg.once('end', () => {
-            simpleParser(email)
-              .then(async (parsed) => {
-                const { from, subject, date, text, html, attachments } = parsed;
-
-                // Extract sender name and email
-                const senderName = from?.value[0]?.name || 'Unknown';
-                const senderEmail = from?.value[0]?.address || 'Unknown';
-                const timestamp = date ? date.getTime() : Date.now();
-
-                // Determine if the email is unread
-                const flags = attributes.flags;
-                const unread = !flags.includes('\\Seen');
-                const important = flags.includes('\\Flagged');
-
-                // Process attachments
-                const processedAttachments = [];
-                if (attachments && attachments.length > 0) {
-                  for (const attachment of attachments) {
-                    processedAttachments.push({
-                      id: attachment.checksum || attachment.filename,
-                      filename: attachment.filename,
-                      contentType: attachment.contentType,
-                      content: attachment.content.toString('base64'),
-                    });
-                  }
-                }
-
-                const formattedEmail = {
-                  id: attributes.uid || seqno,
-                  category: 'inbox',
-                  senderName,
-                  senderEmail,
-                  subject: subject || 'No Subject',
-                  preview: text ? text.substring(0, 100) : '',
-                  content: html || text || 'No Content',
-                  timestamp,
-                  date: date || new Date(),
-                  unread,
-                  important,
-                  attachments: processedAttachments,
-                };
-
-                emails.push(formattedEmail);
-              })
-              .catch((err) => {
-                console.error('Error parsing email:', err);
-              });
-          });
-        });
-
-        f.once('error', (err) => {
-          console.error('Fetch error: ' + err);
-          reject(err);
-        });
-
-        f.once('end', () => {
-          imap.end(); // Close IMAP connection
-          resolve(emails); // Return the emails
+          // Do not resolve here! Wait for all messages to be parsed.
         });
       });
     });
@@ -153,6 +161,7 @@ const fetchEmails = () => {
     imap.connect();
   });
 };
+
 const fetchEmailById = (emailId) => {
   return new Promise((resolve, reject) => {
     const imap = new Imap(imapConfig);
@@ -256,9 +265,27 @@ const replyToEmail = async (emailId, text) => {
   }
 };
 
+const markEmailAsRead = (emailId) => {
+  return new Promise((resolve, reject) => {
+    const imap = new Imap(imapConfig);
+    imap.once('ready', () => {
+      imap.openBox('INBOX', false, (err) => {
+        if (err) return reject(err);
+        imap.addFlags(emailId, '\\Seen', (err) => {
+          imap.end();
+          if (err) return reject(err);
+          resolve(true);
+        });
+      });
+    });
+    imap.once('error', (err) => reject(err));
+    imap.connect();
+  });
+};
+
 module.exports = {
   sendEmail,
   fetchEmails,
   replyToEmail,
-  
+  markEmailAsRead,
 };

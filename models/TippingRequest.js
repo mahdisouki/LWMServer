@@ -34,6 +34,10 @@ const tippingRequestSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: "TippingPlace"
     },
+    storagePlace: {
+        type: Schema.Types.ObjectId,
+        ref: "StoragePlace"
+    },
     createdAt: {
         type: Date,
         default: Date.now

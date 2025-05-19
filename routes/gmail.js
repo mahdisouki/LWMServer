@@ -12,4 +12,8 @@ router.get('/email/:emailId', gmailCtrl.listEmailDetails);
 
 // Reply to an email
 router.post('/reply/:emailId', gmailCtrl.replyToEmail);
+
+// Mark an email as read
+router.post('/email/:emailId/read', gmailCtrl.markAsRead);
+
 module.exports = router;

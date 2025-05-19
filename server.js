@@ -1,21 +1,36 @@
 const express = require("express");
 const app = express();
+require("dotenv").config();
 const http = require("http");
 const bodyParser = require('body-parser');
 const fs = require("fs");
 const TippingPlace = require('./models/TippingPlaces')
 const mongoose=require('mongoose')
 const { initSocket } = require("./socket");
-const { startMailListener } = require('./mailListener');
-
-
+const connectToDatabase = require("./config/db");
+const { sendWasteTransferNoteEmail , sendGeneralInvoiceEmail , sendPartialPaymentNotification , sendBookingConfirmationEmail } = require("./services/emailsService");
 
 const server = http.createServer(app); 
+connectToDatabase()
+  .then(() => {
+    console.log("✅ MongoDB Connected");
 
-initSocket(server);
+    // ✅ Now it's safe to initialize sockets
+    initSocket(server);
 
-require("dotenv").config();
-require("./config/db");
+    // ✅ Load your routes, middleware, jobs, etc.
+    require('./jobs/dailySheetCron');
+    require('./jobs/AssignedStaffCron');
+    // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
+
+  })
+  .catch(err => {
+    console.error("❌ MongoDB Connection Failed:", err);
+    process.exit(1); // Exit safely if DB connection fails
+  });
+
+// initSocket(server);
+
 const cors = require("cors");
 const path = require("path");
 
@@ -67,7 +82,6 @@ app.use((req, res, next) => {
 const taskRouter = require("./routes/task");
 const authRouter = require("./routes/auth");
 const staffRouter = require("./routes/staff");
-
 const truckRouter = require("./routes/truck");
 const driverRouter = require("./routes/driver");
 const tippingRouter = require("./routes/tipping");
@@ -92,7 +106,6 @@ const notificationRoutes = require('./routes/notification');
 const emailTemplateRoutes = require('./routes/emailTemplate')
 const {optimizeRoute } = require("./helper/OpitomRoute");
 
-
 setupSwagger(app); 
 app.use("/api", taskRouter);
 app.use('/api',authRouter);
@@ -102,7 +115,7 @@ app.use('/api',truckRouter);
 app.use('/api',driverRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
-  app.use("/api/dailySheets", dailySheetRoutes);
+app.use("/api/dailySheets", dailySheetRoutes);
 app.use("/api", payrollsRoutes);
 app.use("/api", messageRoutes);
 app.use('/api/tippingPlaces', tippingPlacesRoutes);

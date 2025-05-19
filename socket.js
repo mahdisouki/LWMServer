@@ -8,6 +8,7 @@ const { User } = require('./models/User');
 const Task = require('./models/Task');
 const Truck = require('./models/Truck');
 const TippingRequest = require('./models/TippingRequest');
+const sendReviewRequestEmail = require('./utils/sendReviewEmail');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 
@@ -52,6 +53,83 @@ const initSocket = (server) => {
       allowedHeaders: ['Authorization'],
     },
   });
+
+  // Function to send review request emails
+  // const sendReviewRequestEmails = async () => {
+  //   console.log("Checking for completed tasks to send review requests");
+  //   try {
+  //     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      
+  //     // Find completed tasks from 24 hours ago that haven't received a review request
+  //     const completedTasks = await Task.find({
+  //       taskStatus: 'Completed',
+  //       updatedAt: { $lte: twentyFourHoursAgo },
+  //       reviewRequestSent: { $ne: true }
+  //     });
+
+  //     console.log(`Found ${completedTasks.length} tasks eligible for review requests`);
+
+  //     for (const task of completedTasks) {
+  //       if (task.email) {
+  //         try {
+  //           // Send review request email
+  //           await sendReviewRequestEmail({
+  //             email: task.email,
+  //             firstName: task.firstName,
+  //             orderId: task.orderNumber
+  //           });
+
+  //           // Mark the task as having received a review request
+  //           await Task.findByIdAndUpdate(task._id, {
+  //             reviewRequestSent: true
+  //           });
+
+  //           console.log(`Review request email sent for task #${task.orderNumber}`);
+  //         } catch (emailError) {
+  //           console.error(`Error sending review request email for task #${task.orderNumber}:`, emailError);
+  //         }
+  //       }
+  //     }
+  //   } catch (error) {
+  //     console.error('Error in sendReviewRequestEmails:', error);
+  //   }
+  // };
+
+  // // Run the review request check every hour
+  // setInterval(sendReviewRequestEmails, 60 * 60 * 1000);
+
+  // Function to check for unpaid online tasks
+  const checkUnpaidOnlineTasks = async () => {
+    console.log("checking unpaid online tasks")
+    try {
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+      
+      // Find completed tasks that are online payment method, unpaid, and completed more than 30 minutes ago
+      const unpaidTasks = await Task.find({
+        paymentMethod: 'online',
+        paymentStatus: 'Unpaid',
+        taskStatus: 'Completed',
+        updatedAt: { $lte: thirtyMinutesAgo }
+      });
+      console.log(unpaidTasks)
+      // Get admin users
+      const adminUsers = await User.find({ roleType: 'Admin' });
+      console.log(adminUsers)
+      // Send notification to each admin
+      for (const task of unpaidTasks) {
+        const notificationMessage = `Task #${task.orderNumber} has been completed but payment is still pending`;
+        
+        for (const admin of adminUsers) {
+          await emitNotificationToUser(admin._id, 'Orders', notificationMessage);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking unpaid online tasks:', error);
+    }
+  };
+
+  // Run the check every 5 minutes
+  setInterval(checkUnpaidOnlineTasks, 30 * 60 * 1000);
 
   // Middleware to authenticate socket connections
   io.use((socket, next) => {
