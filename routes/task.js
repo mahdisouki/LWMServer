@@ -175,12 +175,64 @@ router.post('/webhooks/paypal', express.json(), taskCtrl.handlePayPalWebhook);
 
 // Route pour le succès du paiement
 router.get('/webhooks/payment/success', (req, res) => {
-    res.send('<h1>Merci ! Votre paiement a été effectué avec succès !</h1>');
+    res.send(`
+    <html>
+      <head>
+        <title>Paiement réussi - London Waste Management</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: Arial, sans-serif; background: #f4f8f6; margin: 0; padding: 0; }
+          .container { max-width: 500px; margin: 60px auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 40px 30px; text-align: center; }
+          .logo { margin-bottom: 20px; }
+          .success { color: #4CAF50; font-size: 2.2em; margin-bottom: 10px; }
+          .message { font-size: 1.2em; color: #333; margin-bottom: 30px; }
+          .cta { display: inline-block; margin-top: 20px; background: #8dc044; color: #fff; padding: 12px 28px; border-radius: 5px; text-decoration: none; font-weight: bold; transition: background 0.2s; }
+          .cta:hover { background: #6fa32b; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="logo">
+            <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png" width="120"  />
+          </div>
+          <div class="success">&#10003; Payment Successful!</div>
+          <div class="message">Thank you for your payment.<br>Your transaction has been completed successfully.<br>We appreciate your trust in London Waste Management.</div>
+          <a class="cta" href="https://londonwastemanagement.com">Return to Home</a>
+        </div>
+      </body>
+    </html>
+    `);
 });
 
 // Route pour l'annulation du paiement
 router.get('/webhooks/payment/cancel', (req, res) => {
-    res.send('<h1>Paiement annulé. Vous pouvez réessayer si vous le souhaitez.</h1>');
+    res.send(`
+    <html>
+      <head>
+        <title>Paiement annulé - London Waste Management</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: Arial, sans-serif; background: #f4f8f6; margin: 0; padding: 0; }
+          .container { max-width: 500px; margin: 60px auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 40px 30px; text-align: center; }
+          .logo { margin-bottom: 20px; }
+          .cancel { color: #e53935; font-size: 2.2em; margin-bottom: 10px; }
+          .message { font-size: 1.2em; color: #333; margin-bottom: 30px; }
+          .cta { display: inline-block; margin-top: 20px; background: #8dc044; color: #fff; padding: 12px 28px; border-radius: 5px; text-decoration: none; font-weight: bold; transition: background 0.2s; }
+          .cta:hover { background: #6fa32b; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="logo">
+            <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png" width="120" alt="London Waste Management" />
+          </div>
+          <div class="cancel">&#10007; Payment Cancelled</div>
+          <div class="message">Your payment was cancelled.<br>If you wish, you can try again or contact our support team for assistance.</div>
+          <a class="cta" href="https://londonwastemanagement.com">Return to Home</a>
+        </div>
+      </body>
+    </html>
+    `);
 });
 
 router.post('/task/:taskId/send-booking-confirmation', taskCtrl.sendBookingConfirmation);

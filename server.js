@@ -74,7 +74,7 @@ app.use((req, res, next) => {
     "default-src 'self'; " +
     "script-src 'self' https://*.stripe.com https://*.paypal.com https://*.paypalobjects.com 'unsafe-inline' 'unsafe-eval' blob:; " +
     "style-src 'self' https://*.paypal.com https://*.paypalobjects.com 'unsafe-inline'; " +
-    "img-src 'self' data: https://*.paypal.com https://*.paypalobjects.com; " +
+    "img-src 'self' data: https://*.paypal.com https://*.paypalobjects.com https://res.cloudinary.com; " +
     "frame-src https://*.stripe.com https://*.paypal.com; " +
     "connect-src 'self' https://*.stripe.com https://*.paypal.com;"
   );
