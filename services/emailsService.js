@@ -98,6 +98,55 @@ async function loadTaskData(taskId) {
     };
   }
 
+/**
+ * Send a refund email with invoice PDF attached
+ * @param {Object} params
+ * @param {Object} params.task - The Task document
+ * @param {Object} params.paymentHistory - The PaymentHistory document
+ * @param {number} params.refundAmount - The amount refunded
+ */
+async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
+    const refundType = refundAmount < paymentHistory.amount ? 'Partial Refund' : 'Total Refund';
+    const remaining = paymentHistory.amount - refundAmount;
+    const dirPath = path.join(__dirname, "../generated");
+    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
+    const fileName = `invoice-refund-${task.orderNumber}.pdf`;
+    const filePath = path.join(dirPath, fileName);
+    await module.exports.generateOfficialInvoicePDF(task, filePath);
+
+    let refundSummary = `<p><strong>Refund Type:</strong> ${refundType}</p>
+        <p><strong>Refunded Amount:</strong> £${refundAmount.toFixed(2)}</p>`;
+    if (refundType === 'Partial Refund') {
+        refundSummary += `<p><strong>Remaining Balance After Refund:</strong> £${remaining.toFixed(2)}</p>`;
+    }
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png" width="150" alt="London Waste Management" style="display:block;margin:auto;"/>
+            </div>
+            <h2 style="background-color: #e53935; color: white; text-align: center; padding: 10px 0;">Refund Processed</h2>
+            <p>Dear ${task.firstName} ${task.lastName},</p>
+            <p>Your refund for Order <strong>#${task.orderNumber}</strong> has been processed.</p>
+            ${refundSummary}
+            <p>Please find your updated invoice attached.</p>
+            <p>If you have any questions, feel free to contact us.</p>
+            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 12px; color: #666;">
+                <p>London Waste Management | hello@londonwastemanagement.com | 02030971517</p>
+            </div>
+        </div>
+    `;
+
+    await transporter.sendMail({
+        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+        to: task.email,
+        subject: `${refundType} for Order #${task.orderNumber}`,
+        html,
+        attachments: [{ filename: fileName, path: filePath }],
+    });
+    fs.unlinkSync(filePath);
+}
+
 module.exports = {
     async  generateOfficialInvoicePDF(task, filePath) {
         const PDFDocument = require('pdfkit');
@@ -142,62 +191,99 @@ module.exports = {
         doc.fillColor('black');
         let y = 275;
       
-        const items = task.items.map(i => ({
-          name: i.standardItemId?.itemName || i.object || 'Unnamed Item',
-          position: i.Objectsposition,
-          quantity: i.quantity || 1,
-          price: i.price || 0,
-        }));
-      
-        items.forEach(item => {
-          doc.text(`${item.name}`, 55, y)
-            .text(`${item.quantity}`, 355, y)
-            .text(`£${item.price.toFixed(2)}`, 455, y);
-          y += 20;
-          doc.fontSize(10).text(`Item Position: ${item.position}`, 55, y);
-          y += 20;
+        // Calculate totals
+        let subtotal = 0;
+        const items = task.items.map(i => {
+            const quantity = i.quantity || 1;
+            const price = i.standardItemId ? i.standardItemId.price : i.price || 0;
+            const itemTotal = price * quantity;
+            subtotal += itemTotal;
+
+            // Add position fees
+            let positionFee = 0;
+            if (i.Objectsposition === "InsideWithDismantling") {
+                positionFee = 18;
+            } else if (i.Objectsposition === "Inside") {
+                positionFee = 6;
+            }
+            subtotal += positionFee;
+
+            return {
+                name: i.standardItemId?.itemName || i.object || 'Unnamed Item',
+                position: i.Objectsposition,
+                quantity,
+                price: price,
+                positionFee,
+                total: itemTotal + positionFee
+            };
         });
       
-        // Calculate Pricing with Discount Awareness
-        let subtotal = task.totalPrice * 0.8; // Assuming totalPrice includes VAT
-        let discountAmount = 0;
+        // Print items
+        items.forEach(item => {
+            doc.text(`${item.name}`, 55, y)
+              .text(`${item.quantity}`, 355, y)
+              .text(`£${item.price.toFixed(2)}`, 455, y);
+            y += 20;
+
+            if (item.positionFee > 0) {
+                doc.fontSize(10).text(`${item.position} fee`, 55, y)
+                  .text(`£${item.positionFee.toFixed(2)}`, 455, y);
+                y += 20;
+            }
+        });
       
+        // Apply discount if applicable
+        let discountAmount = 0;
         if (task.customDiscountPercent && task.customDiscountPercent > 0) {
-          const originalSubtotal = subtotal / (1 - task.customDiscountPercent / 100);
-          discountAmount = originalSubtotal - subtotal;
+            discountAmount = subtotal * (task.customDiscountPercent / 100);
+            subtotal -= discountAmount;
         }
       
         const vat = subtotal * 0.2;
         const total = subtotal + vat;
       
+        // Print totals
         y += 10;
         doc.text(`Subtotal`, 400, y).text(`£${(subtotal + discountAmount).toFixed(2)}`, 500, y);
         y += 15;
       
         if (discountAmount > 0) {
-          doc.text(`Discount (${task.customDiscountPercent}%)`, 400, y).text(`-£${discountAmount.toFixed(2)}`, 500, y);
-          y += 15;
+            doc.text(`Discount (${task.customDiscountPercent}%)`, 400, y).text(`-£${discountAmount.toFixed(2)}`, 500, y);
+            y += 15;
         }
       
-        doc.text(`VAT`, 400, y).text(`£${vat.toFixed(2)}`, 500, y);
+        doc.text(`VAT (20%)`, 400, y).text(`£${vat.toFixed(2)}`, 500, y);
         y += 15;
         doc.text(`Total`, 400, y).text(`£${total.toFixed(2)}`, 500, y);
+      
+        // Payment status
+        y += 30;
+        const paidAmount = task.paidAmount?.amount || 0;
+        const remainingAmount = total - paidAmount;
+        
+        if (paidAmount > 0) {
+            doc.text(`Amount Paid: £${paidAmount.toFixed(2)}`, 50, y);
+            y += 15;
+            doc.text(`Remaining Balance: £${remainingAmount.toFixed(2)}`, 50, y);
+        }
       
         y += 30;
         doc.fontSize(12).text(`Collection Date: ${task.date.toLocaleDateString('en-GB')}`, 50, y);
         y += 15;
         doc.text(`Time Slot: ${task.available.replace(/_/g, ' ')}`, 50, y);
       
+        // Footer
         doc.fontSize(10)
-          .text("Environment Agency Registered Waste Carrier: CBDU308350", 50, 750, { align: "center" });
+          .text("Environment Agency Registered Waste Carrier: CBDU308350", 50, 750, { align: "center" })
+          .text("London Waste Management | hello@londonwastemanagement.com | 02030971517", 50, 765, { align: "center" });
       
         doc.end();
       
         return new Promise((resolve, reject) => {
-          writeStream.on('finish', resolve);
-          writeStream.on('error', reject);
+            writeStream.on('finish', resolve);
+            writeStream.on('error', reject);
         });
-      },
+    },
   async sendPartialPaymentNotification(taskId) {
     const data = await Task.findById(taskId).populate('items.standardItemId');
     console.log(data)
@@ -485,5 +571,6 @@ module.exports = {
       subject: `Booking Confirmation - Order #${task.orderNumber}`,
       html: htmlContent,
     });
-  }
+  },
+  sendRefundEmail
 };

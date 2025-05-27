@@ -6,6 +6,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key he
 
 const VAT_RATE = 0.2; // VAT rate (20%)
 
+const NGROK_URL = 'https://b37e-197-31-55-96.ngrok-free.app';
+
 async function calculateTotalPrice(taskId) {
     const task = await Task.findById(taskId).populate("items.standardItemId");
     if (!task) throw new Error("Task not found");
@@ -105,6 +107,9 @@ const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
         .map((item) => `${item.itemDescription || item.description}: £${item.price || item.amount}`)
         .join(", ");
 
+    // Convert pounds to pence (integer)
+    const amountInPence = Math.round(finalAmount * 100);
+
     const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
         line_items: [
@@ -115,14 +120,14 @@ const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
                         name: `Payment for Task #${taskId}`,
                         description,
                     },
-                    unit_amount: finalAmount, // Final amount in pence
+                    unit_amount: amountInPence, // Use pence, not pounds
                 },
                 quantity: 1,
             },
         ],
         mode: "payment", // Payment mode
-        success_url: `https://londonwaste.duckdns.org/api/webhooks/payment/success`,
-        cancel_url: `https://londonwaste.duckdns.org/api/webhooks/payment/cancel`,
+        success_url: `${NGROK_URL}/api/webhooks/payment/success`,
+        cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
         metadata: {
             taskId,
             breakdown: JSON.stringify(breakdown), // Store breakdown as metadata
@@ -132,9 +137,9 @@ const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
     return session.url;
 };
 
-const createPaypalPaymentLink = async (taskId, finalAmount, breakdown) => {
+const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentType = 'total') => {
     console.log("Generating PayPal link for items:", breakdown);
-    const itemDetails = breakdown.filter(item => item.price != null && !isNaN(item.price)).map(item => ({
+    let itemDetails = breakdown.filter(item => item.price != null && !isNaN(item.price)).map(item => ({
         name: item.itemDescription || "Item",
         description: `Position: ${item.Objectsposition || "Outside"} - Quantity: ${item.quantity || 1}`,
         unit_amount: {
@@ -144,8 +149,23 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown) => {
         quantity: (item.quantity || 1).toString(),
     }));
 
-    const itemTotal = itemDetails.reduce((sum, item) => sum + parseFloat(item.unit_amount.value) * parseInt(item.quantity), 0);
-    const taxTotal = finalAmount - itemTotal;
+    let itemTotal = itemDetails.reduce((sum, item) => sum + parseFloat(item.unit_amount.value) * parseInt(item.quantity), 0);
+    let taxTotal = finalAmount - itemTotal;
+
+    // If partial payment, send a single item for the partial amount
+    if (finalAmount < itemTotal) {
+        itemDetails = [{
+            name: paymentType === 'deposit' ? 'Deposit Payment' : paymentType === 'remaining' ? 'Remaining Payment' : 'Partial Payment',
+            description: `Partial payment for Task #${taskId}`,
+            unit_amount: {
+                currency_code: "GBP",
+                value: finalAmount.toFixed(2),
+            },
+            quantity: "1",
+        }];
+        itemTotal = finalAmount;
+        taxTotal = 0;
+    }
 
     if (taxTotal < 0) {
         console.error("Calculated tax total is invalid.", { finalAmount, itemTotal, taxTotal });
@@ -169,8 +189,8 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown) => {
             items: itemDetails
         }],
         application_context: {
-            return_url: `https://londonwaste.duckdns.org/api/webhooks/payment/success`,
-            cancel_url: `https://londonwaste.duckdns.org/api/webhooks/payment/cancel`,
+            return_url: `${NGROK_URL}/api/webhooks/payment/success`,
+            cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
         }
     });
 

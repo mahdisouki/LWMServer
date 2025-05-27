@@ -9,6 +9,7 @@ const mongoose=require('mongoose')
 const { initSocket } = require("./socket");
 const connectToDatabase = require("./config/db");
 const { sendWasteTransferNoteEmail , sendGeneralInvoiceEmail , sendPartialPaymentNotification , sendBookingConfirmationEmail } = require("./services/emailsService");
+const { handleStripeWebhook } = require('./controllers/taskCtrl');
 
 const server = http.createServer(app); 
 connectToDatabase()
@@ -57,12 +58,13 @@ app.get('/public/:fileName', (req, res) => {
   }
 });
 
+// Stripe Webhook Route - Raw body middleware is applied ONLY for this route
+app.post(
+  '/api/webhooks/stripe',
+  bodyParser.raw({ type: 'application/json' }),
+  handleStripeWebhook
+);
 
-// // Stripe Webhook Route - Raw body middleware is applied ONLY for this route
-// app.use(
-//   "/api/webhooks/stripe",
-//   express.raw({ type: "application/json" }) // Required for Stripe signature verification
-// );
 app.use(cors(corsOptions));
 // Apply JSON parsing for all other routes
 app.use(express.json());
@@ -103,14 +105,15 @@ const quotationRoutes = require('./routes/quotationRoutes')
 const contactRequestRoutes = require('./routes/contactRequestRoutes');
 const serviceCategoryRoutes = require('./routes/serviceCategory');
 const notificationRoutes = require('./routes/notification');
-const emailTemplateRoutes = require('./routes/emailTemplate')
+const emailTemplateRoutes = require('./routes/emailTemplate');
+const logRouter = require('./routes/log');
 const {optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app); 
 app.use("/api", taskRouter);
 app.use('/api',authRouter);
 app.use('/api',staffRouter);
-
+app.use('/api',logRouter);
 app.use('/api',truckRouter);
 app.use('/api',driverRouter);
 app.use("/api", tippingRouter);

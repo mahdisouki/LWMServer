@@ -414,7 +414,7 @@ const PayrollCtrl = {
 
   // Admin - Update a payroll record for a user
   updatePayrollAdmin: async (req, res) => {
-    const { startTime, endTime } = req.body;
+    const { startTime, endTime, regularHours, extraHours, totalExpenses, totalCash, status } = req.body;
     const { payrollId } = req.params;
 
     try {
@@ -423,25 +423,57 @@ const PayrollCtrl = {
         return res.status(404).json({ message: 'Payroll record not found.' });
       }
 
+      // Update basic time fields if provided
       if (startTime) payroll.startTime = new Date(startTime);
       if (endTime) payroll.endTime = new Date(endTime);
 
-      const hoursWorked =
-        (new Date(payroll.endTime) - new Date(payroll.startTime)) /
-        (1000 * 3600);
+      // Validate time order if both times are provided
+      if (startTime && endTime && new Date(endTime) <= new Date(startTime)) {
+        return res.status(400).json({ message: 'End time must be after start time.' });
+      }
+
+      // Calculate hours worked if both times are provided
+      if (startTime && endTime) {
+        const hoursWorked = (new Date(endTime) - new Date(startTime)) / (1000 * 3600);
+        payroll.totalHoursWorked = hoursWorked;
+      }
+
+      // Update hours if provided
+      if (regularHours !== undefined) payroll.regularHours = regularHours;
+      if (extraHours !== undefined) payroll.extraHours = extraHours;
+
+      // Update financial fields if provided
+      if (totalExpenses !== undefined) payroll.totalExpenses = totalExpenses;
+      if (totalCash !== undefined) payroll.totalCash = totalCash;
+
+      // Update status if provided
+      if (status && ['Pending', 'Paid'].includes(status)) {
+        payroll.status = status;
+      }
+
+      // Calculate salary based on hours and user's rates
       const user = await User.findById(payroll.userId);
-      payroll.totalHoursWorked = hoursWorked;
-      payroll.totalSalary = hoursWorked * user.hourPrice;
+      if (!user) {
+        return res.status(404).json({ message: 'Associated user not found.' });
+      }
+
+      // Calculate total salary based on regular and extra hours
+      const regularSalary = (payroll.regularHours || 0) * user.hourPrice;
+      const extraSalary = (payroll.extraHours || 0) * user.extraHourPrice;
+      payroll.totalSalary = regularSalary + extraSalary;
 
       await payroll.save();
 
-      res
-        .status(200)
-        .json({ message: 'Payroll updated successfully.', payroll });
+      res.status(200).json({
+        message: 'Payroll updated successfully.',
+        payroll
+      });
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: 'Failed to update payroll.', error: error.message });
+      console.error('Error updating payroll:', error);
+      res.status(500).json({
+        message: 'Failed to update payroll.',
+        error: error.message
+      });
     }
   },
 

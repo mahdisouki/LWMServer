@@ -15,6 +15,9 @@ const {
   PayPalClient,
   calculateTotalPriceUpdate,
 } = require('../services/paymentService.js');
+const OrderLock = require('../models/Orderlock');
+
+const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const nodemailer = require('nodemailer');
@@ -32,6 +35,8 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASSWORD,
   },
 });
+const loggingService = require('../services/loggingService');
+
 function validateBreakdown(breakdown) {
   if (!Array.isArray(breakdown) || breakdown.some(item => {
     return isNaN(parseFloat(item.price)) && isNaN(parseFloat(item.amount));
@@ -501,87 +506,75 @@ const taskCtrl = {
   },
 
   updateTask: async (req, res) => {
-    const { taskId } = req.params;
-    console.log(req.body.taskDate)
     try {
-      // Retrieve the existing task
-      const existingTask = await Task.findById(taskId).populate("items.standardItemId");
-      if (!existingTask) {
+      const taskId = req.params.taskId;
+      const updates = req.body;
+      console.log(req.body)
+      const oldTask = await Task.findById(taskId);
+      console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh')
+      if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
       }
-      req.body.taskDate = new Date(req.body.taskDate)
-      let updateData = { ...req.body };
-      if (req.body['paidAmount[method]']) {
-        existingTask.paidAmount.method = req.body['paidAmount[method]'];
-      }
-      // Handle media deletions
-      if (req.body.deletedMedia && Array.isArray(req.body.deletedMedia) && req.body.deletedMedia.length > 0) {
-        existingTask.clientObjectPhotos = existingTask.clientObjectPhotos.filter(
-          (photo) => !req.body.deletedMedia.includes(photo)
-        );
-      }
 
-      // Handle new file uploads
-      if (req.files && req.files.length > 0) {
-        const newClientObjectPhotos = req.files.map((file) => file.path);
-        existingTask.clientObjectPhotos = [
-          ...existingTask.clientObjectPhotos,
-          ...newClientObjectPhotos
-        ];
-      }
-
-      updateData.clientObjectPhotos = existingTask.clientObjectPhotos;
-
-      //  Merge standardItems and objects into items array
-      let updatedItems = [];
-
-      if (req.body.standardItems) {
-        updatedItems.push(
-          ...req.body.standardItems.map((item) => ({
-            standardItemId: item.standardItemId || null,
-            Objectsposition: item.Objectsposition || "Outside",
-            quantity: Number(item.quantity) || 1,
-            price: 0, // Standard items might not have price in request
-          }))
-        );
-      }
-
-      if (req.body.objects) {
-        updatedItems.push(
-          ...req.body.objects.map((item) => ({
-            object: item.object || null,
-            Objectsposition: item.Objectsposition || "Outside",
-            quantity: Number(item.quantity) || 1,
-            price: Number(item.price) || 0,
-          }))
-        );
-      }
-
-      // Update items array in existing task
-      existingTask.items = updatedItems;
-
-      //  Dynamically update other fields
-      for (const [key, value] of Object.entries(updateData)) {
-        if (key !== "items" && key !== "standardItems" && key !== "objects" && key !== "totalPrice") {
-          existingTask[key] = value;
+      // If items are being updated, recalculate totalPrice
+      if (updates.items) {
+        // Save the new items first
+        await Task.findByIdAndUpdate(taskId, { $set: { items: updates.items } });
+        // Re-fetch the task with populated items
+        const populatedTask = await Task.findById(taskId).populate('items.standardItemId');
+        let totalPrice = 0;
+        for (const item of populatedTask.items) {
+          let price = 0;
+          if (item.standardItemId && item.standardItemId.price) {
+            price = Number(item.standardItemId.price);
+          } else if (item.price) {
+            price = Number(item.price);
+          }
+          const quantity = Number(item.quantity) || 1;
+          let positionFee = 0;
+          if (item.Objectsposition === "InsideWithDismantling") positionFee = 18;
+          else if (item.Objectsposition === "Inside") positionFee = 6;
+          const itemTotal = (price + positionFee) * quantity;
+          console.log('Item:', item, 'Price:', price, 'Quantity:', quantity, 'PositionFee:', positionFee, 'ItemTotal:', itemTotal);
+          totalPrice += itemTotal;
         }
+        // Add VAT
+        const vat = totalPrice * 0.2;
+        totalPrice += vat;
+        console.log('Calculated totalPrice with VAT:', totalPrice);
+        updates.totalPrice = totalPrice;
       }
+      console.log(updates.totalPrice)     // Update the task
+      const updatedTask = await Task.findByIdAndUpdate(
+        taskId,
+        { $set: updates },
+        { new: true }
+      );
 
-      // Save the updated task first
-      await existingTask.save();
-      console.log("existingTaskMod:", existingTask)
-      // Recalculate total price based on the updated items
-      const { total } = await calculateTotalPriceUpdate(existingTask._id);
-      existingTask.totalPrice = total;
+      // Create a log of the changes
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'TASK',
+        entityId: taskId,
+        changes: {
+          before: oldTask.toObject(),
+          after: updatedTask.toObject()
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent']
+      });
 
-      // Save again after updating totalPrice
-      await existingTask.save();
-
-      res.status(200).json({ message: 'Task updated successfully', task: existingTask });
-
+      res.status(200).json({
+        message: 'Task updated successfully',
+        task: updatedTask
+      });
     } catch (error) {
-      console.error("Error updating task:", error);
-      res.status(500).json({ message: 'Failed to update task', error: error.message });
+      res.status(500).json({
+        message: 'Failed to update task',
+        error: error.message
+      });
     }
   },
 
@@ -927,36 +920,108 @@ const taskCtrl = {
 
   generatePaymentLinks: async (req, res) => {
     const { taskId } = req.params;
-    const { notes } = req.body;
-
+    const { paymentType, notes } = req.body; // Accept paymentType
+    console.log("paymentType", paymentType)
     try {
-      const task = await Task.findById(taskId);
+      const task = await Task.findById(taskId).populate('items.standardItemId');
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
 
+      let amountToPay;
+      if (paymentType === 'deposit') {
+        amountToPay = task.paidAmount?.amount;
+      } else if (paymentType === 'remaining') {
+        amountToPay = task.remainingAmount?.amount;
+      } else {
+        amountToPay = task.totalPrice;
+      }
+      if (!amountToPay || amountToPay <= 0) {
+        return res.status(400).json({ message: 'No amount to pay for this payment type.' });
+      }
 
-      const { total, breakdown } = await calculateTotalPrice(taskId);
-      // Valider le breakdown avant de continuer
+      // Calculate total price and breakdown as before
+      let totalPrice = 0;
+      const breakdown = [];
+      for (const item of task.items) {
+        let itemPrice = 0;
+        let itemDescription = '';
+        if (item.standardItemId) {
+          itemPrice = item.customPrice || item.standardItemId.price;
+          itemDescription = item.standardItemId.itemName;
+        } else if (item.object) {
+          itemPrice = item.price;
+          itemDescription = item.object;
+        }
+        const quantity = item.quantity || 1;
+        const itemTotal = itemPrice * quantity;
+        let positionFee = 0;
+        if (item.Objectsposition === "InsideWithDismantling") {
+          positionFee = 18;
+        } else if (item.Objectsposition === "Inside") {
+          positionFee = 6;
+        }
+        const positionFeeTotal = positionFee * quantity;
+        const itemTotalWithFee = itemTotal + positionFeeTotal;
+        breakdown.push({
+          itemDescription,
+          quantity,
+          price: itemPrice,
+          positionFee,
+          total: itemTotalWithFee,
+          Objectsposition: item.Objectsposition
+        });
+        totalPrice += itemTotalWithFee;
+      }
+      if (task.customDiscountPercent > 0) {
+        const discountAmount = totalPrice * (task.customDiscountPercent / 100);
+        totalPrice -= discountAmount;
+        breakdown.push({
+          description: `Discount (${task.customDiscountPercent}%)`,
+          amount: -discountAmount
+        });
+      }
+      if (totalPrice < 30) {
+        const adjustment = 30 - totalPrice;
+        totalPrice = 30;
+        breakdown.push({
+          description: "Minimum price adjustment",
+          amount: adjustment
+        });
+      }
+      const vat = totalPrice * 0.2;
+      totalPrice += vat;
+      breakdown.push({
+        description: "VAT (20%)",
+        amount: vat
+      });
       validateBreakdown(breakdown);
 
-      const stripeLink = await createStripePaymentLink(taskId, total, breakdown);
-      const paypalLink = await createPaypalPaymentLink(taskId, total, breakdown);
+      // Generate payment links for the specified amount
+      const stripeLink = await createStripePaymentLink(taskId, amountToPay, breakdown);
+      const paypalLink = await createPaypalPaymentLink(taskId, amountToPay, breakdown);
+
+      // Send email with payment links and paymentType
       await sendPayementEmail({
         taskId,
         customerEmail: task.email,
         stripeLink,
         paypalLink,
-        totalPrice: total,
+        totalPrice: amountToPay,
+        totall:totalPrice,
         breakdown,
         notes,
         taskDetails: task,
+        paymentType,
+        amountToPay
       });
 
       res.status(200).json({
         message: 'Payment links generated successfully and email sent',
         stripeLink,
         paypalLink,
+        totalPrice: amountToPay,
+        paymentType
       });
     } catch (error) {
       console.error('Error generating payment links:', error);
@@ -964,75 +1029,43 @@ const taskCtrl = {
     }
   },
 
-
+  // Update payment status logic in the Stripe webhook handler
   handleStripeWebhook: async (req, res) => {
     const sig = req.headers["stripe-signature"];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
     try {
       const event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
       console.log("Webhook verified:", event.type);
-
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
         const taskId = session.metadata.taskId;
-
+        const paymentType = session.metadata.paymentType;
         if (!taskId) {
           console.error("Task ID missing in session metadata");
           return res.status(400).send("Task ID is required");
         }
-
+        console.log('Stripe webhook received for event:', event.type, 'taskId:', taskId);
         const task = await Task.findById(taskId).populate("items.standardItemId");
         if (!task) {
           console.error(`Task not found for ID: ${taskId}`);
           return res.status(404).send("Task not found");
         }
-
-        // Construction du breakdown des items
-        const breakdown = task.items.map((item) => ({
-          itemDescription: item.standardItemId ? item.standardItemId.itemName : item.object,
-          quantity: item.quantity || 1,
-          price: item.standardItemId ? item.standardItemId.price : item.price || 0,
-          Objectsposition: item.Objectsposition,
-        }));
-
-        // Marquer la tâche comme "Paid"
-        task.paymentStatus = "Paid";
+        // Update payment status fields
+        if (paymentType === 'deposit') {
+          task.paidAmount.status = 'Paid';
+        } else if (paymentType === 'remaining') {
+          task.remainingAmount.status = 'Paid';
+        }
+        if (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid') {
+          task.paymentStatus = 'Paid';
+        }
+        if (paymentType === 'total') {
+          task.paymentStatus = 'Paid';
+          if (task.paidAmount) task.paidAmount.status = 'Paid';
+          if (task.remainingAmount) task.remainingAmount.status = 'Paid';
+        }
         await task.save();
-
-        const payerAccount = session.customer_details?.email || "Unknown Payer (Stripe)";
-        const paymentDate = new Date();
-
-        // Créer une entrée PaymentHistory
-        await PaymentHistory.create({
-          taskId: task._id,
-          firstName: task.firstName,
-          lastName: task.lastName,
-          phoneNumber: task.phoneNumber,
-          amount: session.amount_total / 100,
-          currency: session.currency.toUpperCase(),
-          paymentType: "Stripe",
-          paymentDate,
-          transactionId: session.payment_intent,
-          payerAccount,
-          breakdown, // Ajout des détails des items
-        });
-
-        // Envoi de l'email de confirmation
-        await sendPaymentConfirmationEmail({
-          email: task.email,
-          firstName: task.firstName,
-          lastName: task.lastName,
-          orderId: taskId,
-          paymentDate: paymentDate.toLocaleString(),
-          amount: session.amount_total / 100,
-          currency: session.currency.toUpperCase(),
-          paymentType: "Stripe",
-          taskDetails: task,
-          breakdown,
-        });
-
-        console.log(`Payment for Task ${taskId} confirmed and email sent.`);
+        console.log('Task status updated for paymentType:', paymentType, 'taskId:', taskId);
         res.status(200).send("Webhook received");
       }
     } catch (err) {
@@ -1342,7 +1375,148 @@ const taskCtrl = {
         error: error.message
       });
     }
-  }
+  },
+  // Lock a task
+  lockTask: async (req, res) => {
+    const { taskId } = req.params;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    try {
+      // Check if task exists
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // Check if task is already locked
+      const existingLock = await OrderLock.findOne({ taskId });
+      if (existingLock) {
+        if (existingLock.lockedBy === userId) {
+          // If locked by same user, extend the lock
+          existingLock.expiresAt = new Date(Date.now() + LOCK_DURATION);
+          await existingLock.save();
+          return res.json({
+            message: 'Lock extended',
+            isLocked: true,
+            lockedBy: existingLock.lockedBy
+          });
+        } else {
+          // If locked by different user, return lock info
+          return res.status(409).json({
+            message: 'Task is already locked by another user',
+            isLocked: true,
+            lockedBy: existingLock.lockedBy
+          });
+        }
+      }
+
+      // Create new lock
+      const lock = await OrderLock.create({
+        taskId,
+        lockedBy: userId,
+        expiresAt: new Date(Date.now() + LOCK_DURATION)
+      });
+
+      res.json({
+        message: 'Task locked successfully',
+        isLocked: true,
+        lockedBy: lock.lockedBy
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to lock task',
+        error: error.message
+      });
+    }
+  },
+
+  // Unlock a task
+  unlockTask: async (req, res) => {
+    const { taskId } = req.params;
+    const userId = req.user?._id;
+    console.log("unlock by ", userId)
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+      console.log("user not authenticated")
+    }
+
+    try {
+      const lock = await OrderLock.findOne({ taskId }).populate('lockedBy');
+      
+      if (!lock) {
+        console.log("task is not locked")
+        return res.json({
+          message: 'Task is not locked',
+          isLocked: false,
+          lockedBy: null
+        });
+      }
+
+      // Only allow the user who locked it to unlock it
+      if (!lock.lockedBy._id.equals(userId)) {
+        console.log("lock.lockedBy", lock.lockedBy._id)
+        console.log("userId", userId)
+        console.log("user does not have permission to unlock the task")
+        return res.status(403).json({
+          message: 'You do not have permission to unlock this task',
+          isLocked: true,
+          lockedBy: lock.lockedBy
+        });
+      }
+
+      await lock.deleteOne();
+      console.log("task unlocked successfully")
+      res.json({
+        message: 'Task unlocked successfully',
+        isLocked: false,
+        lockedBy: null
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to unlock task',
+        error: error.message
+      });
+    }
+  },
+
+  // Get lock status
+  getTaskLockStatus: async (req, res) => {
+    const { taskId } = req.params;
+
+    try {
+      const lock = await OrderLock.findOne({ taskId }).populate('lockedBy');
+      
+      if (!lock) {
+        return res.json({
+          isLocked: false,
+          lockedBy: null
+        });
+      }
+
+      // Check if lock has expired
+      if (lock.expiresAt < new Date()) {
+        await lock.deleteOne();
+        return res.json({
+          isLocked: false,
+          lockedBy: null
+        });
+      }
+
+      res.json({
+        isLocked: true,
+        lockedBy: lock.lockedBy
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to get lock status',
+        error: error.message
+      });
+    }
+  },
   
 };
 

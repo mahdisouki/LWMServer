@@ -2,6 +2,7 @@ const Task = require('../models/Task');
 const PaymentHistory = require('../models/PaymentHistory');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const paypal = require('@paypal/checkout-server-sdk');
+const { sendRefundEmail } = require('../services/emailsService');
 
 // PayPal Client setup
 function PayPalClient() {
@@ -81,6 +82,8 @@ exports.processRefund = async (req, res) => {
             }
 
             await task.save();
+            // Send refund email with invoice
+            await sendRefundEmail({ task, paymentHistory, refundAmount });
             return res.status(200).json({
                 message: `Refund of £${refundAmount.toFixed(2)} processed successfully`,
                 remainingAmount
