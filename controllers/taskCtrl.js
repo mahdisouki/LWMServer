@@ -998,8 +998,8 @@ const taskCtrl = {
       validateBreakdown(breakdown);
 
       // Generate payment links for the specified amount
-      const stripeLink = await createStripePaymentLink(taskId, amountToPay, breakdown);
-      const paypalLink = await createPaypalPaymentLink(taskId, amountToPay, breakdown);
+      const stripeLink = await createStripePaymentLink(taskId, amountToPay, breakdown, paymentType);
+      const paypalLink = await createPaypalPaymentLink(taskId, amountToPay, breakdown, paymentType);
 
       // Send email with payment links and paymentType
       await sendPayementEmail({

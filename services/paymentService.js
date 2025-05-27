@@ -6,7 +6,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key he
 
 const VAT_RATE = 0.2; // VAT rate (20%)
 
-const NGROK_URL = 'https://b37e-197-31-55-96.ngrok-free.app';
+const NGROK_URL = 'https://londonwastemanagement.uk';
 
 async function calculateTotalPrice(taskId) {
     const task = await Task.findById(taskId).populate("items.standardItemId");
@@ -102,7 +102,7 @@ const calculateTotalPriceUpdate = async (taskId) => {
 };
 
 
-const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
+const createStripePaymentLink = async (taskId, finalAmount, breakdown, paymentType) => {
     const description = breakdown
         .map((item) => `${item.itemDescription || item.description}: £${item.price || item.amount}`)
         .join(", ");
@@ -131,6 +131,7 @@ const createStripePaymentLink = async (taskId, finalAmount, breakdown) => {
         metadata: {
             taskId,
             breakdown: JSON.stringify(breakdown), // Store breakdown as metadata
+            paymentType: paymentType,
         },
     });
 

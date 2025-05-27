@@ -9,7 +9,7 @@ require('dotenv').config();
 
 
 const generateAccessToken = (user) => {
-  return jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+  return jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
 };
 
 const generateRefreshToken = (user) => {
