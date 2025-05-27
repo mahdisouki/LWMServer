@@ -1056,9 +1056,9 @@ const taskCtrl = {
         } else if (paymentType === 'remaining') {
           task.remainingAmount.status = 'Paid';
         }
-        if (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid') {
-          task.paymentStatus = 'Paid';
-        }
+        // if (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid') {
+        //   task.paymentStatus = 'Paid';
+        // }
         if (paymentType === 'total') {
           task.paymentStatus = 'Paid';
           if (task.paidAmount) task.paidAmount.status = 'Paid';
