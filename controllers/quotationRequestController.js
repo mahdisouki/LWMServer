@@ -11,8 +11,8 @@ const quotationRequestController = {
             const {
                 firstName,
                 lastName,
-                line1,
-                line2,
+                DoorNumber,
+                RoadName,
                 email,
                 phoneNumber,
                 Town,
@@ -39,34 +39,34 @@ const quotationRequestController = {
                     contentType: file.mimetype,
                 });
     
-                const aiResponse = await axios.post('http://127.0.0.1:5000/predict', formData, {
-                    headers: {
-                        ...formData.getHeaders(),
-                    },
-                });
+                // const aiResponse = await axios.post('http://127.0.0.1:5000/predict', formData, {
+                //     headers: {
+                //         ...formData.getHeaders(),
+                //     },
+                // });
     
-                if (aiResponse.data && aiResponse.data.predictions) {
-                    predictions.push(...aiResponse.data.predictions);
-                }
+                // if (aiResponse.data && aiResponse.data.predictions) {
+                //     predictions.push(...aiResponse.data.predictions);
+                // }
             }
     
             // Transform AI predictions into estimatedPrices format
-            const estimatedPrices = predictions.map(pred => ({
-                name: pred.classe,
-                price: pred.price_inc_vat.toString(),
-            }));
+            // const estimatedPrices = predictions.map(pred => ({
+            //     name: pred.classe,
+            //     price: pred.price_inc_vat.toString(),
+            // }));
     
             const newQuotation = new QuotationRequest({
                 Name: `${firstName} ${lastName}`,
-                line1,
-                line2,
+                DoorNumber,
+                RoadName,
                 Town,
                 email,
                 phoneNumber,
                 postcode,
                 comments,
                 items,
-                estimatedPrices,
+                // estimatedPrices,
             });
     
             await newQuotation.save();
@@ -143,6 +143,90 @@ const quotationRequestController = {
     //         res.status(500).json({ message: "Failed to retrieve quotations", error: error.message });
     //     }
     // },
+
+    sendQuotationFormEmail: async (req, res) => {
+        try {
+            const {
+                firstName,
+                lastName,
+                DoorNumber,
+                RoadName,
+                email,
+                phoneNumber,
+                Town,
+                postcode,
+                comments,
+            } = req.body;
+
+            // Compose the address lines for the email template
+            const line1 = `${DoorNumber} ${RoadName}`;
+            const line2 = Town;
+
+            // Compose the quotationData object as expected by sendQuotationEmail
+            const quotationData = {
+                line1,
+                line2,
+                postcode,
+                email,
+                phoneNumber,
+                companyName: '', // Not in form, so leave blank or add if available
+                comments,
+                items: req.files ? req.files.map((file) => file.path) : [],
+            };
+
+            // Use a responsible email from env or hardcoded for now
+            const responsibleEmail = process.env.QUOTATION_RESPONSIBLE_EMAIL || 'admin@londonwastemanagement.com';
+
+            await sendQuotationEmail({ responsibleEmail, quotationData });
+
+            res.status(200).json({ message: 'Quotation email sent successfully.' });
+        } catch (error) {
+            console.error('Error sending quotation email:', error);
+            res.status(500).json({ message: 'Failed to send quotation email', error: error.message });
+        }
+    },
+
+    sendMovingServiceEmail: async (req, res) => {
+        try {
+            const {
+                fullName,
+                contactNumber,
+                email,
+                pickUpLocation,
+                dropOffLocation,
+                pickUpPropertyType,
+                dropOffPropertyType,
+                packingRequired,
+                accessInfo,
+                extraInfo,
+            } = req.body;
+            console.log("req.body",req.body)
+            const files = req.files ? req.files.map((file) => file.path) : [];
+
+            const contactData = {
+                fullName,
+                contactNumber,
+                email,
+                pickUpLocation,
+                dropOffLocation,
+                pickUpPropertyType,
+                dropOffPropertyType,
+                packingRequired,
+                accessInfo,
+                extraInfo,
+                files,
+            };
+
+            const responsibleEmail = 'soukimahdi@gmail.com';
+            const sendContactEmail = require('../utils/sendContactEmail');
+            await sendContactEmail({ responsibleEmail, contactData });
+
+            res.status(200).json({ message: 'Moving service email sent successfully.' });
+        } catch (error) {
+            console.error('Error sending moving service email:', error);
+            res.status(500).json({ message: 'Failed to send moving service email', error: error.message });
+        }
+    },
 };
 
 module.exports = quotationRequestController;

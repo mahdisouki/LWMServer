@@ -651,29 +651,26 @@ const taskCtrl = {
   },
 
   processTaskPayment: async (req, res) => {
-    const { taskId } = req.params; // Récupérer l'ID de la tâche depuis les paramètres
-    const { paymentType } = req.body; // Le type de paiement (stripe ou paypal) est dans le body
-
+    const { taskId } = req.params;
+    const { paymentType, paymentAmountType } = req.body; // Add paymentAmountType
+  
     try {
-      // Récupérer la tâche avec ses détails
       const task = await Task.findById(taskId).populate("items.standardItemId");
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-
-      // Créer l'objet selectedQuantities automatiquement depuis les items de la tâche
+  
+      // Build breakdown array
       const selectedQuantities = {};
       task.items.forEach((item) => {
         if (item.standardItemId) {
           selectedQuantities[item.standardItemId._id.toString()] = item.quantity || 1;
         }
       });
-
-      // Construire le breakdown des items et calculer le prix total
+  
       const breakdown = task.items.map((item) => {
-        const itemQuantity = selectedQuantities[item.standardItemId?._id?.toString()] || item.quantity || 1; // Quantité récupérée automatiquement
+        const itemQuantity = selectedQuantities[item.standardItemId?._id?.toString()] || item.quantity || 1;
         const itemPrice = item.standardItemId ? item.standardItemId.price : item.price || 0;
-
         return {
           itemDescription: item.standardItemId ? item.standardItemId.itemName : item.object,
           quantity: itemQuantity,
@@ -681,41 +678,48 @@ const taskCtrl = {
           Objectsposition: item.Objectsposition,
         };
       });
-
+  
       let basePrice = breakdown.reduce((sum, item) => sum + item.price * item.quantity, 0);
       let additionalFees = 0;
-
-      // Ajouter des frais supplémentaires en fonction de la position des objets
       task.items.forEach((item) => {
         if (item.Objectsposition === "InsideWithDismantling") additionalFees += 18;
         else if (item.Objectsposition === "Inside") additionalFees += 6;
       });
-
       let finalPrice = basePrice + additionalFees;
-
-      // Appliquer une réduction de 10% si toutes les conditions sont remplies
       if (task.available === "AnyTime" && task.items.every((i) => i.Objectsposition === "Outside")) {
-        finalPrice *= 0.9; // Réduction de 10%
+        finalPrice *= 0.9;
       }
-
-      // Montant minimum de 30£
-      if (finalPrice < 30) {
-        finalPrice = 30;
-      }
-
-      const vat = finalPrice * 0.2; // 20% de TVA
-      finalPrice += vat; // Ajouter la TVA au prix final
-
-      // Préparer le breakdown final avec TVA et prix total
+      if (finalPrice < 30) finalPrice = 30;
+      const vat = finalPrice * 0.2;
+      finalPrice += vat;
+  
+      // Prepare fullBreakdown for PayPal
       const fullBreakdown = [
         ...breakdown,
         { description: "VAT (20%)", amount: vat.toFixed(2) },
         { description: "Final Total Price", amount: finalPrice.toFixed(2) },
       ];
-
-      // Convertir le montant en pence pour Stripe et PayPal
-      const finalAmountInPence = Math.round(finalPrice * 100); // En pence pour Stripe et PayPal
-
+  
+      // --- NEW: Determine amount to pay based on paymentAmountType ---
+      let amountToPay;
+      if (paymentAmountType === 'deposit') {
+        amountToPay = 36;
+      } else {
+        amountToPay = finalPrice;
+      }
+      const amountInPence = Math.round(amountToPay * 100);
+  
+      // --- (Optional) Track deposit status ---
+      if (paymentAmountType === 'deposit') {
+        task.paidAmount = 36;
+        task.remainingAmount = finalPrice - 36;
+      } else {
+        task.paidAmount = finalPrice;
+        task.remainingAmount = 0;
+      }
+      await task.save();
+  
+      // --- Use amountToPay for Stripe/PayPal ---
       let paymentResult;
       switch (paymentType) {
         case 'stripe':
@@ -730,7 +734,7 @@ const taskCtrl = {
                     product_data: {
                       name: `Payment for Task ${taskId}`,
                     },
-                    unit_amount: finalAmountInPence,
+                    unit_amount: amountInPence,
                   },
                   quantity: 1,
                 },
@@ -739,15 +743,16 @@ const taskCtrl = {
               cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
               metadata: {
                 taskId: taskId,
+                paymentAmountType: paymentAmountType, // Track in metadata
               },
             });
-
+  
             return res.json({
               message: 'Stripe payment initiated successfully',
               redirectUrl: session.url,
               paymentIntentId: session.payment_intent,
             });
-
+  
           } catch (error) {
             console.error('Stripe Error:', error);
             return res.status(500).json({
@@ -755,18 +760,19 @@ const taskCtrl = {
               error: error.message,
             });
           }
-
+  
         case 'paypal':
-          paymentResult = await createPayPalOrder(finalAmountInPence, taskId, fullBreakdown, task);
+          paymentResult = await createPayPalOrder(amountInPence, taskId, fullBreakdown, task);
           return res.json({
             message: 'PayPal payment initiated successfully',
             orderID: paymentResult.result.id,
             approvalLink: paymentResult.result.links.find((link) => link.rel === 'approve')?.href || null,
-            amount: finalAmountInPence,
+            amount: amountInPence,
             paymentType,
+            paymentAmountType, // Return for frontend tracking
             breakdown: fullBreakdown,
           });
-
+  
         default:
           return res.status(400).json({ message: 'Invalid payment method' });
       }
