@@ -703,20 +703,33 @@ const taskCtrl = {
       // --- NEW: Determine amount to pay based on paymentAmountType ---
       let amountToPay;
       if (paymentAmountType === 'deposit') {
-        amountToPay = 36;
+        task.paymentStatus = "partial_Paid";
+        amountToPay = 36; // Set deposit amount
+        task.paidAmount = {
+          amount: 36,
+          method: "online",
+          status: "Not_Paid" // Will be updated to Paid after successful payment
+        };
+        task.remainingAmount = {
+          amount: finalPrice - 36,
+          method: "online",
+          status: "Not_Paid"
+        };
       } else {
-        amountToPay = finalPrice;
+        amountToPay = finalPrice; // Set full amount
+        task.paidAmount = {
+          amount: finalPrice,
+          method: "online",
+          status: "Not_Paid" // Will be updated to Paid after successful payment
+        };
+        task.remainingAmount = {
+          amount: 0,
+          method: "online",
+          status: "Not_Paid"
+        };
       }
       const amountInPence = Math.round(amountToPay * 100);
   
-      // --- (Optional) Track deposit status ---
-      if (paymentAmountType === 'deposit') {
-        task.paidAmount = 36;
-        task.remainingAmount = finalPrice - 36;
-      } else {
-        task.paidAmount = finalPrice;
-        task.remainingAmount = 0;
-      }
       await task.save();
   
       // --- Use amountToPay for Stripe/PayPal ---
@@ -1045,33 +1058,37 @@ const taskCtrl = {
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
         const taskId = session.metadata.taskId;
-        const paymentType = session.metadata.paymentType;
+        const paymentAmountType = session.metadata.paymentAmountType; // Get payment type from metadata
         if (!taskId) {
           console.error("Task ID missing in session metadata");
           return res.status(400).send("Task ID is required");
         }
-        console.log('Stripe webhook received for event:', event.type, 'taskId:', taskId);
+        console.log('Stripe webhook received for event:', event.type, 'taskId:', taskId, 'paymentAmountType:', paymentAmountType);
         const task = await Task.findById(taskId).populate("items.standardItemId");
         if (!task) {
           console.error(`Task not found for ID: ${taskId}`);
           return res.status(404).send("Task not found");
         }
-        // Update payment status fields
-        if (paymentType === 'deposit') {
+
+        // Update payment status based on payment type
+        if (paymentAmountType === 'deposit') {
           task.paidAmount.status = 'Paid';
-        } else if (paymentType === 'remaining') {
+          task.paymentStatus = 'partial_Paid';
+        } else {
+          // Full payment
+          task.paidAmount.status = 'Paid';
           task.remainingAmount.status = 'Paid';
-        }
-        // if (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid') {
-        //   task.paymentStatus = 'Paid';
-        // }
-        if (paymentType === 'total') {
           task.paymentStatus = 'Paid';
-          if (task.paidAmount) task.paidAmount.status = 'Paid';
-          if (task.remainingAmount) task.remainingAmount.status = 'Paid';
         }
+
         await task.save();
-        console.log('Task status updated for paymentType:', paymentType, 'taskId:', taskId);
+        console.log('Task payment status updated:', {
+          taskId,
+          paymentAmountType,
+          paymentStatus: task.paymentStatus,
+          paidAmountStatus: task.paidAmount.status,
+          remainingAmountStatus: task.remainingAmount.status
+        });
         res.status(200).send("Webhook received");
       }
     } catch (err) {
