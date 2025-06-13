@@ -122,19 +122,17 @@ const standardItemCtrl = {
 
   getAllStandardItems: async (req, res) => {
     try {
-      const { page = '1', limit = '9', pagination, category, search = '' } = req.query;
+      const { page = '1', limit = '9', pagination, category, search = '', sort } = req.query;
       const pageNum = parseInt(page, 10);
       const limitNum = parseInt(limit, 10);
       const isPaginationDisabled = (pagination === 'false');
   
-      // Build the query object
-      let query = StandardItem.find();
+      // Build the filter object
+      let filter = {};
   
       // 🔍 Add search condition if provided
       if (search) {
-        query = query.find({
-          itemName: { $regex: search, $options: 'i' } // Case-insensitive search
-        });
+        filter.itemName = { $regex: search, $options: 'i' };
       }
   
       // Filter by Category if provided
@@ -142,14 +140,37 @@ const standardItemCtrl = {
         if (!mongoose.Types.ObjectId.isValid(category)) {
           return res.status(400).json({ message: 'Invalid category ID' });
         }
-        query = query.where('category').equals(category);
+        filter.category = category;
       }
   
-      // Populate category and sort results
-      query = query.sort('-createdAt _id').populate('category');
+      // Determine sort option
+      let sortOption = { createdAt: -1, _id: 1 }; // Default: newest first
+      if (sort) {
+        switch (sort) {
+          case 'name-asc':
+            sortOption = { itemName: 1 };
+            break;
+          case 'name-desc':
+            sortOption = { itemName: -1 };
+            break;
+          case 'price-asc':
+            sortOption = { price: 1 };
+            break;
+          case 'price-desc':
+            sortOption = { price: -1 };
+            break;
+          default:
+            sortOption = { createdAt: -1, _id: 1 };
+        }
+      }
   
       // Count total matching items
-      const total = await StandardItem.countDocuments(query);
+      const total = await StandardItem.countDocuments(filter);
+  
+      // Build the query
+      let query = StandardItem.find(filter)
+        .sort(sortOption)
+        .populate('category');
   
       let items;
       if (isPaginationDisabled) {

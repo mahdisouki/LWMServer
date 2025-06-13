@@ -103,35 +103,63 @@ const calculateTotalPriceUpdate = async (taskId) => {
 
 
 const createStripePaymentLink = async (taskId, finalAmount, breakdown, paymentType) => {
-    const description = breakdown
-        .map((item) => `${item.itemDescription || item.description}: £${item.price || item.amount}`)
-        .join(", ");
+    // Create line items from the breakdown
+    const lineItems = breakdown.map(item => {
+        // Skip VAT and total entries as they'll be handled separately
+        if (item.description === "VAT (20%)" || item.description === "Final total price") {
+            return null;
+        }
 
-    // Convert pounds to pence (integer)
-    const amountInPence = Math.round(finalAmount * 100);
+        // Convert price to pence
+        const amount = Math.round(parseFloat(item.price || item.amount) * 100);
+        
+        return {
+            price_data: {
+                currency: "gbp",
+                product_data: {
+                    name: item.itemDescription || item.description,
+                    description: item.Objectsposition ? `Position: ${item.Objectsposition}` : undefined,
+                    images: ["https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png"],
+                },
+                unit_amount: amount,
+            },
+            quantity: item.quantity || 1,
+        };
+    }).filter(item => item !== null);
+
+    // Add VAT as a separate line item
+    const vatItem = breakdown.find(item => item.description === "VAT (20%)");
+    if (vatItem) {
+        lineItems.push({
+            price_data: {
+                currency: "gbp",
+                product_data: {
+                    name: "VAT (20%)",
+                    description: "Value Added Tax",
+                },
+                unit_amount: Math.round(parseFloat(vatItem.amount) * 100),
+            },
+            quantity: 1,
+        });
+    }
 
     const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        line_items: [
-            {
-                price_data: {
-                    currency: "gbp",
-                    product_data: {
-                        name: `Payment for Task #${taskId}`,
-                        description,
-                    },
-                    unit_amount: amountInPence, // Use pence, not pounds
-                },
-                quantity: 1,
-            },
-        ],
-        mode: "payment", // Payment mode
+        payment_method_types: ["card", "paypal"],
+        line_items: lineItems,
+        mode: "payment",
         success_url: `${NGROK_URL}/api/webhooks/payment/success`,
         cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
         metadata: {
             taskId,
-            breakdown: JSON.stringify(breakdown), // Store breakdown as metadata
+            breakdown: JSON.stringify(breakdown),
             paymentType: paymentType,
+            totalItems: breakdown.length.toString(),
+            orderDate: new Date().toISOString(),
+        },
+        custom_text: {
+            submit: {
+                message: "Thank you for choosing London Waste Management!",
+            },
         },
     });
 

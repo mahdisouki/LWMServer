@@ -738,7 +738,7 @@ const taskCtrl = {
         case 'stripe':
           try {
             const session = await stripe.checkout.sessions.create({
-              payment_method_types: ['card'],
+              payment_method_types: ['card', 'paypal'],
               mode: 'payment',
               line_items: [
                 {
@@ -746,6 +746,7 @@ const taskCtrl = {
                     currency: 'GBP',
                     product_data: {
                       name: `Payment for Task ${taskId}`,
+                      images: ["https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png"],
                     },
                     unit_amount: amountInPence,
                   },
@@ -756,7 +757,7 @@ const taskCtrl = {
               cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
               metadata: {
                 taskId: taskId,
-                paymentAmountType: paymentAmountType, // Track in metadata
+                paymentAmountType: paymentAmountType,
               },
             });
   
