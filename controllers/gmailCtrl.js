@@ -4,10 +4,11 @@ const gmailCtrl = {
   // Send an email using Nodemailer
   sendEmail: async (req, res) => {
     const { to, subject, text } = req.body;
+    const adminId = req.user._id; // Get the admin ID from the authenticated user
 
     try {
       // Use the new mailing service to send an email
-      const result = await sendEmail(to, subject, text);
+      const result = await sendEmail(to, subject, text, adminId);
       res.json({ message: 'Email sent successfully', result });
     } catch (error) {
       res.status(500).json({ message: 'Failed to send email', error: error.message });
@@ -46,9 +47,10 @@ const gmailCtrl = {
    replyToEmail: async (req, res) => {
     const { emailId } = req.params;
     const { text } = req.body;
+    const adminId = req.user._id; // Get the admin ID from the authenticated user
 
     try {
-      const result = await replyToEmail(emailId, text);
+      const result = await replyToEmail(emailId, text, adminId);
       res.json({ message: 'Reply sent successfully', result });
     } catch (error) {
       res.status(500).json({ message: 'Failed to send reply', error: error.message });

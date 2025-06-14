@@ -8,7 +8,7 @@ const { checkPermissions } = require('../middlewares/permissions');
 
 
 router.post('/create-staff',multer.fields([{ name: 'picture', maxCount: 1 },{ name: 'DriverLicense', maxCount: 1 },{ name: 'addressProof', maxCount: 1 },{ name: 'NatInsurance', maxCount: 1 }]),staffCtrl.addStaff);
-router.get('/staff', isAuth, checkRole('Admin'), staffCtrl.getAllStaff);
+router.get('/staff',  staffCtrl.getAllStaff);
 router.get('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.getStaffById);
 router.delete('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.deleteStaff);
 router.put('/staff/:id', isAuth, checkRole('Admin'),multer.fields([{ name: 'picture', maxCount: 1 },{ name: 'DriverLicense', maxCount: 1 },{ name: 'addressProof', maxCount: 1 },{ name: 'NatInsurance', maxCount: 1 }]), staffCtrl.updateStaff);
@@ -21,6 +21,8 @@ router.delete('/deassignDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl
 router.get('/getTasks/:id', isAuth, staffCtrl.getTasksForDriver);
 // update admin profile
 router.put('/admin/updateProfile', isAuth, checkRole('Admin'), multer.single('picture'), staffCtrl.updateAdminProfile);
+// update admin email signature
+router.put('/admin/email-signature', isAuth, checkRole('Admin'), staffCtrl.updateEmailSignature);
 router.post('/optimise/:truckId' , staffCtrl.optimizeTasks )
 
 module.exports = router;

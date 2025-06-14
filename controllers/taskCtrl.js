@@ -1313,6 +1313,7 @@ const taskCtrl = {
   
     try {
       const task = await Task.findById(taskId).populate('items.standardItemId');
+      console.log("task", task.items)
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }

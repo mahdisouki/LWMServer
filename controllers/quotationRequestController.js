@@ -19,7 +19,7 @@ const quotationRequestController = {
                 postcode,
                 comments,
             } = req.body;
-    
+            console.log("req.body",req.body)
             if (!req.files || req.files.length === 0) {
                 return res.status(400).json({ message: "No files uploaded" });
             }
@@ -90,18 +90,64 @@ const quotationRequestController = {
  
     getAllQuotations: async (req, res) => {
         try {
-            const { page = 1, limit = 10 } = req.query;
-
-            let query = QuotationRequest.find();
-            const features = new APIfeatures(query, req.query);
-            features.sorting().paginating();
-
-            const quotations = await features.query.exec();
-            const total = await QuotationRequest.countDocuments(features.query.getFilter());
-
+            const { 
+                page = 1, 
+                limit = 10, 
+                keyword,
+                startDate,
+                endDate,
+                sortBy = 'createdAt',
+                sortOrder = 'desc'
+            } = req.query;
+    
+            // Build the query
+            let query = {};
+    
+            // Add search condition if keyword exists
+            if (keyword) {
+                query = {
+                    $or: [
+                        { Name: { $regex: keyword, $options: 'i' } },
+                        { email: { $regex: keyword, $options: 'i' } },
+                        { phoneNumber: { $regex: keyword, $options: 'i' } },
+                        { postcode: { $regex: keyword, $options: 'i' } },
+                        { Town: { $regex: keyword, $options: 'i' } },
+                        { RoadName: { $regex: keyword, $options: 'i' } }
+                    ]
+                };
+            }
+    
+            // Add date range if provided
+            if (startDate || endDate) {
+                query.createdAt = {};
+                if (startDate) {
+                    query.createdAt.$gte = new Date(startDate);
+                }
+                if (endDate) {
+                    query.createdAt.$lte = new Date(endDate);
+                }
+            }
+    
+            // Calculate skip value for pagination
+            const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+    
+            // Build sort object
+            const sort = {};
+            sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    
+            // Execute query with pagination and sorting
+            const quotations = await QuotationRequest
+                .find(query)
+                .sort(sort)
+                .skip(skip)
+                .limit(parseInt(limit, 10));
+    
+            // Get total count for pagination
+            const total = await QuotationRequest.countDocuments(query);
+    
             res.status(200).json({
                 message: "All quotations retrieved successfully",
-                quotations,  // <== Now it's inside an object
+                quotations,
                 meta: {
                     currentPage: parseInt(page, 10),
                     limit: parseInt(limit, 10),

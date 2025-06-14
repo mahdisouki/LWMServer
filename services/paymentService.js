@@ -5,6 +5,7 @@ const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key here
 
 const VAT_RATE = 0.2; // VAT rate (20%)
+const MINIMUM_PRICE = 36; // Minimum price including VAT
 
 const NGROK_URL = 'https://londonwastemanagement.uk';
 
@@ -41,7 +42,25 @@ async function calculateTotalPrice(taskId) {
     });
 
     const vat = basePrice * VAT_RATE;
-    const finalPrice = basePrice + vat;
+    let finalPrice = basePrice + vat;
+
+    // Apply minimum price of £36 (including VAT)
+    if (finalPrice < MINIMUM_PRICE) {
+        if (breakdown.length > 0) {
+            const firstItem = breakdown[0];
+            const currentPrice = parseFloat(firstItem.price || firstItem.amount);
+            const adjustment = (MINIMUM_PRICE - finalPrice) / (1 + VAT_RATE);
+            const newPrice = (currentPrice + adjustment).toFixed(2);
+            
+            if (firstItem.itemDescription) {
+                firstItem.price = newPrice;
+            } else {
+                firstItem.amount = newPrice;
+            }
+        }
+        finalPrice = MINIMUM_PRICE;
+        basePrice = MINIMUM_PRICE / (1 + VAT_RATE);
+    }
 
     breakdown.push({ description: "VAT (20%)", amount: vat.toFixed(2) });
     breakdown.push({ description: "Final total price", amount: finalPrice.toFixed(2) });
@@ -51,6 +70,7 @@ async function calculateTotalPrice(taskId) {
         breakdown,
     };
 }
+
 const calculateTotalPriceUpdate = async (taskId) => {
     const task = await Task.findById(taskId).populate("items.standardItemId");
     if (!task) throw new Error("Task not found");
@@ -90,17 +110,17 @@ const calculateTotalPriceUpdate = async (taskId) => {
         basePrice *= 0.9;
     }
 
-    if (basePrice < 30) {
-        basePrice = 30;
-    }
-
     const VAT_RATE = 0.2;
     const vat = basePrice * VAT_RATE;
-    const finalPrice = basePrice + vat;
+    let finalPrice = basePrice + vat;
+
+    // Apply minimum price of £36 (including VAT)
+    if (finalPrice < MINIMUM_PRICE) {
+        finalPrice = MINIMUM_PRICE;
+    }
 
     return { total: Math.round(finalPrice * 100) / 100 };
 };
-
 
 const createStripePaymentLink = async (taskId, finalAmount, breakdown, paymentType) => {
     // Create line items from the breakdown
@@ -123,7 +143,7 @@ const createStripePaymentLink = async (taskId, finalAmount, breakdown, paymentTy
                 },
                 unit_amount: amount,
             },
-            quantity: item.quantity || 1,
+            quantity: 1,
         };
     }).filter(item => item !== null);
 
@@ -242,7 +262,6 @@ const createStripePaymentIntent = async (amount) => {
     });
 };
 
-
 async function createPayPalOrder(amount) {
     const client = PayPalClient();
     const request = new paypal.orders.OrdersCreateRequest();
@@ -286,8 +305,6 @@ const capturePayPalPayment = async (orderId) => {
     }
 };
 
-
-
 function PayPalClient() {
     return new paypal.core.PayPalHttpClient(
         new paypal.core.SandboxEnvironment(
@@ -314,8 +331,5 @@ async function testPayPal() {
 }
 
 //testPayPal();
-
-
-
 
 module.exports = { getPayPalOrderDetails, calculateTotalPrice, createStripePaymentIntent, capturePayPalPayment, createPayPalOrder, PayPalClient, createStripePaymentLink, createPaypalPaymentLink, calculateTotalPriceUpdate };

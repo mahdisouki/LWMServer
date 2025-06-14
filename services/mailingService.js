@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
 const quotedPrintable = require('quoted-printable');
+const Admin = require('../models/Admin');
 
 // Create a transport using Gmail SMTP
 const transporter = nodemailer.createTransport({
@@ -14,13 +15,27 @@ const transporter = nodemailer.createTransport({
 });
 
 // Function to send an email
-const sendEmail = async (to, subject, text) => {
+const sendEmail = async (to, subject, text, adminId = null) => {
   try {
+    let htmlContent = text;
+    
+    // If adminId is provided, get their signature
+    if (adminId) {
+      const admin = await Admin.findById(adminId);
+      if (admin && admin.emailSignature) {
+        // Convert text to HTML if it's plain text
+        if (!text.includes('<')) {
+          htmlContent = text.split('\n').map(line => `<p>${line}</p>`).join('');
+        }
+        htmlContent += admin.emailSignature;
+      }
+    }
+
     const info = await transporter.sendMail({
       from: process.env.EMAIL_USER, // Sender's email address
       to,
       subject,
-      text,
+      html: htmlContent,
     });
     return info.response;
   } catch (err) {
@@ -243,17 +258,31 @@ const fetchEmailById = (emailId) => {
 };
 
 // Function to reply to an email
-const replyToEmail = async (emailId, text) => {
+const replyToEmail = async (emailId, text, adminId = null) => {
   try {
     // Fetch the original email to get necessary headers
     const originalEmail = await fetchEmailById(emailId);
 
+    let htmlContent = text;
+    
+    // If adminId is provided, get their signature
+    if (adminId) {
+      const admin = await Admin.findById(adminId);
+      if (admin && admin.emailSignature) {
+        // Convert text to HTML if it's plain text
+        if (!text.includes('<')) {
+          htmlContent = text.split('\n').map(line => `<p>${line}</p>`).join('');
+        }
+        htmlContent += admin.emailSignature;
+      }
+    }
+
     const replyOptions = {
       from: process.env.EMAIL_USER,
-      to: originalEmail.from, // Replying to sender
-      subject: `Re: ${originalEmail.subject}`, // Keeping the subject line
+      to: originalEmail.from,
+      subject: `Re: ${originalEmail.subject}`,
       text: `${text}\n\nOn ${originalEmail.subject}, ${originalEmail.from} wrote:\n${originalEmail.text}`,
-      html: `<p>${text}</p><br><blockquote>${originalEmail.html}</blockquote>`, // Threaded reply in HTML
+      html: `<p>${htmlContent}</p><br><blockquote>${originalEmail.html}</blockquote>`,
       inReplyTo: originalEmail.messageId,
       references: `${originalEmail.references} ${originalEmail.messageId}`,
     };

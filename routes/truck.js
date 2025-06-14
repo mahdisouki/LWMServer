@@ -6,6 +6,7 @@ const { checkRole } = require('../middlewares/role');
 
 router.post('/trucks', isAuth, checkRole('Admin'), truckCtrl.createTruck);
 router.get('/trucks', truckCtrl.getAllTrucks);
+router.put('/trucks/:id', isAuth, checkRole('Admin'), truckCtrl.updateTruck);
 router.get(
   '/trucks-chat',
   isAuth,

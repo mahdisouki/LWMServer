@@ -11,8 +11,8 @@ const formatDate = (date) => {
 const truckCtrl = {
   createTruck: async (req, res) => {
     try {
-      const { name, loadCapacity, matricule } = req.body;
-      const newTruck = new Truck({ name, loadCapacity, matricule });
+      const { name, loadCapacity, matricule ,fuelNumber } = req.body;
+      const newTruck = new Truck({ name, loadCapacity, matricule ,fuelNumber });
       await newTruck.save();
       res
         .status(201)
@@ -70,7 +70,12 @@ const truckCtrl = {
       });
     }
   },
-
+  updateTruck: async (req, res) => {
+    const { id } = req.params;
+    const { name, loadCapacity, matricule ,fuelNumber } = req.body;
+    const truck = await Truck.findByIdAndUpdate(id, { name, loadCapacity, matricule ,fuelNumber }, { new: true });
+    res.status(200).json({ message: 'Truck updated successfully', truck });
+  },
   getAllTrucksForChat: async (req, res) => {
     try {
       const trucks = await Truck.find()

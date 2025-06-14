@@ -2,6 +2,7 @@
 const nodemailer = require("nodemailer");
 const fs = require("fs");
 const path = require("path");
+const https = require('https');
 
 const PDFDocument = require("pdfkit");
 const Task = require("../models/Task");
@@ -13,6 +14,24 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASSWORD,
   },
 });
+
+// Function to download image from URL
+async function downloadImage(url, filepath) {
+    return new Promise((resolve, reject) => {
+        https.get(url, (response) => {
+            if (response.statusCode === 200) {
+                const writeStream = fs.createWriteStream(filepath);
+                response.pipe(writeStream);
+                writeStream.on('finish', () => {
+                    writeStream.close();
+                    resolve();
+                });
+            } else {
+                reject(new Error(`Failed to download image: ${response.statusCode}`));
+            }
+        }).on('error', reject);
+    });
+}
 
 function generatePDF(data, filePath) {
   const doc = new PDFDocument();
@@ -148,137 +167,241 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
 }
 
 module.exports = {
-    async  generateOfficialInvoicePDF(task, filePath) {
+    async generateOfficialInvoicePDF(task, filePath) {
         const PDFDocument = require('pdfkit');
         const fs = require('fs');
-      
-        const doc = new PDFDocument({ margin: 50 });
+        const doc = new PDFDocument({ size: 'A4', margin: 50 });
         const writeStream = fs.createWriteStream(filePath);
         doc.pipe(writeStream);
-      
-        // Company Details
+
+        // Download and add logo
+        const logoPath = path.join(__dirname, '../temp', 'logo.png');
+        if (!fs.existsSync(path.dirname(logoPath))) {
+            fs.mkdirSync(path.dirname(logoPath), { recursive: true });
+        }
+        await downloadImage('https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png', logoPath);
+
+        // Add logo at the top with a subtle background
+        doc.fillColor('#f8f9fa')
+            .rect(0, 0, doc.page.width, 120)
+            .fill();
+        doc.image(logoPath, 50, 50, { width: 150 });
+
+        // Company Details with improved styling
         doc.fontSize(10)
-          .text("London Waste Management", 400, 50, { align: "right" })
-          .text("6-9 The Square,", { align: "right" })
-          .text("Stockley Park,", { align: "right" })
-          .text("Heathrow, UB11 1FW,", { align: "right" })
-          .text("United Kingdom", { align: "right" })
-          .text("VAT registration number: 403 1603 54", { align: "right" });
-      
-        doc.moveDown(2);
-      
-        // Invoice Title
-        doc.fontSize(16).text("INVOICE", 50, 150);
-      
-        // Billing & Invoice Details
-        doc.fontSize(12)
-          .text(`Billing Address:\n${task.firstName} ${task.lastName}\n${task.email || ''}\n${task.phoneNumber || ''}`, 50, 170)
-          .text(`Invoice Number: ${task.orderNumber}`, 400, 170)
-          .text(`Invoice Date: ${new Date().toISOString().split('T')[0]}`, 400, 185)
-          .text(`Order Number: ${task.orderNumber}`, 400, 200)
-          .text(`Order Date: ${task.date.toISOString().split('T')[0]}`, 400, 215);
-      
-        doc.moveDown(2);
-      
-        // Table Headers
-        doc.fillColor('black')
-          .rect(50, 250, 500, 20).fill('#000')
-          .fillColor('#fff')
-          .text('Product', 55, 253)
-          .text('Quantity', 355, 253)
-          .text('Price', 455, 253);
-      
-        doc.fillColor('black');
-        let y = 275;
-      
+            .fillColor('#8dc044')
+            .text("London Waste Management", 400, 50, { align: "right" })
+            .fillColor('#333333')
+            .text("6-9 The Square,", { align: "right" })
+            .text("Stockley Park,", { align: "right" })
+            .text("London, UB11 1AF", { align: "right" })
+            .text("United Kingdom", { align: "right" })
+            .text("hello@londonwastemanagement.com", { align: "right" })
+            .text("02030971517", { align: "right" });
+
+        // Add a decorative line
+        doc.strokeColor('#8dc044')
+            .lineWidth(2)
+            .moveTo(50, 140)
+            .lineTo(doc.page.width - 50, 140)
+            .stroke();
+
+        // Invoice Title with improved styling
+        doc.fillColor('#8dc044')
+            .fontSize(20)
+            .text("INVOICE", 50, 150);
+
+        // Billing & Invoice Details with improved styling
+        doc.fillColor('#333333')
+            .fontSize(12)
+            .text(`Billing Address:`, 50, 170)
+            .fontSize(11)
+            .text(`${task.firstName} ${task.lastName}`, 50, 190)
+            .text(`${task.email || ''}`, 50, 205)
+            .text(`${task.phoneNumber || ''}`, 50, 220)
+            .fontSize(12)
+            .text(`Invoice Number: ${task.orderNumber}`, 400, 170)
+            .text(`Date: ${task.date.toLocaleDateString('en-GB')}`, 400, 210);
+
+        // Add a decorative line before the table
+        doc.strokeColor('#e0e0e0')
+            .lineWidth(1)
+            .moveTo(50, 250)
+            .lineTo(doc.page.width - 50, 250)
+            .stroke();
+
+        // Table Headers with improved styling
+        doc.fillColor('#8dc044')
+            .rect(50, 255, 500, 30).fill()
+            .fillColor('#ffffff')
+            .fontSize(12)
+            .text('Product', 55, 265)
+            .text('Quantity', 355, 265)
+            .text('Price', 455, 265);
+
+        doc.fillColor('#333333');
+        let y = 290;
+
         // Calculate totals
         let subtotal = 0;
-        const items = task.items.map(i => {
-            const quantity = i.quantity || 1;
-            const price = i.standardItemId ? i.standardItemId.price : i.price || 0;
-            const itemTotal = price * quantity;
-            subtotal += itemTotal;
+        let discountAmount = 0;
+        const items = task.items.map(item => {
+            const standardItem = item.standardItemId;
+            const positionFee = standardItem.position === item.position ? 0 : 5;
+            const itemPrice = standardItem.price * item.quantity;
+            let itemDiscount = 0;
+            let itemDiscountPercent = 0;
 
-            // Add position fees
-            let positionFee = 0;
-            if (i.Objectsposition === "InsideWithDismantling") {
-                positionFee = 18;
-            } else if (i.Objectsposition === "Inside") {
-                positionFee = 6;
+            // Calculate item discount if customDiscountedPrice exists
+            if (item.customDiscountedPrice) {
+                const originalTotal = itemPrice + positionFee;
+                itemDiscount = originalTotal - item.customDiscountedPrice;
+                itemDiscountPercent = (itemDiscount / originalTotal) * 100;
             }
-            subtotal += positionFee;
 
+            const itemTotal = itemPrice + positionFee - itemDiscount;
+            subtotal += itemTotal;
             return {
-                name: i.standardItemId?.itemName || i.object || 'Unnamed Item',
-                position: i.Objectsposition,
-                quantity,
-                price: price,
-                positionFee,
-                total: itemTotal + positionFee
+                name: standardItem.itemName,
+                quantity: item.quantity,
+                price: standardItem.price,
+                position: item.position,
+                positionFee: positionFee,
+                total: itemTotal,
+                discount: itemDiscount,
+                discountPercent: itemDiscountPercent
             };
         });
-      
-        // Print items
-        items.forEach(item => {
-            doc.text(`${item.name}`, 55, y)
-              .text(`${item.quantity}`, 355, y)
-              .text(`£${item.price.toFixed(2)}`, 455, y);
+
+        if (task.customDiscountPercent) {
+            discountAmount = (subtotal * task.customDiscountPercent) / 100;
+            subtotal -= discountAmount;
+        }
+
+        // Ensure minimum price of £30 (before VAT)
+        if (subtotal < 30) {
+            const adjustment = 30 - subtotal;
+            subtotal = 30;
+            y += 10;
+            // doc.fillColor('#666666')
+            //     .fontSize(10)
+            //     .text('Minimum price adjustment', 55, y)
+            //     .text(`£${adjustment.toFixed(2)}`, 455, y);
+            // y += 20;
+        }
+
+        // Print items with improved styling
+        items.forEach((item, index) => {
+            // Add subtle background for alternating rows
+            if (index % 2 === 0) {
+                doc.fillColor('#f8f9fa')
+                    .rect(50, y - 5, 500, 25)
+                    .fill();
+            }
+
+            console.log("item", item)
+            doc.fillColor('#333333')
+                .fontSize(11)
+                .text(`${item.name}`, 55, y)
+                .text(`${item.quantity}`, 355, y)
+                .text(`£${item.price.toFixed(2)}`, 455, y);
             y += 20;
 
             if (item.positionFee > 0) {
-                doc.fontSize(10).text(`${item.position} fee`, 55, y)
-                  .text(`£${item.positionFee.toFixed(2)}`, 455, y);
+                doc.fontSize(10)
+                    .fillColor('#666666')
+                    .text(`${item.position} fee`, 55, y)
+                    .text(`£${item.positionFee.toFixed(2)}`, 455, y);
+                y += 20;
+            }
+
+            // Add item discount if it exists
+            if (item.discount) {
+                doc.fontSize(10)
+                    .fillColor('#666666')
+                    .text(`Discount (${item.discountPercent}%)`, 55, y)
+                    .text(`-£${item.discount.toFixed(2)}`, 455, y);
                 y += 20;
             }
         });
-      
-        // Apply discount if applicable
-        let discountAmount = 0;
-        if (task.customDiscountPercent && task.customDiscountPercent > 0) {
-            discountAmount = subtotal * (task.customDiscountPercent / 100);
-            subtotal -= discountAmount;
-        }
-      
+
         const vat = subtotal * 0.2;
         const total = subtotal + vat;
-      
-        // Print totals
-        y += 10;
-        doc.text(`Subtotal`, 400, y).text(`£${(subtotal + discountAmount).toFixed(2)}`, 500, y);
-        y += 15;
-      
+
+        // Add a decorative line before totals
+        doc.strokeColor('#e0e0e0')
+            .lineWidth(1)
+            .moveTo(50, y)
+            .lineTo(doc.page.width - 50, y)
+            .stroke();
+
+        // Print totals with improved styling
+        y += 20;
+        doc.fillColor('#333333')
+            .fontSize(12)
+            .text(`Subtotal`, 400, y)
+            .text(`£${subtotal.toFixed(2)}`, 500, y);
+        y += 20;
+
         if (discountAmount > 0) {
-            doc.text(`Discount (${task.customDiscountPercent}%)`, 400, y).text(`-£${discountAmount.toFixed(2)}`, 500, y);
-            y += 15;
+            doc.fillColor('#666666')
+                .fontSize(11)
+                .text(`Discount (${task.customDiscountPercent}%)`, 400, y)
+                .text(`-£${discountAmount.toFixed(2)}`, 500, y);
+            y += 20;
         }
-      
-        doc.text(`VAT (20%)`, 400, y).text(`£${vat.toFixed(2)}`, 500, y);
-        y += 15;
-        doc.text(`Total`, 400, y).text(`£${total.toFixed(2)}`, 500, y);
-      
-        // Payment status
-        y += 30;
+
+        doc.fillColor('#333333')
+            .fontSize(12)
+            .text(`VAT (20%)`, 400, y)
+            .text(`£${vat.toFixed(2)}`, 500, y);
+        y += 20;
+
+        // Add a decorative line before total
+        doc.strokeColor('#8dc044')
+            .lineWidth(1)
+            .moveTo(400, y)
+            .lineTo(doc.page.width - 50, y)
+            .stroke();
+
+        doc.fillColor('#8dc044')
+            .fontSize(14)
+            .text(`Total`, 400, y + 10)
+            .text(`£${total.toFixed(2)}`, 500, y + 10);
+
+        // Payment status with improved styling
+        y += 40;
         const paidAmount = task.paidAmount?.amount || 0;
         const remainingAmount = total - paidAmount;
-        
-        if (paidAmount > 0) {
-            doc.text(`Amount Paid: £${paidAmount.toFixed(2)}`, 50, y);
-            y += 15;
+
+        if (task.paymentStatus === "partial_Paid" && paidAmount > 0) {
+            doc.fillColor('#333333')
+                .fontSize(12)
+                .text(`Amount Paid: £${paidAmount.toFixed(2)}`, 50, y);
+            y += 20;
             doc.text(`Remaining Balance: £${remainingAmount.toFixed(2)}`, 50, y);
         }
-      
+
         y += 30;
-        doc.fontSize(12).text(`Collection Date: ${task.date.toLocaleDateString('en-GB')}`, 50, y);
-        y += 15;
+        doc.fillColor('#333333')
+            .fontSize(12)
+            .text(`Collection Date: ${task.date.toLocaleDateString('en-GB')}`, 50, y);
+        y += 20;
         doc.text(`Time Slot: ${task.available.replace(/_/g, ' ')}`, 50, y);
-      
-        // Footer
-        doc.fontSize(10)
-          .text("Environment Agency Registered Waste Carrier: CBDU308350", 50, 750, { align: "center" })
-          .text("London Waste Management | hello@londonwastemanagement.com | 02030971517", 50, 765, { align: "center" });
-      
+
+        // Footer with improved styling
+        doc.fillColor('#8dc044')
+            .rect(0, 750, doc.page.width, 50).fill()
+            .fillColor('#ffffff')
+            .fontSize(10)
+            .text("Environment Agency Registered Waste Carrier: CBDU308350", 50, 760, { align: "center" })
+            .text("London Waste Management | hello@londonwastemanagement.com | 02030971517", 50, 775, { align: "center" });
+
         doc.end();
-      
+
+        // Clean up the temporary logo file
+        fs.unlinkSync(logoPath);
+
         return new Promise((resolve, reject) => {
             writeStream.on('finish', resolve);
             writeStream.on('error', reject);

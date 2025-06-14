@@ -138,12 +138,17 @@ const staffManagement = {
 
   getAllStaff: async (req, res) => {
     try {
-      const { page = 1, limit = 9, filters } = req.query;
+      const { page = 1, limit = 9, filters, showAll } = req.query;
 
-      // Define the query to retrieve drivers and helpers, excluding Admins
-      let query = User.find({
-        role: { $in: ['Driver', 'Helper'], $nin: ['Admin'] },
-      });
+      // Define the base query
+      let query = User.find();
+
+      // Only filter for drivers and helpers if showAll is not true
+      if (!showAll) {
+        query = User.find({
+          role: { $in: ['Driver', 'Helper'], $nin: ['Admin'] },
+        });
+      }
 
       const total = await User.countDocuments(query);
 
@@ -576,6 +581,31 @@ const staffManagement = {
     } catch (error) {
       console.log(error)
       res.json({ error: error })
+    }
+  },
+  updateEmailSignature: async (req, res) => {
+    try {
+      const { signature } = req.body;
+      const adminId = req.user._id;
+
+      const admin = await Admin.findById(adminId);
+      if (!admin) {
+        return res.status(404).json({ message: 'Admin not found' });
+      }
+
+      admin.emailSignature = signature;
+      await admin.save();
+
+      res.status(200).json({ 
+        message: 'Email signature updated successfully',
+        signature: admin.emailSignature 
+      });
+    } catch (error) {
+      console.error('Error updating email signature:', error);
+      res.status(500).json({ 
+        message: 'Failed to update email signature', 
+        error: error.message 
+      });
     }
   }
 };

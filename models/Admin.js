@@ -1,4 +1,3 @@
-
 const mongoose = require('mongoose');
 const { User } = require('./User');
 
@@ -18,8 +17,20 @@ const adminSchema = new mongoose.Schema({
         Busy_Days: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
         Emails: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
         Quotations: { type: [String], enum: ["View", "Edit", "Delete"], default: [] }
+    },
+    emailSignature: {
+        type: String,
+        default: `
+            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; font-family: Arial, sans-serif;">
+                <p style="margin: 0; color: #333;">Best regards,</p>
+                <p style="margin: 5px 0; font-weight: bold; color: #333;">London Waste Management</p>
+                <p style="margin: 5px 0; color: #666;">hello@londonwastemanagement.com</p>
+                <p style="margin: 5px 0; color: #666;">02030971517</p>
+            </div>
+        `
     }
 });
+
 const Admin = User.discriminator('Admin', adminSchema);
 
 module.exports = Admin;
