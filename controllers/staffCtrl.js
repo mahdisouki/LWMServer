@@ -138,65 +138,79 @@ const staffManagement = {
 
   getAllStaff: async (req, res) => {
     try {
-      const { page = 1, limit = 9, filters, showAll } = req.query;
-
-      // Define the base query
-      let query = User.find();
-
-      // Only filter for drivers and helpers if showAll is not true
+      const { page = 1, limit = 9, showAll, pagination = 'true' } = req.query;
+  
+      // Base filter
+      let filter = {};
       if (!showAll) {
-        query = User.find({
-          role: { $in: ['Driver', 'Helper'], $nin: ['Admin'] },
-        });
+        filter.role = { $in: ['Driver', 'Helper'], $nin: ['Admin'] };
       }
-
-      const total = await User.countDocuments(query);
-
-      // Apply filters, sorting, and pagination
-      const features = new APIfeatures(query, req.query);
-      if (filters) {
-        features.filtering();
+  
+      // Keyword search
+      if (req.query.keyword) {
+        const keyword = req.query.keyword.trim();
+        filter.$or = [
+          { username: { $regex: keyword, $options: 'i' } },
+          { email: { $regex: keyword, $options: 'i' } },
+          { phoneNumber: { $regex: keyword, $options: 'i' } },
+        ];
       }
-      features.sorting().paginating();
-
-      // Execute the query to retrieve users
-      const users = await features.query.exec();
-
-      // Find trucks assigned to these users
+  
+      // Count
+      const total = await User.countDocuments(filter);
+  
+      // Sort
+      let sort = req.query.sort
+        ? req.query.sort.split(',').join(' ') + ' _id'
+        : '-createdAt _id';
+  
+      // Query with conditional pagination
+      let query = User.find(filter).sort(sort);
+      
+      if (pagination === 'true') {
+        const currentPage = parseInt(page, 10);
+        const limitNum = parseInt(limit, 10);
+        const skip = (currentPage - 1) * limitNum;
+        query = query.skip(skip).limit(limitNum);
+      }
+  
+      const users = await query;
+  
+      // Trucks
       const userIds = users.map((user) => user._id);
       const trucks = await Truck.find({
         $or: [{ driverId: { $in: userIds } }, { helperId: { $in: userIds } }],
       }).select('name driverId helperId driverSpecificDays helperSpecificDays');
-
-      // Map trucks to their corresponding user
+  
       const usersWithTrucks = users.map((user) => {
         const userTrucks = trucks.filter(
           (truck) =>
             truck.driverId?.toString() === user._id.toString() ||
-            truck.helperId?.toString() === user._id.toString(),
+            truck.helperId?.toString() === user._id.toString()
         );
         return { ...user.toObject(), trucks: userTrucks };
       });
-
-      const currentPage = parseInt(page, 10);
-      const limitNum = parseInt(limit, 10);
-
+  
       res.status(200).json({
         message: 'Staff retrieved successfully',
         users: usersWithTrucks,
         meta: {
-          currentPage,
-          limit: limitNum,
+          currentPage: pagination === 'true' ? parseInt(page, 10) : 1,
+          limit: pagination === 'true' ? parseInt(limit, 10) : total,
           total,
           count: users.length,
+          pagination: pagination === 'true'
         },
       });
     } catch (error) {
-      res
-        .status(500)
-        .json({ message: 'Failed to retrieve staff', error: error.message });
+      res.status(500).json({
+        message: 'Failed to retrieve staff',
+        error: error.message,
+      });
     }
   },
+  
+  
 
   getStaffById: async (req, res) => {
     const { id } = req.params;

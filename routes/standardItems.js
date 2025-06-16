@@ -150,17 +150,64 @@ const express = require('express');
 const router = express.Router();
 const standardItemCtrl = require('../controllers/standardItemCtrl');
 const { isAuth } = require('../middlewares/auth');
-const { checkRole } = require('../middlewares/role')
+const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-router.post('/item', isAuth, checkRole('Admin'), multer.single('image'), standardItemCtrl.createStandardItem);
+// Configure multer for different upload scenarios
+const uploadMainImage = multer.single('image');
+const uploadAdditionalImages = multer.array('images', 5); // Allow up to 5 additional images
+
+// Create standard item with main image
+router.post('/item', 
+  isAuth, 
+  checkRole('Admin'), 
+  uploadMainImage, 
+  standardItemCtrl.createStandardItem
+);
+
+// Get all standard items
 router.get('/items', standardItemCtrl.getAllStandardItems);
-router.get('/items/category/:category', standardItemCtrl.getItemsByCategory); 
+
+// Get items by category
+router.get('/items/category/:category', standardItemCtrl.getItemsByCategory);
+
+// Get item by ID
 router.get('/items/:id', standardItemCtrl.getStandardItemById);
-router.put('/items/:id', isAuth, checkRole('Admin'), multer.single('image'), standardItemCtrl.updateStandardItem);
-router.delete('/items/:id', isAuth, checkRole('Admin'), standardItemCtrl.deleteStandardItem);
-router.put("/convert" , standardItemCtrl.convertCategoryToReferences)
+
+// Update standard item (main image)
+router.put('/items/:id', 
+  isAuth, 
+  checkRole('Admin'), 
+  uploadMainImage, 
+  standardItemCtrl.updateStandardItem
+);
+
+// Add additional images to standard item
+router.post('/items/:id/images',
+  isAuth,
+  checkRole('Admin'),
+  uploadAdditionalImages,
+  standardItemCtrl.addAdditionalImages
+);
+
+// Delete additional image from standard item
+router.delete('/items/:id/images/:imageIndex',
+  isAuth,
+  checkRole('Admin'),
+  standardItemCtrl.deleteAdditionalImage
+);
+
+// Delete standard item
+router.delete('/items/:id', 
+  isAuth, 
+  checkRole('Admin'), 
+  standardItemCtrl.deleteStandardItem
+);
+
+// Convert category to references
+router.put("/convert", standardItemCtrl.convertCategoryToReferences);
+
 // router.post('/pay',    standardItemCtrl.processPayment);
 // router.post('/checkoutStripe',    standardItemCtrl.confirmStripePayment);
 // router.post('/checkoutPaypal',    standardItemCtrl.capturePayPalOrder);

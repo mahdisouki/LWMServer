@@ -107,6 +107,8 @@ const serviceCategoryRoutes = require('./routes/serviceCategory');
 const notificationRoutes = require('./routes/notification');
 const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
+const customerRoutes = require('./routes/customerRoutes');
+
 const {optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app); 
@@ -136,6 +138,7 @@ app.use('/api', contactRequestRoutes);
 app.use('/api' , serviceCategoryRoutes);
 app.use('/api' , notificationRoutes);
 app.use('/api' , emailTemplateRoutes)
+app.use('/api/customers', customerRoutes); 
 app.post('/optimise/:truckId' , async(req,res)=>{
   try {
     const {truckId} = req.params;

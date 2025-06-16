@@ -14,19 +14,30 @@ const standardItemCtrl = {
   createStandardItem: async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: 'Image file is required' });
+        return res.status(400).json({ message: 'Main image file is required' });
       }
-      const { itemName, price, category, description } = req.body;
+
+      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode } = req.body;
+      
+      // Main image
       const image = req.file.path;
+      
+      // Additional images if any
+      const additionalImages = req.files ? req.files.map(file => file.path) : [];
+
       const newStandardItem = new StandardItem({
         itemName,
         image,
+        images: additionalImages,
         price,
         category,
         description,
         insidePrice,
         insideWithDismantlingPrice,
+        Objectsposition,
+        ewcCode
       });
+
       await newStandardItem.save();
       res.status(201).json(newStandardItem);
     } catch (error) {
@@ -276,29 +287,43 @@ const standardItemCtrl = {
   },
 
   updateStandardItem: async (req, res) => {
-    const { id } = req.params;
-    const { itemName, price, category, description , insidePrice , insideWithDismantlingPrice ,ewcCode } = req.body; // Inclure description
-
     try {
-      // Récupérer d'abord l'item existant pour conserver l'image si aucune nouvelle n'est fournie
-      const item = await StandardItem.findById(id);
-      if (!item) {
+      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode } = req.body;
+      
+      const updateData = {
+        itemName,
+        price,
+        category,
+        description,
+        insidePrice,
+        insideWithDismantlingPrice,
+        Objectsposition,
+        ewcCode
+      };
+
+      // Get existing item
+      const standardItem = await StandardItem.findById(req.params.id);
+      if (!standardItem) {
         return res.status(404).json({ message: 'Standard item not found' });
       }
 
-      // Définir l'image à l'image existante si aucune nouvelle image n'est fournie
-      const image = req.file ? req.file.path : item.image;
+      // Update main image if provided
+      if (req.file) {
+        updateData.image = req.file.path;
+      }
 
-      // Mise à jour de l'item avec les nouvelles valeurs, en conservant l'image existante si nécessaire
+      // Add new additional images if provided
+      if (req.files && req.files.length > 0) {
+        const newImages = req.files.map(file => file.path);
+        updateData.images = [...standardItem.images, ...newImages];
+      }
+
       const updatedItem = await StandardItem.findByIdAndUpdate(
-        id,
-        { itemName, price, category, image, description , insidePrice , insideWithDismantlingPrice ,ewcCode },
-        { new: true },
+        req.params.id,
+        updateData,
+        { new: true, runValidators: true }
       );
 
-      if (!updatedItem) {
-        return res.status(404).json({ message: 'Standard item not found' });
-      }
       res.status(200).json(updatedItem);
     } catch (error) {
       res.status(500).json({
@@ -323,6 +348,66 @@ const standardItemCtrl = {
       });
     }
   },
+
+  // Add additional images to standard item
+  addAdditionalImages: async (req, res) => {
+    try {
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ message: 'No images provided' });
+      }
+
+      const standardItem = await StandardItem.findById(req.params.id);
+      if (!standardItem) {
+        return res.status(404).json({ message: 'Standard item not found' });
+      }
+
+      const newImages = req.files.map(file => file.path);
+      standardItem.images = [...standardItem.images, ...newImages];
+      await standardItem.save();
+
+      res.status(200).json({
+        message: 'Additional images added successfully',
+        standardItem
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to add additional images',
+        error: error.message,
+      });
+    }
+  },
+
+  // Delete additional image from standard item
+  deleteAdditionalImage: async (req, res) => {
+    try {
+      const { itemId, imageIndex } = req.params;
+      
+      const standardItem = await StandardItem.findById(itemId);
+      if (!standardItem) {
+        return res.status(404).json({ message: 'Standard item not found' });
+      }
+
+      // Check if image index is valid
+      if (imageIndex < 0 || imageIndex >= standardItem.images.length) {
+        return res.status(400).json({ message: 'Invalid image index' });
+      }
+
+      // Remove the image at the specified index
+      standardItem.images.splice(imageIndex, 1);
+      await standardItem.save();
+
+      res.status(200).json({
+        message: 'Additional image deleted successfully',
+        standardItem
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to delete additional image',
+        error: error.message,
+      });
+    }
+  },
+
   convertCategoryToReferences: async (req, res) => {
     try {
       // Fetch all service categories
