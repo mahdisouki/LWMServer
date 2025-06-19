@@ -65,6 +65,10 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  csvPermission: {
+    type: Boolean,
+    default: false
+  },
   breaks: [breakSchema],
 }, { discriminatorKey: 'roleType' });
 

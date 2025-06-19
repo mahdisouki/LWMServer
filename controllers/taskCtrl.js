@@ -534,7 +534,7 @@ const taskCtrl = {
           let positionFee = 0;
           if (item.Objectsposition === "InsideWithDismantling") positionFee = 18;
           else if (item.Objectsposition === "Inside") positionFee = 6;
-          const itemTotal = (price + positionFee) * quantity;
+          const itemTotal = (price * quantity) + positionFee;
           console.log('Item:', item, 'Price:', price, 'Quantity:', quantity, 'PositionFee:', positionFee, 'ItemTotal:', itemTotal);
           totalPrice += itemTotal;
         }
@@ -1306,7 +1306,7 @@ const taskCtrl = {
         error: error.message
       });
     }
-  },
+  }, 
 
   sendInvoice: async (req, res) => {
     const { taskId } = req.params;

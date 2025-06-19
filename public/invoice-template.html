@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Invoice</title>
+  <style>
+    @font-face {
+      font-family: 'Lato';
+      src: url('{{fontRegular}}') format('truetype');
+    }
+    @font-face {
+      font-family: 'Lato-Bold';
+      src: url('{{fontBold}}') format('truetype');
+      font-weight: bold;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Lato', sans-serif;
+      background: url("{{bgPath}}") no-repeat top center;
+      background-size: cover;
+      font-size:15px;
+      color: #222;
+    }
+
+    .container {
+      padding: 40px 45px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .address-box {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      padding: 0px 20px;
+      width: 270px;
+      box-shadow: 0 2px 3px rgba(0,0,0,0.08);
+    }
+
+    .address-box div {
+      margin-bottom: 15px;
+      
+    }
+
+    .address-box img {
+      margin-right: 8px;
+    }
+
+    .section {
+      background: rgba(255, 255, 255, 0.512);
+      border-radius: 10px;
+      padding: 15px 20px;
+      margin-top: 30px;
+      box-shadow: 0 2px 3px rgba(0,0,0,0.06);
+    }
+    .sectionL {
+      background: rgb(255, 255, 255);
+      border-radius: 10px;
+      padding: 15px 20px;
+      margin-top: 30px;
+      box-shadow: 0 2px 3px rgba(0,0,0,0.06);
+    }
+
+    .section-title {
+      font-family: 'Lato-Bold';
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+
+    .info-box {
+     
+      font-size: 18px;
+    }
+
+    .info-box div {
+      flex: 1;
+    }
+
+    .green {
+      color: #8dc044;
+      font-weight: bold;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    table thead {
+      background: #8dc044;
+      color: white;
+    }
+
+    table th, table td {
+      padding: 10px 8px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+
+    .datetime-box, .summary-box {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 2px 3px rgba(0,0,0,0.06);
+      padding: 12px 20px;
+      width: 230px;
+      font-size: 13px;
+    }
+
+    .summary-box {
+      float: right;
+      margin-top: 20px;
+    }
+
+    .summary-box div {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .datetime-box {
+      float: left;
+      margin-top: 20px;
+    }
+
+    .datetime-box div {
+      margin: 4px 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .datetime-box img {
+      width: 16px;
+      margin-right: 8px;
+    }
+
+    .footer {
+      margin-top: 100px;
+      background: #eaf7d6;
+      width: 100%;
+      text-align: center;
+      font-size: 11px;
+      padding: 8px 0;
+      color: #8dc044;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="{{logoPath}}" width="130" height="130" />
+      <div class="address-box">
+        <div style="background-color: #fff; border-radius: 10px; padding: 10px;">  
+        <div><img src="{{locationIcon}}" width="16" /> 6-9 The Square, Stockley Park, Heathrow <strong>UB11 1FW</strong>,</div>
+        <div style="padding-left: 24px;"> <span class="green">United Kingdom</span></div>
+    </div>
+    <div style="background-color: #fff; border-radius: 10px; padding: 10px;">  
+        <div><img src="{{phoneIcon}}" width="16" /> <strong>VAT registration number:</strong></div>
+        <div style="padding-left: 24px;">403 1603 54</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">INVOICE</div>
+      <div class="info-box">
+        <div style="background-color: #fff; border-radius: 10px; padding: 10px; margin-bottom: 10px;">
+        <img src="{{emailIcon}}" width="14" /> 
+          <strong>Billing Address:</strong> {{billingName}} | {{email}}<br/><span class="green">{{phone}}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+        <div style="background-color: #fff; border-radius: 10px; padding: 10px; margin: 10px 10px;">
+          <strong>Invoice Number:</strong> {{invoiceNumber}}<br /><br />
+          <strong>Invoice Date:</strong> {{invoiceDate}}
+        </div>
+        <div style="background-color: #fff; border-radius: 10px; padding: 10px;margin: 10px 10px;" >
+          <strong>Order Number:</strong> {{orderNumber}}<br /><br />
+          <strong>Order Date:</strong> {{orderDate}}
+        </div>
+    </div>
+      </div>
+    </div>
+    <div style="background-color: #ffffff66; border-radius: 10px; padding: 10px; margin-bottom: 10px;margin-top: 10px;">
+    <div class="sectionL">
+      <table>
+        <img src="{{vatIcon}}" width="24" height="24" />
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Price</th>
+            {{discountColumns}}
+            <th>Position fee</th>
+            <th>object position</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{itemRows}}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; margin-top: 40px;">
+      <div class="datetime-box">
+        <div><img src="{{calendarIcon}}" /> {{serviceDate}}</div>
+        <hr style="border: 1px solid #8dc044; margin: 10px 0;" />
+        <div><img src="{{clockIcon}}" /> {{available}}</div>
+      </div>
+
+      <div class="summary-box">
+        <div><span>Subtotal :</span><span>£{{subtotal}}</span></div>
+        {{discountRow}}
+        <hr style="border: 1px solid #8dc044; margin: 10px 0;" />
+        <div><span>VAT :</span><span>£{{vat}}</span></div>
+        <hr style="border: 1px solid #8dc044; margin: 10px 0;" />
+        <div class="green"><span>Total :</span><span>£{{totalPrice}}</span></div>
+      </div>
+    </div>
+</div>
+  </div>
+
+  <div class="footer">
+    Environment Agency Registered Waste Carrier: CBDU308350<br/>
+    London Waste Management | hello@londonwastemanagement.com | 02030971517
+  </div>
+</body>
+</html>

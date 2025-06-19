@@ -3,7 +3,7 @@ const nodemailer = require("nodemailer");
 const fs = require("fs");
 const path = require("path");
 const https = require('https');
-
+const {chromium} = require('playwright');
 const PDFDocument = require("pdfkit");
 const Task = require("../models/Task");
 const StandardItem = require("../models/StandardItem");
@@ -15,23 +15,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Function to download image from URL
-async function downloadImage(url, filepath) {
-    return new Promise((resolve, reject) => {
-        https.get(url, (response) => {
-            if (response.statusCode === 200) {
-                const writeStream = fs.createWriteStream(filepath);
-                response.pipe(writeStream);
-                writeStream.on('finish', () => {
-                    writeStream.close();
-                    resolve();
-                });
-            } else {
-                reject(new Error(`Failed to download image: ${response.statusCode}`));
-            }
-        }).on('error', reject);
-    });
-}
+
 
 function generatePDF(data, filePath) {
   const doc = new PDFDocument();
@@ -167,246 +151,192 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
 }
 
 module.exports = {
-    async generateOfficialInvoicePDF(task, filePath) {
-        const PDFDocument = require('pdfkit');
-        const fs = require('fs');
-        const doc = new PDFDocument({ size: 'A4', margin: 50 });
-        const writeStream = fs.createWriteStream(filePath);
-        doc.pipe(writeStream);
+  async  generateOfficialInvoicePDF(task, outputPath) {
+    const templatePath = path.join(__dirname, '../public/invoice-template.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+    console.log(task)
+    const iconDir = path.join(__dirname, '../public/invoice-icons');
+    console.log('Icon directory:', iconDir); // Debug log
+  
+    const asset = name => {
+      const filePath = path.resolve(iconDir, name);
+      console.log(`Asset path for ${name}:`, filePath);
+      // Read file and convert to base64
+      const fileBuffer = fs.readFileSync(filePath);
+      const base64 = fileBuffer.toString('base64');
+      const mimeType = name.endsWith('.png') ? 'image/png' : 
+                      name.endsWith('.svg') ? 'image/svg+xml' : 
+                      name.endsWith('.ttf') ? 'font/ttf' : 'image/png';
+      return `data:${mimeType};base64,${base64}`;
+    };
+    let subtotal = 0;
+    let vat = 0;
+    let total = 0;
+    let totalDiscount = 0;
+    
+    task.items.forEach(item => {
+      const itemPrice = item.standardItemId?.price * item.quantity || 0;
+      const positionPrice = item.Objectsposition === "InsideWithDismantling" 
+        ? (item.standardItemId?.insideWithDismantlingPrice || 0)
+        : item.Objectsposition === "Inside" 
+        ? (item.standardItemId?.insidePrice || 0) 
+        : 0;
+      
+      const itemSubtotal = itemPrice + positionPrice;
+      
+      // Handle item-specific discount only if hasDiscount is true
+      const itemDiscount = (task.hasDiscount && item.customPrice) ? (itemSubtotal - item.customPrice) : 0;
+      const finalItemTotal = itemSubtotal - itemDiscount;
+      
+      subtotal += finalItemTotal;
+      totalDiscount += itemDiscount;
+    });
+    
+    // Handle percentage discount on total only if hasDiscount is true
+    if (task.hasDiscount && task.customDiscountPercent > 0) {
+      const percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
+      subtotal -= percentageDiscount;
+      totalDiscount += percentageDiscount;
+    }
+    
+    vat = subtotal * 0.2;
+    total = subtotal + vat;
 
-        // Download and add logo
-        const logoPath = path.join(__dirname, '../temp', 'logo.png');
-        if (!fs.existsSync(path.dirname(logoPath))) {
-            fs.mkdirSync(path.dirname(logoPath), { recursive: true });
-        }
-        await downloadImage('https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png', logoPath);
+    const itemRows = task.items.map(item => {
+      const itemPrice = item.standardItemId?.price * item.quantity || 0;
+      const positionPrice = item.Objectsposition === "InsideWithDismantling" 
+        ? (item.standardItemId?.insideWithDismantlingPrice || 0)
+        : item.Objectsposition === "Inside" 
+        ? (item.standardItemId?.insidePrice || 0) 
+        : 0;
+      
+      const itemSubtotal = itemPrice + positionPrice;
+      const itemDiscount = (task.hasDiscount && item.customPrice) ? (itemSubtotal - item.customPrice) : 0;
+      const finalItemTotal = itemSubtotal - itemDiscount;
+      
+      if (task.hasDiscount) {
+        return `
+          <tr>
+            <td>${item.standardItemId?.itemName || item.object || 'Unnamed Item'}</td>
+            <td>${item.quantity}</td>
+            <td>£${(item.standardItemId?.price || 0).toFixed(2)}</td>
+            <td>£${(item.customPrice || itemSubtotal).toFixed(2)}</td>
+            <td>£${itemDiscount.toFixed(2)}</td>
+            <td>£${positionPrice.toFixed(2)}</td>
+            <td>${item.Objectsposition}</td>
+            <td>£${finalItemTotal.toFixed(2)}</td>
+          </tr>`;
+      } else {
+        return `
+          <tr>
+            <td>${item.standardItemId?.itemName || item.object || 'Unnamed Item'}</td>
+            <td>${item.quantity}</td>
+            <td>£${(item.standardItemId?.price || 0).toFixed(2)}</td>
+            <td>£${positionPrice.toFixed(2)}</td>
+            <td>${item.Objectsposition}</td>
+            <td>£${finalItemTotal.toFixed(2)}</td>
+          </tr>`;
+      }
+    }).join('');
 
-        // Add logo at the top with a subtle background
-        doc.fillColor('#f8f9fa')
-            .rect(0, 0, doc.page.width, 120)
-            .fill();
-        doc.image(logoPath, 50, 50, { width: 150 });
+    const vars = {
+      billingName: `${task.firstName} ${task.lastName}`,
+      email: task.email,
+      phone: task.phoneNumber,
+      invoiceNumber: task.orderNumber,
+      orderNumber: task.orderNumber,
+      invoiceDate: task.createdAt?.toDateString(),
+      orderDate: task.date?.toDateString(),
+      serviceDate: new Date(task.date).toLocaleDateString('en-GB'),
+      available: task.available?.replace(/_/g, ' ') || '',
+      itemRows,
+      subtotal: (subtotal || 0).toFixed(2),
+      vat: (vat || 0).toFixed(2),
+      totalPrice: (total || 0).toFixed(2),
+      totalDiscount: (totalDiscount || 0).toFixed(2),
+      hasDiscount: task.hasDiscount || totalDiscount > 0,
+      customDiscountPercent: (task.customDiscountPercent || 0).toFixed(2),
+      
+      // Discount display logic
+      showDiscountRow: (totalDiscount > 0 || (task.hasDiscount && task.customDiscountPercent > 0)) ? 'block' : 'none',
+      discountLabel: task.hasDiscount && task.customDiscountPercent > 0 
+        ? `Discount (${task.customDiscountPercent}%)` 
+        : 'Discount',
+      discountAmount: totalDiscount.toFixed(2),
+      
+      // Asset paths with base64 encoding
+      logoPath: asset('london_waste_logo 1.png'),
+      bgPath: asset('green-bg.png'),
+      locationIcon: asset('location-pin-svgrepo-com 1.png'),
+      vatIcon: asset('product-o-svgrepo-com 1.png'),
+      emailIcon: asset('email-svgrepo-com 1.png'),
+      phoneIcon: asset('phone-svgrepo-com 1.png'),
+      calendarIcon: asset('Vector.png'),
+      clockIcon: asset('Group 4.png'),
+      fontRegular: asset('Lato-Regular.ttf'),
+      fontBold: asset('lato-bold.ttf')
+    };
+  
+    // Build discount columns for the table header
+    let discountColumns = '';
+    if (vars.hasDiscount) {
+      discountColumns = '<th>Discounted Price</th><th>Discount</th>';
+    }
+    template = template.replace('{{discountColumns}}', discountColumns);
 
-        // Company Details with improved styling
-        doc.fontSize(10)
-            .fillColor('#8dc044')
-            .text("London Waste Management", 400, 50, { align: "right" })
-            .fillColor('#333333')
-            .text("6-9 The Square,", { align: "right" })
-            .text("Stockley Park,", { align: "right" })
-            .text("London, UB11 1AF", { align: "right" })
-            .text("United Kingdom", { align: "right" })
-            .text("hello@londonwastemanagement.com", { align: "right" })
-            .text("02030971517", { align: "right" });
+    // Build discount row for the summary
+    let discountRow = '';
+    if (vars.hasDiscount) {
+      discountRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div><span>${vars.discountLabel} :</span><span>-£${vars.discountAmount}</span></div>`;
+    }
+    template = template.replace('{{discountRow}}', discountRow);
 
-        // Add a decorative line
-        doc.strokeColor('#8dc044')
-            .lineWidth(2)
-            .moveTo(50, 140)
-            .lineTo(doc.page.width - 50, 140)
-            .stroke();
-
-        // Invoice Title with improved styling
-        doc.fillColor('#8dc044')
-            .fontSize(20)
-            .text("INVOICE", 50, 150);
-
-        // Billing & Invoice Details with improved styling
-        doc.fillColor('#333333')
-            .fontSize(12)
-            .text(`Billing Address:`, 50, 170)
-            .fontSize(11)
-            .text(`${task.firstName} ${task.lastName}`, 50, 190)
-            .text(`${task.email || ''}`, 50, 205)
-            .text(`${task.phoneNumber || ''}`, 50, 220)
-            .fontSize(12)
-            .text(`Invoice Number: ${task.orderNumber}`, 400, 170)
-            .text(`Date: ${task.date.toLocaleDateString('en-GB')}`, 400, 210);
-
-        // Add a decorative line before the table
-        doc.strokeColor('#e0e0e0')
-            .lineWidth(1)
-            .moveTo(50, 250)
-            .lineTo(doc.page.width - 50, 250)
-            .stroke();
-
-        // Table Headers with improved styling
-        doc.fillColor('#8dc044')
-            .rect(50, 255, 500, 30).fill()
-            .fillColor('#ffffff')
-            .fontSize(12)
-            .text('Product', 55, 265)
-            .text('Quantity', 355, 265)
-            .text('Price', 455, 265);
-
-        doc.fillColor('#333333');
-        let y = 290;
-
-        // Calculate totals
-        let subtotal = 0;
-        let discountAmount = 0;
-        const items = task.items.map(item => {
-            const standardItem = item.standardItemId;
-            const positionFee = standardItem.position === item.position ? 0 : 5;
-            const itemPrice = standardItem.price * item.quantity;
-            let itemDiscount = 0;
-            let itemDiscountPercent = 0;
-
-            // Calculate item discount if customDiscountedPrice exists
-            if (item.customDiscountedPrice) {
-                const originalTotal = itemPrice + positionFee;
-                itemDiscount = originalTotal - item.customDiscountedPrice;
-                itemDiscountPercent = (itemDiscount / originalTotal) * 100;
-            }
-
-            const itemTotal = itemPrice + positionFee - itemDiscount;
-            subtotal += itemTotal;
-            return {
-                name: standardItem.itemName,
-                quantity: item.quantity,
-                price: standardItem.price,
-                position: item.position,
-                positionFee: positionFee,
-                total: itemTotal,
-                discount: itemDiscount,
-                discountPercent: itemDiscountPercent
-            };
-        });
-
-        if (task.customDiscountPercent) {
-            discountAmount = (subtotal * task.customDiscountPercent) / 100;
-            subtotal -= discountAmount;
-        }
-
-        // Ensure minimum price of £30 (before VAT)
-        if (subtotal < 30) {
-            const adjustment = 30 - subtotal;
-            subtotal = 30;
-            y += 10;
-            // doc.fillColor('#666666')
-            //     .fontSize(10)
-            //     .text('Minimum price adjustment', 55, y)
-            //     .text(`£${adjustment.toFixed(2)}`, 455, y);
-            // y += 20;
-        }
-
-        // Print items with improved styling
-        items.forEach((item, index) => {
-            // Add subtle background for alternating rows
-            if (index % 2 === 0) {
-                doc.fillColor('#f8f9fa')
-                    .rect(50, y - 5, 500, 25)
-                    .fill();
-            }
-
-            console.log("item", item)
-            doc.fillColor('#333333')
-                .fontSize(11)
-                .text(`${item.name}`, 55, y)
-                .text(`${item.quantity}`, 355, y)
-                .text(`£${item.price.toFixed(2)}`, 455, y);
-            y += 20;
-
-            if (item.positionFee > 0) {
-                doc.fontSize(10)
-                    .fillColor('#666666')
-                    .text(`${item.position} fee`, 55, y)
-                    .text(`£${item.positionFee.toFixed(2)}`, 455, y);
-                y += 20;
-            }
-
-            // Add item discount if it exists
-            if (item.discount) {
-                doc.fontSize(10)
-                    .fillColor('#666666')
-                    .text(`Discount (${item.discountPercent}%)`, 55, y)
-                    .text(`-£${item.discount.toFixed(2)}`, 455, y);
-                y += 20;
-            }
-        });
-
-        const vat = subtotal * 0.2;
-        const total = subtotal + vat;
-
-        // Add a decorative line before totals
-        doc.strokeColor('#e0e0e0')
-            .lineWidth(1)
-            .moveTo(50, y)
-            .lineTo(doc.page.width - 50, y)
-            .stroke();
-
-        // Print totals with improved styling
-        y += 20;
-        doc.fillColor('#333333')
-            .fontSize(12)
-            .text(`Subtotal`, 400, y)
-            .text(`£${subtotal.toFixed(2)}`, 500, y);
-        y += 20;
-
-        if (discountAmount > 0) {
-            doc.fillColor('#666666')
-                .fontSize(11)
-                .text(`Discount (${task.customDiscountPercent}%)`, 400, y)
-                .text(`-£${discountAmount.toFixed(2)}`, 500, y);
-            y += 20;
-        }
-
-        doc.fillColor('#333333')
-            .fontSize(12)
-            .text(`VAT (20%)`, 400, y)
-            .text(`£${vat.toFixed(2)}`, 500, y);
-        y += 20;
-
-        // Add a decorative line before total
-        doc.strokeColor('#8dc044')
-            .lineWidth(1)
-            .moveTo(400, y)
-            .lineTo(doc.page.width - 50, y)
-            .stroke();
-
-        doc.fillColor('#8dc044')
-            .fontSize(14)
-            .text(`Total`, 400, y + 10)
-            .text(`£${total.toFixed(2)}`, 500, y + 10);
-
-        // Payment status with improved styling
-        y += 40;
-        const paidAmount = task.paidAmount?.amount || 0;
-        const remainingAmount = total - paidAmount;
-
-        if (task.paymentStatus === "partial_Paid" && paidAmount > 0) {
-            doc.fillColor('#333333')
-                .fontSize(12)
-                .text(`Amount Paid: £${paidAmount.toFixed(2)}`, 50, y);
-            y += 20;
-            doc.text(`Remaining Balance: £${remainingAmount.toFixed(2)}`, 50, y);
-        }
-
-        y += 30;
-        doc.fillColor('#333333')
-            .fontSize(12)
-            .text(`Collection Date: ${task.date.toLocaleDateString('en-GB')}`, 50, y);
-        y += 20;
-        doc.text(`Time Slot: ${task.available.replace(/_/g, ' ')}`, 50, y);
-
-        // Footer with improved styling
-        doc.fillColor('#8dc044')
-            .rect(0, 750, doc.page.width, 50).fill()
-            .fillColor('#ffffff')
-            .fontSize(10)
-            .text("Environment Agency Registered Waste Carrier: CBDU308350", 50, 760, { align: "center" })
-            .text("London Waste Management | hello@londonwastemanagement.com | 02030971517", 50, 775, { align: "center" });
-
-        doc.end();
-
-        // Clean up the temporary logo file
-        fs.unlinkSync(logoPath);
-
-        return new Promise((resolve, reject) => {
-            writeStream.on('finish', resolve);
-            writeStream.on('error', reject);
-        });
-    },
+    // Now do the rest of your variable replacements as before
+    for (let key in vars) {
+      template = template.replaceAll(`{{${key}}}`, vars[key]);
+    }
+  
+    // Debug: Save the template to check paths
+    fs.writeFileSync(path.join(__dirname, '../public/debug-template.html'), template);
+  
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+  
+    // Set content and wait for network to be idle
+    await page.setContent(template, { 
+      waitUntil: 'networkidle',
+      timeout: 30000 // Increase timeout to 30 seconds
+    });
+  
+    // Wait for images to load
+    await page.waitForLoadState('networkidle');
+  
+    // Debug: Check if images are loaded
+    const imageStatus = await page.evaluate(() => {
+      const images = Array.from(document.getElementsByTagName('img'));
+      return images.map(img => ({
+        src: img.src.substring(0, 50) + '...', // Truncate base64 string for logging
+        complete: img.complete,
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight
+      }));
+    });
+    console.log('Image loading status:', imageStatus);
+  
+    await page.pdf({
+      path: outputPath,
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '20px', bottom: '40px', left: '20px', right: '20px' }
+    });
+  
+    await context.close();
+    await browser.close();
+  },
   async sendPartialPaymentNotification(taskId) {
     const data = await Task.findById(taskId).populate('items.standardItemId');
     console.log(data)
@@ -696,4 +626,147 @@ module.exports = {
     });
   },
   sendRefundEmail
+};
+
+const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
+  try {
+    const templatePath = path.join(__dirname, '../public/invoice-template.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    const iconDir = path.join(__dirname, '../public/invoice-icons');
+    console.log('Icon directory:', iconDir); // Debug log
+
+    const asset = name => {
+      const filePath = path.resolve(iconDir, name);
+      console.log(`Asset path for ${name}:`, filePath);
+      // Read file and convert to base64
+      const fileBuffer = fs.readFileSync(filePath);
+      const base64 = fileBuffer.toString('base64');
+      const mimeType = name.endsWith('.png') ? 'image/png' : 
+                      name.endsWith('.svg') ? 'image/svg+xml' : 
+                      name.endsWith('.ttf') ? 'font/ttf' : 'image/png';
+      return `data:${mimeType};base64,${base64}`;
+    };
+
+    const itemRows = taskData.items.map(item => `
+      <tr>
+        <td>${item.name}</td>
+        <td>${item.quantity}</td>
+        <td>£${(item.price || 0).toFixed(2)}</td>
+        <td>£${(item.positionFee || 0).toFixed(2)}</td>
+        <td>£${(item.total || 0).toFixed(2)}</td>
+      </tr>`).join('');
+
+    const vars = {
+      billingName: `${taskData.firstName} ${taskData.lastName}`,
+      email: taskData.email,
+      phone: taskData.phoneNumber,
+      invoiceNumber: taskData.invoiceNumber,
+      orderNumber: taskData.orderNumber,
+      invoiceDate: taskData.invoiceDate,
+      orderDate: taskData.orderDate,
+      serviceDate: new Date(taskData.date).toLocaleDateString('en-GB'),
+      available: taskData.available?.replace(/_/g, ' ') || '',
+      itemRows,
+      subtotal: (taskData.subtotal || 0).toFixed(2),
+      vat: (taskData.vat || 0).toFixed(2),
+      totalPrice: (taskData.totalPrice || 0).toFixed(2),
+
+      // Asset paths with base64 encoding
+      logoPath: asset('london_waste_logo 1.png'),
+      bgPath: asset('green-bg.png'),
+      locationIcon: asset('location-pin-svgrepo-com 1.png'),
+      vatIcon: asset('product-o-svgrepo-com 1.png'),
+      emailIcon: asset('email-svgrepo-com 1.png'),
+      phoneIcon: asset('phone-svgrepo-com 1.png'),
+      calendarIcon: asset('Vector.png'),
+      clockIcon: asset('Group 4.png'),
+      fontRegular: asset('Lato-Regular.ttf'),
+      fontBold: asset('lato-bold.ttf')
+    };
+
+    // Build discount columns for the table header
+    let discountColumns = '';
+    if (vars.hasDiscount) {
+      discountColumns = '<th>Discounted Price</th><th>Discount</th>';
+    }
+    template = template.replace('{{discountColumns}}', discountColumns);
+
+    // Build discount row for the summary
+    let discountRow = '';
+    if (vars.hasDiscount) {
+      discountRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div><span>${vars.discountLabel} :</span><span>-£${vars.discountAmount}</span></div>`;
+    }
+    template = template.replace('{{discountRow}}', discountRow);
+
+    // Now do the rest of your variable replacements as before
+    for (let key in vars) {
+      template = template.replaceAll(`{{${key}}}`, vars[key]);
+    }
+
+    // Debug: Save the template to check paths
+    fs.writeFileSync(path.join(__dirname, '../public/debug-template.html'), template);
+
+    // Generate PDF using Playwright
+    const browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    // Set content and wait for network to be idle
+    await page.setContent(template, { 
+      waitUntil: 'networkidle',
+      timeout: 30000 // Increase timeout to 30 seconds
+    });
+
+    // Wait for images to load
+    await page.waitForLoadState('networkidle');
+
+    // Debug: Check if images are loaded
+    const imageStatus = await page.evaluate(() => {
+      const images = Array.from(document.getElementsByTagName('img'));
+      return images.map(img => ({
+        src: img.src.substring(0, 50) + '...', // Truncate base64 string for logging
+        complete: img.complete,
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight
+      }));
+    });
+    console.log('Image loading status:', imageStatus);
+
+    // Generate PDF buffer
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '20px', bottom: '40px', left: '20px', right: '20px' }
+    });
+
+    await context.close();
+    await browser.close();
+
+    // Send email with PDF attachment
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: responsibleEmail,
+      subject: 'New Invoice',
+      html: `
+        <h1>New Invoice</h1>
+        <p>Please find attached the invoice for your recent order.</p>
+      `,
+      attachments: [
+        {
+          filename: 'invoice.pdf',
+          content: pdfBuffer
+        }
+      ]
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log('Invoice email sent successfully');
+  } catch (error) {
+    console.error('Error sending invoice email:', error);
+    throw error;
+  }
 };

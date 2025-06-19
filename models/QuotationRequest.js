@@ -12,6 +12,7 @@ const quotationRequestSchema = new Schema({
   estimatedPrices : [{name:{type:String} , price:{type:String}}],
   comments: { type: String, required: false },
   items: [{ type: String, required: true }], 
+  read: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 

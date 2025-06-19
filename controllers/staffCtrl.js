@@ -42,6 +42,7 @@ const staffManagement = {
         AccountNumber,
         SortNumber,
         username,
+        csvPermission,
         email,
         phoneNumber,
         gender,
@@ -78,6 +79,7 @@ const staffManagement = {
           AccountNumber,
           SortNumber,
           username,
+          csvPermission,
           email,
           phoneNumber,
           password: hashedPassword,
@@ -123,7 +125,7 @@ const staffManagement = {
           NatInsurance: natInsuranceUrl,
         });
       }
-
+      console.log(newUser)
       await newUser.save();
       res.status(201).json({ message: `${role} created successfully`, user: newUser });
     } catch (error) {
@@ -138,8 +140,8 @@ const staffManagement = {
 
   getAllStaff: async (req, res) => {
     try {
-      const { page = 1, limit = 9, showAll, pagination = 'true' } = req.query;
-  
+      const { page = 1, limit = 9, showAll='true' , pagination = 'true' } = req.query;
+      console.log(req.query)
       // Base filter
       let filter = {};
       if (!showAll) {
@@ -245,8 +247,13 @@ const staffManagement = {
   updateStaff: async (req, res) => {
     const { id } = req.params;
     let updateData = req.body; // Take all incoming fields for potential update
-
+    console.log(updateData)
     try {
+      // Handle empty phone number
+      if (updateData.phoneNumber === '') {
+        updateData.phoneNumber = null;
+      }
+
       // Check if any files are included in the request and update their respective fields
       if (req.files) {
         updateData.picture = req.files['picture'] ? req.files['picture'][0].path : undefined;

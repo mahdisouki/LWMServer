@@ -124,6 +124,7 @@ const taskSchema = new Schema(
         default: "Not_Paid",
       },
     },
+    hasDiscount: { type: Boolean, default: false },
     customDiscountPercent: { type: Number, default: 0 },
     email: { type: String },
     additionalNotes: { type: String, required: false },

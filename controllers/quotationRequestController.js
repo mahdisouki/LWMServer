@@ -3,8 +3,8 @@ const sendQuotationEmail = require('../utils/sendQuotationEmail'); // Utility fu
 const APIfeatures = require('../utils/APIFeatures');
 const FormData = require('form-data')
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
-const axios = require('axios')
-
+const axios = require('axios');
+const { emitNotificationToUser } = require('../socket');
 const quotationRequestController = {
     createQuotationRequest : async (req, res) => {
         try {
@@ -70,7 +70,7 @@ const quotationRequestController = {
             });
     
             await newQuotation.save();
-    
+            emitNotificationToUser("67cb6810c9e768ec25d39523", "New Quotation Request", "A new quotation request has been submitted");
     
             res.status(201).json({
                 message: 'Quotation request submitted successfully',
@@ -173,6 +173,13 @@ const quotationRequestController = {
                     .status(404)
                     .json({ message: 'Quotation not found' });
             }
+            
+            // Mark as read when viewed
+            if (!quotation.read) {
+                quotation.read = true;
+                await quotation.save();
+            }
+            
             res.status(200).json(quotation);
         } catch (error) {
             res.status(500).json({
@@ -271,6 +278,56 @@ const quotationRequestController = {
         } catch (error) {
             console.error('Error sending moving service email:', error);
             res.status(500).json({ message: 'Failed to send moving service email', error: error.message });
+        }
+    },
+
+    markQuotationAsRead: async (req, res) => {
+        const { id } = req.params;
+        try {
+            const quotation = await QuotationRequest.findByIdAndUpdate(
+                id,
+                { read: true },
+                { new: true }
+            );
+            
+            if (!quotation) {
+                return res.status(404).json({ message: 'Quotation not found' });
+            }
+            
+            res.status(200).json({
+                message: 'Quotation marked as read',
+                quotation
+            });
+        } catch (error) {
+            res.status(500).json({
+                message: 'Failed to mark quotation as read',
+                error: error.message,
+            });
+        }
+    },
+
+    markQuotationAsUnread: async (req, res) => {
+        const { id } = req.params;
+        try {
+            const quotation = await QuotationRequest.findByIdAndUpdate(
+                id,
+                { read: false },
+                { new: true }
+            );
+            
+            if (!quotation) {
+                return res.status(404).json({ message: 'Quotation not found' });
+            }
+            
+            res.status(200).json({
+                message: 'Quotation marked as unread',
+                quotation
+            });
+        } catch (error) {
+            res.status(500).json({
+                message: 'Failed to mark quotation as unread',
+                error: error.message,
+            });
         }
     },
 };
