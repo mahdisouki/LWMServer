@@ -3,7 +3,7 @@ const Task = require('../models/Task');
 const Truck = require('../models/Truck');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
-const { emitNotificationToUser } = require('../socket.js')
+const { emitNotificationToUser } = require('../socket.js');
 const paginateQuery = require('../utils/paginationHelper');
 const {
   getPayPalOrderDetails,
@@ -27,9 +27,9 @@ const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si 
 const { sendBookingConfirmationEmail } = require('../services/emailsService');
 const path = require('path');
 const fs = require('fs');
-const {generateOfficialInvoicePDF} = require('../services/emailsService');
+const { generateOfficialInvoicePDF } = require('../services/emailsService');
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD,
@@ -38,22 +38,32 @@ const transporter = nodemailer.createTransport({
 const loggingService = require('../services/loggingService');
 
 function validateBreakdown(breakdown) {
-  if (!Array.isArray(breakdown) || breakdown.some(item => {
-    return isNaN(parseFloat(item.price)) && isNaN(parseFloat(item.amount));
-  })) {
-    console.error("Invalid breakdown: ", breakdown);
-    throw new Error("Breakdown is not valid or contains undefined prices or descriptions");
+  if (
+    !Array.isArray(breakdown) ||
+    breakdown.some((item) => {
+      return isNaN(parseFloat(item.price)) && isNaN(parseFloat(item.amount));
+    })
+  ) {
+    console.error('Invalid breakdown: ', breakdown);
+    throw new Error(
+      'Breakdown is not valid or contains undefined prices or descriptions',
+    );
   }
 }
 // Fonction auxiliaire pour traiter les événements de commande approuvés
-async function calculateTotalPrice({ standardItems = [], objects = [], customDiscountPercent }) {
+async function calculateTotalPrice({
+  standardItems = [],
+  objects = [],
+  customDiscountPercent,
+}) {
   let totalPrice = 0;
 
   // 1. Add custom items (objects) - NO position fee
   if (objects && Array.isArray(objects)) {
     objects.forEach((customObject) => {
       if (customObject.object && customObject.price) {
-        const itemTotal = Number(customObject.price) * (Number(customObject.quantity) || 1);
+        const itemTotal =
+          Number(customObject.price) * (Number(customObject.quantity) || 1);
         totalPrice += itemTotal;
       }
     });
@@ -62,18 +72,20 @@ async function calculateTotalPrice({ standardItems = [], objects = [], customDis
   // 2. Add standard items (with per-item custom price if present) + position fee
   if (standardItems && Array.isArray(standardItems)) {
     for (const item of standardItems) {
-      if(!item.standardItemId) continue;
+      if (!item.standardItemId) continue;
       const standardItem = await StandardItem.findById(item.standardItemId);
       if (!standardItem) continue;
 
       // Use customPrice if present, otherwise use standard price
-      let price = (typeof item.customPrice !== 'undefined' && !isNaN(Number(item.customPrice)))
-        ? Number(item.customPrice)
-        : Number(standardItem.price);
+      let price =
+        typeof item.customPrice !== 'undefined' &&
+        !isNaN(Number(item.customPrice))
+          ? Number(item.customPrice)
+          : Number(standardItem.price);
 
       // Always add position fee for standard items
-      if (item.Objectsposition === "InsideWithDismantling") price += 18;
-      else if (item.Objectsposition === "Inside") price += 6;
+      if (item.Objectsposition === 'InsideWithDismantling') price += 18;
+      else if (item.Objectsposition === 'Inside') price += 6;
 
       const itemTotal = price * (Number(item.quantity) || 1);
       totalPrice += itemTotal;
@@ -81,7 +93,11 @@ async function calculateTotalPrice({ standardItems = [], objects = [], customDis
   }
 
   // 3. Apply global discount if present (before VAT)
-  if (typeof customDiscountPercent !== 'undefined' && !isNaN(customDiscountPercent) && customDiscountPercent > 0) {
+  if (
+    typeof customDiscountPercent !== 'undefined' &&
+    !isNaN(customDiscountPercent) &&
+    customDiscountPercent > 0
+  ) {
     totalPrice = totalPrice * (1 - customDiscountPercent / 100);
   }
 
@@ -94,7 +110,7 @@ async function calculateTotalPrice({ standardItems = [], objects = [], customDis
 
   return {
     totalPrice: Number(totalPrice.toFixed(2)),
-    vat: Number(vat.toFixed(2))
+    vat: Number(vat.toFixed(2)),
   };
 }
 
@@ -120,46 +136,53 @@ const taskCtrl = {
         paymentStatus,
         cloneClientObjectPhotos,
         postcode,
-        customDiscountPercent // NEW: from frontend
+        customDiscountPercent, // NEW: from frontend
       } = req.body;
-  
+
       let clientObjectPhotos = [];
       if (cloneClientObjectPhotos) {
         clientObjectPhotos = cloneClientObjectPhotos;
       } else if (req.files && req.files.length > 0) {
         clientObjectPhotos = req.files.map((file) => file.path);
       }
-  
+
       const taskDate = new Date(date);
-  
+
       // ... (blocking day and truck checks as before) ...
-  
+
       // Calculate price using new logic
       const { totalPrice, vat } = await calculateTotalPrice({
         standardItems,
         objects,
-        customDiscountPercent
+        customDiscountPercent,
       });
-  
+
       // Prepare items array for DB (merge standard and custom)
       let items = [];
       if (standardItems && Array.isArray(standardItems)) {
-        items.push(...standardItems.map(item => ({
-          standardItemId: item.standardItemId || null,
-          quantity: Number(item.quantity) || 1,
-          Objectsposition: item.Objectsposition || "Outside",
-          customPrice: item.customPrice !== undefined ? Number(item.customPrice) : undefined
-        })));
+        items.push(
+          ...standardItems.map((item) => ({
+            standardItemId: item.standardItemId || null,
+            quantity: Number(item.quantity) || 1,
+            Objectsposition: item.Objectsposition || 'Outside',
+            customPrice:
+              item.customPrice !== undefined
+                ? Number(item.customPrice)
+                : undefined,
+          })),
+        );
       }
       if (objects && Array.isArray(objects)) {
-        items.push(...objects.map(item => ({
-          object: item.object || null,
-          quantity: Number(item.quantity) || 1,
-          price: Number(item.price) || 0,
-          Objectsposition: item.Objectsposition || "Outside"
-        })));
+        items.push(
+          ...objects.map((item) => ({
+            object: item.object || null,
+            quantity: Number(item.quantity) || 1,
+            price: Number(item.price) || 0,
+            Objectsposition: item.Objectsposition || 'Outside',
+          })),
+        );
       }
-  
+
       // Create the task
       const newTask = new Task({
         firstName,
@@ -181,9 +204,9 @@ const taskCtrl = {
         items,
         taskStatus: 'Processing',
         postcode,
-        customDiscountPercent // Save for reference
+        customDiscountPercent, // Save for reference
       });
-  
+
       await newTask.save();
       // ... (emit notification, etc.) ...
       res.status(201).json({
@@ -191,8 +214,10 @@ const taskCtrl = {
         task: newTask,
       });
     } catch (error) {
-      console.log(error)
-      res.status(400).json({ message: 'Failed to create task', error: error.message });
+      console.log(error);
+      res
+        .status(400)
+        .json({ message: 'Failed to create task', error: error.message });
     }
   },
 
@@ -200,7 +225,10 @@ const taskCtrl = {
     const { taskId } = req.params;
 
     try {
-      const task = await Task.findById(taskId).populate('createdBy', 'email name'); // optional fields;
+      const task = await Task.findById(taskId).populate(
+        'createdBy',
+        'email name',
+      ); // optional fields;
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -218,7 +246,15 @@ const taskCtrl = {
         Task,
         req.query,
         ['paymentStatus', 'date', 'orderNumber'], // filters
-        ['firstName', 'lastName', 'email', 'username', 'phoneNumber', 'postcode', 'orderNumber'] // searchable fields
+        [
+          'firstName',
+          'lastName',
+          'email',
+          'username',
+          'phoneNumber',
+          'postcode',
+          'orderNumber',
+        ], // searchable fields
       );
 
       const tasksWithTrucks = await Promise.all(
@@ -229,7 +265,7 @@ const taskCtrl = {
             task.truckName = truck?.name ?? null;
           }
           return task;
-        })
+        }),
       );
 
       res.status(200).json({
@@ -244,8 +280,6 @@ const taskCtrl = {
       });
     }
   },
-
-
 
   assignTruckToTask: async (req, res) => {
     const { taskId } = req.params;
@@ -400,7 +434,7 @@ const taskCtrl = {
 
         if (currentTasksByDate[taskDate]) {
           currentTasksByDate[taskDate] = currentTasksByDate[taskDate].filter(
-            (id) => id !== task._id.toString()
+            (id) => id !== task._id.toString(),
           );
 
           // Remove the date entry if no tasks remain
@@ -414,7 +448,9 @@ const taskCtrl = {
       }
 
       // Add the task to the new truck's tasks list
-      const newTasksByDate = newTruck.tasks ? Object.fromEntries(newTruck.tasks) : {};
+      const newTasksByDate = newTruck.tasks
+        ? Object.fromEntries(newTruck.tasks)
+        : {};
       if (!newTasksByDate[taskDate]) {
         newTasksByDate[taskDate] = [];
       }
@@ -478,7 +514,15 @@ const taskCtrl = {
 
     try {
       if (
-        !['Declined', 'Processing', 'Completed', 'Cancelled', 'On_Hold' , 'Not_Completed',"Completed" ].includes(taskStatus)
+        ![
+          'Declined',
+          'Processing',
+          'Completed',
+          'Cancelled',
+          'On_Hold',
+          'Not_Completed',
+          'Completed',
+        ].includes(taskStatus)
       ) {
         return res.status(400).json({ message: 'Invalid task status' });
       }
@@ -509,9 +553,9 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      console.log(req.body)
+      console.log(req.body);
       const oldTask = await Task.findById(taskId);
-      console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh')
+      console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh');
       if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -519,9 +563,13 @@ const taskCtrl = {
       // If items are being updated, recalculate totalPrice
       if (updates.items) {
         // Save the new items first
-        await Task.findByIdAndUpdate(taskId, { $set: { items: updates.items } });
+        await Task.findByIdAndUpdate(taskId, {
+          $set: { items: updates.items },
+        });
         // Re-fetch the task with populated items
-        const populatedTask = await Task.findById(taskId).populate('items.standardItemId');
+        const populatedTask = await Task.findById(taskId).populate(
+          'items.standardItemId',
+        );
         let totalPrice = 0;
         for (const item of populatedTask.items) {
           let price = 0;
@@ -532,10 +580,22 @@ const taskCtrl = {
           }
           const quantity = Number(item.quantity) || 1;
           let positionFee = 0;
-          if (item.Objectsposition === "InsideWithDismantling") positionFee = 18;
-          else if (item.Objectsposition === "Inside") positionFee = 6;
-          const itemTotal = (price * quantity) + positionFee;
-          console.log('Item:', item, 'Price:', price, 'Quantity:', quantity, 'PositionFee:', positionFee, 'ItemTotal:', itemTotal);
+          if (item.Objectsposition === 'InsideWithDismantling')
+            positionFee = 18;
+          else if (item.Objectsposition === 'Inside') positionFee = 6;
+          const itemTotal = price * quantity + positionFee;
+          console.log(
+            'Item:',
+            item,
+            'Price:',
+            price,
+            'Quantity:',
+            quantity,
+            'PositionFee:',
+            positionFee,
+            'ItemTotal:',
+            itemTotal,
+          );
           totalPrice += itemTotal;
         }
         // Add VAT
@@ -544,11 +604,11 @@ const taskCtrl = {
         console.log('Calculated totalPrice with VAT:', totalPrice);
         updates.totalPrice = totalPrice;
       }
-      console.log(updates.totalPrice)     // Update the task
+      console.log(updates.totalPrice); // Update the task
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
         { $set: updates },
-        { new: true }
+        { new: true },
       );
 
       // Create a log of the changes
@@ -560,24 +620,23 @@ const taskCtrl = {
         entityId: taskId,
         changes: {
           before: oldTask.toObject(),
-          after: updatedTask.toObject()
+          after: updatedTask.toObject(),
         },
         ipAddress: req.ip,
-        userAgent: req.headers['user-agent']
+        userAgent: req.headers['user-agent'],
       });
 
       res.status(200).json({
         message: 'Task updated successfully',
-        task: updatedTask
+        task: updatedTask,
       });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to update task',
-        error: error.message
+        error: error.message,
       });
     }
   },
-
 
   updateTaskStatus: async (req, res) => {
     const { taskId } = req.params;
@@ -653,85 +712,100 @@ const taskCtrl = {
   processTaskPayment: async (req, res) => {
     const { taskId } = req.params;
     const { paymentType, paymentAmountType } = req.body; // Add paymentAmountType
-  
+
     try {
-      const task = await Task.findById(taskId).populate("items.standardItemId");
+      const task = await Task.findById(taskId).populate('items.standardItemId');
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-  
+
       // Build breakdown array
       const selectedQuantities = {};
       task.items.forEach((item) => {
         if (item.standardItemId) {
-          selectedQuantities[item.standardItemId._id.toString()] = item.quantity || 1;
+          selectedQuantities[item.standardItemId._id.toString()] =
+            item.quantity || 1;
         }
       });
-  
+
       const breakdown = task.items.map((item) => {
-        const itemQuantity = selectedQuantities[item.standardItemId?._id?.toString()] || item.quantity || 1;
-        const itemPrice = item.standardItemId ? item.standardItemId.price : item.price || 0;
+        const itemQuantity =
+          selectedQuantities[item.standardItemId?._id?.toString()] ||
+          item.quantity ||
+          1;
+        const itemPrice = item.standardItemId
+          ? item.standardItemId.price
+          : item.price || 0;
         return {
-          itemDescription: item.standardItemId ? item.standardItemId.itemName : item.object,
+          itemDescription: item.standardItemId
+            ? item.standardItemId.itemName
+            : item.object,
           quantity: itemQuantity,
           price: itemPrice,
           Objectsposition: item.Objectsposition,
         };
       });
-  
-      let basePrice = breakdown.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+      let basePrice = breakdown.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0,
+      );
       let additionalFees = 0;
       task.items.forEach((item) => {
-        if (item.Objectsposition === "InsideWithDismantling") additionalFees += 18;
-        else if (item.Objectsposition === "Inside") additionalFees += 6;
+        if (item.Objectsposition === 'InsideWithDismantling')
+          additionalFees += 18;
+        else if (item.Objectsposition === 'Inside') additionalFees += 6;
       });
       let finalPrice = basePrice + additionalFees;
-      if (task.available === "AnyTime" && task.items.every((i) => i.Objectsposition === "Outside")) {
+      if (
+        task.available === 'AnyTime' &&
+        task.items.every((i) => i.Objectsposition === 'Outside')
+      ) {
         finalPrice *= 0.9;
       }
       if (finalPrice < 30) finalPrice = 30;
       const vat = finalPrice * 0.2;
       finalPrice += vat;
-  
+
       // Prepare fullBreakdown for PayPal
       const fullBreakdown = [
         ...breakdown,
-        { description: "VAT (20%)", amount: vat.toFixed(2) },
-        { description: "Final Total Price", amount: finalPrice.toFixed(2) },
+        { description: 'VAT (20%)', amount: vat.toFixed(2) },
+        { description: 'Final Total Price', amount: finalPrice.toFixed(2) },
       ];
-  
+
       // --- NEW: Determine amount to pay based on paymentAmountType ---
       let amountToPay;
       if (paymentAmountType === 'deposit') {
-        task.paymentStatus = "partial_Paid";
+        task.paymentStatus = 'partial_Paid';
         amountToPay = 36; // Set deposit amount
         task.paidAmount = {
           amount: 36,
-          method: "online",
-          status: "Not_Paid" // Will be updated to Paid after successful payment
+          method: 'online',
+          status: 'Not_Paid', // Will be updated to Paid after successful payment
         };
         task.remainingAmount = {
           amount: finalPrice - 36,
-          method: "online",
-          status: "Not_Paid"
+          method: 'online',
+          status: 'Not_Paid',
         };
       } else {
         amountToPay = finalPrice; // Set full amount
         task.paidAmount = {
           amount: finalPrice,
-          method: "online",
-          status: "Not_Paid" // Will be updated to Paid after successful payment
+          method: 'online',
+          status: 'Not_Paid', // Will be updated to Paid after successful payment
         };
         task.remainingAmount = {
           amount: 0,
-          method: "online",
-          status: "Not_Paid"
+          method: 'online',
+          status: 'Not_Paid',
         };
       }
       const amountInPence = Math.round(amountToPay * 100);
-  
+
       await task.save();
-  
+
       // --- Use amountToPay for Stripe/PayPal ---
       let paymentResult;
       switch (paymentType) {
@@ -746,7 +820,9 @@ const taskCtrl = {
                     currency: 'GBP',
                     product_data: {
                       name: `Payment for Task ${taskId}`,
-                      images: ["https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png"],
+                      images: [
+                        'https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png',
+                      ],
                     },
                     unit_amount: amountInPence,
                   },
@@ -760,13 +836,12 @@ const taskCtrl = {
                 paymentAmountType: paymentAmountType,
               },
             });
-  
+
             return res.json({
               message: 'Stripe payment initiated successfully',
               redirectUrl: session.url,
               paymentIntentId: session.payment_intent,
             });
-  
           } catch (error) {
             console.error('Stripe Error:', error);
             return res.status(500).json({
@@ -774,25 +849,34 @@ const taskCtrl = {
               error: error.message,
             });
           }
-  
+
         case 'paypal':
-          paymentResult = await createPayPalOrder(amountInPence, taskId, fullBreakdown, task);
+          paymentResult = await createPayPalOrder(
+            amountInPence,
+            taskId,
+            fullBreakdown,
+            task,
+          );
           return res.json({
             message: 'PayPal payment initiated successfully',
             orderID: paymentResult.result.id,
-            approvalLink: paymentResult.result.links.find((link) => link.rel === 'approve')?.href || null,
+            approvalLink:
+              paymentResult.result.links.find((link) => link.rel === 'approve')
+                ?.href || null,
             amount: amountInPence,
             paymentType,
             paymentAmountType, // Return for frontend tracking
             breakdown: fullBreakdown,
           });
-  
+
         default:
           return res.status(400).json({ message: 'Invalid payment method' });
       }
     } catch (error) {
       console.error('Payment Error:', error);
-      return res.status(500).json({ message: 'Failed to initiate payment', error: error.message });
+      return res
+        .status(500)
+        .json({ message: 'Failed to initiate payment', error: error.message });
     }
   },
 
@@ -801,12 +885,17 @@ const taskCtrl = {
 
     try {
       // Confirmer le paiement Stripe
-      const paymentIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
-        payment_method: paymentMethodId,
-      });
+      const paymentIntent = await stripe.paymentIntents.confirm(
+        paymentIntentId,
+        {
+          payment_method: paymentMethodId,
+        },
+      );
 
       if (paymentIntent.status === 'succeeded') {
-        const task = await Task.findById(taskId).populate('items.standardItemId');
+        const task = await Task.findById(taskId).populate(
+          'items.standardItemId',
+        );
         if (!task) return res.status(404).json({ message: 'Task not found' });
 
         task.paymentStatus = 'Paid';
@@ -817,23 +906,32 @@ const taskCtrl = {
         const amountInGBP = Number((amountInCents / 100).toFixed(2));
 
         // Récupérer les informations du paiement
-        const charges = await stripe.charges.list({ payment_intent: paymentIntentId, limit: 1 });
+        const charges = await stripe.charges.list({
+          payment_intent: paymentIntentId,
+          limit: 1,
+        });
         const charge = charges.data[0];
         if (!charge) throw new Error('Charge not found for this payment');
 
-        const payerAccount = charge.billing_details.email || `Card ending in ${charge.payment_method_details.card.last4}`;
+        const payerAccount =
+          charge.billing_details.email ||
+          `Card ending in ${charge.payment_method_details.card.last4}`;
 
         // Construire le breakdown complet
         const breakdown = task.items.map((item) => ({
-          itemDescription: item.standardItemId ? item.standardItemId.itemName : 'Custom Item',
+          itemDescription: item.standardItemId
+            ? item.standardItemId.itemName
+            : 'Custom Item',
           quantity: item.quantity || 1,
-          price: item.standardItemId ? item.standardItemId.price : item.price || 0,
+          price: item.standardItemId
+            ? item.standardItemId.price
+            : item.price || 0,
         }));
 
         // Ajouter le total et les détails de la méthode de paiement
         breakdown.push(
           { description: 'Total Amount (includes VAT)', amount: amountInGBP },
-          { description: 'Payment Method', amount: payerAccount }
+          { description: 'Payment Method', amount: payerAccount },
         );
 
         // Sauvegarder l'historique du paiement
@@ -862,13 +960,21 @@ const taskCtrl = {
           breakdown,
         });
 
-        return res.status(200).json({ message: 'Payment confirmed successfully and email sent', task });
+        return res.status(200).json({
+          message: 'Payment confirmed successfully and email sent',
+          task,
+        });
       } else {
-        return res.status(400).json({ message: 'Payment confirmation failed', status: paymentIntent.status });
+        return res.status(400).json({
+          message: 'Payment confirmation failed',
+          status: paymentIntent.status,
+        });
       }
     } catch (error) {
       console.error('Error confirming payment:', error);
-      return res.status(500).json({ message: 'Error confirming payment', error: error.message });
+      return res
+        .status(500)
+        .json({ message: 'Error confirming payment', error: error.message });
     }
   },
   capturePayPalTaskPayment: async (req, res) => {
@@ -887,20 +993,27 @@ const taskCtrl = {
         task.paymentStatus = 'Paid';
         await task.save();
 
-        const amountInGBP = parseFloat(capture.result.purchase_units[0].payments.captures[0].amount.value);
-        const transactionId = capture.result.purchase_units[0].payments.captures[0].id;
+        const amountInGBP = parseFloat(
+          capture.result.purchase_units[0].payments.captures[0].amount.value,
+        );
+        const transactionId =
+          capture.result.purchase_units[0].payments.captures[0].id;
         const payerAccount = capture.result.payer.email_address;
 
         // Construire le breakdown complet
         const breakdown = task.items.map((item) => ({
-          itemDescription: item.standardItemId ? item.standardItemId.itemName : 'Custom Item',
+          itemDescription: item.standardItemId
+            ? item.standardItemId.itemName
+            : 'Custom Item',
           quantity: item.quantity || 1,
-          price: item.standardItemId ? item.standardItemId.price : item.price || 0,
+          price: item.standardItemId
+            ? item.standardItemId.price
+            : item.price || 0,
         }));
 
         breakdown.push(
           { description: 'Total Amount (includes VAT)', amount: amountInGBP },
-          { description: 'PayPal Transaction ID', amount: transactionId }
+          { description: 'PayPal Transaction ID', amount: transactionId },
         );
 
         await PaymentHistory.create({
@@ -928,20 +1041,28 @@ const taskCtrl = {
           breakdown,
         });
 
-        return res.status(200).json({ message: 'PayPal payment captured successfully and email sent', task });
+        return res.status(200).json({
+          message: 'PayPal payment captured successfully and email sent',
+          task,
+        });
       } else {
-        return res.status(400).json({ message: 'Failed to capture payment', capture });
+        return res
+          .status(400)
+          .json({ message: 'Failed to capture payment', capture });
       }
     } catch (error) {
       console.error('Error capturing PayPal payment:', error);
-      return res.status(500).json({ message: 'Failed to capture PayPal payment', error: error.message });
+      return res.status(500).json({
+        message: 'Failed to capture PayPal payment',
+        error: error.message,
+      });
     }
   },
 
   generatePaymentLinks: async (req, res) => {
     const { taskId } = req.params;
     const { paymentType, notes } = req.body; // Accept paymentType
-    console.log("paymentType", paymentType)
+    console.log('paymentType', paymentType);
     try {
       const task = await Task.findById(taskId).populate('items.standardItemId');
       if (!task) {
@@ -957,7 +1078,9 @@ const taskCtrl = {
         amountToPay = task.totalPrice;
       }
       if (!amountToPay || amountToPay <= 0) {
-        return res.status(400).json({ message: 'No amount to pay for this payment type.' });
+        return res
+          .status(400)
+          .json({ message: 'No amount to pay for this payment type.' });
       }
 
       // Calculate total price and breakdown as before
@@ -976,9 +1099,9 @@ const taskCtrl = {
         const quantity = item.quantity || 1;
         const itemTotal = itemPrice * quantity;
         let positionFee = 0;
-        if (item.Objectsposition === "InsideWithDismantling") {
+        if (item.Objectsposition === 'InsideWithDismantling') {
           positionFee = 18;
-        } else if (item.Objectsposition === "Inside") {
+        } else if (item.Objectsposition === 'Inside') {
           positionFee = 6;
         }
         const positionFeeTotal = positionFee * quantity;
@@ -989,7 +1112,7 @@ const taskCtrl = {
           price: itemPrice,
           positionFee,
           total: itemTotalWithFee,
-          Objectsposition: item.Objectsposition
+          Objectsposition: item.Objectsposition,
         });
         totalPrice += itemTotalWithFee;
       }
@@ -998,28 +1121,38 @@ const taskCtrl = {
         totalPrice -= discountAmount;
         breakdown.push({
           description: `Discount (${task.customDiscountPercent}%)`,
-          amount: -discountAmount
+          amount: -discountAmount,
         });
       }
       if (totalPrice < 30) {
         const adjustment = 30 - totalPrice;
         totalPrice = 30;
         breakdown.push({
-          description: "Minimum price adjustment",
-          amount: adjustment
+          description: 'Minimum price adjustment',
+          amount: adjustment,
         });
       }
       const vat = totalPrice * 0.2;
       totalPrice += vat;
       breakdown.push({
-        description: "VAT (20%)",
-        amount: vat
+        description: 'VAT (20%)',
+        amount: vat,
       });
       validateBreakdown(breakdown);
 
       // Generate payment links for the specified amount
-      const stripeLink = await createStripePaymentLink(taskId, amountToPay, breakdown, paymentType);
-      const paypalLink = await createPaypalPaymentLink(taskId, amountToPay, breakdown, paymentType);
+      const stripeLink = await createStripePaymentLink(
+        taskId,
+        amountToPay,
+        breakdown,
+        paymentType,
+      );
+      const paypalLink = await createPaypalPaymentLink(
+        taskId,
+        amountToPay,
+        breakdown,
+        paymentType,
+      );
 
       // Send email with payment links and paymentType
       await sendPayementEmail({
@@ -1028,12 +1161,12 @@ const taskCtrl = {
         stripeLink,
         paypalLink,
         totalPrice: amountToPay,
-        totall:totalPrice,
+        totall: totalPrice,
         breakdown,
         notes,
         taskDetails: task,
         paymentType,
-        amountToPay
+        amountToPay,
       });
 
       res.status(200).json({
@@ -1041,34 +1174,50 @@ const taskCtrl = {
         stripeLink,
         paypalLink,
         totalPrice: amountToPay,
-        paymentType
+        paymentType,
       });
     } catch (error) {
       console.error('Error generating payment links:', error);
-      res.status(500).json({ message: 'Failed to generate payment links', error: error.message });
+      res.status(500).json({
+        message: 'Failed to generate payment links',
+        error: error.message,
+      });
     }
   },
 
   // Update payment status logic in the Stripe webhook handler
   handleStripeWebhook: async (req, res) => {
-    const sig = req.headers["stripe-signature"];
+    const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
     try {
-      const event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-      console.log("Webhook verified:", event.type);
-      if (event.type === "checkout.session.completed") {
+      const event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        endpointSecret,
+      );
+      console.log('Webhook verified:', event.type);
+      if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
         const taskId = session.metadata.taskId;
         const paymentAmountType = session.metadata.paymentAmountType; // Get payment type from metadata
         if (!taskId) {
-          console.error("Task ID missing in session metadata");
-          return res.status(400).send("Task ID is required");
+          console.error('Task ID missing in session metadata');
+          return res.status(400).send('Task ID is required');
         }
-        console.log('Stripe webhook received for event:', event.type, 'taskId:', taskId, 'paymentAmountType:', paymentAmountType);
-        const task = await Task.findById(taskId).populate("items.standardItemId");
+        console.log(
+          'Stripe webhook received for event:',
+          event.type,
+          'taskId:',
+          taskId,
+          'paymentAmountType:',
+          paymentAmountType,
+        );
+        const task = await Task.findById(taskId).populate(
+          'items.standardItemId',
+        );
         if (!task) {
           console.error(`Task not found for ID: ${taskId}`);
-          return res.status(404).send("Task not found");
+          return res.status(404).send('Task not found');
         }
 
         // Update payment status based on payment type
@@ -1088,9 +1237,9 @@ const taskCtrl = {
           paymentAmountType,
           paymentStatus: task.paymentStatus,
           paidAmountStatus: task.paidAmount.status,
-          remainingAmountStatus: task.remainingAmount.status
+          remainingAmountStatus: task.remainingAmount.status,
         });
-        res.status(200).send("Webhook received");
+        res.status(200).send('Webhook received');
       }
     } catch (err) {
       console.error(`Webhook error: ${err.message}`);
@@ -1101,63 +1250,85 @@ const taskCtrl = {
   handlePayPalWebhook: async (req, res) => {
     try {
       const event = req.body;
-      console.log("Received PayPal Webhook Event:", JSON.stringify(event));
+      console.log('Received PayPal Webhook Event:', JSON.stringify(event));
 
       switch (event.event_type) {
-        case "CHECKOUT.ORDER.APPROVED":
-          console.log("Order approved. Capturing payment...");
+        case 'CHECKOUT.ORDER.APPROVED':
+          console.log('Order approved. Capturing payment...');
 
           const orderId = event.resource.id; // PayPal Order ID
           const customId = event.resource.purchase_units[0]?.custom_id; // Custom Task ID
 
           if (!customId) {
-            console.error("custom_id (Task ID) is missing in the webhook event.");
-            return res.status(400).send("Task ID is required in the webhook event");
+            console.error(
+              'custom_id (Task ID) is missing in the webhook event.',
+            );
+            return res
+              .status(400)
+              .send('Task ID is required in the webhook event');
           }
 
           try {
             // Capture the payment
-            const captureRequest = new paypal.orders.OrdersCaptureRequest(orderId);
+            const captureRequest = new paypal.orders.OrdersCaptureRequest(
+              orderId,
+            );
             const paypalClient = new paypal.core.PayPalHttpClient(
               new paypal.core.SandboxEnvironment(
                 process.env.PAYPAL_CLIENT_ID,
-                process.env.PAYPAL_CLIENT_SECRET
-              )
+                process.env.PAYPAL_CLIENT_SECRET,
+              ),
             );
             const captureResponse = await paypalClient.execute(captureRequest);
 
-            if (captureResponse.statusCode === 201 || captureResponse.result.status === "COMPLETED") {
-              console.log("Payment captured successfully:", captureResponse.result);
+            if (
+              captureResponse.statusCode === 201 ||
+              captureResponse.result.status === 'COMPLETED'
+            ) {
+              console.log(
+                'Payment captured successfully:',
+                captureResponse.result,
+              );
 
-              const captureDetail = captureResponse.result.purchase_units[0].payments.captures[0];
+              const captureDetail =
+                captureResponse.result.purchase_units[0].payments.captures[0];
 
               // Trouver la tâche associée
-              const task = await Task.findById(customId).populate("items.standardItemId");
+              const task = await Task.findById(customId).populate(
+                'items.standardItemId',
+              );
               if (!task) {
                 console.error(`Task not found for ID: ${customId}`);
-                return res.status(404).send("Task not found");
+                return res.status(404).send('Task not found');
               }
 
               // Vérifier si la tâche est déjà payée
-              if (task.paymentStatus === "Paid") {
-                console.log(`Payment already processed for Task ID: ${customId}`);
-                return res.status(200).send("Payment already processed");
+              if (task.paymentStatus === 'Paid') {
+                console.log(
+                  `Payment already processed for Task ID: ${customId}`,
+                );
+                return res.status(200).send('Payment already processed');
               }
 
               // Construire le breakdown des items
               const breakdown = task.items.map((item) => ({
-                itemDescription: item.standardItemId ? item.standardItemId.itemName : item.object,
+                itemDescription: item.standardItemId
+                  ? item.standardItemId.itemName
+                  : item.object,
                 quantity: item.quantity || 1,
-                price: item.standardItemId ? item.standardItemId.price : item.price || 0,
+                price: item.standardItemId
+                  ? item.standardItemId.price
+                  : item.price || 0,
                 Objectsposition: item.Objectsposition,
               }));
 
               // Mettre à jour le statut de paiement de la tâche
-              task.paymentStatus = "Paid";
+              task.paymentStatus = 'Paid';
               await task.save();
 
               const payerAccount =
-                captureDetail.payer?.email_address || `PayPal ID: ${captureDetail.payer?.payer_id}`;
+                captureDetail.payer?.email_address ||
+                `PayPal ID: ${captureDetail.payer?.payer_id}`;
               const paymentDate = new Date(captureDetail.create_time);
 
               // Créer une entrée dans PaymentHistory
@@ -1168,7 +1339,7 @@ const taskCtrl = {
                 phoneNumber: task.phoneNumber,
                 amount: parseFloat(captureDetail.amount.value),
                 currency: captureDetail.amount.currency_code,
-                paymentType: "PayPal",
+                paymentType: 'PayPal',
                 paymentDate,
                 transactionId: captureDetail.id,
                 payerAccount,
@@ -1184,61 +1355,76 @@ const taskCtrl = {
                 paymentDate: paymentDate.toLocaleString(),
                 amount: parseFloat(captureDetail.amount.value),
                 currency: captureDetail.amount.currency_code,
-                paymentType: "PayPal",
+                paymentType: 'PayPal',
                 taskDetails: task,
                 breakdown,
               });
 
-              console.log(`Payment for Task ${customId} confirmed and email sent.`);
-              res.status(200).send("Payment captured and processed successfully");
+              console.log(
+                `Payment for Task ${customId} confirmed and email sent.`,
+              );
+              res
+                .status(200)
+                .send('Payment captured and processed successfully');
             } else {
-              console.error("Failed to capture payment:", captureResponse);
-              res.status(500).send("Failed to capture payment");
+              console.error('Failed to capture payment:', captureResponse);
+              res.status(500).send('Failed to capture payment');
             }
           } catch (captureError) {
-            console.error("Error capturing payment:", captureError);
-            res.status(500).send("Error capturing payment");
+            console.error('Error capturing payment:', captureError);
+            res.status(500).send('Error capturing payment');
           }
           break;
 
-        case "PAYMENT.CAPTURE.COMPLETED":
-          console.log("Processing completed payment...");
+        case 'PAYMENT.CAPTURE.COMPLETED':
+          console.log('Processing completed payment...');
           const captureDetail = event.resource;
 
           if (!captureDetail.custom_id) {
-            console.error("custom_id (Task ID) is missing in the webhook event.");
-            return res.status(400).send("Task ID is required in the webhook event");
+            console.error(
+              'custom_id (Task ID) is missing in the webhook event.',
+            );
+            return res
+              .status(400)
+              .send('Task ID is required in the webhook event');
           }
 
           const taskId = captureDetail.custom_id;
 
           // Trouver la tâche associée
-          const task = await Task.findById(taskId).populate("items.standardItemId");
+          const task = await Task.findById(taskId).populate(
+            'items.standardItemId',
+          );
           if (!task) {
             console.error(`Task not found for ID: ${taskId}`);
-            return res.status(404).send("Task not found");
+            return res.status(404).send('Task not found');
           }
 
           // Vérifier si la tâche est déjà payée
-          if (task.paymentStatus === "Paid") {
+          if (task.paymentStatus === 'Paid') {
             console.log(`Payment already processed for Task ID: ${taskId}`);
-            return res.status(200).send("Payment already processed");
+            return res.status(200).send('Payment already processed');
           }
 
           // Construire le breakdown des items
           const breakdown = task.items.map((item) => ({
-            itemDescription: item.standardItemId ? item.standardItemId.itemName : item.object,
+            itemDescription: item.standardItemId
+              ? item.standardItemId.itemName
+              : item.object,
             quantity: item.quantity || 1,
-            price: item.standardItemId ? item.standardItemId.price : item.price || 0,
+            price: item.standardItemId
+              ? item.standardItemId.price
+              : item.price || 0,
             Objectsposition: item.Objectsposition,
           }));
 
           // Mettre à jour le statut de paiement de la tâche
-          task.paymentStatus = "Paid";
+          task.paymentStatus = 'Paid';
           await task.save();
 
           const payerAccount =
-            captureDetail.payer?.email_address || `PayPal ID: ${captureDetail.payer?.payer_id}`;
+            captureDetail.payer?.email_address ||
+            `PayPal ID: ${captureDetail.payer?.payer_id}`;
           const paymentDate = new Date(captureDetail.create_time);
 
           // Créer une entrée dans PaymentHistory
@@ -1249,7 +1435,7 @@ const taskCtrl = {
             phoneNumber: task.phoneNumber,
             amount: parseFloat(captureDetail.amount.value),
             currency: captureDetail.amount.currency_code,
-            paymentType: "PayPal",
+            paymentType: 'PayPal',
             paymentDate,
             transactionId: captureDetail.id,
             payerAccount,
@@ -1265,21 +1451,21 @@ const taskCtrl = {
             paymentDate: paymentDate.toLocaleString(),
             amount: parseFloat(captureDetail.amount.value),
             currency: captureDetail.amount.currency_code,
-            paymentType: "PayPal",
+            paymentType: 'PayPal',
             taskDetails: task,
             breakdown,
           });
 
           console.log(`Payment for Task ${taskId} confirmed and email sent.`);
-          res.status(200).send("Payment processed successfully");
+          res.status(200).send('Payment processed successfully');
           break;
 
         default:
           console.log(`Ignoring event type: ${event.event_type}`);
-          res.status(200).send("Event type ignored");
+          res.status(200).send('Event type ignored');
       }
     } catch (error) {
-      console.error("Error processing PayPal webhook:", error);
+      console.error('Error processing PayPal webhook:', error);
       res.status(500).send(`Webhook processing failed: ${error.message}`);
     }
   },
@@ -1297,107 +1483,130 @@ const taskCtrl = {
 
       res.status(200).json({
         message: 'Booking confirmation email sent successfully',
-        task
+        task,
       });
     } catch (error) {
       console.error('Error sending booking confirmation:', error);
       res.status(500).json({
         message: 'Failed to send booking confirmation',
-        error: error.message
+        error: error.message,
       });
     }
-  }, 
+  },
 
   sendInvoice: async (req, res) => {
     const { taskId } = req.params;
-  
+
     try {
       const task = await Task.findById(taskId).populate('items.standardItemId');
-      console.log("task", task.items)
+      console.log('task', task.items);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-  
+
       // Ensure directory exists
-      const dirPath = path.join(__dirname, "../generated");
+      const dirPath = path.join(__dirname, '../generated');
       if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
-  
-      const fileName = `invoice-${task.orderNumber}.pdf`;
+
+      const fileName = `invoice-${task._id}.pdf`;
       const filePath = path.join(dirPath, fileName);
-  
+
       // Generate the official invoice PDF
       await generateOfficialInvoicePDF(task, filePath);
-  
+
       // Email content in branded design
       const paidAmount = task.paidAmount?.amount || 0;
       const remainingAmount = task.totalPrice - paidAmount;
       const isPartialPaid = task.paymentStatus === 'partial_Paid';
-      const subtotalBeforeDiscount = task.totalPrice ;
-      const discountAmount = task.customDiscountPercent > 0
-      ? subtotalBeforeDiscount * (task.customDiscountPercent / 100)
-      : 0;
+      const subtotalBeforeDiscount = task.totalPrice;
+      const discountAmount =
+        task.customDiscountPercent > 0
+          ? subtotalBeforeDiscount * (task.customDiscountPercent / 100)
+          : 0;
       const subtotal = subtotalBeforeDiscount - discountAmount;
-    const vat = subtotal * 0.2;
-    const total = subtotal + vat;
+      const vat = subtotal * 0.2;
+      const total = subtotal + vat;
       const emailContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px;">
+        <div style="font-family: Arial, sans-serif; max-width: 100%; margin: auto; padding: 20px;">
           <div style="text-align: center; margin-bottom: 20px;">
-            <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png" width="150" alt="London Waste Management"/>
+            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="200" alt="London Waste Management"/>
           </div>
   
-          <div style="background-color: #8dc044; color: white; padding: 10px; text-align: center; border-radius: 4px;">
-            <h2 style="margin: 0;">Invoice Confirmation</h2>
-          </div>
-  
-          <div style="padding: 20px;">
-            <p>Dear ${task.firstName} ${task.lastName},</p>
+<div style="background: linear-gradient(to bottom, #ffffff, #dcedd6); color: #444; padding: 20px; text-align: center; border-radius: 0 0 30px 30px;">
+  <h2 style="margin: 0;">Invoice Confirmation</h2>
+</div>
+
+   <div style="padding: 20px;">
+  <div style="display: flex; align-items: flex-start; ">
+    
+   
+    <div style="flex: 1;">
+       <p style="font-size: 30px;">
+  <span style="color: #8DC044; font-weight: bold;">Dear</span>
+  <span style="font-weight: bold;">${task.firstName} ${task.lastName},</span>
+</p>
+
             <p>Thank you for choosing London Waste Management.</p>
-            <p>Please find attached your invoice for Order <strong>#${task.orderNumber}</strong>.</p>
+            <p>Please find attached your invoice for Order <strong>#${
+              task._id
+            }</strong>.</p>
             
-            ${isPartialPaid
-              ? `<p>Payment Details:</p>
+            ${
+              isPartialPaid
+                ? `<p>Payment Details:</p>
                  <ul>
-                    <li>Total Amount (Before VAT): £${(subtotal + discountAmount).toFixed(2)}</li>
-                    ${discountAmount > 0 ? `<li>Discount (${task.customDiscountPercent}%): -£${discountAmount.toFixed(2)}</li>` : ''}
+                    <li>Total Amount (Before VAT): £${(
+                      subtotal + discountAmount
+                    ).toFixed(2)}</li>
+                    ${
+                      discountAmount > 0
+                        ? `<li>Discount (${
+                            task.customDiscountPercent
+                          }%): -£${discountAmount.toFixed(2)}</li>`
+                        : ''
+                    }
                     <li>VAT (20%): £${vat.toFixed(2)}</li>
                     <li>Total Amount (Including VAT): £${total.toFixed(2)}</li>
                  </ul>
                  <p>Please settle the remaining balance at your earliest convenience.</p>`
-              : `<p>Total Amount: £${task.totalPrice.toFixed(2)}</p>`
+                : `<p>Total Amount: <strong> £${task.totalPrice.toFixed(
+                    2,
+                  )} </strong> </p>`
             }
-  
-            <p>Kind regards,</p>
-            <p>London Waste Management</p>
+ 
+            <p>Best regards,</p>
+          <p style="color: #8dc044;">London Waste Management Department</p>
           </div>
-  
-          <footer style="text-align: center; font-size: 12px; color: #888;">
-            <p>London Waste Management | hello@londonwastemanagement.com | 02030971517</p>
-          </footer>
+   <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750545550/uploads/mqqbsxjwlacqityvwlmf.png" 
+         style="width: 370px; max-width: 100%; height: auto; border-radius: 4px; margin-left: 100px;">
+  </div>
+         <footer style="font-size: 12px; color: #999; text-align: center">
+  <p>London Waste Management | <a href="mailto:hello@londonwastemanagement.com" style="color: #4A90E2; text-decoration: none;">hello@londonwastemanagement.com</a></p>
+</footer>
         </div>
       `;
-  
+
       // Send the email with the generated PDF as attachment
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: task.email,
-        subject: `Invoice for Order #${task.orderNumber}`,
+        subject: `Invoice for Order #${task._id}`,
         html: emailContent,
-        attachments: [{ filename: fileName, path: filePath }]
+        attachments: [{ filename: fileName, path: filePath }],
       });
-  
+
       // Clean up
       fs.unlinkSync(filePath);
-  
+
       res.status(200).json({
         message: 'Invoice sent successfully',
-        task
+        task,
       });
-  
     } catch (error) {
       console.error('Error sending invoice:', error);
       res.status(500).json({
         message: 'Failed to send invoice',
-        error: error.message
+        error: error.message,
       });
     }
   },
@@ -1427,14 +1636,14 @@ const taskCtrl = {
           return res.json({
             message: 'Lock extended',
             isLocked: true,
-            lockedBy: existingLock.lockedBy
+            lockedBy: existingLock.lockedBy,
           });
         } else {
           // If locked by different user, return lock info
           return res.status(409).json({
             message: 'Task is already locked by another user',
             isLocked: true,
-            lockedBy: existingLock.lockedBy
+            lockedBy: existingLock.lockedBy,
           });
         }
       }
@@ -1443,18 +1652,18 @@ const taskCtrl = {
       const lock = await OrderLock.create({
         taskId,
         lockedBy: userId,
-        expiresAt: new Date(Date.now() + LOCK_DURATION)
+        expiresAt: new Date(Date.now() + LOCK_DURATION),
       });
 
       res.json({
         message: 'Task locked successfully',
         isLocked: true,
-        lockedBy: lock.lockedBy
+        lockedBy: lock.lockedBy,
       });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to lock task',
-        error: error.message
+        error: error.message,
       });
     }
   },
@@ -1463,47 +1672,47 @@ const taskCtrl = {
   unlockTask: async (req, res) => {
     const { taskId } = req.params;
     const userId = req.user?._id;
-    console.log("unlock by ", userId)
+    console.log('unlock by ', userId);
     if (!userId) {
       return res.status(401).json({ message: 'User not authenticated' });
-      console.log("user not authenticated")
+      console.log('user not authenticated');
     }
 
     try {
       const lock = await OrderLock.findOne({ taskId }).populate('lockedBy');
-      
+
       if (!lock) {
-        console.log("task is not locked")
+        console.log('task is not locked');
         return res.json({
           message: 'Task is not locked',
           isLocked: false,
-          lockedBy: null
+          lockedBy: null,
         });
       }
 
       // Only allow the user who locked it to unlock it
       if (!lock.lockedBy._id.equals(userId)) {
-        console.log("lock.lockedBy", lock.lockedBy._id)
-        console.log("userId", userId)
-        console.log("user does not have permission to unlock the task")
+        console.log('lock.lockedBy', lock.lockedBy._id);
+        console.log('userId', userId);
+        console.log('user does not have permission to unlock the task');
         return res.status(403).json({
           message: 'You do not have permission to unlock this task',
           isLocked: true,
-          lockedBy: lock.lockedBy
+          lockedBy: lock.lockedBy,
         });
       }
 
       await lock.deleteOne();
-      console.log("task unlocked successfully")
+      console.log('task unlocked successfully');
       res.json({
         message: 'Task unlocked successfully',
         isLocked: false,
-        lockedBy: null
+        lockedBy: null,
       });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to unlock task',
-        error: error.message
+        error: error.message,
       });
     }
   },
@@ -1514,11 +1723,11 @@ const taskCtrl = {
 
     try {
       const lock = await OrderLock.findOne({ taskId }).populate('lockedBy');
-      
+
       if (!lock) {
         return res.json({
           isLocked: false,
-          lockedBy: null
+          lockedBy: null,
         });
       }
 
@@ -1527,22 +1736,21 @@ const taskCtrl = {
         await lock.deleteOne();
         return res.json({
           isLocked: false,
-          lockedBy: null
+          lockedBy: null,
         });
       }
 
       res.json({
         isLocked: true,
-        lockedBy: lock.lockedBy
+        lockedBy: lock.lockedBy,
       });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to get lock status',
-        error: error.message
+        error: error.message,
       });
     }
   },
-  
 };
 
 module.exports = taskCtrl;

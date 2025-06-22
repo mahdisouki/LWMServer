@@ -1,232 +1,311 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Invoice</title>
-  <style>
-    @font-face {
-      font-family: 'Lato';
-      src: url('{{fontRegular}}') format('truetype');
-    }
-    @font-face {
-      font-family: 'Lato-Bold';
-      src: url('{{fontBold}}') format('truetype');
-      font-weight: bold;
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <title>Invoice</title>
+    <style>
+      @font-face {
+        font-family: 'Lato';
+        src: url('{{fontRegular}}') format('truetype');
+      }
+      @font-face {
+        font-family: 'Lato-Bold';
+        src: url('{{fontBold}}') format('truetype');
+        font-weight: bold;
+      }
 
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: 'Lato', sans-serif;
-      background: url("{{bgPath}}") no-repeat top center;
-      background-size: cover;
-      font-size:15px;
-      color: #222;
-    }
+      html,
+      body {
+        /* background: #f4f5f4; */
+        margin: 0;
+        padding: 0;
+        left: 0;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        font-family: 'Lato', sans-serif;
+        font-size: 15px;
+        /* color: #222; */
+      }
 
-    .container {
-      padding: 40px 45px;
-    }
+      .container {
+        padding: 10px;
+        max-width: 800px;
+        margin: 0 auto;
+      }
 
-    .header {
-      display: flex;
-      justify-content: space-between;
-    }
+      .header {
+        display: flex;
+        align-items: flex-start;
+        padding: 20px;
+        /* border-radius: 12px; */
+        gap: 20px;
+        /* box-shadow: 0 4px 8px rgba(0.2, 0.2, 0.2, 0.2); */
+      }
 
-    .address-box {
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 10px;
-      padding: 0px 20px;
-      width: 270px;
-      box-shadow: 0 2px 3px rgba(0,0,0,0.08);
-    }
+      .address-box {
+        display: flex;
+        flex-direction: column;
+        border-radius: 12px;
+        gap: 16px;
+        /* box-shadow: 0 6px 6px rgba(0, 0, 0, 0.1); */
+      }
 
-    .address-box div {
-      margin-bottom: 15px;
-      
-    }
+      .card {
+        background-color: #fff;
+        border-radius: 12px;
+        padding: 14px 18px;
+        box-shadow: 0 2px 8px rgba(0.2, 0.2, 0.2, 0.2);
+        font-size: 14px;
+        color: #333;
+      }
 
-    .address-box img {
-      margin-right: 8px;
-    }
+      .card span.green {
+        color: #8dc044;
+        font-weight: bold;
+      }
 
-    .section {
-      background: rgba(255, 255, 255, 0.512);
-      border-radius: 10px;
-      padding: 15px 20px;
-      margin-top: 30px;
-      box-shadow: 0 2px 3px rgba(0,0,0,0.06);
-    }
-    .sectionL {
-      background: rgb(255, 255, 255);
-      border-radius: 10px;
-      padding: 15px 20px;
-      margin-top: 30px;
-      box-shadow: 0 2px 3px rgba(0,0,0,0.06);
-    }
+      .section {
+        background: #fff;
+        border-radius: 12px;
+        padding: 10px 24px;
+        margin-top: 10px;
+        box-shadow: 0 3px 8px rgba(0.2, 0.2, 0.2, 0.2);
+      }
 
-    .section-title {
-      font-family: 'Lato-Bold';
-      font-size: 18px;
-      margin-bottom: 10px;
-    }
+      .section-title {
+        font-family: 'Lato-Bold';
+        font-size: 25px;
+        margin-bottom: 18px;
+      }
 
-    .info-box {
-     
-      font-size: 18px;
-    }
+      .info-box {
+        font-size: 15px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
 
-    .info-box div {
-      flex: 1;
-    }
+      .green {
+        color: #8dc044;
+        font-weight: bold;
+      }
 
-    .green {
-      color: #8dc044;
-      font-weight: bold;
-    }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+      }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-    }
+      thead {
+        background: #8dc044;
+        color: white;
+      }
 
-    table thead {
-      background: #8dc044;
-      color: white;
-    }
+      thead th:first-child {
+        border-top-left-radius: 12px;
+      }
 
-    table th, table td {
-      padding: 10px 8px;
-      text-align: left;
-      border-bottom: 1px solid #eee;
-    }
+      thead th:last-child {
+        border-top-right-radius: 12px;
+      }
 
-    .datetime-box, .summary-box {
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 2px 3px rgba(0,0,0,0.06);
-      padding: 12px 20px;
-      width: 230px;
-      font-size: 13px;
-    }
+      table th,
+      table td {
+        padding: 10px 6px;
+        font-size: 14px;
 
-    .summary-box {
-      float: right;
-      margin-top: 20px;
-    }
+        text-align: left;
+        border-bottom: 1px solid #eee;
+      }
 
-    .summary-box div {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 6px;
-    }
+      .datetime-box,
+      .summary-box {
+        flex: 0 0 auto;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 6px rgba(0.2, 0.2, 0.2, 0.2);
+        padding: 14px 20px;
 
-    .datetime-box {
-      float: left;
-      margin-top: 20px;
-    }
+        font-size: 13px;
+        min-width: 160px;
+        width: fit-content;
+      }
 
-    .datetime-box div {
-      margin: 4px 0;
-      display: flex;
-      align-items: center;
-    }
+      .summary-box div {
+        display: flex;
+        font-size: 14px;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
 
-    .datetime-box img {
-      width: 16px;
-      margin-right: 8px;
-    }
+      .datetime-box div {
+        margin: 6px 0;
+        display: flex;
+        align-items: center;
+      }
+      .summary-box .green {
+        font-size: 15px;
+        font-weight: bold;
+      }
+      .datetime-box img {
+        width: 16px;
+        margin-right: 8px;
+      }
 
-    .footer {
-      margin-top: 100px;
-      background: #eaf7d6;
-      width: 100%;
-      text-align: center;
-      font-size: 11px;
-      padding: 8px 0;
-      color: #8dc044;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
+      .footer {
+        margin-top: 80px;
+
+        width: 100%;
+        text-align: center;
+        font-size: 11px;
+        padding: 10px 0;
+        color: #8dc044;
+        border-radius: 0 0 12px 12px;
+      }
+    </style>
+  </head>
+  <body>
     <div class="header">
-      <img src="{{logoPath}}" width="130" height="130" />
-      <div class="address-box">
-        <div style="background-color: #fff; border-radius: 10px; padding: 10px;">  
-        <div><img src="{{locationIcon}}" width="16" /> 6-9 The Square, Stockley Park, Heathrow <strong>UB11 1FW</strong>,</div>
-        <div style="padding-left: 24px;"> <span class="green">United Kingdom</span></div>
-    </div>
-    <div style="background-color: #fff; border-radius: 10px; padding: 10px;">  
-        <div><img src="{{phoneIcon}}" width="16" /> <strong>VAT registration number:</strong></div>
-        <div style="padding-left: 24px;">403 1603 54</div>
+      <img src="{{logoPath}}" width="150" alt="Logo" />
+      <img
+        src="{{ArrowIcon}}"
+        width="120"
+        alt="Arrow"
+        style="margin-top: 10px"
+      />
+
+      <div class="card">
+        <div class="card">
+          <div style="display: flex; align-items: center; gap: 8px">
+            <img src="{{locationIcon}}" width="16" />
+            <span
+              ><span class="green">6-9</span> The Square, Stockley Park,
+              Heathrow <strong>UB11 1FW</strong>,</span
+            >
+          </div>
+          <div style="padding-left: 24px; margin-top: 4px">
+            <span class="green">United Kingdom</span>
+          </div>
+        </div>
+        <div class="card" style="margin-top: 15px">
+          <div style="display: flex; align-items: center; gap: 8px">
+            <img src="{{phoneIcon}}" width="16" />
+            <strong>VAT registration number:</strong>
+          </div>
+          <div style="padding-left: 24px; margin-top: 4px">403 1603 54</div>
         </div>
       </div>
     </div>
 
     <div class="section">
       <div class="section-title">INVOICE</div>
-      <div class="info-box">
-        <div style="background-color: #fff; border-radius: 10px; padding: 10px; margin-bottom: 10px;">
-        <img src="{{emailIcon}}" width="14" /> 
-          <strong>Billing Address:</strong> {{billingName}} | {{email}}<br/><span class="green">{{phone}}</span>
+      <div class="address-box">
+        <div class="card">
+          <img src="{{emailIcon}}" width="14" />
+          <strong>Billing Address:</strong> {{billingName}} | {{email}}<br />
+          <span class="green">{{phone}}</span>
         </div>
-        <div style="display: flex; justify-content: space-between;">
-        <div style="background-color: #fff; border-radius: 10px; padding: 10px; margin: 10px 10px;">
-          <strong>Invoice Number:</strong> {{invoiceNumber}}<br /><br />
-          <strong>Invoice Date:</strong> {{invoiceDate}}
+        <div style="display: flex; gap: 20px">
+          <div class="card" style="flex: 1">
+            <strong>Invoice Number:</strong> {{invoiceNumber}}<br />
+            <strong>Invoice Date:</strong> {{invoiceDate}}
+          </div>
+          <div class="card" style="flex: 1">
+            <strong>Order Number:</strong> {{orderNumber}}<br />
+            <strong>Order Date:</strong> {{orderDate}}
+          </div>
         </div>
-        <div style="background-color: #fff; border-radius: 10px; padding: 10px;margin: 10px 10px;" >
-          <strong>Order Number:</strong> {{orderNumber}}<br /><br />
-          <strong>Order Date:</strong> {{orderDate}}
-        </div>
-    </div>
       </div>
     </div>
-    <div style="background-color: #ffffff66; border-radius: 10px; padding: 10px; margin-bottom: 10px;margin-top: 10px;">
-    <div class="sectionL">
-      <table>
-        <img src="{{vatIcon}}" width="24" height="24" />
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>Qty</th>
-            <th>Price</th>
-            {{discountColumns}}
-            <th>Position fee</th>
-            <th>object position</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{itemRows}}
-        </tbody>
-      </table>
+
+    <div class="section">
+      <div
+        class="address-box"
+        style="
+          display: flex;
+          flex-direction: row;
+          align-items: center;
+          gap: 10px;
+          margin: 12px 12px 12px 12px;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        "
+      >
+        <img
+          src="{{vatIcon}}"
+          width="24"
+          height="24"
+          style="margin-right: 10px"
+        />
+        <table>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Position fee</th>
+              <th>Object position</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{itemRows}}
+          </tbody>
+        </table>
+      </div>
+      <div
+        style="
+          display: flex;
+          justify-content: row;
+          gap: 280px;
+          padding: 10px;
+          align-items: flex-start;
+          flex-wrap: wrap;
+        "
+      >
+        <div class="datetime-box">
+          <div><img src="{{calendarIcon}}" /> {{serviceDate}}</div>
+          <hr
+            style="
+              border: none;
+              height: 1px;
+              background: #8dc044;
+              margin: 10px 0;
+            "
+          />
+          <div><img src="{{clockIcon}}" /> {{available}}</div>
+        </div>
+
+        <div class="summary-box">
+          <div><span>Subtotal :</span><span>£{{subtotal}}</span></div>
+          {{discountRow}}
+          <hr
+            style="
+              border: none;
+              height: 1px;
+              background: #8dc044;
+              margin: 10px 0;
+            "
+          />
+          <div><span>VAT :</span><span>£{{vat}}</span></div>
+          <hr
+            style="
+              border: none;
+              height: 1px;
+              background: #8dc044;
+              margin: 10px 0;
+            "
+          />
+          <div class="green">
+            <span>Total :</span><span>£{{totalPrice}}</span>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div style="display: flex; justify-content: space-between; margin-top: 40px;">
-      <div class="datetime-box">
-        <div><img src="{{calendarIcon}}" /> {{serviceDate}}</div>
-        <hr style="border: 1px solid #8dc044; margin: 10px 0;" />
-        <div><img src="{{clockIcon}}" /> {{available}}</div>
-      </div>
-
-      <div class="summary-box">
-        <div><span>Subtotal :</span><span>£{{subtotal}}</span></div>
-        {{discountRow}}
-        <hr style="border: 1px solid #8dc044; margin: 10px 0;" />
-        <div><span>VAT :</span><span>£{{vat}}</span></div>
-        <hr style="border: 1px solid #8dc044; margin: 10px 0;" />
-        <div class="green"><span>Total :</span><span>£{{totalPrice}}</span></div>
-      </div>
+    <div class="footer">
+      Environment Agency Registered Waste Carrier: CBDU308350<br />
+      London Waste Management | hello@londonwastemanagement.com | 02030971517
     </div>
-</div>
-  </div>
-
-  <div class="footer">
-    Environment Agency Registered Waste Carrier: CBDU308350<br/>
-    London Waste Management | hello@londonwastemanagement.com | 02030971517
-  </div>
-</body>
+  </body>
 </html>
