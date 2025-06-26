@@ -5,6 +5,7 @@ const FormData = require('form-data')
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 const axios = require('axios');
 const { emitNotificationToUser } = require('../socket');
+const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
 const quotationRequestController = {
     createQuotationRequest : async (req, res) => {
         try {
@@ -68,7 +69,7 @@ const quotationRequestController = {
                 items,
                 // estimatedPrices,
             });
-    
+            sendQuoteRequestConfirmationEmail(email)
             await newQuotation.save();
             emitNotificationToUser("67cb6810c9e768ec25d39523", "New Quotation Request", "A new quotation request has been submitted");
     

@@ -205,13 +205,12 @@ module.exports = {
       '../public/invoice-template.html',
     );
     let template = fs.readFileSync(templatePath, 'utf8');
-    console.log(task);
+    
     const iconDir = path.join(__dirname, '../public/invoice-icons');
-    console.log('Icon directory:', iconDir); // Debug log
+    
 
     const asset = (name) => {
       const filePath = path.resolve(iconDir, name);
-      console.log(`Asset path for ${name}:`, filePath);
       // Read file and convert to base64
       const fileBuffer = fs.readFileSync(filePath);
       const base64 = fileBuffer.toString('base64');
@@ -224,11 +223,12 @@ module.exports = {
         : 'image/png';
       return `data:${mimeType};base64,${base64}`;
     };
+    
     let subtotal = 0;
     let vat = 0;
     let total = 0;
-    let totalDiscount = 0;
 
+    // Calculate subtotal and handle discounts based on discountType
     task.items.forEach((item) => {
       const itemPrice = item.standardItemId?.price * item.quantity || 0;
       const positionPrice =
@@ -240,27 +240,28 @@ module.exports = {
 
       const itemSubtotal = itemPrice + positionPrice;
 
-      // Handle item-specific discount only if hasDiscount is true
-      const itemDiscount =
-        task.hasDiscount && item.customPrice
-          ? itemSubtotal - item.customPrice
-          : 0;
-      const finalItemTotal = itemSubtotal - itemDiscount;
-
+      // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
+      let finalItemTotal = itemSubtotal;
+      if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
+        finalItemTotal = (item.customPrice * item.quantity) + positionPrice;
+      }
+      
       subtotal += finalItemTotal;
-      totalDiscount += itemDiscount;
     });
 
-    // Handle percentage discount on total only if hasDiscount is true
-    if (task.hasDiscount && task.customDiscountPercent > 0) {
-      const percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
-      subtotal -= percentageDiscount;
-      totalDiscount += percentageDiscount;
-    }
-
+    // // Handle percentage discount on total only if hasDiscount is true and discountType is "percentage"
+    // if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
+    //   const percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
+    //   subtotal -= percentageDiscount;
+    // }
+    console.log("subtotal",subtotal)
     vat = subtotal * 0.2;
     total = subtotal + vat;
-
+    
+    console.log("task.items", task.items);
+    console.log("discountType:", task.discountType);
+    console.log("hasDiscount:", task.hasDiscount);
+    
     const itemRows = task.items
       .map((item) => {
         const itemPrice = item.standardItemId?.price * item.quantity || 0;
@@ -272,13 +273,17 @@ module.exports = {
             : 0;
 
         const itemSubtotal = itemPrice + positionPrice;
-        const itemDiscount =
-          task.hasDiscount && item.customPrice
-            ? itemSubtotal - item.customPrice
-            : 0;
-        const finalItemTotal = itemSubtotal - itemDiscount;
-
-        if (task.hasDiscount) {
+        
+        // Handle different discount types
+        let finalItemTotal = itemSubtotal;
+        let discountedPrice = itemSubtotal;
+        
+        if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
+          discountedPrice = item.customPrice;
+          finalItemTotal = (discountedPrice * item.quantity) + positionPrice;
+        }
+        
+        if (task.hasDiscount && task.discountType === "perItem") {
           return `
           <tr>
             <td>${
@@ -286,10 +291,9 @@ module.exports = {
             }</td>
             <td>${item.quantity}</td>
             <td>£${(item.standardItemId?.price || 0).toFixed(2)}</td>
-            <td>£${(item.customPrice || itemSubtotal).toFixed(2)}</td>
-            <td>£${itemDiscount.toFixed(2)}</td>
-            <td>£${positionPrice.toFixed(2)}</td>
+            ${task.hasDiscount && task.discountType === "perItem" && item.customPrice ? `<td>£${discountedPrice.toFixed(2)}</td>` : ''}
             <td>${item.Objectsposition}</td>
+            <td>£${positionPrice.toFixed(2)}</td>
             <td>£${finalItemTotal.toFixed(2)}</td>
           </tr>`;
         } else {
@@ -312,8 +316,8 @@ module.exports = {
       billingName: `${task.firstName} ${task.lastName}`,
       email: task.email,
       phone: task.phoneNumber,
-      invoiceNumber: task._id,
-      orderNumber: task._id,
+      invoiceNumber: task.orderNumber,
+      orderNumber: task.orderNumber,
       invoiceDate: task.createdAt?.toDateString(),
       orderDate: task.date?.toDateString(),
       serviceDate: new Date(task.date).toLocaleDateString('en-GB'),
@@ -321,22 +325,25 @@ module.exports = {
       itemRows,
       subtotal: (subtotal || 0).toFixed(2),
       vat: (vat || 0).toFixed(2),
-      totalPrice: (total || 0).toFixed(2),
-      totalDiscount: (totalDiscount || 0).toFixed(2),
-      hasDiscount: task.hasDiscount || totalDiscount > 0,
+      totalPrice: (task.totalPrice || 0).toFixed(2),
+      hasDiscount: task.hasDiscount,
+      discountType: task.discountType || 'percentage',
       customDiscountPercent: (task.customDiscountPercent || 0).toFixed(2),
 
-      // Discount display logic
+      // Discount display logic based on discount type
       showDiscountRow:
-        totalDiscount > 0 ||
-        (task.hasDiscount && task.customDiscountPercent > 0)
+        task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
           ? 'block'
           : 'none',
       discountLabel:
-        task.hasDiscount && task.customDiscountPercent > 0
+        task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
           ? `Discount (${task.customDiscountPercent}%)`
+          : task.hasDiscount && task.discountType === "perItem"
+          ? 'Item Discounts'
           : 'Discount',
-      discountAmount: totalDiscount.toFixed(2),
+      discountAmount: task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
+        ? ((subtotal * task.customDiscountPercent) / 100).toFixed(2)
+        : '0.00',
 
       // Asset paths with base64 encoding
       logoPath: asset('london_waste_logo 1.png'),
@@ -352,16 +359,16 @@ module.exports = {
       fontBold: asset('lato-bold.ttf'),
     };
 
-    // Build discount columns for the table header
+    // Build discount columns for the table header based on discount type
     let discountColumns = '';
-    if (vars.hasDiscount) {
-      discountColumns = '<th>Discounted Price</th><th>Discount</th>';
+    if (vars.hasDiscount && task.discountType === "perItem") {
+      discountColumns = '<th>Discounted Price</th>';
     }
     template = template.replace('{{discountColumns}}', discountColumns);
 
-    // Build discount row for the summary
+    // Build discount row for the summary based on discount type
     let discountRow = '';
-    if (vars.hasDiscount) {
+    if (vars.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
       discountRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div><span>${vars.discountLabel} :</span><span>-£${vars.discountAmount}</span></div>`;
     }
     template = template.replace('{{discountRow}}', discountRow);
@@ -403,7 +410,6 @@ module.exports = {
         naturalHeight: img.naturalHeight,
       }));
     });
-    console.log('Image loading status:', imageStatus);
 
     await page.pdf({
       path: outputPath,
@@ -694,7 +700,7 @@ module.exports = {
     if (!task) throw new Error('Task not found');
 
     const htmlContent = `
-      <div style="padding: 40px 0 0; font-family: Arial, sans-serif; text-align: center;">
+      <div style="padding: 40px 0 0; font-family: Arial, sans-serif; text-align: center;background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff');background-size: cover;background-position: center;background-repeat: no-repeat;">
   <div style="max-width: 90%; margin: auto; background: #ffffff; border-radius: 12px 12px 8px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; position: relative; z-index: 2;">
     
     <div style="padding: 20px 0;">
@@ -719,7 +725,7 @@ module.exports = {
         <p>Thank you for booking with London Waste Management.</p>
 
         <p>We have successfully received your order 
-          <strong style="color: #00b300;">#${task._id}</strong> scheduled on 
+          <strong style="color: #00b300;">#${task.orderNumber}</strong> scheduled on 
           <strong>${task.date.toLocaleDateString('en-GB')}</strong> during 
           <strong>${task.available.replace(/_/g, ' ')}</strong>.
         </p>
@@ -740,7 +746,7 @@ module.exports = {
         <img 
           src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750623581/uploads/kk0rcexpiwluvaaq4xtj.png" 
           alt="Booking Illustration" 
-  style="width: 260px; max-width: 100%; height: auto; margin-left: 20px; margin-top :75px"         />
+style="width: 260px; max-width: 100%; height: auto; margin-left: 20px; margin-top :75px"         />
       </div>
     </div>
 
@@ -756,7 +762,7 @@ module.exports = {
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
-      subject: `Booking Confirmation - Order #${task._id}`,
+      subject: `Booking Confirmation - Order #${task.orderNumber}`,
       html: htmlContent,
     });
   },
@@ -772,11 +778,9 @@ const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
     let template = fs.readFileSync(templatePath, 'utf8');
 
     const iconDir = path.join(__dirname, '../public/invoice-icons');
-    console.log('Icon directory:', iconDir); // Debug log
 
     const asset = (name) => {
       const filePath = path.resolve(iconDir, name);
-      console.log(`Asset path for ${name}:`, filePath);
       // Read file and convert to base64
       const fileBuffer = fs.readFileSync(filePath);
       const base64 = fileBuffer.toString('base64');
@@ -789,7 +793,7 @@ const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
         : 'image/png';
       return `data:${mimeType};base64,${base64}`;
     };
-
+    console.log("taskData.items",taskData)
     const itemRows = taskData.items
       .map(
         (item) => `
@@ -797,6 +801,8 @@ const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
         <td>${item.name}</td>
         <td>${item.quantity}</td>
         <td>£${(item.price || 0).toFixed(2)}</td>
+        <td>£${(item.discount || 0).toFixed(2)}</td>
+        <td>£${(item.objectPosition || 0).toFixed(2)}</td>
         <td>£${(item.positionFee || 0).toFixed(2)}</td>
         <td>£${(item.total || 0).toFixed(2)}</td>
       </tr>`,
@@ -883,7 +889,6 @@ const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
         naturalHeight: img.naturalHeight,
       }));
     });
-    console.log('Image loading status:', imageStatus);
 
     // Generate PDF buffer
     const pdfBuffer = await page.pdf({

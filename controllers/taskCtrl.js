@@ -55,8 +55,10 @@ async function calculateTotalPrice({
   standardItems = [],
   objects = [],
   customDiscountPercent,
+  discountType,
+  hasDiscount
 }) {
-  let totalPrice = 0;
+  let subtotal = 0;
 
   // 1. Add custom items (objects) - NO position fee
   if (objects && Array.isArray(objects)) {
@@ -64,7 +66,7 @@ async function calculateTotalPrice({
       if (customObject.object && customObject.price) {
         const itemTotal =
           Number(customObject.price) * (Number(customObject.quantity) || 1);
-        totalPrice += itemTotal;
+        subtotal += itemTotal;
       }
     });
   }
@@ -76,37 +78,42 @@ async function calculateTotalPrice({
       const standardItem = await StandardItem.findById(item.standardItemId);
       if (!standardItem) continue;
 
-      // Use customPrice if present, otherwise use standard price
-      let price =
-        typeof item.customPrice !== 'undefined' &&
-        !isNaN(Number(item.customPrice))
-          ? Number(item.customPrice)
-          : Number(standardItem.price);
-
+      // Calculate base item subtotal
+      let price = Number(standardItem.price);
+      const quantity = Number(item.quantity) || 1;
+      
       // Always add position fee for standard items
-      if (item.Objectsposition === 'InsideWithDismantling') price += 18;
-      else if (item.Objectsposition === 'Inside') price += 6;
-
-      const itemTotal = price * (Number(item.quantity) || 1);
-      totalPrice += itemTotal;
+      let positionFee = 0;
+      if (item.Objectsposition === 'InsideWithDismantling') positionFee = 18;
+      else if (item.Objectsposition === 'Inside') positionFee = 6;
+      
+      const itemSubtotal = price * quantity + positionFee;
+      
+      // Handle item-specific discount if discountType is "perItem"
+      let finalItemTotal = itemSubtotal;
+      if (hasDiscount && discountType === "perItem" && 
+          typeof item.customPrice !== 'undefined' && !isNaN(Number(item.customPrice))) {
+        finalItemTotal = Number(item.customPrice) * quantity;
+      }
+      
+      subtotal += finalItemTotal;
     }
   }
 
-  // 3. Apply global discount if present (before VAT)
-  if (
-    typeof customDiscountPercent !== 'undefined' &&
-    !isNaN(customDiscountPercent) &&
-    customDiscountPercent > 0
-  ) {
-    totalPrice = totalPrice * (1 - customDiscountPercent / 100);
+  // 3. Apply percentage discount if discountType is "percentage"
+  if (hasDiscount && discountType === "percentage" && 
+      typeof customDiscountPercent !== 'undefined' && 
+      !isNaN(customDiscountPercent) && customDiscountPercent > 0) {
+    const percentageDiscount = (subtotal * customDiscountPercent) / 100;
+    subtotal -= percentageDiscount;
   }
 
   // 4. Enforce minimum price (before VAT)
-  if (totalPrice < 30) totalPrice = 30;
+  if (subtotal < 30) subtotal = 30;
 
   // 5. Add VAT (20%)
-  const vat = totalPrice * 0.2;
-  totalPrice += vat;
+  const vat = subtotal * 0.2;
+  const totalPrice = subtotal + vat;
 
   return {
     totalPrice: Number(totalPrice.toFixed(2)),
@@ -137,6 +144,7 @@ const taskCtrl = {
         cloneClientObjectPhotos,
         postcode,
         customDiscountPercent, // NEW: from frontend
+        discountType
       } = req.body;
 
       let clientObjectPhotos = [];
@@ -155,6 +163,8 @@ const taskCtrl = {
         standardItems,
         objects,
         customDiscountPercent,
+        discountType,
+        hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0
       });
 
       // Prepare items array for DB (merge standard and custom)
@@ -205,6 +215,8 @@ const taskCtrl = {
         taskStatus: 'Processing',
         postcode,
         customDiscountPercent, // Save for reference
+        discountType,
+        hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0
       });
 
       await newTask.save();
@@ -570,7 +582,10 @@ const taskCtrl = {
         const populatedTask = await Task.findById(taskId).populate(
           'items.standardItemId',
         );
-        let totalPrice = 0;
+        
+        let subtotal = 0;
+        
+        // Calculate subtotal with discount handling
         for (const item of populatedTask.items) {
           let price = 0;
           if (item.standardItemId && item.standardItemId.price) {
@@ -583,7 +598,15 @@ const taskCtrl = {
           if (item.Objectsposition === 'InsideWithDismantling')
             positionFee = 18;
           else if (item.Objectsposition === 'Inside') positionFee = 6;
-          const itemTotal = price * quantity + positionFee;
+          
+          const itemSubtotal = price * quantity + positionFee;
+          
+          // Handle item-specific discount if discountType is "perItem"
+          let finalItemTotal = itemSubtotal;
+          if (populatedTask.hasDiscount && populatedTask.discountType === "perItem" && item.customPrice) {
+            finalItemTotal = (item.customPrice * quantity ) + positionFee;
+          }
+          
           console.log(
             'Item:',
             item,
@@ -593,17 +616,33 @@ const taskCtrl = {
             quantity,
             'PositionFee:',
             positionFee,
-            'ItemTotal:',
-            itemTotal,
+            'ItemSubtotal:',
+            itemSubtotal,
+            'FinalItemTotal:',
+            finalItemTotal,
           );
-          totalPrice += itemTotal;
+          
+          subtotal += finalItemTotal;
         }
+        
+        // Handle percentage discount if discountType is "percentage"
+        if (populatedTask.hasDiscount && populatedTask.discountType === "percentage" && populatedTask.customDiscountPercent > 0) {
+          const percentageDiscount = (subtotal * populatedTask.customDiscountPercent) / 100;
+          subtotal -= percentageDiscount;
+          console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
+        }
+        
         // Add VAT
-        const vat = totalPrice * 0.2;
-        totalPrice += vat;
+        const vat = subtotal * 0.2;
+        const totalPrice = subtotal + vat;
+        
+        console.log('Final subtotal:', subtotal);
+        console.log('VAT:', vat);
         console.log('Calculated totalPrice with VAT:', totalPrice);
+        
         updates.totalPrice = totalPrice;
       }
+      
       console.log(updates.totalPrice); // Update the task
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
@@ -1084,60 +1123,82 @@ const taskCtrl = {
       }
 
       // Calculate total price and breakdown as before
-      let totalPrice = 0;
+      let subtotal = 0;
       const breakdown = [];
+      
+      // Calculate subtotal with discount handling
       for (const item of task.items) {
         let itemPrice = 0;
         let itemDescription = '';
+        
         if (item.standardItemId) {
-          itemPrice = item.customPrice || item.standardItemId.price;
+          itemPrice = Number(item.standardItemId.price);
           itemDescription = item.standardItemId.itemName;
         } else if (item.object) {
-          itemPrice = item.price;
+          itemPrice = Number(item.price);
           itemDescription = item.object;
         }
-        const quantity = item.quantity || 1;
-        const itemTotal = itemPrice * quantity;
+        
+        const quantity = Number(item.quantity) || 1;
         let positionFee = 0;
         if (item.Objectsposition === 'InsideWithDismantling') {
           positionFee = 18;
         } else if (item.Objectsposition === 'Inside') {
           positionFee = 6;
         }
-        const positionFeeTotal = positionFee * quantity;
-        const itemTotalWithFee = itemTotal + positionFeeTotal;
+        
+        // Per-item discount logic: use customPrice if present, and always add positionFee
+        let displayPrice = itemPrice;
+        let finalItemTotal = itemPrice * quantity + positionFee;
+        if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
+          displayPrice = Number(item.customPrice) + (positionFee / quantity);
+          finalItemTotal = (Number(item.customPrice) * quantity) + positionFee;
+        } else if (positionFee > 0) {
+          // If no discount but there is a position fee, add it to the per-unit price for display
+          displayPrice = itemPrice + (positionFee / quantity);
+        }
+        
         breakdown.push({
           itemDescription,
           quantity,
-          price: itemPrice,
+          price: displayPrice,
           positionFee,
-          total: itemTotalWithFee,
+          total: finalItemTotal,
           Objectsposition: item.Objectsposition,
         });
-        totalPrice += itemTotalWithFee;
+        
+        subtotal += finalItemTotal;
       }
-      if (task.customDiscountPercent > 0) {
-        const discountAmount = totalPrice * (task.customDiscountPercent / 100);
-        totalPrice -= discountAmount;
+      
+      // Handle percentage discount if discountType is "percentage"
+      if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
+        const percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
+        subtotal -= percentageDiscount;
         breakdown.push({
           description: `Discount (${task.customDiscountPercent}%)`,
-          amount: -discountAmount,
+          amount: -percentageDiscount,
         });
       }
-      if (totalPrice < 30) {
-        const adjustment = 30 - totalPrice;
-        totalPrice = 30;
+      
+      // Enforce minimum price (before VAT)
+      if (subtotal < 30) {
+        const adjustment = 30 - subtotal;
+        subtotal = 30;
         breakdown.push({
           description: 'Minimum price adjustment',
           amount: adjustment,
         });
       }
-      const vat = totalPrice * 0.2;
-      totalPrice += vat;
+      
+      // Add VAT
+      const vat = subtotal * 0.2;
+      const totalPrice = subtotal + vat;
+      
       breakdown.push({
         description: 'VAT (20%)',
         amount: vat,
       });
+      
       validateBreakdown(breakdown);
 
       // Generate payment links for the specified amount
@@ -1527,62 +1588,64 @@ const taskCtrl = {
       const vat = subtotal * 0.2;
       const total = subtotal + vat;
       const emailContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 100%; margin: auto; padding: 20px;">
-          <div style="text-align: center; margin-bottom: 20px;">
-            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="200" alt="London Waste Management"/>
-          </div>
-  
-<div style="background: linear-gradient(to bottom, #ffffff, #dcedd6); color: #444; padding: 20px; text-align: center; border-radius: 0 0 30px 30px;">
-  <h2 style="margin: 0;">Invoice Confirmation</h2>
-</div>
+        <div style="font-family: Arial, sans-serif; max-width: 100%; margin: auto; padding: 20px; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff'); background-size: cover; background-position: center; background-repeat: no-repeat; min-height: 100vh; position: relative;">
+          <div style="position: relative; z-index: 2;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="200" alt="London Waste Management"/>
+            </div>
+      
+            <div style="background: linear-gradient(to bottom, #ffffff, #dcedd6); color: #444; padding: 20px; text-align: center; border-radius: 0 0 30px 30px;">
+              <h2 style="margin: 0;">Invoice Confirmation</h2>
+            </div>
 
-   <div style="padding: 20px;">
-  <div style="display: flex; align-items: flex-start; ">
-    
-   
-    <div style="flex: 1;">
-       <p style="font-size: 30px;">
-  <span style="color: #8DC044; font-weight: bold;">Dear</span>
-  <span style="font-weight: bold;">${task.firstName} ${task.lastName},</span>
-</p>
+            <div style="padding: 20px; background: rgba(255, 255, 255, 0.95); border-radius: 15px; margin-top: 20px;">
+              <div style="display: flex; align-items: flex-start;">
+                <div style="flex: 1;">
+                  <p style="font-size: 30px;">
+                    <span style="color: #8DC044; font-weight: bold;">Dear</span>
+                    <span style="font-weight: bold;">${task.firstName} ${task.lastName},</span>
+                  </p>
 
-            <p>Thank you for choosing London Waste Management.</p>
-            <p>Please find attached your invoice for Order <strong>#${
-              task._id
-            }</strong>.</p>
+                  <p>Thank you for choosing London Waste Management.</p>
+                  <p>Please find attached your invoice for Order <strong>#${
+                    task._id
+                  }</strong>.</p>
+                  
+                  ${
+                    isPartialPaid
+                      ? `<p>Payment Details:</p>
+                       <ul>
+                          <li>Total Amount (Before VAT): £${(
+                            subtotal + discountAmount
+                          ).toFixed(2)}</li>
+                          ${
+                            discountAmount > 0
+                              ? `<li>Discount (${
+                                  task.customDiscountPercent
+                                }%): -£${discountAmount.toFixed(2)}</li>`
+                              : ''
+                          }
+                          <li>VAT (20%): £${vat.toFixed(2)}</li>
+                          <li>Total Amount (Including VAT): £${total.toFixed(2)}</li>
+                       </ul>
+                       <p>Please settle the remaining balance at your earliest convenience.</p>`
+                      : `<p>Total Amount: <strong> £${task.totalPrice.toFixed(
+                          2,
+                        )} </strong> </p>`
+                  }
+         
+                  <p>Best regards,</p>
+                  <p style="color: #8dc044;">London Waste Management Department</p>
+                </div>
+                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750545550/uploads/mqqbsxjwlacqityvwlmf.png" 
+                     style="width: 370px; max-width: 100%; height: auto; border-radius: 4px; margin-left: 100px;">
+              </div>
+            </div>
             
-            ${
-              isPartialPaid
-                ? `<p>Payment Details:</p>
-                 <ul>
-                    <li>Total Amount (Before VAT): £${(
-                      subtotal + discountAmount
-                    ).toFixed(2)}</li>
-                    ${
-                      discountAmount > 0
-                        ? `<li>Discount (${
-                            task.customDiscountPercent
-                          }%): -£${discountAmount.toFixed(2)}</li>`
-                        : ''
-                    }
-                    <li>VAT (20%): £${vat.toFixed(2)}</li>
-                    <li>Total Amount (Including VAT): £${total.toFixed(2)}</li>
-                 </ul>
-                 <p>Please settle the remaining balance at your earliest convenience.</p>`
-                : `<p>Total Amount: <strong> £${task.totalPrice.toFixed(
-                    2,
-                  )} </strong> </p>`
-            }
- 
-            <p>Best regards,</p>
-          <p style="color: #8dc044;">London Waste Management Department</p>
+            <footer style="font-size: 12px; color: #999; text-align: center; margin-top: 20px; background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 10px;">
+              <p>London Waste Management | <a href="mailto:hello@londonwastemanagement.com" style="color: #4A90E2; text-decoration: none;">hello@londonwastemanagement.com</a></p>
+            </footer>
           </div>
-   <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750545550/uploads/mqqbsxjwlacqityvwlmf.png" 
-         style="width: 370px; max-width: 100%; height: auto; border-radius: 4px; margin-left: 100px;">
-  </div>
-         <footer style="font-size: 12px; color: #999; text-align: center">
-  <p>London Waste Management | <a href="mailto:hello@londonwastemanagement.com" style="color: #4A90E2; text-decoration: none;">hello@londonwastemanagement.com</a></p>
-</footer>
         </div>
       `;
 

@@ -125,6 +125,7 @@ const taskSchema = new Schema(
       },
     },
     hasDiscount: { type: Boolean, default: false },
+    discountType:{type:String , enum :["perItem" , "percentage"]},
     customDiscountPercent: { type: Number, default: 0 },
     email: { type: String },
     additionalNotes: { type: String, required: false },
