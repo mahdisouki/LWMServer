@@ -16,9 +16,54 @@ function getTodayDateRange() {
   end.setHours(23, 59, 59, 999);
   return { start, end };
 }
+
+// Helper function to get user model based on role
+async function getUserModel(userId) {
+  // Try to find user in User model first
+  let user = await User.findById(userId);
+  if (user) {
+    if (user.role.includes('Driver')) {
+      return { user, model: 'User', type: 'Driver' };
+    } else if (user.role.includes('Helper')) {
+      return { user, model: 'User', type: 'Helper' };
+    }
+  }
+  
+  // If not found in User model, try Driver model
+  user = await Driver.findById(userId);
+  if (user) {
+    return { user, model: 'Driver', type: 'Driver' };
+  }
+  
+  // If not found in Driver model, try Helper model
+  user = await Helper.findById(userId);
+  if (user) {
+    return { user, model: 'Helper', type: 'Helper' };
+  }
+  
+  return null;
+}
+
+// Helper function to get truck for user (driver or helper)
+async function getTruckForUser(userId) {
+  // First try to find truck by driverId
+  let truck = await Truck.findOne({ driverId: userId });
+  if (truck) {
+    return truck;
+  }
+  
+  // If not found, try to find truck by helperId
+  truck = await Truck.findOne({ helperId: userId });
+  if (truck) {
+    return truck;
+  }
+  
+  return null;
+}
+
 const driverManagement = {
   updateDriverProfile: async (req, res) => {
-    const driverId = req.user._id;
+    const userId = req.user._id;
     const {
       email,
       officialEmail,
@@ -33,117 +78,159 @@ const driverManagement = {
     } = req.body;
 
     try {
-      // Find driver by ID
-      const driver = await User.findById(driverId);
-
-      if (!driver || (!driver.role.includes('Driver') && !driver.role.includes('Helper'))) {
+      // Get user model and type
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
         return res.status(404).json({ message: 'User not found or not authorized' });
       }
 
+      const { user, model, type } = userInfo;
+
       // Update fields only if they are provided
-      if (email) driver.email = email;
-      if (officialEmail) driver.officialEmail = officialEmail;
+      if (email) user.email = email;
+      if (officialEmail) user.officialEmail = officialEmail;
       if (phoneNumber)
-        driver.phoneNumber = Array.isArray(phoneNumber)
+        user.phoneNumber = Array.isArray(phoneNumber)
           ? phoneNumber
           : [phoneNumber];
-      if (username) driver.username = username;
-      if (gender) driver.gender = gender;
-      if (designation) driver.designation = designation;
-      if (dateOfBirth) driver.dateOfBirth = dateOfBirth;
-      if (address) driver.address = address;
-      if (CIN) driver.CIN = CIN;
+      if (username) user.username = username;
+      if (gender) user.gender = gender;
+      if (designation) user.designation = designation;
+      if (dateOfBirth) user.dateOfBirth = dateOfBirth;
+      if (address) user.address = address;
+      if (CIN) user.CIN = CIN;
 
       // Update files if new files are uploaded
       if (req.files) {
-        if (req.files.picture) driver.picture = req.files.picture[0].path;
-        if (req.files.DriverLicense) driver.DriverLicense = req.files.DriverLicense[0].path;
-        if (req.files.addressProof) driver.addressProof = req.files.addressProof[0].path;
-        if (req.files.NatInsurance) driver.NatInsurance = req.files.NatInsurance[0].path;
+        if (req.files.picture) user.picture = req.files.picture[0].path;
+        if (req.files.DriverLicense) user.DriverLicense = req.files.DriverLicense[0].path;
+        if (req.files.addressProof) user.addressProof = req.files.addressProof[0].path;
+        if (req.files.NatInsurance) user.NatInsurance = req.files.NatInsurance[0].path;
       }
 
       // Hash and update password if provided
       if (password) {
-        driver.password = await bcrypt.hash(password, 10);
+        user.password = await bcrypt.hash(password, 10);
       }
 
-      // Save the updated driver data
-      await driver.save();
+      // Save the updated user data
+      await user.save();
 
       // Respond with updated information
       res.status(200).json({
-        message: 'Driver profile updated successfully',
+        message: `${type} profile updated successfully`,
         user: {
-          username: driver.username,
-          email: driver.email,
-          role: driver.role,
-          id: driver._id,
-          picture: driver.picture,
-          phoneNumber: driver.phoneNumber[0],
-          address: driver.address,
-          CIN: driver.CIN,
-          DriverLicense: driver.DriverLicense,
-          addressProof: driver.addressProof,
-          NatInsurance: driver.NatInsurance,
+          username: user.username,
+          email: user.email,
+          role: user.role || type,
+          id: user._id,
+          picture: user.picture,
+          phoneNumber: user.phoneNumber[0],
+          address: user.address,
+          CIN: user.CIN,
+          DriverLicense: user.DriverLicense,
+          addressProof: user.addressProof,
+          NatInsurance: user.NatInsurance,
         },
       });
     } catch (error) {
-      console.error('Error updating driver profile:', error);
+      console.error('Error updating user profile:', error);
       res.status(500).json({
-        message: 'Failed to update driver profile',
+        message: 'Failed to update user profile',
         error: error.message,
       });
     }
   },
 
   getHelperLocationForDriver: async (req, res) => {
-    const driverId = req.user._id;
+    const userId = req.user._id;
 
     try {
-      // Find the truck assigned to this driver
-      const truck = await Truck.findOne({ driverId: driverId });
+      // Get user info to determine if they're a driver or helper
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+
+      // Find the truck for this user
+      const truck = await getTruckForUser(userId);
 
       if (!truck) {
         return res
           .status(404)
-          .json({ message: 'No truck found for the given driver.' });
+          .json({ message: 'No truck found for the given user.' });
       }
 
-      // Check if a helper is assigned to the truck
-      if (!truck.helperId) {
-        return res
-          .status(404)
-          .json({ message: 'No helper assigned to this truck' });
-      }
+      // If user is a driver, get helper location
+      if (type === 'Driver') {
+        if (!truck.helperId) {
+          return res
+            .status(404)
+            .json({ message: 'No helper assigned to this truck' });
+        }
 
-      // Fetch the helper using helperId from the truck
-      const helper = await Helper.findById(truck.helperId);
-      if (!helper) {
-        return res.status(404).json({ message: 'Helper not found' });
-      }
+        const helper = await Helper.findById(truck.helperId);
+        if (!helper) {
+          return res.status(404).json({ message: 'Helper not found' });
+        }
 
-      if (!helper.location) {
-        return res
-          .status(404)
-          .json({ message: 'Location for this helper is not set' });
-      }
+        if (!helper.location) {
+          return res
+            .status(404)
+            .json({ message: 'Location for this helper is not set' });
+        }
 
-      res.status(200).json({
-        message: 'Helper location retrieved successfully',
-        location: helper.location,
-      });
+        res.status(200).json({
+          message: 'Helper location retrieved successfully',
+          location: helper.location,
+        });
+      } 
+      // If user is a helper, get driver location
+      else if (type === 'Helper') {
+        if (!truck.driverId) {
+          return res
+            .status(404)
+            .json({ message: 'No driver assigned to this truck' });
+        }
+
+        const driver = await Driver.findById(truck.driverId);
+        if (!driver) {
+          return res.status(404).json({ message: 'Driver not found' });
+        }
+
+        if (!driver.location) {
+          return res
+            .status(404)
+            .json({ message: 'Location for this driver is not set' });
+        }
+
+        res.status(200).json({
+          message: 'Driver location retrieved successfully',
+          location: driver.location,
+        });
+      }
     } catch (error) {
       res.status(500).json({
-        message: 'Failed to retrieve helper location',
+        message: 'Failed to retrieve location',
         error: error.message,
       });
     }
   },
 
   getTasksForDriver: async (req, res) => {
-    const driverId = req.user._id; // ID of the driver from the authenticated request
+    const userId = req.user._id;
   
     try {
+      // Get user info to determine if they're a driver or helper
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+
       // Determine today's date range
       const startOfDay = new Date();
       console.log("startOfDayB:",startOfDay)
@@ -154,29 +241,35 @@ const driverManagement = {
       console.log(endOfDay)
       const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
       console.log("formatted date:",formattedDate)
-      // Find the truck assigned to the driver
-      const truck = await Truck.findOne({ driverId });
+
+      // Find the truck for this user
+      const truck = await getTruckForUser(userId);
   
       if (!truck) {
         return res
           .status(404)
-          .json({ message: 'No truck found for the given driver.' });
+          .json({ message: 'No truck found for the given user.' });
       }
   
       // Get the task IDs for today's date from `tasksByDate`
       const taskIdsForToday = truck.tasks.get(formattedDate);
       console.log("taskIdsForToday:",taskIdsForToday)
+      
       // Fetch the tasks for the current day
       // const tasks = await Task.find({
       //   _id: { $in: taskIdsForToday }
       // });
-         const tasks = await Task.find();
+      const tasks = await Task.find();
   
       res
         .status(200)
-        .json({ message: 'Tasks for today retrieved successfully', tasks });
+        .json({ 
+          message: `Tasks for today retrieved successfully for ${type}`, 
+          tasks,
+          userType: type 
+        });
     } catch (error) {
-      console.error('Error retrieving tasks for driver:', error);
+      console.error('Error retrieving tasks for user:', error);
       res.status(500).json({
         message: 'Failed to retrieve tasks',
         error: error.message || 'Unknown error occurred',
@@ -266,43 +359,28 @@ const driverManagement = {
     const { taskId } = req.params;
     const description = req.body.description;
     const uploads = req.files.map((file) => file.path);
+    const userId = req.user._id;
 
     try {
-        // Fetch the truck containing the task
-        const truck = await Truck.findOne({driverId:req.user._id}).populate('tasks');
-        if (!truck) {
-            return res.status(404).json({ message: 'No truck found for the given task.' });
+        // Get user info
+        const userInfo = await getUserModel(userId);
+        if (!userInfo) {
+          return res.status(404).json({ message: 'User not found' });
         }
 
-        // // Find the date key that contains the task
-        // let taskDate = null;
+        const { type } = userInfo;
 
-        // for (const [date, tasks] of truck.tasks.entries()) {
-        //     if (tasks.some(task => task.equals(taskId))) {
-        //         taskDate = date;
-        //         break;
-        //     }
-        // }
-
-        // if (!taskDate) {
-        //     return res.status(404).json({ message: 'Task not found in the truck.' });
-        // }
+        // Fetch the truck containing the task
+        const truck = await getTruckForUser(userId);
+        if (!truck) {
+            return res.status(404).json({ message: 'No truck found for the given user.' });
+        }
 
         // Get the current job (task)
         const currentTask = await Task.findById(taskId);
         if (!currentTask) {
             return res.status(404).json({ message: 'Current task not found.' });
         }
-
-        // // Find the index of the current task in the tasks array for the date
-        // const currentTaskIndex = truck.tasks.get(taskDate).findIndex(task => task.equals(taskId));
-        // let nextJobAddress = null;
-        
-        // // Determine the address of the next job (if any)
-        // if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.get(taskDate).length - 1) {
-        //     const nextTask = await Task.findById(truck.tasks.get(taskDate)[currentTaskIndex + 1]);
-        //     nextJobAddress = nextTask && nextTask.location ? nextTask.location.address : null;
-        // }
 
         // Update the task with initial condition photos
         const taskUpdate = {
@@ -319,23 +397,24 @@ const driverManagement = {
             return res.status(404).json({ message: 'Failed to update the task with initial condition photos.' });
         }
 
-        // Update the driver's current and next job addresses
-        const driverId = truck.driverId;
-        if (driverId) {
+        // Update the user's current job address based on type
+        if (type === 'Driver') {
             const driverUpdate = {
                 currentJobAddress: currentTask.location ? currentTask.location.address : null,
-                // nextJobAddress: nextJobAddress,
             };
-
-            await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true });
-        } else {
-            console.warn('No driver assigned to this truck.');
+            await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
+        } else if (type === 'Helper') {
+            const helperUpdate = {
+                currentJobAddress: currentTask.location ? currentTask.location.address : null,
+            };
+            await Helper.findByIdAndUpdate(userId, helperUpdate, { new: true });
         }
 
         // Send response
         res.status(200).json({
-            message: 'Initial condition photos uploaded successfully',
+            message: `Initial condition photos uploaded successfully by ${type}`,
             task: updatedTask,
+            userType: type
         });
     } catch (error) {
         console.error(error);
@@ -348,18 +427,27 @@ const driverManagement = {
 
   intermediateConditionPhotos: async (req, res) => {
     const { taskId } = req.params;
-    const description = req.body.description; // Single description for all uploaded files
-    const uploads = req.files.map((file) => file.path); // Collecting file paths
+    const description = req.body.description;
+    const uploads = req.files.map((file) => file.path);
+    const userId = req.user._id;
 
     try {
       console.log('Processing intermediate condition photos for task:', taskId);
       
-      // Fetch the truck associated with the current driver
-      const truck = await Truck.findOne({ tasks: taskId }).populate('tasks');
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+      
+      // Fetch the truck associated with the current user
+      const truck = await getTruckForUser(userId);
       if (!truck) {
         return res
           .status(404)
-          .json({ message: 'No truck found for the given task.' });
+          .json({ message: 'No truck found for the given user.' });
       }
 
       console.log('Found truck:', truck._id);
@@ -387,25 +475,30 @@ const driverManagement = {
       const task = await Task.findByIdAndUpdate(
         taskId,
         taskUpdate,
-        { new: true }, // Update the task document
+        { new: true },
       );
 
       console.log('Task updated successfully');
 
-      // Update the driver's current job address
-      const driverId = truck.driverId; // Assuming you can get driverId from the truck
-      if (driverId) {
+      // Update the user's current job address based on type
+      if (type === 'Driver') {
         const driverUpdate = {
-          currentJobAddress: currentTask.currentJobAddress, // Current task address
+          currentJobAddress: currentTask.currentJobAddress,
         };
-
-        await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true }); // Update the driver document
+        await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
         console.log('Driver updated successfully');
+      } else if (type === 'Helper') {
+        const helperUpdate = {
+          currentJobAddress: currentTask.currentJobAddress,
+        };
+        await Helper.findByIdAndUpdate(userId, helperUpdate, { new: true });
+        console.log('Helper updated successfully');
       }
 
       res.status(200).json({
-        message: 'Intermediate condition photos uploaded successfully',
+        message: `Intermediate condition photos uploaded successfully by ${type}`,
         task,
+        userType: type
       });
     } catch (error) {
       console.error('Error in intermediateConditionPhotos:', error);
@@ -440,14 +533,21 @@ const driverManagement = {
     const { taskId } = req.params;
     const description = req.body.description;
     const uploads = req.files.map((file) => file.path);
-
-    // console.log(uploads);
+    const userId = req.user._id;
 
     try {
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+
       const taskUpdate = {
         finalConditionPhotos: [
           {
-            items: uploads, // This should be an array of strings
+            items: uploads,
             description: description,
           },
         ],
@@ -458,8 +558,9 @@ const driverManagement = {
       });
 
       res.status(200).json({
-        message: 'Final condition photos uploaded successfully',
+        message: `Final condition photos uploaded successfully by ${type}`,
         task,
+        userType: type
       });
     } catch (error) {
       console.log(error)
@@ -471,11 +572,20 @@ const driverManagement = {
   },
 
   addAdditionalItems: async (req, res) => {
-    const { taskId } = req.params; // Ensure your route is set to capture this
+    const { taskId } = req.params;
+    const description = req.body.description;
+    const uploads = req.files.map((file) => file.path);
+    const userId = req.user._id;
 
-    const description = req.body.description; // Single description for all uploads
-    const uploads = req.files.map((file) => file.path); // Array of image URLs
     try {
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+
       const taskUpdate = {
         additionalItems: [
           {
@@ -488,12 +598,16 @@ const driverManagement = {
       const task = await Task.findByIdAndUpdate(
         taskId,
         taskUpdate,
-        { new: true }, // Ensures the updated document is returned
+        { new: true },
       );
 
       res
         .status(200)
-        .json({ message: 'Additional items added successfully', task });
+        .json({ 
+          message: `Additional items added successfully by ${type}`, 
+          task,
+          userType: type 
+        });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to add additional items',
@@ -504,9 +618,18 @@ const driverManagement = {
 
   updateJobStatus: async (req, res) => {
     const { taskId } = req.params;
-    const { taskStatus } = req.body; // Assuming the new status is passed in the body of the request
+    const { taskStatus } = req.body;
+    const userId = req.user._id;
 
     try {
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+
       const task = await Task.findById(taskId);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
@@ -517,7 +640,11 @@ const driverManagement = {
       await task.save();
       res
         .status(200)
-        .json({ message: 'Task status updated successfully', task });
+        .json({ 
+          message: `Task status updated successfully by ${type}`, 
+          task,
+          userType: type 
+        });
     } catch (error) {
       console.error('Error updating task status:', error);
       res.status(500).json({
@@ -529,38 +656,48 @@ const driverManagement = {
 
   rateTask: async (req, res) => {
     const { taskId } = req.params;
-    const { clientFeedback, clientFeedbackScale } = req.body; // Assuming satisfaction rating and feedback are sent in the body
+    const { clientFeedback, clientFeedbackScale } = req.body;
+    const userId = req.user._id;
 
     try {
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+
       const task = await Task.findById(taskId);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-      // Prevent multiple feedback submissions
-    // if (task.clientFeedback || task.clientFeedbackScale) {
-    //   return res.status(400).json({ message: 'Feedback has already been submitted for this task.' });
-    // }
+
       // Update task with the client satisfaction rating and feedback
       task.clientFeedback = clientFeedback;
       task.clientFeedbackScale = clientFeedbackScale;
       task.taskStatus = "Completed"
-      // Check if this is the first task completed by this client (using email)
-    const previousCompletedTasks = await Task.find({
-      email: task.email,
-      taskStatus: "Completed",
-      _id: { $ne: task._id } // Exclude current task
-    });
 
-    // If no previous completed tasks, it's a new client — send review email
-    // if (previousCompletedTasks.length === 0) {
+      // Check if this is the first task completed by this client (using email)
+      const previousCompletedTasks = await Task.find({
+        email: task.email,
+        taskStatus: "Completed",
+        _id: { $ne: task._id }
+      });
+
+      // Send review email
       await sendReviewRequestEmail({
         email: task.email,
         firstName: task.firstName,
         orderId: task._id,
       });
-    // }
+
       await task.save();
-      res.status(200).json({ message: 'Task rated successfully', task });
+      res.status(200).json({ 
+        message: `Task rated successfully by ${type}`, 
+        task,
+        userType: type 
+      });
     } catch (error) {
       console.error('Error rating task:', error);
       res
@@ -602,31 +739,41 @@ const driverManagement = {
       return res.status(500).json({ message: 'An error occurred', error });
     }
   },
+
   startBreak: async (req, res) => {
-    const driverId = req.user._id;
+    const userId = req.user._id;
 
     try {
-      const driver = await Driver.findById(driverId);
-      if (!driver) {
-        return res.status(404).json({ message: 'Driver not found' });
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
       }
 
+      const { user, type } = userInfo;
+
       // Check if there's an active break
-      const activeBreak = driver.breaks.find((b) => !b.endTime);
+      const activeBreak = user.breaks.find((b) => !b.endTime);
       if (activeBreak) {
         return res
           .status(400)
-          .json({ message: 'Driver is already on a break' });
+          .json({ message: `${type} is already on a break` });
       }
 
       // Create a new break entry
       const newBreak = { startTime: new Date() };
-      driver.breaks.push(newBreak);
-     driver.onBreak = true;
-      driver.breakStartTime = Date.now();
-      await driver.save();
-      emitNotificationToUser(adminId , 'Driver_Tracking',`a driver ${driver.username} is taking a break`)
-      return res.status(200).json({ message: 'Break started', newBreak });
+      user.breaks.push(newBreak);
+      user.onBreak = true;
+      user.breakStartTime = Date.now();
+      await user.save();
+      
+      emitNotificationToUser(adminId, 'Driver_Tracking', `A ${type.toLowerCase()} ${user.username} is taking a break`);
+      
+      return res.status(200).json({ 
+        message: 'Break started', 
+        newBreak,
+        userType: type 
+      });
     } catch (error) {
       console.error(error);
       return res.status(500).json({ message: 'Error starting break', error });
@@ -634,18 +781,25 @@ const driverManagement = {
   },
 
   endBreak: async (req, res) => {
-    const driverId = req.user._id;
+    const userId = req.user._id;
 
     try {
-      const driver = await Driver.findById(driverId);
-      if (!driver || driver.breaks.length === 0) {
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { user, type } = userInfo;
+
+      if (!user.breaks || user.breaks.length === 0) {
         return res
           .status(404)
-          .json({ message: 'Driver not found or no active breaks' });
+          .json({ message: `${type} not found or no active breaks` });
       }
 
       // Get the last break and update it
-      const lastBreak = driver.breaks[driver.breaks.length - 1];
+      const lastBreak = user.breaks[user.breaks.length - 1];
       if (lastBreak.endTime) {
         return res.status(400).json({ message: 'Break already ended' });
       }
@@ -655,10 +809,14 @@ const driverManagement = {
       lastBreak.duration = Math.round(
         (lastBreak.endTime - lastBreak.startTime) / (1000 * 60),
       );
-     driver.onBreak = false;
-      await driver.save();
+      user.onBreak = false;
+      await user.save();
 
-      return res.status(200).json({ message: 'Break ended', lastBreak });
+      return res.status(200).json({ 
+        message: 'Break ended', 
+        lastBreak,
+        userType: type 
+      });
     } catch (error) {
       console.error(error);
       return res.status(500).json({ message: 'Error ending break', error });
@@ -666,23 +824,26 @@ const driverManagement = {
   },
 
   getBreakTimer: async (req, res) => {
-    const driverId = req.user._id;
+    const userId = req.user._id;
 
     try {
-      const driver = await User.findById(driverId);
-      if (!driver) {
-        return res.status(404).json({ message: 'Driver not found' });
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
       }
 
-      // Check if driver.breaks exists and is not empty
-      if (!driver.breaks || driver.breaks.length === 0) {
+      const { user, type } = userInfo;
+
+      // Check if user.breaks exists and is not empty
+      if (!user.breaks || user.breaks.length === 0) {
         return res
           .status(200)
-          .json({ message: 'No breaks found', isActive: false, elapsed: 0 });
+          .json({ message: 'No breaks found', isActive: false, elapsed: 0, userType: type });
       }
 
       // Get the last break and calculate the elapsed time
-      const lastBreak = driver.breaks[driver.breaks.length - 1];
+      const lastBreak = user.breaks[user.breaks.length - 1];
 
       // If lastBreak is active (no endTime)
       if (!lastBreak.endTime) {
@@ -693,12 +854,13 @@ const driverManagement = {
           message: 'Break timer',
           isActive: true,
           elapsed: elapsedSeconds,
+          userType: type
         });
       }
 
       return res
         .status(200)
-        .json({ message: 'No active break', isActive: false, elapsed: 0 });
+        .json({ message: 'No active break', isActive: false, elapsed: 0, userType: type });
     } catch (error) {
       console.error(error);
       return res
