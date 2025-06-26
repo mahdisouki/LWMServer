@@ -33,32 +33,32 @@ function generatePDF(data, filePath) {
   doc.end();
 }
 async function buildWasteTransferNoteDetails(task) {
-  const itemDetails = await Promise.all(
-    task.items.map(async (item) => {
-      if (!item.standardItemId) {
-        return {
+    const itemDetails = await Promise.all(
+      task.items.map(async (item) => {
+        if (!item.standardItemId) {
+          return {
           name: item.object || 'Other item',
+            quantity: item.quantity || 1,
+            price: item.price || 0,
+          ewcCode: 'N/A',
+          };
+        }
+  
+        const standardItem = await StandardItem.findById(item.standardItemId);
+        return {
+        name: standardItem?.itemName || 'Unnamed Item',
           quantity: item.quantity || 1,
           price: item.price || 0,
-          ewcCode: 'N/A',
-        };
-      }
-
-      const standardItem = await StandardItem.findById(item.standardItemId);
-      return {
-        name: standardItem?.itemName || 'Unnamed Item',
-        quantity: item.quantity || 1,
-        price: item.price || 0,
         ewcCode: standardItem?.ewcCode || 'N/A',
-      };
+        };
     }),
-  );
-
-  return itemDetails;
-}
+    );
+  
+    return itemDetails;
+  }
 
 async function sendEmail({ to, subject, html, attachments = [] }) {
-  try {
+    try {
     return await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to,
@@ -66,44 +66,44 @@ async function sendEmail({ to, subject, html, attachments = [] }) {
       html,
       attachments,
     });
-  } catch (error) {
-    console.log(error);
-    throw error;
-  }
+    } catch (error) {
+        console.log(error);
+        throw error;
+    }
 }
 
 async function loadTaskData(taskId) {
-  const task = await Task.findById(taskId).populate('items.standardItemId');
+    const task = await Task.findById(taskId).populate('items.standardItemId');
   if (!task) throw new Error('Task not found');
-
-  const subtotal = task.totalPrice * 0.8;
-  const vat = task.totalPrice * 0.2;
-  const paid = task.paidAmount?.amount || 0;
-  const balance = task.totalPrice - paid;
-
+  
+    const subtotal = task.totalPrice * 0.8;
+    const vat = task.totalPrice * 0.2;
+    const paid = task.paidAmount?.amount || 0;
+    const balance = task.totalPrice - paid;
+  
   const items = task.items.map((i) => ({
-    name: i.standardItemId?.itemName || i.object || 'Unnamed Item',
-    position: i.Objectsposition,
-    quantity: i.quantity || 1,
-    price: i.price || 0,
-  }));
-
-  return {
-    firstName: task.firstName,
-    lastName: task.lastName,
-    email: task.email,
-    phoneNumber: task.phoneNumber,
-    orderNumber: task.orderNumber,
-    date: task.date,
-    available: task.available,
-    subtotal,
-    vat,
-    total: task.totalPrice,
-    paidAmount: paid,
-    balanceAmount: balance,
-    items,
-  };
-}
+      name: i.standardItemId?.itemName || i.object || 'Unnamed Item',
+      position: i.Objectsposition,
+      quantity: i.quantity || 1,
+      price: i.price || 0,
+    }));
+  
+    return {
+      firstName: task.firstName,
+      lastName: task.lastName,
+      email: task.email,
+      phoneNumber: task.phoneNumber,
+      orderNumber: task.orderNumber,
+      date: task.date,
+      available: task.available,
+      subtotal,
+      vat,
+      total: task.totalPrice,
+      paidAmount: paid,
+      balanceAmount: balance,
+      items,
+    };
+  }
 
 /**
  * Send a refund email with invoice PDF attached
@@ -115,22 +115,22 @@ async function loadTaskData(taskId) {
 async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
   const refundType =
     refundAmount < paymentHistory.amount ? 'Partial Refund' : 'Total Refund';
-  const remaining = paymentHistory.amount - refundAmount;
+    const remaining = paymentHistory.amount - refundAmount;
   const dirPath = path.join(__dirname, '../generated');
-  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
-  const fileName = `invoice-refund-${task.orderNumber}.pdf`;
-  const filePath = path.join(dirPath, fileName);
-  await module.exports.generateOfficialInvoicePDF(task, filePath);
+    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
+    const fileName = `invoice-refund-${task.orderNumber}.pdf`;
+    const filePath = path.join(dirPath, fileName);
+    await module.exports.generateOfficialInvoicePDF(task, filePath);
 
-  let refundSummary = `<p><strong>Refund Type:</strong> ${refundType}</p>
+    let refundSummary = `<p><strong>Refund Type:</strong> ${refundType}</p>
         <p><strong>Refunded Amount:</strong> £${refundAmount.toFixed(2)}</p>`;
-  if (refundType === 'Partial Refund') {
+    if (refundType === 'Partial Refund') {
     refundSummary += `<p><strong>Remaining Balance After Refund:</strong> £${remaining.toFixed(
       2,
     )}</p>`;
-  }
+    }
 
-  const html = `
+    const html = `
   <div style=" padding: 40px 0 0; font-family: Arial, sans-serif; text-align: center;">
     <div style="max-width: 90%; margin: auto;  background: #ffffff; border-radius: 12px 12px 8px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; position: relative; z-index: 2;">
       <div style="padding: 20px 0;">
@@ -148,14 +148,14 @@ ${refundType}</div>
       
       style="width: 120px; max-width: 120%; height: auto; margin-top: 330px; " 
     />
-  </div>
+            </div>
       <div style="flex: 1; padding-right: 10px;">
           <p style="font-size: 30px;">
   <span style="color: #8DC044; font-weight: bold;">Dear</span>
   <span style="font-weight: bold;">${task.firstName} ${task.lastName},</span>
 </p>
 <p>We are writing to confirm that a full refund has been issued for your recent payment to London Waste Management</p>
-          ${refundSummary}
+            ${refundSummary}
                <p>The amount has been refunded to your original method of payment and should appear in your account within 3–5 business days.</p>
           <p>We apologise for any inconvenience caused and thank you for your understanding.</p>
   
@@ -180,22 +180,22 @@ ${refundType}</div>
       </div>
     </div>
 
-</div>
-  </div>
-  `;
+            </div>
+        </div>
+    `;
   //shadow image
   // <div style="position: absolute; bottom: 0; left: 0;">
   //       <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750610806/uploads/s4fn4kpglsacaejbfdhg.png" alt="Shadow bottom left" style="max-width: 200px; width: 100%; display: block;" />
   //     </div>
 
-  await transporter.sendMail({
-    from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
-    to: task.email,
-    subject: `${refundType} for Order #${task.orderNumber}`,
-    html,
-    attachments: [{ filename: fileName, path: filePath }],
-  });
-  fs.unlinkSync(filePath);
+    await transporter.sendMail({
+        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+        to: task.email,
+        subject: `${refundType} for Order #${task.orderNumber}`,
+        html,
+        attachments: [{ filename: fileName, path: filePath }],
+    });
+    fs.unlinkSync(filePath);
 }
 
 module.exports = {
@@ -478,7 +478,7 @@ module.exports = {
   async sendReviewRequestEmail(taskId) {
     const task = await Task.findById(taskId);
     if (!task) throw new Error('Task not found');
-
+  
     const baseReviewLink = `https://lwmadmin.netlify.app/review/${task.orderNumber}`;
     const trustpilotLink = `https://www.trustpilot.com/evaluate/www.londonwastemanagement.com`;
     const htmlContent = `
@@ -534,7 +534,7 @@ module.exports = {
         </footer>
       </div>
     `;
-
+  
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
@@ -542,7 +542,7 @@ module.exports = {
       html: htmlContent,
     });
   },
-
+  
   async sendQuoteRequestConfirmationEmail(email) {
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; background-color: #f0f9e8; border: 1px solid #e0e0e0;">
@@ -557,7 +557,7 @@ module.exports = {
         </div>
       </div>
     `;
-
+  
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -570,9 +570,9 @@ module.exports = {
     const task = await Task.findById(taskId).populate('items.standardItemId');
     console.log(task);
     if (!task) throw new Error('Task not found');
-
+  
     const items = await buildWasteTransferNoteDetails(task);
-
+  
     const productRows = items
       .map(
         (detail) => `
@@ -588,12 +588,12 @@ module.exports = {
     `,
       )
       .join('');
-
+  
     const ewcCodesList = items
       .filter((i) => i.ewcCode && i.ewcCode !== 'N/A')
       .map((detail) => `<li>${detail.ewcCode} : ${detail.name}</li>`)
       .join('');
-
+  
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 700px; margin: auto; padding: 20px; border: 1px solid #ddd;">
         <div style="text-align: center; margin-bottom: 20px;">
@@ -663,7 +663,7 @@ module.exports = {
         </div>
       </div>
     `;
-
+  
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
@@ -676,15 +676,15 @@ module.exports = {
     const task = await Task.findById(taskId).populate('items.standardItemId');
     if (!task || !task.orderNumber)
       throw new Error('Invalid task or missing order number');
-
+  
     const dirPath = path.join(__dirname, '../generated');
     if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
-
+  
     const fileName = `invoice-${task.orderNumber}.pdf`;
     const filePath = path.join(dirPath, fileName);
-
+  
     await generateOfficialInvoicePDF(task, filePath);
-
+  
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
@@ -692,7 +692,7 @@ module.exports = {
       html: `<p>Please find attached your official invoice for Order #${task.orderNumber}.</p>`,
       attachments: [{ filename: fileName, path: filePath }],
     });
-
+  
     fs.unlinkSync(filePath);
   },
   async sendBookingConfirmationEmail(taskId) {
@@ -705,11 +705,11 @@ module.exports = {
     
     <div style="padding: 20px 0;">
       <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="150" alt="London Waste Management" />
-    </div>
+        </div>
 
     <div style="background: linear-gradient(to bottom, #ffffff, #dcedd6); font-weight:bold; color: #222; padding: 20px; text-align: center; font-size: 24px; border-radius: 0 0 30px 30px;">
       Booking confirmation
-    </div>
+        </div>
 
     <div style="padding: 20px; display: flex; flex-direction: row; justify-content: space-between; align-items: flex-start; text-align: left; position: relative; z-index: 2;">
 
@@ -722,7 +722,7 @@ module.exports = {
     },</span>
         </p>
 
-        <p>Thank you for booking with London Waste Management.</p>
+          <p>Thank you for booking with London Waste Management.</p>
 
         <p>We have successfully received your order 
           <strong style="color: #00b300;">#${task.orderNumber}</strong> scheduled on 
@@ -740,7 +740,7 @@ module.exports = {
         </p>
 
         <p>We look forward to serving you !</p>
-      </div>
+        </div>
 
       <div style="flex-shrink: 0;">
         <img 

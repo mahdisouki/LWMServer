@@ -24,4 +24,23 @@ router.post('/additional-items/uploadItem/:taskId', isAuth, multer.array('upload
 router.post('/break/start', isAuth, driverCtrl.startBreak);
 router.post('/break/end',isAuth , driverCtrl.endBreak);
 router.get('/break',isAuth , driverCtrl.getBreakTimer);
+
+// Cleanup corrupted truck tasks data
+router.post('/cleanup-truck-tasks', isAuth, async (req, res) => {
+  try {
+    const Truck = require('../models/Truck');
+    const cleanedCount = await Truck.cleanupTasks();
+    res.json({ 
+      message: 'Truck tasks cleanup completed', 
+      cleanedCount 
+    });
+  } catch (error) {
+    console.error('Truck tasks cleanup failed:', error);
+    res.status(500).json({ 
+      message: 'Cleanup failed', 
+      error: error.message 
+    });
+  }
+});
+
 module.exports = router;

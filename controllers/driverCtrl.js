@@ -269,24 +269,24 @@ const driverManagement = {
 
     try {
         // Fetch the truck containing the task
-        const truck = await Truck.findOne().populate('tasks');
+        const truck = await Truck.findOne({driverId:req.user._id}).populate('tasks');
         if (!truck) {
             return res.status(404).json({ message: 'No truck found for the given task.' });
         }
 
-        // Find the date key that contains the task
-        let taskDate = null;
+        // // Find the date key that contains the task
+        // let taskDate = null;
 
-        for (const [date, tasks] of truck.tasks.entries()) {
-            if (tasks.some(task => task.equals(taskId))) {
-                taskDate = date;
-                break;
-            }
-        }
+        // for (const [date, tasks] of truck.tasks.entries()) {
+        //     if (tasks.some(task => task.equals(taskId))) {
+        //         taskDate = date;
+        //         break;
+        //     }
+        // }
 
-        if (!taskDate) {
-            return res.status(404).json({ message: 'Task not found in the truck.' });
-        }
+        // if (!taskDate) {
+        //     return res.status(404).json({ message: 'Task not found in the truck.' });
+        // }
 
         // Get the current job (task)
         const currentTask = await Task.findById(taskId);
@@ -294,15 +294,15 @@ const driverManagement = {
             return res.status(404).json({ message: 'Current task not found.' });
         }
 
-        // Find the index of the current task in the tasks array for the date
-        const currentTaskIndex = truck.tasks.get(taskDate).findIndex(task => task.equals(taskId));
-        let nextJobAddress = null;
+        // // Find the index of the current task in the tasks array for the date
+        // const currentTaskIndex = truck.tasks.get(taskDate).findIndex(task => task.equals(taskId));
+        // let nextJobAddress = null;
         
-        // Determine the address of the next job (if any)
-        if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.get(taskDate).length - 1) {
-            const nextTask = await Task.findById(truck.tasks.get(taskDate)[currentTaskIndex + 1]);
-            nextJobAddress = nextTask && nextTask.location ? nextTask.location.address : null;
-        }
+        // // Determine the address of the next job (if any)
+        // if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.get(taskDate).length - 1) {
+        //     const nextTask = await Task.findById(truck.tasks.get(taskDate)[currentTaskIndex + 1]);
+        //     nextJobAddress = nextTask && nextTask.location ? nextTask.location.address : null;
+        // }
 
         // Update the task with initial condition photos
         const taskUpdate = {
@@ -324,7 +324,7 @@ const driverManagement = {
         if (driverId) {
             const driverUpdate = {
                 currentJobAddress: currentTask.location ? currentTask.location.address : null,
-                nextJobAddress: nextJobAddress,
+                // nextJobAddress: nextJobAddress,
             };
 
             await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true });
@@ -352,6 +352,8 @@ const driverManagement = {
     const uploads = req.files.map((file) => file.path); // Collecting file paths
 
     try {
+      console.log('Processing intermediate condition photos for task:', taskId);
+      
       // Fetch the truck associated with the current driver
       const truck = await Truck.findOne({ tasks: taskId }).populate('tasks');
       if (!truck) {
@@ -360,22 +362,17 @@ const driverManagement = {
           .json({ message: 'No truck found for the given task.' });
       }
 
+      console.log('Found truck:', truck._id);
+
       // Get the current job (task)
       const currentTask = await Task.findById(taskId);
       if (!currentTask) {
         return res.status(404).json({ message: 'Current task not found.' });
       }
 
-      // Get the next job (next task in the list)
-      const currentTaskIndex = truck.tasks.indexOf(taskId);
-      let nextJobAddress = null;
+      console.log('Found current task:', currentTask._id);
 
-      if (currentTaskIndex >= 0 && currentTaskIndex < truck.tasks.length - 1) {
-        const nextTask = await Task.findById(truck.tasks[currentTaskIndex + 1]);
-        nextJobAddress = nextTask ? nextTask.currentJobAddress : null;
-      }
-
-      // Update the task with initial condition photos
+      // Update the task with intermediate condition photos
       const taskUpdate = {
         intermediateConditionPhotos: [
           {
@@ -385,28 +382,55 @@ const driverManagement = {
         ],
       };
 
+      console.log('Updating task with photos:', taskUpdate);
+
       const task = await Task.findByIdAndUpdate(
         taskId,
         taskUpdate,
         { new: true }, // Update the task document
       );
 
-      // Update the driver's current and next job addresses
-      const driverId = truck.driverId; // Assuming you can get driverId from the truck
-      const driverUpdate = {
-        currentJobAddress: currentTask.currentJobAddress, // Current task address
-        nextJobAddress: nextJobAddress, // Next task address
-      };
+      console.log('Task updated successfully');
 
-      await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true }); // Update the driver document
+      // Update the driver's current job address
+      const driverId = truck.driverId; // Assuming you can get driverId from the truck
+      if (driverId) {
+        const driverUpdate = {
+          currentJobAddress: currentTask.currentJobAddress, // Current task address
+        };
+
+        await Driver.findByIdAndUpdate(driverId, driverUpdate, { new: true }); // Update the driver document
+        console.log('Driver updated successfully');
+      }
 
       res.status(200).json({
-        message: 'Initial condition photos uploaded successfully',
+        message: 'Intermediate condition photos uploaded successfully',
         task,
       });
     } catch (error) {
+      console.error('Error in intermediateConditionPhotos:', error);
+      
+      // Check if it's a Map error
+      if (error.message && error.message.includes('Iterator value')) {
+        console.error('Map error detected, attempting to clean up truck data...');
+        
+        try {
+          const Truck = require('../models/Truck');
+          await Truck.cleanupTasks();
+          console.log('Truck tasks cleaned up successfully');
+          
+          // Retry the operation
+          return res.status(500).json({
+            message: 'Database cleanup required. Please try again.',
+            error: 'Map data corruption detected and fixed. Please retry the operation.',
+          });
+        } catch (cleanupError) {
+          console.error('Cleanup failed:', cleanupError);
+        }
+      }
+      
       res.status(500).json({
-        message: 'Failed to upload initial condition photos',
+        message: 'Failed to upload intermediate condition photos',
         error: error.message,
       });
     }
@@ -438,6 +462,7 @@ const driverManagement = {
         task,
       });
     } catch (error) {
+      console.log(error)
       res.status(500).json({
         message: 'Failed to upload final condition photos',
         error: error.message,

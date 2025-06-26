@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Invoice Confirmation</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #f6f6f6;
+        font-family: Arial, sans-serif;
+        color: #333;
+      }
+
+      .email-wrapper {
+        background-image: url('./bg.png');
+        background-position: bottom;
+        background-repeat: no-repeat;
+        background-size: cover;
+        padding: 40px 20px;
+      }
+
+      .email-container {
+        max-width: 640px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+        overflow: hidden;
+      }
+
+      .header {
+        text-align: center;
+        padding: 30px 20px 10px;
+      }
+
+      .header img {
+        width: 180px;
+      }
+
+      .title {
+        text-align: center;
+        font-size: 26px;
+        font-weight: bold;
+        margin: 10px 0 0;
+      }
+
+      .title span {
+        color: #8dc044;
+      }
+
+      .content {
+        padding: 30px 40px 20px;
+      }
+
+      .content h2 {
+        font-size: 20px;
+        color: #333;
+      }
+
+      .content p {
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      .highlight {
+        font-weight: bold;
+      }
+
+      .green {
+        color: #8dc044;
+      }
+
+      .object-img {
+        display: flex;
+        justify-content: center;
+        margin: 20px 0;
+      }
+
+      .object-img img {
+        width: 120px;
+      }
+
+      .footer {
+        text-align: center;
+        font-size: 13px;
+        padding: 10px 20px 30px;
+        color: #777;
+      }
+
+      .footer a {
+        color: #8dc044;
+        text-decoration: none;
+      }
+
+      @media only screen and (max-width: 600px) {
+        .content {
+          padding: 20px;
+        }
+
+        .title {
+          font-size: 22px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="email-wrapper">
+      <div class="email-container">
+        <div class="header">
+          <img src="./logoemail.svg" alt="Logo" />
+        </div>
+
+        <div class="title">
+          Invoice <span>Confirmation</span>
+        </div>
+
+        <div class="content">
+          <h2><span class="green">Dear</span> {{firstName}} {{lastName}},</h2>
+
+          <p>Thank you for choosing London Waste Management.</p>
+
+          <p>
+            Please find attached your invoice for Order
+            <strong>#{{orderNumber}}</strong>.
+          </p>
+
+          <p>Total Amount: <strong>£{{total}}</strong></p>
+
+          <p>Best regards,</p>
+          <p><span class="green">London Waste Management Department</span></p>
+
+          <div class="object-img">
+            <img src="./object.svg" alt="Invoice Illustration" />
+          </div>
+        </div>
+
+        <div class="footer">
+          London Waste Management |
+          <a href="mailto:hello@londonwastemanagement.com">hello@londonwastemanagement.com</a>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

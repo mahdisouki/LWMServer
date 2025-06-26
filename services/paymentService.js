@@ -125,102 +125,79 @@ const calculateTotalPriceUpdate = async (taskId) => {
 const createStripePaymentLink = async (taskId, finalAmount, breakdown, paymentType) => {
     // Create line items from the breakdown
     const lineItems = breakdown.map(item => {
-        // Skip VAT and total entries as they'll be handled separately
-        if (item.description === "VAT (20%)" || item.description === "Final total price") {
+        // Skip VAT, total, discount, and minimum price adjustment entries
+        if (item.description === "VAT (20%)" || 
+            item.description === "Final total price" ||
+            item.description?.includes("Discount") ||
+            item.description?.includes("Minimum price adjustment")) {
             return null;
         }
 
-        // Get the price value - handle both price and amount fields
-        let priceValue = 0;
-        if (item.price !== undefined && item.price !== null) {
-            priceValue = parseFloat(item.price);
-        } else if (item.amount !== undefined && item.amount !== null) {
-            priceValue = parseFloat(item.amount);
-        }
-
-        // Validate price value
-        if (isNaN(priceValue) || priceValue < 0) {
-            console.warn(`Invalid price value for item:`, item);
-            return null; // Skip this item
-        }
-
-        // Convert price to pence (smallest currency unit)
-        const amount = Math.round(priceValue * 100);
-        
-        // Ensure amount is a positive integer
-        if (amount <= 0) {
-            console.warn(`Invalid amount calculated for item:`, item, `amount:`, amount);
-            return null; // Skip this item
-        }
-        
-        return {
-            price_data: {
-                currency: "gbp",
-                product_data: {
-                    name: item.itemDescription || item.description || "Item",
-                    description: item.Objectsposition ? `Position: ${item.Objectsposition}` : undefined,
-                    images: ["https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png"],
+        // Handle items with itemDescription (from task controller)
+        if (item.itemDescription) {
+            const quantity = item.quantity || 1;
+            const unitPrice = parseFloat(item.price) || 0;
+            const totalPrice = parseFloat(item.total) || (unitPrice * quantity);
+            
+            // Convert total price to pence
+            const amountInPence = Math.round(totalPrice * 100);
+            
+            return {
+                price_data: {
+                    currency: "gbp",
+                    product_data: {
+                        name: item.itemDescription,
+                        description: item.Objectsposition ? `Position: ${item.Objectsposition}` : undefined,
+                        images: ["https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png"],
+                    },
+                    unit_amount: amountInPence,
                 },
-                unit_amount: amount,
-            },
-            quantity: item.quantity || 1,
-        };
+                quantity: 1, // We're using the total price, so quantity is 1
+            };
+        }
+
+        // Handle items with description (legacy format)
+        if (item.description && (item.price || item.amount)) {
+            const amount = Math.round(parseFloat(item.price || item.amount) * 100);
+            
+            return {
+                price_data: {
+                    currency: "gbp",
+                    product_data: {
+                        name: item.description,
+                        description: item.Objectsposition ? `Position: ${item.Objectsposition}` : undefined,
+                        images: ["https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png"],
+                    },
+                    unit_amount: amount,
+                },
+                quantity: 1,
+            };
+        }
+
+        return null;
     }).filter(item => item !== null);
 
     // Add VAT as a separate line item
     const vatItem = breakdown.find(item => item.description === "VAT (20%)");
-    if (vatItem && vatItem.amount) {
-        const vatAmount = Math.round(parseFloat(vatItem.amount) * 100);
-        if (vatAmount > 0) {
-            lineItems.push({
-                price_data: {
-                    currency: "gbp",
-                    product_data: {
-                        name: "VAT (20%)",
-                        description: "Value Added Tax",
-                    },
-                    unit_amount: vatAmount,
+    if (vatItem) {
+        lineItems.push({
+            price_data: {
+                currency: "gbp",
+                product_data: {
+                    name: "VAT (20%)",
+                    description: "Value Added Tax",
                 },
-                quantity: 1,
-            });
-        }
+                unit_amount: Math.round(parseFloat(vatItem.amount) * 100),
+            },
+            quantity: 1,
+        });
     }
 
-    // Validate that we have at least one line item
-    if (lineItems.length === 0) {
-        throw new Error("No valid line items found for payment link");
-    }
-
-    console.log('Creating Stripe session with line items:', lineItems);
-
-    // Prepare metadata with character limit consideration
+    // Fix: Define metadata object
     const metadata = {
-        taskId,
-        paymentType: paymentType,
-        totalItems: breakdown.length.toString(),
-        orderDate: new Date().toISOString(),
+        taskId: String(taskId),
+        paymentType: paymentType || '',
     };
-
-    // Add breakdown only if it fits within Stripe's 500 character limit
-    const breakdownJson = JSON.stringify(breakdown);
-    if (breakdownJson.length <= 400) { // Leave some buffer for other metadata
-        metadata.breakdown = breakdownJson;
-    } else {
-        // Store a simplified breakdown or just the essential info
-        const simplifiedBreakdown = breakdown.map(item => ({
-            name: item.itemDescription || item.description || "Item",
-            price: item.price || item.amount,
-            quantity: item.quantity || 1
-        }));
-        metadata.breakdown = JSON.stringify(simplifiedBreakdown);
-        
-        // If still too long, just store item count and total
-        if (metadata.breakdown.length > 400) {
-            delete metadata.breakdown;
-            metadata.itemCount = breakdown.length.toString();
-            metadata.totalAmount = finalAmount.toString();
-        }
-    }
 
     const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card", "paypal"],

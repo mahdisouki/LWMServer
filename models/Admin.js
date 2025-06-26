@@ -18,6 +18,13 @@ const adminSchema = new mongoose.Schema({
         Emails: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
         Quotations: { type: [String], enum: ["View", "Edit", "Delete"], default: [] }
     },
+    gmailTokens: {
+        access_token: String,
+        refresh_token: String,
+        scope: String,
+        token_type: String,
+        expiry_date: Number,
+      },
     emailSignature: {
         type: String,
         default: `

@@ -1587,7 +1587,8 @@ const taskCtrl = {
       const subtotal = subtotalBeforeDiscount - discountAmount;
       const vat = subtotal * 0.2;
       const total = subtotal + vat;
-      const emailContent = `
+      
+            const emailContent = `
         <div style="font-family: Arial, sans-serif; max-width: 100%; margin: auto; padding: 20px; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff'); background-size: cover; background-position: center; background-repeat: no-repeat; min-height: 100vh; position: relative;">
           <div style="position: relative; z-index: 2;">
             <div style="text-align: center; margin-bottom: 20px;">
