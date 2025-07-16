@@ -271,6 +271,7 @@ module.exports = {
 
     const vars = {
       billingName: `${task.firstName} ${task.lastName}`,
+      billingAddress: task.billingAddress,
       email: task.email,
       phone: task.phoneNumber,
       invoiceNumber: task.orderNumber,

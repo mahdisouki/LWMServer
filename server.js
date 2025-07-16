@@ -52,6 +52,9 @@ const corsOptions = {
    'https://adminlondonwaste.netlify.app',
    'http://localhost:5173',
    'http://localhost:5175',
+   'https://admin.londonwastemanagement.uk',
+   'https://driver.londonwastemanagement.uk',
+   'https://client.londonwastemanagement.uk',
    ], 
   optionsSuccessStatus: 200 
 };

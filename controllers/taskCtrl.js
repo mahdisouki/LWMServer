@@ -141,14 +141,17 @@ const taskCtrl = {
         createdByType,
         billingAddress,
         collectionAddress,
-        objects, // Custom items
-        standardItems, // Standard items with quantity, position, and maybe customPrice
+        objects, // Custom items (optional)
+        items,   // Standard items (from frontend)
         paymentStatus,
         cloneClientObjectPhotos,
         postcode,
-        customDiscountPercent, // NEW: from frontend
+        customDiscountPercent,
         discountType
       } = req.body;
+  
+      // For debugging: see what you get from frontend
+      console.log('Received items:', req.body.items);
   
       let clientObjectPhotos = [];
       if (cloneClientObjectPhotos) {
@@ -159,40 +162,38 @@ const taskCtrl = {
   
       const taskDate = new Date(date);
   
-      // ... (blocking day and truck checks as before) ...
-  
       // Calculate price using new logic
       const { totalPrice, vat } = await calculateTotalPrice({
-        standardItems,
+        items, // Use items for price calculation
         objects,
         customDiscountPercent,
         discountType,
         hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0
       });
   
-      // Prepare items array for DB (merge standard and custom)
-      let items = [];
-      if (standardItems && Array.isArray(standardItems)) {
-        items.push(
-          ...standardItems.map((item) => ({
-          standardItemId: item.standardItemId || null,
-          quantity: Number(item.quantity) || 1,
+      // Prepare items array for DB (merge standard and custom if needed)
+      let allItems = [];
+      if (items && Array.isArray(items)) {
+        allItems.push(
+          ...items.map((item) => ({
+            standardItemId: item.standardItemId || null,
+            quantity: Number(item.quantity) || 1,
             Objectsposition: item.Objectsposition || 'Outside',
-            customPrice:
-              item.customPrice !== undefined
-                ? Number(item.customPrice)
-                : undefined,
-          })),
+            customPrice: item.customPrice !== undefined ? Number(item.customPrice) : undefined,
+            object: item.object || undefined,
+            price: item.price !== undefined ? Number(item.price) : undefined,
+          }))
         );
       }
+      // If you want to keep supporting "objects" as a separate array, merge them too:
       if (objects && Array.isArray(objects)) {
-        items.push(
+        allItems.push(
           ...objects.map((item) => ({
-          object: item.object || null,
-          quantity: Number(item.quantity) || 1,
-          price: Number(item.price) || 0,
+            object: item.object || null,
+            quantity: Number(item.quantity) || 1,
+            price: Number(item.price) || 0,
             Objectsposition: item.Objectsposition || 'Outside',
-          })),
+          }))
         );
       }
   
@@ -214,16 +215,15 @@ const taskCtrl = {
         collectionAddress,
         clientObjectPhotos,
         totalPrice,
-        items,
+        items: allItems,
         taskStatus: 'Processing',
         postcode,
-        customDiscountPercent, // Save for reference
+        customDiscountPercent,
         discountType,
         hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0
       });
   
       await newTask.save();
-      // ... (emit notification, etc.) ...
       res.status(201).json({
         message: 'Task created successfully',
         task: newTask,
@@ -568,7 +568,7 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      console.log(req.body);
+      console.log(req.body.items);
       const oldTask = await Task.findById(taskId);
       console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh');
       if (!oldTask) {

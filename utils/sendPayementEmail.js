@@ -158,7 +158,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 32px auto; padding: 0; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff'); background-size: cover; background-position: center; background-repeat: no-repeat; border-radius: 18px; box-shadow: 0 4px 24px #e8f5e9; border: 1.5px solid #e0e0e0;">
             <div style="background: #ffffff43; border-top-left-radius: 18px; border-top-right-radius: 18px; padding: 32px 32px 18px 32px; border-bottom: 1.5px solid #e0e0e0;">
                 <div style="text-align: center; margin-bottom: 18px;">
-                    <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/nvwy3j4dlvqoc72aokw3" width="140" alt="London Waste Management" style="display:block;margin:auto;"/>
+                    <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/logo_cr9bor.png" width="140" alt="London Waste Management" style="display:block;margin:auto;"/>
                 </div>
                 <div style="background:rgb(255, 255, 255); padding: 10px 0 0 0; box-shadow: 0 6px 24px 0 rgba(140,192,68,0.18), 0 1.5px 0 #8dc044;">
                   <h2 style="

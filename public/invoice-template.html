@@ -207,9 +207,15 @@
       <div class="section-title">INVOICE</div>
       <div class="address-box">
         <div class="card">
-          <img src="{{emailIcon}}" width="14" />
-          <strong>Billing Address:</strong> {{billingName}} | {{email}}<br />
-          <span class="green">{{phone}}</span>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <img src="{{emailIcon}}" width="14" />
+            <strong>Name:</strong> {{billingName}} | <strong>Email:</strong> {{email}}<br />
+           
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <img src="{{emailIcon}}" width="14" />
+            <strong>Billing Address:</strong> {{billingAddress}} |  <strong>Phone:</strong> {{phone}}
+          </div>
         </div>
         <div style="display: flex; gap: 20px">
           <div class="card" style="flex: 1">
