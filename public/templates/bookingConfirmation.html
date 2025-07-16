@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="bookingConfirmation.css" />
+    <title>London Waste Management - Booking Confirmation</title>
+  </head>
+  <body>
+    <div style="font-family: Arial, sans-serif; text-align: center; padding: 40px 20px; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/v1751808909/Group_86_gexnyo.png'); background-size: cover; background-position: center; background-repeat: no-repeat; min-height: 100vh;">
+      
+      <!-- Logo Section -->
+      <div style="padding: 20px 0; text-align: center;">
+        <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" 
+             width="200" 
+             style="max-width: 80%; height: auto;" 
+             alt="London Waste Management" />
+      </div>
+      
+      <!-- Main Content Container -->
+      <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden;">
+        
+        <!-- Header Section -->
+        <div style="box-shadow: 0 45px 45px rgba(0, 0, 0, 0.65); border-bottom: 1px solid rgb(0, 0, 0); font-weight: bold; color: #222; padding: 20px; text-align: center; font-size: 24px; border-radius: 0 0 45px 45px;">
+          Booking confirmation
+        </div>
+
+        <!-- Content Section -->
+        <div style="padding: 20px;">
+          
+          <!-- Mobile Image (shown above content on mobile) -->
+          <div style="text-align: center; margin-bottom: 20px;">
+            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750623581/uploads/kk0rcexpiwluvaaq4xtj.png" 
+                 alt="Booking Illustration" 
+                 style="width: 200px; max-width: 80%; height: auto;" />
+          </div>
+          
+          <!-- Text Content -->
+          <div style="text-align: left;">
+            <p style="font-size: 24px; margin-bottom: 20px;">
+              <span style="color: #6dc24b; font-weight: bold;">Hi</span>
+              <span style="font-weight: bold;"> {{firstName}} {{lastName}},</span>
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;">Thank you for booking with London Waste Management.</p>
+
+            <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;">We have successfully received your order 
+              <strong style="color: #00b300;">#{{orderNumber}}</strong> scheduled on 
+              <strong>{{date}}</strong> during 
+              <strong>{{available}}</strong>.
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;"><strong>Collection Address:</strong> 
+              <span style="color: #6dc24b;">{{collectionAddress}}</span>
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;">If you have any question feel free to contact us at 
+              <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a><br>
+              or call us on <strong>02030971517</strong>.
+            </p>
+
+            <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;">We look forward to serving you !</p>
+          </div>
+        </div>
+
+        <!-- Footer Section -->
+        <div style="padding: 15px 20px; font-size: 12px; text-align: center; color: #666; border-top: 1px solid #eee;">
+          London Waste Management |
+          <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

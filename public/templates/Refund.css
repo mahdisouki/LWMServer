@@ -1,0 +1,275 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  min-height: 100vh;
+  padding: 20px;
+  position: relative;
+}
+
+
+body > div > div:first-child {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+body > div > div:first-child img {
+  width: 100px;
+  height: auto;
+}
+
+.content-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 80%;
+  flex-direction: column;
+  align-items: center;
+  margin: auto;
+  background-color: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  height: min-content;
+  position: relative;
+  z-index: 1;
+}
+
+.content {
+  background-color: white;
+  width: 100%;
+}
+
+.title {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 70px;
+  background-color: #8DC044;
+  border-radius: 8px 8px 45px 45px;
+  color: white;
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 30px;
+}
+
+.sub-content {
+  padding: 19px;
+  display: flex;
+  flex-direction: row;
+  gap: 40px;
+}
+
+.text-content {
+  flex: 1;
+}
+
+.image-placeholder {
+  width: 30%;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-placeholder img {
+  max-width: 100%;
+  height: auto;
+}
+
+.greeting-title {
+  font-size: 24px;
+  padding-bottom: 10px;
+}
+
+.name {
+  color: #8bc34a;
+  font-weight: bold;
+}
+
+.message {
+  line-height: 1.6;
+  font-size: 16px;
+  margin-bottom: 20px;
+}
+
+.refund-amount {
+  color: #8bc34a;
+  font-weight: bold;
+}
+
+.order-number {
+  color: #8bc34a;
+  font-weight: bold;
+}
+
+.contact-link {
+  color: #5cb3cc;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.contact-link:hover {
+  text-decoration: underline;
+}
+
+.signature {
+  margin-top: 30px;
+  color: #666;
+  text-align: left;
+}
+
+.department {
+  color: #8bc34a;
+  font-weight: bold;
+  margin-top: 5px;
+}
+
+.footer-contact {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 15px;
+  display: flex;
+  justify-content: center;
+  padding: 20px;
+}
+
+.footer-waves {
+  width: 100%;
+  max-height: 100px;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.footer-waves img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Background decorative images - ABSOLUTE ON WHOLE PAGE */
+.right-top-image {
+  background-image: url(".https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/Ellipse_lqz1rk.png");
+  width: 18vw;
+  height: 18vw;
+  max-width: 300px;
+  max-height: 300px;
+  min-width: 150px;
+  min-height: 150px;
+  position: absolute;
+  top: 5vh;
+  right: 2vw;
+  z-index: -1;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.left-bot-image {
+  width: 30vw;
+  height: 30vw;
+  max-width: 500px;
+  max-height: 500px;
+  min-width: 200px;
+  min-height: 200px;
+  background-image: url(".https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659276/Rectangle_sfjyos.png");
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .content-wrapper {
+    width: 95%;
+  }
+  
+  .title {
+    font-size: 24px;
+    height: 60px;
+  }
+  
+.sub-content {
+  flex-direction: column;
+  align-items: center;
+}
+
+.image-placeholder {
+  width: 100%;
+  margin-top: 30px;
+}
+  
+  .greeting-title {
+    font-size: 20px;
+  }
+  
+  .message {
+    font-size: 12px;
+  }
+  
+  /* Smaller background images on mobile */
+  .right-top-image {
+    width: 25vw;
+    height: 25vw;
+    max-width: 150px;
+    max-height: 150px;
+    min-width: 80px;
+    min-height: 80px;
+    top: 2vh;
+    right: 2vw;
+  }
+  
+  .left-bot-image {
+    width: 40vw;
+    height: 40vw;
+    max-width: 200px;
+    max-height: 200px;
+    min-width: 100px;
+    min-height: 100px;
+  }
+  
+}
+
+@media (max-width: 480px) {
+  body {
+    padding: 10px;
+  }
+  
+  .sub-content {
+    padding: 20px 15px;
+  }
+  
+  .greeting-title {
+    font-size: 18px;
+  }
+  
+  /* Even smaller on very small screens */
+  .right-top-image {
+    width: 20vw;
+    height: 20vw;
+    max-width: 100px;
+    max-height: 100px;
+    min-width: 60px;
+    min-height: 60px;
+  }
+  
+  .left-bot-image {
+    width: 35vw;
+    height: 35vw;
+    max-width: 150px;
+    max-height: 150px;
+    min-width: 80px;
+    min-height: 80px;
+  }
+}

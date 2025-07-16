@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Waste Transfer Note</title>
+</head>
+
+<body style="font-family: Arial, sans-serif; background: #e9f5d9; margin: 0; padding: 0; min-height: 100vh;">
+  <div style="width: 100%; min-height: 100vh; display: flex; justify-content: center; align-items: center;">
+    <div style="background: rgba(255,255,255,0.92); border-radius: 18px; box-shadow: 0 4px 24px rgba(38,50,56,0.10); width: 100%; max-width: 700px; padding: 0; position: relative;">
+      <div style="text-align: center; margin-top: 32px; margin-bottom: 24px;">
+        <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822222/logo_q1jtkx.png" alt="London Waste Management Logo" style="height: 64px;" />
+      </div>
+      <div style="background: #fff; border: 2px solid #8bc53f; border-radius: 16px; margin: 0 24px 24px 24px; padding-bottom: 2rem;">
+        <div style="margin-bottom: 32px;">
+          <div style="background: #fff; border-radius: 999px; box-shadow: 0 2px 8px rgba(38,50,56,0.10); padding: 16px; width: fit-content; margin: 0 auto;">
+            <h1 style="color: #8bc53f; font-size: 28px; font-weight: bold; margin: 0; text-align: center;">DUTY OF CARE WASTE TRANSFER NOTE</h1>
+          </div>
+        </div>
+        <div style="padding: 0 24px 0 24px; margin-bottom: 16px;">
+          <p style="margin: 0 0 8px 0;"><span style="color: #8bc53f; font-weight: 500;">Hi</span> {{firstName}},</p>
+          <p style="margin: 0 0 8px 0;">Your clearance is now complete. This email acts as your Waste Transfer Note.</p>
+          <p style="color: #8bc53f; margin: 0 0 8px 0;">[Order #{{orderNumber}}] ({{date}})</p>
+        </div>
+        <div style="padding: 0 24px 0 24px; margin-bottom: 24px;">
+          <div style="border-radius: 10px; box-shadow: 0 2px 8px rgba(38,50,56,0.10); overflow: hidden;">
+            <div style="background: #8bc53f; color: #fff; display: flex; flex-direction: row; font-weight: bold; padding: 8px 0;">
+              <div style="flex: 2; padding-left: 12px;">Product</div>
+              <div style="flex: 1; text-align: center;">Qty</div>
+              <div style="flex: 1; text-align: right; padding-right: 12px;">Price</div>
+            </div>
+            {{productRows}}
+          </div>
+        </div>
+        <div style="padding: 0 24px 0 24px; margin-bottom: 24px;">
+          <div style="margin-bottom: 12px;">
+            <p style="font-weight: bold; margin: 0 0 4px 0;">Note :</p>
+            <p style="margin: 0;">{{additionalNotes}}</p>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 24px;">
+            <div style="flex: 1 1 200px; min-width: 180px;">
+              <p style="font-weight: bold; margin: 0 0 4px 0;">EWC Codes :</p>
+              {{ewcCodes}}
+            </div>
+            <div style="flex: 1 1 200px; min-width: 180px;">
+              <p style="font-weight: bold; margin: 0 0 4px 0;">Collection address</p>
+              <p style="margin: 0;">{{collectionAddress}}</p>
+            </div>
+          </div>
+        </div>
+        <div style="padding: 0 24px 0 24px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; color: #8bc53f; font-size: 15px;">
+            <span style="font-size: 20px; margin-right: 6px;">📅</span> <span>{{date}}</span>
+          </div>
+          <div style="display: flex; align-items: center; color: #8bc53f; font-size: 15px;">
+            <span style="font-size: 20px; margin-right: 6px;">⏰</span> <span>{{timeSlot}}</span>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 0 24px 24px 24px; font-size: 12px; color: #666; text-align: center;">
+        <p style="margin: 0;">This Waste Transfer Note has been created by London Waste Management LTD and is valid for one year from the date and time of collection. Please keep this document for your records for a minimum of two years.</p>
+      </div>
+      <div style="position: absolute; bottom: 0; right: 0; opacity: 0.18;">
+        <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822220/Rectangle_xkipfl.png" alt="" style="height: 120px;" />
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>

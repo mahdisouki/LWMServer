@@ -113,89 +113,36 @@ async function loadTaskData(taskId) {
  * @param {number} params.refundAmount - The amount refunded
  */
 async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
-  const refundType =
-    refundAmount < paymentHistory.amount ? 'Partial Refund' : 'Total Refund';
-    const remaining = paymentHistory.amount - refundAmount;
+  const fs = require('fs');
+  const path = require('path');
+  const templatePath = path.join(__dirname, '../public/templates/Refund.html');
+  let html = fs.readFileSync(templatePath, 'utf8');
+
+  // Prepare dynamic values
+  const name = `${task.firstName} ${task.lastName}`;
+  const refundAmountStr = `£${refundAmount.toFixed(2)}`;
+  const orderNumber = task.orderNumber;
+
+  // Replace placeholders in template
+  html = html.replace(/<span class="name">.*?<\/span>/, `<span class="name">${name}</span>`)
+             .replace(/<span class="refund-amount">.*?<\/span>/, `<span class="refund-amount">${refundAmountStr}</span>`)
+             .replace(/<span class="order-number">.*?<\/span>/, `<span class="order-number">${orderNumber}</span>`);
+
+  // Generate and attach refund invoice PDF
   const dirPath = path.join(__dirname, '../generated');
-    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
-    const fileName = `invoice-refund-${task.orderNumber}.pdf`;
-    const filePath = path.join(dirPath, fileName);
-    await module.exports.generateOfficialInvoicePDF(task, filePath);
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
+  const fileName = `invoice-refund-${task.orderNumber}.pdf`;
+  const filePath = path.join(dirPath, fileName);
+  await module.exports.generateOfficialInvoicePDF(task, filePath);
 
-    let refundSummary = `<p><strong>Refund Type:</strong> ${refundType}</p>
-        <p><strong>Refunded Amount:</strong> £${refundAmount.toFixed(2)}</p>`;
-    if (refundType === 'Partial Refund') {
-    refundSummary += `<p><strong>Remaining Balance After Refund:</strong> £${remaining.toFixed(
-      2,
-    )}</p>`;
-    }
-
-    const html = `
-  <div style=" padding: 40px 0 0; font-family: Arial, sans-serif; text-align: center;">
-    <div style="max-width: 90%; margin: auto;  background: #ffffff; border-radius: 12px 12px 8px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; position: relative; z-index: 2;">
-      <div style="padding: 20px 0;">
-        <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="200" alt="London Waste Management" />
-      </div>
-  
-     <div style="background: linear-gradient(to bottom, #ffffff, #dcedd6);font-weight:bold; color: #444; padding: 20px;text-align: center; font-size: 22px;; border-radius: 0 0 30px 30px;">
-${refundType}</div>
-    <div style="position: relative; width: 100%;">
-    
-      <div style="padding: 20px; display: flex; flex-direction: row; justify-content: space-between; align-items: flex-start; text-align: left;">
-        <div style="flex-shrink: 0; margin-right: 20px; align-self: flex-end;">
-    <img 
-      src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750615000/uploads/ijxwg07gisqn8d3x3eaz.png" 
-      
-      style="width: 120px; max-width: 120%; height: auto; margin-top: 330px; " 
-    />
-            </div>
-      <div style="flex: 1; padding-right: 10px;">
-          <p style="font-size: 30px;">
-  <span style="color: #8DC044; font-weight: bold;">Dear</span>
-  <span style="font-weight: bold;">${task.firstName} ${task.lastName},</span>
-</p>
-<p>We are writing to confirm that a full refund has been issued for your recent payment to London Waste Management</p>
-            ${refundSummary}
-               <p>The amount has been refunded to your original method of payment and should appear in your account within 3–5 business days.</p>
-          <p>We apologise for any inconvenience caused and thank you for your understanding.</p>
-  
-          <p>If you have any questions or require further assistance, please do not hesitate to contact us at
-            <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a> or call us on <strong>02030971517</strong>.
-          </p>
-  
-          <p style="margin: 20px 0 5px;">Best regards,</p>
-          <p style="color: #6dc24b; font-weight: bold; margin: 0;">London Waste Management Department</p>
-        </div>
-        <div style="flex-shrink: 0;">
-<img 
-  src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750610829/uploads/fo5jyq8wjfhoaf2evk6t.png" 
-  alt="Truck" 
-  style="width: 340px; max-width: 100%; height: auto; border-radius: 4px; margin-left: 40px; margin-top: 190px;" 
-/>
-        </div>
-      </div>
-      <div style="padding: 15px 20px; font-size: 12px; text-align: center; color: #666; border-top: 1px solid #eee;">
-        London Waste Management |
-        <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a>
-      </div>
-    </div>
-
-            </div>
-        </div>
-    `;
-  //shadow image
-  // <div style="position: absolute; bottom: 0; left: 0;">
-  //       <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750610806/uploads/s4fn4kpglsacaejbfdhg.png" alt="Shadow bottom left" style="max-width: 200px; width: 100%; display: block;" />
-  //     </div>
-
-    await transporter.sendMail({
-        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
-        to: task.email,
-        subject: `${refundType} for Order #${task.orderNumber}`,
-        html,
-        attachments: [{ filename: fileName, path: filePath }],
-    });
-    fs.unlinkSync(filePath);
+  await transporter.sendMail({
+    from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+    to: task.email,
+    subject: `Refund for Order #${task.orderNumber}`,
+    html,
+    attachments: [{ filename: fileName, path: filePath }],
+  });
+  fs.unlinkSync(filePath);
 }
 
 module.exports = {
@@ -249,11 +196,17 @@ module.exports = {
       subtotal += finalItemTotal;
     });
 
-    // // Handle percentage discount on total only if hasDiscount is true and discountType is "percentage"
-    // if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
-    //   const percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
-    //   subtotal -= percentageDiscount;
-    // }
+    // Handle percentage discount on total only if hasDiscount is true and discountType is "percentage"
+    if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
+      const percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
+      subtotal -= percentageDiscount;
+    }
+    
+    // Apply minimum price (before VAT) - if under £30, make it £30
+    if (subtotal < 30) {
+      subtotal = 30;
+    }
+    
     console.log("subtotal",subtotal)
     vat = subtotal * 0.2;
     total = subtotal + vat;
@@ -283,7 +236,11 @@ module.exports = {
           finalItemTotal = (discountedPrice * item.quantity) + positionPrice;
         }
         
-        if (task.hasDiscount && task.discountType === "perItem") {
+        // Check if any items have custom prices to determine if we need discount column
+        const hasCustomPrices = task.items.some(item => item.customPrice);
+        const showDiscountColumn = task.hasDiscount && task.discountType === "perItem" && hasCustomPrices;
+        
+        if (showDiscountColumn) {
           return `
           <tr>
             <td>${
@@ -291,7 +248,7 @@ module.exports = {
             }</td>
             <td>${item.quantity}</td>
             <td>£${(item.standardItemId?.price || 0).toFixed(2)}</td>
-            ${task.hasDiscount && task.discountType === "perItem" && item.customPrice ? `<td>£${discountedPrice.toFixed(2)}</td>` : ''}
+            <td>£${item.customPrice ? discountedPrice.toFixed(2) : (item.standardItemId?.price || 0).toFixed(2)}</td>
             <td>${item.Objectsposition}</td>
             <td>£${positionPrice.toFixed(2)}</td>
             <td>£${finalItemTotal.toFixed(2)}</td>
@@ -304,8 +261,8 @@ module.exports = {
             }</td>
             <td>${item.quantity}</td>
             <td>£${(item.standardItemId?.price || 0).toFixed(2)}</td>
-            <td>£${positionPrice.toFixed(2)}</td>
             <td>${item.Objectsposition}</td>
+            <td>£${positionPrice.toFixed(2)}</td>
             <td>£${finalItemTotal.toFixed(2)}</td>
           </tr>`;
         }
@@ -361,7 +318,8 @@ module.exports = {
 
     // Build discount columns for the table header based on discount type
     let discountColumns = '';
-    if (vars.hasDiscount && task.discountType === "perItem") {
+    const hasCustomPrices = task.items.some(item => item.customPrice);
+    if (task.hasDiscount && task.discountType === "perItem" && hasCustomPrices) {
       discountColumns = '<th>Discounted Price</th>';
     }
     template = template.replace('{{discountColumns}}', discountColumns);
@@ -415,7 +373,7 @@ module.exports = {
       path: outputPath,
       format: 'A4',
       printBackground: true,
-      margin: { top: '20px', bottom: '40px', left: '20px', right: '20px' },
+      margin: { top: '0', bottom: '0', left: '0', right: '0' },
     });
 
     await context.close();
@@ -545,12 +503,12 @@ module.exports = {
   
   async sendQuoteRequestConfirmationEmail(email) {
     const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; background-color: #f0f9e8; border: 1px solid #e0e0e0;">
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; background-image:url('https://res.cloudinary.com/ddcsuzef0/image/upload/v1752624279/Group_91_gbbl5x.png');background-size:cover;background-position:center; border: 1px solid #e0e0e0;">
         <div style="text-align: center; margin-bottom: 30px;">
           <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png" width="150" alt="London Waste Management"/>
         </div>
   
-        <div style="background-color: #ffffff; padding: 30px; border-radius: 6px; text-align: center;">
+        <div style="background-color: rgba(255, 255, 255, 0.5); padding: 30px; border-radius: 10px; text-align: center;border:1px solid green">
           <h2 style="color: #222;">Thank You</h2>
           <p>Hello <a href="mailto:${email}" style="color: #007bff; text-decoration: none;">${email}</a>,</p>
           <p>We have received your quote.</p>
@@ -568,107 +526,41 @@ module.exports = {
 
   async sendWasteTransferNoteEmail(taskId) {
     const task = await Task.findById(taskId).populate('items.standardItemId');
-    console.log(task);
     if (!task) throw new Error('Task not found');
-  
-    const items = await buildWasteTransferNoteDetails(task);
-  
-    const productRows = items
-      .map(
-        (detail) => `
-      <tr>
-        <td style="border: 1px solid #ccc; padding: 8px;">${detail.name}</td>
-        <td style="border: 1px solid #ccc; padding: 8px;">${
-          detail.quantity
-        }</td>
-        <td style="border: 1px solid #ccc; padding: 8px;">£${detail.price.toFixed(
-          2,
-        )}</td>
-      </tr>
-    `,
-      )
-      .join('');
-  
-    const ewcCodesList = items
-      .filter((i) => i.ewcCode && i.ewcCode !== 'N/A')
-      .map((detail) => `<li>${detail.ewcCode} : ${detail.name}</li>`)
-      .join('');
-  
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 700px; margin: auto; padding: 20px; border: 1px solid #ddd;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png" width="150" alt="London Waste Management"/>
-        </div>
-  
-        <div style="background-color: #8dc044; color: white; padding: 10px; text-align: center; border-radius: 4px;">
-          <h2 style="margin: 0;">DUTY OF CARE WASTE TRANSFER NOTE</h2>
-        </div>
-  
-        <div style="padding: 20px;">
-          <p>Hi ${task.firstName},</p>
-          <p>Your clearance is now complete. This email acts as your Waste Transfer Note.</p>
-  
-          <h3 style="color: #4CAF50;">[Order #${task.orderNumber}] (${
-      task.date.toISOString().split('T')[0]
-    })</h3>
-  
-          <table width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 20px;">
-            <thead style="background-color: #f2f2f2;">
-              <tr>
-                <th style="border: 1px solid #ccc; padding: 8px;">Product</th>
-                <th style="border: 1px solid #ccc; padding: 8px;">Quantity</th>
-                <th style="border: 1px solid #ccc; padding: 8px;">Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${productRows}
-            </tbody>
-          </table>
-  
-          <p><strong>Note:</strong> ${
-            task.additionalNotes || 'No additional notes provided.'
-          }</p>
-  
-          ${
-            ewcCodesList
-              ? `
-            <p><strong>EWC Codes:</strong></p>
-            <ul style="margin-top: 5px; margin-bottom: 20px; padding-left: 20px;">${ewcCodesList}</ul>
-          `
-              : ''
-          }
-  
-          <p><strong>Collection Date:</strong> ${
-            task.date.toISOString().split('T')[0]
-          }</p>
-          <p><strong>Time Slot:</strong> ${task.available.replace(
-            /_/g,
-            ' ',
-          )}</p>
-  
-          <div style="border: 1px solid #ddd; padding: 10px; margin-top: 20px;">
-            <h4 style="margin: 0 0 10px 0;">Collection address</h4>
-            <p style="margin: 0;">${task.firstName} ${task.lastName}</p>
-            <p style="margin: 0;">${task.collectionAddress}</p>
-          </div>
-  
-          <p style="margin-top: 20px; font-size: 12px; color: #777;">
-            This Waste Transfer Note has been created by London Waste Management LTD and is valid for one year from the date and time of collection. Please keep this document for your records for a minimum of two years.
-            <br/><br/>
-            Waste Carrier Licence Number: CBDU308350<br/>
-            Business Address: 4 Roundwood Ave, Stockley Park, London, UB11 1AF, United Kingdom.
-            <br/><br/>
-            For any queries please email us at <a href="mailto:hello@londonwastemanagement.com">hello@londonwastemanagement.com</a> or call us on 02030971517.
-          </p>
-        </div>
+
+    const templatePath = path.join(__dirname, '../public/templates/wastenote.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    // Build product rows
+    const productRows = task.items.map(item => `
+      <div class="bg-white grid grid-cols-3 p-2 border-b border-gray-200">
+        <div>${item.standardItemId?.itemName || item.object || 'Unnamed Item'}</div>
+        <div class="text-center">${item.quantity || 1}</div>
+        <div class="text-right">£${(item.price || item.standardItemId?.price || 0).toFixed(2)}</div>
       </div>
-    `;
-  
+    `).join('');
+
+    // Build EWC codes
+    const ewcCodes = task.items
+      .filter(i => i.standardItemId?.ewcCode)
+      .map(i => `<p><span class="text-[#8bc53f]">${i.standardItemId.ewcCode}</span> : ${i.standardItemId.itemName}</p>`) 
+      .join('');
+
+    // Replace placeholders
+    template = template.replace(/{{firstName}}/g, task.firstName);
+    template = template.replace(/{{orderNumber}}/g, task.orderNumber);
+    template = template.replace(/{{date}}/g, task.date.toISOString().split('T')[0]);
+    template = template.replace(/{{productRows}}/g, productRows);
+    template = template.replace(/{{ewcCodes}}/g, ewcCodes || '');
+    template = template.replace(/{{collectionAddress}}/g, task.collectionAddress || '');
+    template = template.replace(/{{timeSlot}}/g, task.available?.replace(/_/g, ' ') || '');
+    template = template.replace(/{{additionalNotes}}/g, task.additionalNotes || 'No additional notes provided.');
+
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
-      subject: 'Your London Waste Management order is now complete',
-      html: htmlContent,
+      subject: `Waste Transfer Note for Order #${task.orderNumber}`,
+      html: template,
     });
   },
 
@@ -699,65 +591,24 @@ module.exports = {
     const task = await Task.findById(taskId).populate('items.standardItemId');
     if (!task) throw new Error('Task not found');
 
-    const htmlContent = `
-      <div style="padding: 40px 0 0; font-family: Arial, sans-serif; text-align: center;background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff');background-size: cover;background-position: center;background-repeat: no-repeat;">
-  <div style="max-width: 90%; margin: auto; background: #ffffff; border-radius: 12px 12px 8px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; position: relative; z-index: 2;">
+    // Read the template file
+    const templatePath = path.join(__dirname, '../public/templates/bookingConfirmation.html');
+    let template = fs.readFileSync(templatePath, 'utf8');
+
+    // Read the CSS file and inline it
+    const cssPath = path.join(__dirname, '../public/templates/bookingConfirmation.css');
+    const css = fs.readFileSync(cssPath, 'utf8');
+
+    // Replace template variables
+    template = template.replace('{{firstName}}', task.firstName);
+    template = template.replace('{{lastName}}', task.lastName);
+    template = template.replace('{{orderNumber}}', task.orderNumber);
+    template = template.replace('{{date}}', task.date.toLocaleDateString('en-GB'));
+    template = template.replace('{{available}}', task.available.replace(/_/g, ' '));
+    template = template.replace('{{collectionAddress}}', task.collectionAddress);
     
-    <div style="padding: 20px 0;">
-      <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="150" alt="London Waste Management" />
-        </div>
-
-    <div style="background: linear-gradient(to bottom, #ffffff, #dcedd6); font-weight:bold; color: #222; padding: 20px; text-align: center; font-size: 24px; border-radius: 0 0 30px 30px;">
-      Booking confirmation
-        </div>
-
-    <div style="padding: 20px; display: flex; flex-direction: row; justify-content: space-between; align-items: flex-start; text-align: left; position: relative; z-index: 2;">
-
-      
-      <div style="flex: 1; padding-right: 10px;">
-        <p style="font-size: 24px; margin-bottom: 20px;">
-          <span style="color: #6dc24b; font-weight: bold;">Hi</span>
-          <span style="font-weight: bold;"> ${task.firstName} ${
-      task.lastName
-    },</span>
-        </p>
-
-          <p>Thank you for booking with London Waste Management.</p>
-
-        <p>We have successfully received your order 
-          <strong style="color: #00b300;">#${task.orderNumber}</strong> scheduled on 
-          <strong>${task.date.toLocaleDateString('en-GB')}</strong> during 
-          <strong>${task.available.replace(/_/g, ' ')}</strong>.
-        </p>
-
-        <p><strong>Collection Address:</strong> 
-          <span style="color: #6dc24b;">${task.collectionAddress}</span>
-        </p>
-
-        <p>If you have any question feel free to contact us at 
-          <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a>
-          or call us on <strong>02030971517</strong>.
-        </p>
-
-        <p>We look forward to serving you !</p>
-        </div>
-
-      <div style="flex-shrink: 0;">
-        <img 
-          src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750623581/uploads/kk0rcexpiwluvaaq4xtj.png" 
-          alt="Booking Illustration" 
-style="width: 260px; max-width: 100%; height: auto; margin-left: 20px; margin-top :75px"         />
-      </div>
-    </div>
-
-    <div style="padding: 15px 20px; font-size: 12px; text-align: center; color: #666; border-top: 1px solid #eee;">
-      London Waste Management |
-      <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a>
-    </div>
-  </div>
-</div>
-
-    `;
+    // Inline the CSS into the HTML
+    const htmlContent = template.replace('</head>', `<style>${css}</style></head>`);
 
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
@@ -894,7 +745,7 @@ const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
-      margin: { top: '20px', bottom: '40px', left: '20px', right: '20px' },
+      margin: { top: '0', bottom: '0', left: '0', right: '0' },
     });
 
     await context.close();

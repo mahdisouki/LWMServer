@@ -9,8 +9,8 @@ function encodeMessage(raw) {
 
 async function sendEmail(adminId, to, subject, text, attachments = []) {
   try {
-    const gmail = await getGmailAuth(adminId);
-    const admin = await Admin.findById(adminId);
+  const gmail = await getGmailAuth(adminId);
+  const admin = await Admin.findById(adminId);
 
     console.log('Sending email with:', {
       adminId,
@@ -86,13 +86,13 @@ async function sendEmail(adminId, to, subject, text, attachments = []) {
       attachmentCount: attachments.length
     });
 
-    const res = await gmail.users.messages.send({
-      userId: 'me',
+  const res = await gmail.users.messages.send({
+    userId: 'me',
       requestBody: { raw: encodeMessage(rawMessage) },
-    });
+  });
 
     console.log('Email sent successfully:', res.data);
-    return res.data;
+  return res.data;
   } catch (error) {
     console.error('Error in sendEmail:', {
       error: error.message,
@@ -135,47 +135,47 @@ async function getEmailById(adminId, messageId) {
   try {
     console.log('getEmailById called with:', { adminId, messageId });
     
-    const gmail = await getGmailAuth(adminId);
+  const gmail = await getGmailAuth(adminId);
     // console.log('Gmail auth successful for getEmailById');
     
-    const res = await gmail.users.messages.get({
-      userId: 'me',
-      id: messageId,
-      format: 'full',
-    });
+  const res = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageId,
+    format: 'full',
+  });
 
     // console.log('Gmail API response received');
-    const data = res.data;
-    const headers = data.payload.headers;
+  const data = res.data;
+  const headers = data.payload.headers;
 
-    const getHeader = name => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value;
-    const from = getHeader('From');
-    const to = getHeader('To');
-    const subject = getHeader('Subject');
-    const date = getHeader('Date');
+  const getHeader = name => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value;
+  const from = getHeader('From');
+  const to = getHeader('To');
+  const subject = getHeader('Subject');
+  const date = getHeader('Date');
     const messageIdHeader = getHeader('Message-ID');
-    const references = getHeader('References');
+  const references = getHeader('References');
 
-    let body = '';
-    const part = data.payload.parts?.find(p => p.mimeType === 'text/html' || p.mimeType === 'text/plain');
-    if (part && part.body.data) {
-      body = Buffer.from(part.body.data, 'base64').toString('utf-8');
-    } else if (data.payload.body?.data) {
-      body = Buffer.from(data.payload.body.data, 'base64').toString('utf-8');
-    }
+  let body = '';
+  const part = data.payload.parts?.find(p => p.mimeType === 'text/html' || p.mimeType === 'text/plain');
+  if (part && part.body.data) {
+    body = Buffer.from(part.body.data, 'base64').toString('utf-8');
+  } else if (data.payload.body?.data) {
+    body = Buffer.from(data.payload.body.data, 'base64').toString('utf-8');
+  }
 
     const result = {
       id: data.id,  // Always use Gmail's internal message ID
-      threadId: data.threadId,
-      from,
-      to,
-      subject,
-      date,
+    threadId: data.threadId,
+    from,
+    to,
+    subject,
+    date,
       messageId: messageIdHeader,  // Store the Message-ID header separately
-      references,
-      content: body,
-      labelIds: data.labelIds,
-    };
+    references,
+    content: body,
+    labelIds: data.labelIds,
+  };
     
     // console.log('Email processed successfully:', { 
     //   id: result.id, 
@@ -231,10 +231,10 @@ async function replyToEmail(adminId, messageId, replyText, attachments = []) {
     console.log('=== REPLY EMAIL DEBUG START ===');
     console.log('Input parameters:', { adminId, messageId, replyTextLength: replyText?.length, attachmentCount: attachments.length });
     
-    const gmail = await getGmailAuth(adminId);
+  const gmail = await getGmailAuth(adminId);
     console.log('Gmail auth successful');
     
-    const admin = await Admin.findById(adminId);
+  const admin = await Admin.findById(adminId);
     if (!admin) throw new Error('Admin not found');
     console.log('Admin found:', { adminId: admin._id, hasSignature: !!admin.emailSignature });
 
@@ -377,17 +377,17 @@ async function replyToEmail(adminId, messageId, replyText, attachments = []) {
 
     // Send the email
     console.log('Sending reply email via Gmail API...');
-    const res = await gmail.users.messages.send({
-      userId: 'me',
+  const res = await gmail.users.messages.send({
+    userId: 'me',
       requestBody: {
         raw,
         // threadId,
       },
-    });
+  });
 
     console.log('Gmail API response:', res.data);
     console.log('=== REPLY EMAIL DEBUG END ===');
-    return res.data;
+  return res.data;
   } catch (error) {
     console.error('=== REPLY EMAIL ERROR ===');
     console.error('Error details:', {
@@ -424,10 +424,10 @@ async function forwardEmail(adminId, messageId, forwardTo, forwardText, attachme
       attachmentCount: attachments.length 
     });
     
-    const gmail = await getGmailAuth(adminId);
+  const gmail = await getGmailAuth(adminId);
     console.log('Gmail auth successful');
     
-    const admin = await Admin.findById(adminId);
+  const admin = await Admin.findById(adminId);
     if (!admin) throw new Error('Admin not found');
     console.log('Admin found:', { adminId: admin._id, hasSignature: !!admin.emailSignature });
 
@@ -547,14 +547,14 @@ async function forwardEmail(adminId, messageId, forwardTo, forwardText, attachme
 
     // Send the email
     console.log('Sending forward email via Gmail API...');
-    const res = await gmail.users.messages.send({
-      userId: 'me',
-      requestBody: { raw },
-    });
+  const res = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw },
+  });
 
     console.log('Gmail API response:', res.data);
     console.log('=== FORWARD EMAIL DEBUG END ===');
-    return res.data;
+  return res.data;
   } catch (error) {
     console.error('=== FORWARD EMAIL ERROR ===');
     console.error('Error details:', {

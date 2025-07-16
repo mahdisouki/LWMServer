@@ -5,7 +5,7 @@ const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key here
 
 const VAT_RATE = 0.2; // VAT rate (20%)
-const MINIMUM_PRICE = 36; // Minimum price including VAT
+const MINIMUM_PRICE = 36; // Minimum price including VAT (£30 + £6 VAT)
 
 const NGROK_URL = 'https://londonwastemanagement.uk';
 
@@ -44,22 +44,19 @@ async function calculateTotalPrice(taskId) {
     const vat = basePrice * VAT_RATE;
     let finalPrice = basePrice + vat;
 
-    // Apply minimum price of £36 (including VAT)
+    // Apply minimum price of £36 (including VAT) - if under £30 base price, make it £30 + £6 VAT
     if (finalPrice < MINIMUM_PRICE) {
-        if (breakdown.length > 0) {
-            const firstItem = breakdown[0];
-            const currentPrice = parseFloat(firstItem.price || firstItem.amount);
-            const adjustment = (MINIMUM_PRICE - finalPrice) / (1 + VAT_RATE);
-            const newPrice = (currentPrice + adjustment).toFixed(2);
-            
-            if (firstItem.itemDescription) {
-                firstItem.price = newPrice;
-            } else {
-                firstItem.amount = newPrice;
-            }
-        }
+        // Calculate the adjustment needed to reach £36 total
+        const adjustment = MINIMUM_PRICE - finalPrice;
+        
+        // Add minimum price adjustment to the breakdown
+        breakdown.push({
+            description: "Minimum price adjustment",
+            amount: adjustment.toFixed(2),
+        });
+        
         finalPrice = MINIMUM_PRICE;
-        basePrice = MINIMUM_PRICE / (1 + VAT_RATE);
+        basePrice = MINIMUM_PRICE / (1 + VAT_RATE); // This will be £30
     }
 
     breakdown.push({ description: "VAT (20%)", amount: vat.toFixed(2) });
@@ -114,7 +111,7 @@ const calculateTotalPriceUpdate = async (taskId) => {
     const vat = basePrice * VAT_RATE;
     let finalPrice = basePrice + vat;
 
-    // Apply minimum price of £36 (including VAT)
+    // Apply minimum price of £36 (including VAT) - if under £30 base price, make it £30 + £6 VAT
     if (finalPrice < MINIMUM_PRICE) {
         finalPrice = MINIMUM_PRICE;
     }
@@ -122,76 +119,26 @@ const calculateTotalPriceUpdate = async (taskId) => {
     return { total: Math.round(finalPrice * 100) / 100 };
 };
 
-const createStripePaymentLink = async (taskId, finalAmount, breakdown, paymentType) => {
-    // Create line items from the breakdown
-    const lineItems = breakdown.map(item => {
-        // Skip VAT, total, discount, and minimum price adjustment entries
-        if (item.description === "VAT (20%)" || 
-            item.description === "Final total price" ||
-            item.description?.includes("Discount") ||
-            item.description?.includes("Minimum price adjustment")) {
-            return null;
-        }
-
-        // Handle items with itemDescription (from task controller)
-        if (item.itemDescription) {
-            const quantity = item.quantity || 1;
-            const unitPrice = parseFloat(item.price) || 0;
-            const totalPrice = parseFloat(item.total) || (unitPrice * quantity);
-            
-            // Convert total price to pence
-            const amountInPence = Math.round(totalPrice * 100);
-            
-            return {
-                price_data: {
-                    currency: "gbp",
-                    product_data: {
-                        name: item.itemDescription,
-                        description: item.Objectsposition ? `Position: ${item.Objectsposition}` : undefined,
-                        images: ["https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png"],
-                    },
-                    unit_amount: amountInPence,
-                },
-                quantity: 1, // We're using the total price, so quantity is 1
-            };
-        }
-
-        // Handle items with description (legacy format)
-        if (item.description && (item.price || item.amount)) {
-            const amount = Math.round(parseFloat(item.price || item.amount) * 100);
-            
-            return {
-                price_data: {
-                    currency: "gbp",
-                    product_data: {
-                        name: item.description,
-                        description: item.Objectsposition ? `Position: ${item.Objectsposition}` : undefined,
-                        images: ["https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png"],
-                    },
-                    unit_amount: amount,
-                },
-                quantity: 1,
-            };
-        }
-
-        return null;
-    }).filter(item => item !== null);
-
-    // Add VAT as a separate line item
-    const vatItem = breakdown.find(item => item.description === "VAT (20%)");
-    if (vatItem) {
-        lineItems.push({
-            price_data: {
-                currency: "gbp",
-                product_data: {
-                    name: "VAT (20%)",
-                    description: "Value Added Tax",
-                },
-                unit_amount: Math.round(parseFloat(vatItem.amount) * 100),
+const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentType , orderNumber) => {
+    // VAT is already included in amountToPay, so we just convert to pence
+    const amountInPence = Math.round(amountToPay * 100);
+    console.log('amountInPence:', amountInPence);
+    
+    // Single line item for the payment amount
+    const lineItems = [{
+        price_data: {
+            currency: "gbp",
+            product_data: {
+                name: paymentType === 'deposit' ? "Deposit Payment"
+                    : paymentType === 'remaining' ? "Remaining Payment"
+                    : paymentType === 'partial' ? "Partial Payment"
+                    : "Payment",
+                description: `Payment for Task #${orderNumber}`,
             },
-            quantity: 1,
-        });
-    }
+            unit_amount: amountInPence,
+        },
+        quantity: 1,
+    }];
 
     // Fix: Define metadata object
     const metadata = {

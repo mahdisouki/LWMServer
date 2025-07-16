@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>London Waste Management - Full Refund</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      min-height: 100vh;
+      padding: 20px;
+      position: relative;
+    }
+
+    body > div > div:first-child {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    body > div > div:first-child img {
+      width: 200px;
+      height: auto;
+    }
+
+    .content-wrapper {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+      flex-direction: column;
+      align-items: center;
+      margin: auto;
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+      height: min-content;
+      position: relative;
+      z-index: 1;
+    }
+
+    .content {
+      background-color: white;
+      width: 100%;
+    }
+
+    .title {
+      
+        font-size: 24px;
+        height: 60px;
+        background-color: #fff;
+        box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+        border-radius: 0px 0px 45px 45px;
+        text-align: center;
+        border-bottom: 1px solid #000000;
+        color: #8DC044;
+        font-weight: 700;
+        
+    }
+
+    .sub-content {
+      padding: 19px;
+     
+    }
+
+    .text-content {
+      flex: 1;
+    }
+
+    .image-placeholder {
+      width: 30%;
+      min-width: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .image-placeholder img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .greeting-title {
+      font-size: 24px;
+      color: #8bc34a;
+      padding-bottom: 10px;
+    }
+
+    .name {
+      color: #8bc34a;
+      font-weight: bold;
+    }
+
+    .message {
+      line-height: 1.6;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+
+    .refund-amount {
+      color: #8bc34a;
+      font-weight: bold;
+    }
+
+    .order-number {
+      color: #8bc34a;
+      font-weight: bold;
+    }
+
+    .contact-link {
+      color: #5cb3cc;
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .contact-link:hover {
+      text-decoration: underline;
+    }
+
+    .signature {
+      margin-top: 30px;
+      color: #666;
+      text-align: left;
+    }
+
+    .department {
+      color: rgba(141, 192, 68, 1);
+      font-weight: bold;
+      margin-top: 5px;
+    }
+
+    hr {
+      border: none;
+      height: 1px;
+      background-color: #8bc34a;
+      margin: 10px 0;
+    }
+
+    .footer-contact {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 15px;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .footer-waves {
+      width: 100%;
+      max-height: 100px;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      border-radius: 0 0 10px 10px;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .footer-waves img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .right-top-image {
+      background-image: url("https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822229/Ellipse_f9axva.png");
+      width: 18vw;
+      height: 18vw;
+      max-width: 300px;
+      max-height: 300px;
+      min-width: 150px;
+      min-height: 150px;
+      position: absolute;
+      top: 5vh;
+      right: 2vw;
+      z-index: -1;
+      background-size: contain;
+      background-repeat: no-repeat;
+    }
+
+    .left-bot-image {
+      width: 30vw;
+      height: 30vw;
+      max-width: 500px;
+      max-height: 500px;
+      min-width: 200px;
+      min-height: 200px;
+      background-image: url("https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822220/Rectangle_xkipfl.png");
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      z-index: -1;
+      background-size: contain;
+      background-repeat: no-repeat;
+    }
+    .stars-container{
+        display: flex; 
+        gap: 1rem;
+         justify-content: space-around;
+        }
+
+    @media (max-width: 768px) {
+      .content-wrapper {
+        width: 100%;
+      }
+      .title {
+        font-size: 24px;
+        height: 60px;
+        background-color: #fff;
+        box-shadow: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+        border-radius: 0px 0px 45px 45px;
+        text-align: center;
+        border-bottom: 1px solid #000000;
+
+      }
+      .sub-content {
+        flex-direction: column;
+        align-items: center;
+      }
+      .image-placeholder {
+        width: 100%;
+        margin-top: 30px;
+      }
+      .greeting-title {
+        font-size: 20px;
+      }
+      .message {
+        font-size: 12px;
+      }
+      .text-content div[style*="display: flex"] {
+        flex-direction: column !important;
+        gap: 1rem !important;
+        justify-content: center !important;
+        align-items: center !important;
+      }
+      .text-content div[style*="display: flex"] img {
+        max-width: 120px;
+        height: auto;
+      }
+      .right-top-image {
+        width: 25vw;
+        height: 25vw;
+        max-width: 150px;
+        max-height: 150px;
+        min-width: 80px;
+        min-height: 80px;
+        top: 2vh;
+        right: 2vw;
+      }
+      .left-bot-image {
+        width: 40vw;
+        height: 40vw;
+        max-width: 200px;
+        max-height: 200px;
+        min-width: 100px;
+        min-height: 100px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      body {
+        padding: 10px;
+      }
+      .sub-content {
+        padding: 20px 15px;
+      }
+      .greeting-title {
+        font-size: 18px;
+      }
+      .text-content div[style*="display: flex"] {
+        flex-direction: column !important;
+        gap: 0.8rem !important;
+        justify-content: center !important;
+        align-items: center !important;
+      }
+      .text-content div[style*="display: flex"] img {
+        max-width: 100px;
+        height: auto;
+      }
+      .right-top-image {
+        width: 20vw;
+        height: 20vw;
+        max-width: 100px;
+        max-height: 100px;
+        min-width: 60px;
+        min-height: 60px;
+      }
+      .left-bot-image {
+        width: 35vw;
+        height: 35vw;
+        max-width: 150px;
+        max-height: 150px;
+        min-width: 80px;
+        min-height: 80px;
+      }
+      .stars-container{
+       width: 100%;
+       height: 50%;
+       flex-direction: row-reverse !important;
+       align-items: center;
+       justify-content: center;
+      }
+      .starss{
+       width: 150px;
+       height: auto;
+      }
+      .img-logo{
+        width: 40%;
+        height: 40%;
+      }
+     
+    }
+  </style>
+</head>
+<body style="background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822871/Group_89_h07jtf.png'); background-size: cover; background-position: center; background-repeat: no-repeat;">
+
+
+  <div>
+    <div style="text-align: center; margin-bottom: 20px;">
+      <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822222/logo_q1jtkx.png" alt="London Waste Management Logo" width="100px" height="auto"/>
+    </div>
+
+    <div class="content-wrapper">
+      <div class="content">
+        <div class="title">HOW DID WE DO</div>
+
+        <div class="sub-content">
+          <div class="text-content">
+            <div class="greeting-title">
+              Hi, <span style="color: black">Texty Text,</span>
+            </div>
+
+            <div class="message">
+              <span style="color: #8dc044">Thank you</span> for choosing
+              LWM for your recent removal and recycling collection.
+            </div>
+
+            <br />
+
+            <div class="message">
+              We would love it if you could help us and other customers by
+              rating your experience with us. It only takes a few clicks and
+              would be sincerely appreciated!
+            </div>
+          </div>
+
+          <div class="image-placeholder">
+            <!-- Optional image here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <br />
+
+    <div class="content-wrapper">
+      <div class="content">
+        <div class="sub-content">
+          <div class="text-content">
+            <div style="font-weight: 600" class="greeting-title">
+              How <span style="color: black">was your <br /><span class="greeting-title">E</span>xperience?</span>
+            </div>
+
+            <div style="font-weight: 500" class="message">
+              <span>Tap the </span><span style="color: #8dc044">stars</span> to rate us:
+            </div>
+
+            <hr />
+            <br />
+            <div class="stars-container">
+              <img class="img-logo" src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822224/Group66_ierctp.png" height="auto" width="100%" alt="" />
+              <div>
+               <a href="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751823067/S4_dtnt28.png" target="_blank"> <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751823067/S4_dtnt28.png" alt="" class="starss" /></a>              
+               <a href="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751823066/S4_1_moddjv.png" target="_blank"> <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751823066/S4_1_moddjv.png" alt="" class="starss" /></a>
+               <a href="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751823065/S4_2_h8ojkx.png" target="_blank"> <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751823065/S4_2_h8ojkx.png" alt="" class="starss" /></a>
+               <a href="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822984/S4_3_swjyj1.png" target="_blank"> <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822984/S4_3_swjyj1.png" alt="" class="starss" /></a>
+               <a href="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822984/S4_4_j5a6mt.png" target="_blank"> <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822984/S4_4_j5a6mt.png" alt="" class="starss" /></a>
+
+              </div>
+              <div class="logo-container">
+                <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751822220/LondonWasteManagementLogo_xfiduq.png" height="auto" width="100%" />
+              </div>
+            </div>
+          </div>
+
+        
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-contact">
+      London Waste Management |
+      <a href="mailto:hello@londonwastemanagement.com" class="contact-link">hello@londonwastemanagement.com</a>
+    </div>
+  </div>
+</body>
+</html>

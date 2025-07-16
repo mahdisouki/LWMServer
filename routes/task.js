@@ -237,5 +237,5 @@ router.get('/webhooks/payment/cancel', (req, res) => {
 
 router.post('/task/:taskId/send-booking-confirmation', taskCtrl.sendBookingConfirmation);
 router.post('/task/:taskId/send-invoice', taskCtrl.sendInvoice);
-
+router.post('/task/:taskId/send-waste-transfer-note', taskCtrl.sendWasteTransferNote);
 module.exports = router;

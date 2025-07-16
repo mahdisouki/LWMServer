@@ -165,27 +165,27 @@ const driverManagement = {
 
       // If user is a driver, get helper location
       if (type === 'Driver') {
-        if (!truck.helperId) {
-          return res
-            .status(404)
-            .json({ message: 'No helper assigned to this truck' });
-        }
+      if (!truck.helperId) {
+        return res
+          .status(404)
+          .json({ message: 'No helper assigned to this truck' });
+      }
 
-        const helper = await Helper.findById(truck.helperId);
-        if (!helper) {
-          return res.status(404).json({ message: 'Helper not found' });
-        }
+      const helper = await Helper.findById(truck.helperId);
+      if (!helper) {
+        return res.status(404).json({ message: 'Helper not found' });
+      }
 
-        if (!helper.location) {
-          return res
-            .status(404)
-            .json({ message: 'Location for this helper is not set' });
-        }
+      if (!helper.location) {
+        return res
+          .status(404)
+          .json({ message: 'Location for this helper is not set' });
+      }
 
-        res.status(200).json({
-          message: 'Helper location retrieved successfully',
-          location: helper.location,
-        });
+      res.status(200).json({
+        message: 'Helper location retrieved successfully',
+        location: helper.location,
+      });
       } 
       // If user is a helper, get driver location
       else if (type === 'Helper') {
@@ -259,7 +259,7 @@ const driverManagement = {
       // const tasks = await Task.find({
       //   _id: { $in: taskIdsForToday }
       // });
-      const tasks = await Task.find();
+         const tasks = await Task.find();
   
       res
         .status(200)
@@ -482,7 +482,7 @@ const driverManagement = {
 
       // Update the user's current job address based on type
       if (type === 'Driver') {
-        const driverUpdate = {
+      const driverUpdate = {
           currentJobAddress: currentTask.currentJobAddress,
         };
         await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
@@ -654,19 +654,19 @@ const driverManagement = {
     }
   },
 
-  rateTask: async (req, res) => {
+rateTask: async (req, res) => {
     const { taskId } = req.params;
     const { clientFeedback, clientFeedbackScale } = req.body;
-    const userId = req.user._id;
+    // const userId = req.user._id;
 
     try {
       // Get user info
-      const userInfo = await getUserModel(userId);
-      if (!userInfo) {
-        return res.status(404).json({ message: 'User not found' });
-      }
+      // const userInfo = await getUserModel(userId);
+      // if (!userInfo) {
+      //   return res.status(404).json({ message: 'User not found' });
+      // }
 
-      const { type } = userInfo;
+      // const { type } = userInfo;
 
       const task = await Task.findById(taskId);
       if (!task) {
@@ -679,11 +679,11 @@ const driverManagement = {
       task.taskStatus = "Completed"
 
       // Check if this is the first task completed by this client (using email)
-      const previousCompletedTasks = await Task.find({
-        email: task.email,
-        taskStatus: "Completed",
+    const previousCompletedTasks = await Task.find({
+      email: task.email,
+      taskStatus: "Completed",
         _id: { $ne: task._id }
-      });
+    });
 
       // Send review email
       await sendReviewRequestEmail({
@@ -694,7 +694,7 @@ const driverManagement = {
 
       await task.save();
       res.status(200).json({ 
-        message: `Task rated successfully by ${type}`, 
+        message: `Task rated successfully by `, 
         task,
         userType: type 
       });

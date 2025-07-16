@@ -16,6 +16,7 @@ const {
   calculateTotalPriceUpdate,
 } = require('../services/paymentService.js');
 const OrderLock = require('../models/Orderlock');
+const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
@@ -41,7 +42,7 @@ function validateBreakdown(breakdown) {
   if (
     !Array.isArray(breakdown) ||
     breakdown.some((item) => {
-      return isNaN(parseFloat(item.price)) && isNaN(parseFloat(item.amount));
+    return isNaN(parseFloat(item.price)) && isNaN(parseFloat(item.amount));
     })
   ) {
     console.error('Invalid breakdown: ', breakdown);
@@ -81,7 +82,7 @@ async function calculateTotalPrice({
       // Calculate base item subtotal
       let price = Number(standardItem.price);
       const quantity = Number(item.quantity) || 1;
-      
+
       // Always add position fee for standard items
       let positionFee = 0;
       if (item.Objectsposition === 'InsideWithDismantling') positionFee = 18;
@@ -108,8 +109,10 @@ async function calculateTotalPrice({
     subtotal -= percentageDiscount;
   }
 
-  // 4. Enforce minimum price (before VAT)
-  if (subtotal < 30) subtotal = 30;
+  // 4. Enforce minimum price (before VAT) - if under £30, make it £30
+  if (subtotal < 30) {
+    subtotal = 30;
+  }
 
   // 5. Add VAT (20%)
   const vat = subtotal * 0.2;
@@ -146,18 +149,18 @@ const taskCtrl = {
         customDiscountPercent, // NEW: from frontend
         discountType
       } = req.body;
-
+  
       let clientObjectPhotos = [];
       if (cloneClientObjectPhotos) {
         clientObjectPhotos = cloneClientObjectPhotos;
       } else if (req.files && req.files.length > 0) {
         clientObjectPhotos = req.files.map((file) => file.path);
       }
-
+  
       const taskDate = new Date(date);
-
+  
       // ... (blocking day and truck checks as before) ...
-
+  
       // Calculate price using new logic
       const { totalPrice, vat } = await calculateTotalPrice({
         standardItems,
@@ -166,14 +169,14 @@ const taskCtrl = {
         discountType,
         hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0
       });
-
+  
       // Prepare items array for DB (merge standard and custom)
       let items = [];
       if (standardItems && Array.isArray(standardItems)) {
         items.push(
           ...standardItems.map((item) => ({
-            standardItemId: item.standardItemId || null,
-            quantity: Number(item.quantity) || 1,
+          standardItemId: item.standardItemId || null,
+          quantity: Number(item.quantity) || 1,
             Objectsposition: item.Objectsposition || 'Outside',
             customPrice:
               item.customPrice !== undefined
@@ -185,14 +188,14 @@ const taskCtrl = {
       if (objects && Array.isArray(objects)) {
         items.push(
           ...objects.map((item) => ({
-            object: item.object || null,
-            quantity: Number(item.quantity) || 1,
-            price: Number(item.price) || 0,
+          object: item.object || null,
+          quantity: Number(item.quantity) || 1,
+          price: Number(item.price) || 0,
             Objectsposition: item.Objectsposition || 'Outside',
           })),
         );
       }
-
+  
       // Create the task
       const newTask = new Task({
         firstName,
@@ -218,7 +221,7 @@ const taskCtrl = {
         discountType,
         hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0
       });
-
+  
       await newTask.save();
       // ... (emit notification, etc.) ...
       res.status(201).json({
@@ -632,6 +635,12 @@ const taskCtrl = {
           console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
         }
         
+        // Apply minimum price (before VAT) - if under £30, make it £30
+        if (subtotal < 30) {
+          console.log('Applying minimum price adjustment: £' + subtotal + ' → £30');
+          subtotal = 30;
+        }
+        
         // Add VAT
         const vat = subtotal * 0.2;
         const totalPrice = subtotal + vat;
@@ -751,13 +760,13 @@ const taskCtrl = {
   processTaskPayment: async (req, res) => {
     const { taskId } = req.params;
     const { paymentType, paymentAmountType } = req.body; // Add paymentAmountType
-
+  
     try {
       const task = await Task.findById(taskId).populate('items.standardItemId');
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-
+  
       // Build breakdown array
       const selectedQuantities = {};
       task.items.forEach((item) => {
@@ -766,7 +775,7 @@ const taskCtrl = {
             item.quantity || 1;
         }
       });
-
+  
       const breakdown = task.items.map((item) => {
         const itemQuantity =
           selectedQuantities[item.standardItemId?._id?.toString()] ||
@@ -784,7 +793,7 @@ const taskCtrl = {
           Objectsposition: item.Objectsposition,
         };
       });
-
+  
       let basePrice = breakdown.reduce(
         (sum, item) => sum + item.price * item.quantity,
         0,
@@ -802,17 +811,22 @@ const taskCtrl = {
       ) {
         finalPrice *= 0.9;
       }
-      if (finalPrice < 30) finalPrice = 30;
+      
+      // Apply minimum price (before VAT) - if under £30, make it £30
+      if (finalPrice < 30) {
+        finalPrice = 30;
+      }
+      
       const vat = finalPrice * 0.2;
       finalPrice += vat;
-
+  
       // Prepare fullBreakdown for PayPal
       const fullBreakdown = [
         ...breakdown,
         { description: 'VAT (20%)', amount: vat.toFixed(2) },
         { description: 'Final Total Price', amount: finalPrice.toFixed(2) },
       ];
-
+  
       // --- NEW: Determine amount to pay based on paymentAmountType ---
       let amountToPay;
       if (paymentAmountType === 'deposit') {
@@ -842,9 +856,9 @@ const taskCtrl = {
         };
       }
       const amountInPence = Math.round(amountToPay * 100);
-
+  
       await task.save();
-
+  
       // --- Use amountToPay for Stripe/PayPal ---
       let paymentResult;
       switch (paymentType) {
@@ -875,7 +889,7 @@ const taskCtrl = {
                 paymentAmountType: paymentAmountType,
               },
             });
-
+  
             return res.json({
               message: 'Stripe payment initiated successfully',
               redirectUrl: session.url,
@@ -888,7 +902,7 @@ const taskCtrl = {
               error: error.message,
             });
           }
-
+  
         case 'paypal':
           paymentResult = await createPayPalOrder(
             amountInPence,
@@ -907,7 +921,7 @@ const taskCtrl = {
             paymentAmountType, // Return for frontend tracking
             breakdown: fullBreakdown,
           });
-
+  
         default:
           return res.status(400).json({ message: 'Invalid payment method' });
       }
@@ -927,7 +941,7 @@ const taskCtrl = {
       const paymentIntent = await stripe.paymentIntents.confirm(
         paymentIntentId,
         {
-          payment_method: paymentMethodId,
+        payment_method: paymentMethodId,
         },
       );
 
@@ -1110,7 +1124,16 @@ const taskCtrl = {
 
       let amountToPay;
       if (paymentType === 'deposit') {
-        amountToPay = task.paidAmount?.amount;
+        // Enforce minimum deposit of £36
+        amountToPay = Math.max(task.paidAmount?.amount || 0, 36);
+        if (!task.paidAmount || task.paidAmount.amount < 36) {
+          task.paidAmount = {
+            amount: 36,
+            method: 'online',
+            status: 'Not_Paid',
+          };
+          await task.save();
+        }
       } else if (paymentType === 'remaining') {
         amountToPay = task.remainingAmount?.amount;
       } else {
@@ -1201,12 +1224,16 @@ const taskCtrl = {
       
       validateBreakdown(breakdown);
 
+      // Debug log to confirm amountToPay and paymentType
+      console.log('amountToPay for payment link:', amountToPay, 'paymentType:', paymentType);
+      const orderNumber = task.orderNumber;
       // Generate payment links for the specified amount
       const stripeLink = await createStripePaymentLink(
         taskId,
         amountToPay,
         breakdown,
         paymentType,
+        orderNumber,
       );
       const paypalLink = await createPaypalPaymentLink(
         taskId,
@@ -1557,24 +1584,24 @@ const taskCtrl = {
 
   sendInvoice: async (req, res) => {
     const { taskId } = req.params;
-
+  
     try {
       const task = await Task.findById(taskId).populate('items.standardItemId');
       console.log('task', task.items);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-
+  
       // Ensure directory exists
       const dirPath = path.join(__dirname, '../generated');
       if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
-
+  
       const fileName = `invoice-${task._id}.pdf`;
       const filePath = path.join(dirPath, fileName);
-
+  
       // Generate the official invoice PDF
       await generateOfficialInvoicePDF(task, filePath);
-
+  
       // Email content in branded design
       const paidAmount = task.paidAmount?.amount || 0;
       const remainingAmount = task.totalPrice - paidAmount;
@@ -1582,86 +1609,64 @@ const taskCtrl = {
       const subtotalBeforeDiscount = task.totalPrice;
       const discountAmount =
         task.customDiscountPercent > 0
-          ? subtotalBeforeDiscount * (task.customDiscountPercent / 100)
-          : 0;
+      ? subtotalBeforeDiscount * (task.customDiscountPercent / 100)
+      : 0;
       const subtotal = subtotalBeforeDiscount - discountAmount;
-      const vat = subtotal * 0.2;
-      const total = subtotal + vat;
+    const vat = subtotal * 0.2;
+    const total = subtotal ;
       
-            const emailContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 100%; margin: auto; padding: 20px; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff'); background-size: cover; background-position: center; background-repeat: no-repeat; min-height: 100vh; position: relative;">
-          <div style="position: relative; z-index: 2;">
-            <div style="text-align: center; margin-bottom: 20px;">
-              <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="200" alt="London Waste Management"/>
-            </div>
+      // Read the template file
+      const templatePath = path.join(__dirname, '../public/templates/invoiceConfirmation.html');
+      let template = fs.readFileSync(templatePath, 'utf8');
+
+      // Replace template variables
+      template = template.replace('{{firstName}}', task.firstName);
+      template = template.replace('{{lastName}}', task.lastName);
+      template = template.replace('{{orderNumber}}', task.orderNumber);
+      template = template.replace('{{totalPrice}}', task.totalPrice.toFixed(2));
       
-            <div style="background: linear-gradient(to bottom, #ffffff, #dcedd6); color: #444; padding: 20px; text-align: center; border-radius: 0 0 30px 30px;">
-              <h2 style="margin: 0;">Invoice Confirmation</h2>
-            </div>
+      // Handle conditional content for partial payment
+      if (isPartialPaid) {
+        const paymentDetails = `
+          <p>Payment Details:</p>
+          <ul>
+            ${discountAmount > 0 ? `<li>Discount (${task.customDiscountPercent}%): -£${discountAmount.toFixed(2)}</li>` : ''}
+            <li>VAT (20%): £${vat.toFixed(2)}</li>
+            <li>Total Amount (Including VAT): £${total.toFixed(2)}</li>
+          </ul>
+          <p>Please settle the remaining balance at your earliest convenience.</p>`;
+        
+        template = template.replace('{{#if isPartialPaid}}', '');
+        template = template.replace('{{/if}}', '');
+        template = template.replace('{{#if hasDiscount}}', '');
+        template = template.replace('{{/if}}', '');
+        template = template.replace('{{customDiscountPercent}}', task.customDiscountPercent);
+        template = template.replace('{{discountAmount}}', discountAmount.toFixed(2));
+        template = template.replace('{{vat}}', vat.toFixed(2));
+        template = template.replace('{{total}}', total.toFixed(2));
+        
+        // Replace the conditional blocks with actual content
+        template = template.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}[\s\S]*?{{\/if}}/g, paymentDetails);
+      } else {
+        // Remove conditional blocks for non-partial payment
+        template = template.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}([\s\S]*?){{\/if}}/g, '$1');
+        template = template.replace(/{{#if hasDiscount}}[\s\S]*?{{\/if}}/g, '');
+      }
 
-            <div style="padding: 20px; background: rgba(255, 255, 255, 0.95); border-radius: 15px; margin-top: 20px;">
-              <div style="display: flex; align-items: flex-start;">
-                <div style="flex: 1;">
-                  <p style="font-size: 30px;">
-                    <span style="color: #8DC044; font-weight: bold;">Dear</span>
-                    <span style="font-weight: bold;">${task.firstName} ${task.lastName},</span>
-                  </p>
-
-                  <p>Thank you for choosing London Waste Management.</p>
-                  <p>Please find attached your invoice for Order <strong>#${
-                    task._id
-                  }</strong>.</p>
-                  
-                  ${
-                    isPartialPaid
-                      ? `<p>Payment Details:</p>
-                       <ul>
-                          <li>Total Amount (Before VAT): £${(
-                            subtotal + discountAmount
-                          ).toFixed(2)}</li>
-                          ${
-                            discountAmount > 0
-                              ? `<li>Discount (${
-                                  task.customDiscountPercent
-                                }%): -£${discountAmount.toFixed(2)}</li>`
-                              : ''
-                          }
-                          <li>VAT (20%): £${vat.toFixed(2)}</li>
-                          <li>Total Amount (Including VAT): £${total.toFixed(2)}</li>
-                       </ul>
-                       <p>Please settle the remaining balance at your earliest convenience.</p>`
-                      : `<p>Total Amount: <strong> £${task.totalPrice.toFixed(
-                          2,
-                        )} </strong> </p>`
-                  }
-         
-                  <p>Best regards,</p>
-                  <p style="color: #8dc044;">London Waste Management Department</p>
-                </div>
-                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750545550/uploads/mqqbsxjwlacqityvwlmf.png" 
-                     style="width: 370px; max-width: 100%; height: auto; border-radius: 4px; margin-left: 100px;">
-              </div>
-            </div>
-            
-            <footer style="font-size: 12px; color: #999; text-align: center; margin-top: 20px; background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 10px;">
-              <p>London Waste Management | <a href="mailto:hello@londonwastemanagement.com" style="color: #4A90E2; text-decoration: none;">hello@londonwastemanagement.com</a></p>
-            </footer>
-          </div>
-        </div>
-      `;
-
+      const emailContent = template;
+  
       // Send the email with the generated PDF as attachment
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: task.email,
-        subject: `Invoice for Order #${task._id}`,
+        subject: `Invoice for Order #${task.orderNumber}`,
         html: emailContent,
         attachments: [{ filename: fileName, path: filePath }],
       });
-
+  
       // Clean up
       fs.unlinkSync(filePath);
-
+  
       res.status(200).json({
         message: 'Invoice sent successfully',
         task,
@@ -1744,7 +1749,7 @@ const taskCtrl = {
 
     try {
       const lock = await OrderLock.findOne({ taskId }).populate('lockedBy');
-
+      
       if (!lock) {
         console.log('task is not locked');
         return res.json({
@@ -1787,7 +1792,7 @@ const taskCtrl = {
 
     try {
       const lock = await OrderLock.findOne({ taskId }).populate('lockedBy');
-
+      
       if (!lock) {
         return res.json({
           isLocked: false,
@@ -1813,6 +1818,17 @@ const taskCtrl = {
         message: 'Failed to get lock status',
         error: error.message,
       });
+    }
+  },
+
+  sendWasteTransferNote: async (req, res) => {
+    const { taskId } = req.params;
+    try {
+      await sendWasteTransferNoteEmail(taskId);
+      res.status(200).json({ message: 'Waste Transfer Note sent successfully' });
+    } catch (error) {
+      console.error('Error sending waste transfer note:', error);
+      res.status(500).json({ message: 'Failed to send waste transfer note', error: error.message });
     }
   },
 };

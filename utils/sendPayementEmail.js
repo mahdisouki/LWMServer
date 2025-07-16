@@ -117,7 +117,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
           <tr>
             <td style="padding:8px 12px;text-align:right;color:#8DC044;font-weight:bold;">Total :</td>
             <td style="padding:8px 12px;text-align:right;color:#8DC044;font-weight:bold;">£${Number(totall).toFixed(2)}</td>
-          </tr>
+        </tr>
         </table>
       </div>
       <div style="clear:both;"></div>
@@ -147,8 +147,8 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
       <div style="text-align: center; margin: 32px 0 18px 0;">
         <a href="${stripeLink}" style="background: #8DC044; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 600; margin-right: 12px; box-shadow:0 2px 8px #e0f2f1; transition: background 0.2s; display:inline-block;">Pay with Stripe</a>
         <a href="${paypalLink}" style="border:1px solid #8DC044;background:rgb(255, 255, 255); color: #8DC044; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 600; box-shadow:0 2px 8px #e0f2f1; transition: background 0.2s; display:inline-block;">Pay with Paypal</a>
-      </div>
-    `;
+          </div>
+        `;
 
     const mailOptions = {
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,

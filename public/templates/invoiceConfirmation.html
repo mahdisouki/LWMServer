@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>London Waste Management - Invoice Confirmation</title>
+  </head>
+  
+  <body>
+    <div style="font-family: Arial, sans-serif; max-width: 100%; margin: auto; padding: 20px; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff'); background-size: cover; background-position: center; background-repeat: no-repeat; position: relative;">
+      <div style="position: relative; z-index: 2;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="200" alt="London Waste Management"/>
+        </div>
+
+        <div style="background: linear-gradient(to bottom, #ffffff, #dcedd6); color: #444; padding: 20px; text-align: center; border-radius: 0 0 30px 30px;">
+          <h2 style="margin: 0;">Invoice Confirmation</h2>
+        </div>
+        
+        <div style="padding: 20px; background: rgba(255, 255, 255, 0.95); border-radius: 15px; margin-top: 20px;">
+          <img class="img-email" src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750545550/uploads/mqqbsxjwlacqityvwlmf.png" 
+        style="width: 370px; max-width: 100%; height: auto; border-radius: 4px;">
+          <div style="display: flex; align-items: flex-start;">
+            <div style="flex: 1;">
+              <p style="font-size: 30px;">
+                <span style="color: #8DC044 !important; font-weight: bold;">Dear</span>
+                <span style="font-weight: bold;">{{firstName}} {{lastName}},</span>
+              </p>
+
+              <p>Thank you for choosing London Waste Management.</p>
+              <p>Please find attached your invoice for Order <strong>#{{orderNumber}}</strong>.</p>
+              
+              {{#if isPartialPaid}}
+                <p>Payment Details:</p>
+                <ul>
+                  {{#if hasDiscount}}
+                    <li>Discount ({{customDiscountPercent}}%): -£{{discountAmount}}</li>
+                  {{/if}}
+                  <li>VAT (20%): £{{vat}}</li>
+                  <li>Total Amount (Including VAT): £{{total}}</li>
+                </ul>
+                <p>Please settle the remaining balance at your earliest convenience.</p>
+              {{else}}
+                <p>Total Amount: <strong>£{{totalPrice}}</strong></p>
+              {{/if}}
+
+              <p>Best regards,</p>
+              <p style="color: #8dc044 !important;">London Waste Management Department</p>
+            </div>
+            
+          </div>
+        </div>
+
+        <footer style="font-size: 12px; color: #999; text-align: center; margin-top: 20px; background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 10px;">
+          <p>London Waste Management | <a href="mailto:hello@londonwastemanagement.com" style="color: #4A90E2; text-decoration: none;">hello@londonwastemanagement.com</a></p>
+        </footer>
+      </div>
+    </div>
+  </body>
+</html>

@@ -133,7 +133,7 @@ const gmailCtrl = {
         console.log('Controller - Missing text');
         return res.status(400).json({ message: 'Reply text is required' });
       }
-      
+
       console.log('Controller - Calling replyToEmail service...');
       const result = await replyToEmail(adminId, emailId, text);
       console.log('Controller - Reply successful:', result);
@@ -158,7 +158,7 @@ const gmailCtrl = {
           suggestion: 'Use the send email endpoint to compose a new email'
         });
       }
-      
+
       // Check for Gmail API specific errors
       if (err.response) {
         console.error('Controller - Gmail API Error:', {
@@ -359,7 +359,7 @@ const gmailCtrl = {
           try {
             if (fs.existsSync(file.path)) {
               fs.unlinkSync(file.path);
-            }
+  }
           } catch (cleanupError) {
             console.error('Error cleaning up file on error:', file.path, cleanupError);
           }

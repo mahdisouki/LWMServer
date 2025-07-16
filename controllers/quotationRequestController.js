@@ -40,22 +40,22 @@ const quotationRequestController = {
                     contentType: file.mimetype,
                 });
     
-                // const aiResponse = await axios.post('http://127.0.0.1:5000/predict', formData, {
-                //     headers: {
-                //         ...formData.getHeaders(),
-                //     },
-                // });
+                const aiResponse = await axios.post('http://147.93.85.229/predict', formData, {
+                    headers: {
+                        ...formData.getHeaders(),
+                    },
+                });
     
-                // if (aiResponse.data && aiResponse.data.predictions) {
-                //     predictions.push(...aiResponse.data.predictions);
-                // }
+                if (aiResponse.data && aiResponse.data.predictions) {
+                    predictions.push(...aiResponse.data.predictions);
+                }
             }
     
             // Transform AI predictions into estimatedPrices format
-            // const estimatedPrices = predictions.map(pred => ({
-            //     name: pred.classe,
-            //     price: pred.price_inc_vat.toString(),
-            // }));
+            const estimatedPrices = predictions.map(pred => ({
+                name: pred.classe,
+                price: pred.price_inc_vat.toString(),
+            }));
     
             const newQuotation = new QuotationRequest({
                 Name: `${firstName} ${lastName}`,
@@ -67,7 +67,7 @@ const quotationRequestController = {
                 postcode,
                 comments,
                 items,
-                // estimatedPrices,
+                estimatedPrices,
             });
             sendQuoteRequestConfirmationEmail(email)
             await newQuotation.save();
