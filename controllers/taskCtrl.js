@@ -144,6 +144,7 @@ const taskCtrl = {
         objects, // Custom items (optional)
         items,   // Standard items (from frontend)
         paymentStatus,
+        paymentMethod,
         cloneClientObjectPhotos,
         postcode,
         customDiscountPercent,
@@ -216,6 +217,7 @@ const taskCtrl = {
         paymentStatus,
         billingAddress,
         collectionAddress,
+        paymentMethod,
         clientObjectPhotos,
         totalPrice,
         items: allItems,
