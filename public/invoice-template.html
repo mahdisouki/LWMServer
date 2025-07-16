@@ -214,13 +214,18 @@
           </div>
           <div style="display: flex; align-items: center; gap: 8px">
             <img src="{{emailIcon}}" width="14" />
-            <strong>Billing Address:</strong> {{billingAddress}} |  <strong>Phone:</strong> {{phone}}
+            <strong>Business Name:</strong> {{businessName}} 
+           
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <img src="{{emailIcon}}" width="14" />
+            <strong>Billing Address:</strong> {{billingAddress}} |  <strong>Phone1:</strong> {{phone}} | <strong>Phone2:</strong> {{phone2}}
           </div>
         </div>
         <div style="display: flex; gap: 20px">
           <div class="card" style="flex: 1">
-            <strong>Invoice Number:</strong> {{invoiceNumber}}<br />
-            <strong>Invoice Date:</strong> {{invoiceDate}}
+            <strong>Payment Method :</strong> {{paymentMethod}}<br />
+            <strong>Notes:</strong> {{additionalNotes}}
           </div>
           <div class="card" style="flex: 1">
             <strong>Order Number:</strong> {{orderNumber}}<br />
@@ -270,14 +275,14 @@
         style="
           display: flex;
           justify-content: row;
-          gap: 280px;
+          gap: 200px;
           padding: 10px;
           align-items: flex-start;
           flex-wrap: wrap;
         "
       >
         <div class="datetime-box">
-          <div><img src="{{calendarIcon}}" /> {{serviceDate}}</div>
+          <div><img src="{{calendarIcon}}" /> <strong>collection date:</strong> {{serviceDate}}</div>
           <hr
             style="
               border: none;
@@ -286,7 +291,16 @@
               margin: 10px 0;
             "
           />
-          <div><img src="{{clockIcon}}" /> {{available}}</div>
+          <div><img src="{{clockIcon}}" /> <strong>time slot:</strong> {{available}}</div>
+          <hr
+          style="
+            border: none;
+            height: 1px;
+            background: #8dc044;
+            margin: 10px 0;
+          "
+        />
+          <div><img src="{{clockIcon}}" /> <strong>collection address:</strong> {{collectionAddress}}</div>
         </div>
 
         <div class="summary-box">

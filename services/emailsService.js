@@ -274,12 +274,15 @@ module.exports = {
       billingAddress: task.billingAddress,
       email: task.email,
       phone: task.phoneNumber,
+      phone2: task.phoneNumber2,
       invoiceNumber: task.orderNumber,
       orderNumber: task.orderNumber,
       invoiceDate: task.createdAt?.toDateString(),
       orderDate: task.date?.toDateString(),
       serviceDate: new Date(task.date).toLocaleDateString('en-GB'),
-      available: task.available?.replace(/_/g, ' ') || '',
+      available: task.available === 'AnyTime' ? 'Any time (6:30am to 8:30pm)' : 
+      task.available === '7am-12pm' ? 'Morning (7am to 12pm)' :
+      task.available === '12pm-5pm' ? 'Afternoon (12pm to 5pm)' : task.available,
       itemRows,
       subtotal: (subtotal || 0).toFixed(2),
       vat: (vat || 0).toFixed(2),
@@ -287,7 +290,10 @@ module.exports = {
       hasDiscount: task.hasDiscount,
       discountType: task.discountType || 'percentage',
       customDiscountPercent: (task.customDiscountPercent || 0).toFixed(2),
-
+      paymentMethod: task.paymentMethod,
+      additionalNotes: task.additionalNotes,
+      privateNotes: task.privateNotes,
+      businessName: task.bussinessName,
       // Discount display logic based on discount type
       showDiscountRow:
         task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
@@ -605,20 +611,31 @@ module.exports = {
     template = template.replace('{{lastName}}', task.lastName);
     template = template.replace('{{orderNumber}}', task.orderNumber);
     template = template.replace('{{date}}', task.date.toLocaleDateString('en-GB'));
-    template = template.replace('{{available}}', task.available === 'AnyTime' ? 'anytime (7am to 8pm)' : 
+    template = template.replace('{{available}}', task.available === 'AnyTime' ? 'anytime (6:30am to 8:30pm)' : 
       task.available === '7am-12pm' ? 'morning (7am to 12pm)' :
       task.available === '12pm-5pm' ? 'afternoon (12pm to 5pm)' : task.available);
+    template = template.replace('{{businessName}}', task.bussinessName);
     template = template.replace('{{collectionAddress}}', task.collectionAddress);
     
     // Inline the CSS into the HTML
     const htmlContent = template.replace('</head>', `<style>${css}</style></head>`);
+
+    // Generate invoice PDF
+    const dirPath = path.join(__dirname, '../generated');
+    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
+    const fileName = `invoice-${task.orderNumber}.pdf`;
+    const filePath = path.join(dirPath, fileName);
+    await module.exports.generateOfficialInvoicePDF(task, filePath);
 
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
       subject: `Booking Confirmation - Order #${task.orderNumber}`,
       html: htmlContent,
+      attachments: [{ filename: fileName, path: filePath }]
     });
+
+    fs.unlinkSync(filePath);
   },
   sendRefundEmail,
 };
