@@ -605,7 +605,9 @@ module.exports = {
     template = template.replace('{{lastName}}', task.lastName);
     template = template.replace('{{orderNumber}}', task.orderNumber);
     template = template.replace('{{date}}', task.date.toLocaleDateString('en-GB'));
-    template = template.replace('{{available}}', task.available.replace(/_/g, ' '));
+    template = template.replace('{{available}}', task.available === 'AnyTime' ? 'anytime (7am to 8pm)' : 
+      task.available === '7am-12pm' ? 'morning (7am to 12pm)' :
+      task.available === '12pm-5pm' ? 'afternoon (12pm to 5pm)' : task.available);
     template = template.replace('{{collectionAddress}}', task.collectionAddress);
     
     // Inline the CSS into the HTML
