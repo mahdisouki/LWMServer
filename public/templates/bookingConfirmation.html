@@ -38,24 +38,24 @@
           <!-- Text Content -->
           <div style="text-align: left;">
             <p style="font-size: 24px; margin-bottom: 20px;">
-              <span style="color: #6dc24b; font-weight: bold;">Hi</span>
+              <span style="color: #000; font-weight: bold;">Hi</span>
               <span style="font-weight: bold;"> {{firstName}} {{lastName}},</span>
             </p>
 
             <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;">Thank you for booking with London Waste Management.</p>
 
             <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;">We have successfully received your order 
-              <strong style="color: #00b300;">#{{orderNumber}}</strong> scheduled on 
+              <strong style="color: #000;">#{{orderNumber}}</strong> scheduled on 
               <strong>{{date}}</strong> during 
-              <strong>{{available}}</strong>.
+              <strong>{{available}}{{#if available}} {{#ifEquals available "AnyTime"}}(7am to 5pm){{/ifEquals}}{{#ifEquals available "7am-12pm"}}(Morning){{/ifEquals}}{{#ifEquals available "12pm-5pm"}}(Afternoon){{/ifEquals}}{{/if}}</strong>.
             </p>
 
             <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;"><strong>Collection Address:</strong> 
-              <span style="color: #6dc24b;">{{collectionAddress}}</span>
+              <span style="color: #000;">{{collectionAddress}}</span>
             </p>
 
             <p style="font-size: 16px; line-height: 1.5; margin-bottom: 15px;">If you have any question feel free to contact us at 
-              <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a><br>
+              <a href="mailto:hello@londonwastemanagement.com" style="color:#000 ;">hello@londonwastemanagement.com</a><br>
               or call us on <strong>02030971517</strong>.
             </p>
 
@@ -66,7 +66,7 @@
         <!-- Footer Section -->
         <div style="padding: 15px 20px; font-size: 12px; text-align: center; color: #666; border-top: 1px solid #eee;">
           London Waste Management |
-          <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a>
+          <a href="mailto:hello@londonwastemanagement.com" style="color: #000;">hello@londonwastemanagement.com</a>
         </div>
       </div>
     </div>

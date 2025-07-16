@@ -568,7 +568,7 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      console.log(req.body.items);
+      console.log("dddddddddddddddddddddddddddddddddddddddddd",req.body.date);
       const oldTask = await Task.findById(taskId);
       console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh');
       if (!oldTask) {
