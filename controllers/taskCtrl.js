@@ -147,12 +147,15 @@ const taskCtrl = {
         cloneClientObjectPhotos,
         postcode,
         customDiscountPercent,
+        additionalNotes,
+        privateNotes,
         discountType
       } = req.body;
   
       // For debugging: see what you get from frontend
       console.log('Received items:', req.body.items);
-  
+      console.log("additionalNotes",additionalNotes);
+      console.log("privateNotes",privateNotes);
       let clientObjectPhotos = [];
       if (cloneClientObjectPhotos) {
         clientObjectPhotos = cloneClientObjectPhotos;
@@ -220,7 +223,9 @@ const taskCtrl = {
         postcode,
         customDiscountPercent,
         discountType,
-        hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0
+        hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0,
+        additionalNotes,
+        privateNotes,
       });
   
       await newTask.save();
@@ -571,6 +576,8 @@ const taskCtrl = {
       console.log("dddddddddddddddddddddddddddddddddddddddddd",req.body.date);
       const oldTask = await Task.findById(taskId);
       console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh');
+      console.log("additionalNotes",updates.additionalNotes);
+      console.log("privateNotes",updates.privateNotes);
       if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
       }

@@ -129,6 +129,7 @@ const taskSchema = new Schema(
     customDiscountPercent: { type: Number, default: 0 },
     email: { type: String },
     additionalNotes: { type: String, required: false },
+    privateNotes: { type: String },
     itemDescription: { type: String, required: false },
     clientFeedback: { type: String },
     clientFeedbackScale: { type: Number },
