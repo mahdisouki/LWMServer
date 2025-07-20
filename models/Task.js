@@ -143,6 +143,27 @@ const taskSchema = new Schema(
   },
   { timestamps: true }
 );
+// Add a pre-save hook to clean up empty items
+taskSchema.pre('save', function(next) {
+  // Filter out items where both standardItemId is null and object is empty
+  this.items = this.items.filter(item => {
+    return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
+  });
+  next();
+});
+// Add pre-findOneAndUpdate middleware to clean up empty items
+taskSchema.pre('findOneAndUpdate', function(next) {
+  const update = this.getUpdate();
+  
+  // Check if items array is being updated
+  if (update.$set && update.$set.items) {
+    // Filter out items where both standardItemId is null and object is empty
+    update.$set.items = update.$set.items.filter(item => {
+      return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
+    });
+  }
+  next();
+});
 
 // Add pre-save middleware to auto-increment order number
 taskSchema.pre('save', async function(next) {

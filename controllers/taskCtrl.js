@@ -196,6 +196,7 @@ const taskCtrl = {
             object: item.object || null,
             quantity: Number(item.quantity) || 1,
             price: Number(item.price) || 0,
+            customPrice: item.customPrice !== undefined ? Number(item.customPrice) : undefined,
             Objectsposition: item.Objectsposition || 'Outside',
           }))
         );
@@ -575,7 +576,7 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      console.log("dddddddddddddddddddddddddddddddddddddddddd",req.body.date);
+      console.log("dddddddddddddddddddddddddddddddddddddddddd",req.body);
       const oldTask = await Task.findById(taskId);
       console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh');
       console.log("additionalNotes",updates.additionalNotes);
@@ -586,6 +587,41 @@ const taskCtrl = {
 
       // If items are being updated, recalculate totalPrice
       if (updates.items) {
+        // Clean and filter items
+        updates.items = updates.items.map(item => {
+          // Convert empty string standardItemId to null
+          if (item.standardItemId === '') {
+            item.standardItemId = null;
+          }
+          return item;
+        }).filter(item => {
+          // Keep items that have either:
+          // 1. A valid standardItemId, or
+          // 2. A non-empty object attribute (for custom items)
+          return (item.standardItemId && 
+                 typeof item.standardItemId === 'string' && 
+                 item.standardItemId.trim() !== '' && 
+                 mongoose.Types.ObjectId.isValid(item.standardItemId)) ||
+                 (item.object && item.object.trim() !== '');
+        });
+        
+        // Also handle objects array (custom items) if present
+        if (updates.objects && Array.isArray(updates.objects)) {
+          const customItems = updates.objects.map(obj => ({
+            standardItemId: null, // Custom items don't have standardItemId
+            object: obj.object,
+            Objectsposition: obj.Objectsposition || 'Outside',
+            quantity: Number(obj.quantity) || 1,
+            customPrice: obj.customPrice !== undefined ? Number(obj.customPrice) : undefined,
+            price: Number(obj.price) || 0
+          }));
+          
+          // Merge items and custom items
+          updates.items = [...updates.items, ...customItems];
+        }
+        
+        console.log('Final items to save:', updates.items);
+        
         // Save the new items first
         await Task.findByIdAndUpdate(taskId, {
           $set: { items: updates.items },
@@ -600,16 +636,22 @@ const taskCtrl = {
         // Calculate subtotal with discount handling
         for (const item of populatedTask.items) {
           let price = 0;
+          const isCustomItem = !item.standardItemId; // Check if it's a custom item
+          
           if (item.standardItemId && item.standardItemId.price) {
             price = Number(item.standardItemId.price);
           } else if (item.price) {
             price = Number(item.price);
           }
           const quantity = Number(item.quantity) || 1;
+          
+          // Only apply position fees to standard items (not custom items)
           let positionFee = 0;
-          if (item.Objectsposition === 'InsideWithDismantling')
-            positionFee = 18;
-          else if (item.Objectsposition === 'Inside') positionFee = 6;
+          if (!isCustomItem) {
+            if (item.Objectsposition === 'InsideWithDismantling')
+              positionFee = 18;
+            else if (item.Objectsposition === 'Inside') positionFee = 6;
+          }
           
           const itemSubtotal = price * quantity + positionFee;
           
@@ -1605,7 +1647,7 @@ const taskCtrl = {
       const dirPath = path.join(__dirname, '../generated');
       if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
   
-      const fileName = `invoice-${task._id}.pdf`;
+      const fileName = `invoice-${task.orderNumber}.pdf`;
       const filePath = path.join(dirPath, fileName);
   
       // Generate the official invoice PDF

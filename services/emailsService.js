@@ -177,12 +177,16 @@ module.exports = {
 
     // Calculate subtotal and handle discounts based on discountType
     task.items.forEach((item) => {
-      const itemPrice = item.standardItemId?.price * item.quantity || 0;
+      // For custom items, use item.price; for standard items, use standardItemId.price
+      const itemPrice = item.standardItemId 
+        ? (item.standardItemId.price * item.quantity || 0)
+        : (item.price * item.quantity || 0);
+        
       const positionPrice =
         item.Objectsposition === 'InsideWithDismantling'
-          ? item.standardItemId?.insideWithDismantlingPrice || 0
+          ? (item.standardItemId?.insideWithDismantlingPrice || 0)
           : item.Objectsposition === 'Inside'
-          ? item.standardItemId?.insidePrice || 0
+          ? (item.standardItemId?.insidePrice || 0)
           : 0;
 
       const itemSubtotal = itemPrice + positionPrice;
@@ -217,12 +221,16 @@ module.exports = {
     
     const itemRows = task.items
       .map((item) => {
-        const itemPrice = item.standardItemId?.price * item.quantity || 0;
+        // For custom items, use item.price; for standard items, use standardItemId.price
+        const itemPrice = item.standardItemId 
+          ? (item.standardItemId.price * item.quantity || 0)
+          : (item.price * item.quantity || 0);
+          
         const positionPrice =
           item.Objectsposition === 'InsideWithDismantling'
-            ? item.standardItemId?.insideWithDismantlingPrice || 0
+            ? (item.standardItemId?.insideWithDismantlingPrice || 0)
             : item.Objectsposition === 'Inside'
-            ? item.standardItemId?.insidePrice || 0
+            ? (item.standardItemId?.insidePrice || 0)
             : 0;
 
         const itemSubtotal = itemPrice + positionPrice;
@@ -240,6 +248,11 @@ module.exports = {
         const hasCustomPrices = task.items.some(item => item.customPrice);
         const showDiscountColumn = task.hasDiscount && task.discountType === "perItem" && hasCustomPrices;
         
+        // Get the correct price for display
+        const displayPrice = item.standardItemId 
+          ? (item.standardItemId.price || 0)
+          : (item.price || 0);
+          
         if (showDiscountColumn) {
           return `
           <tr>
@@ -247,8 +260,8 @@ module.exports = {
               item.standardItemId?.itemName || item.object || 'Unnamed Item'
             }</td>
             <td>${item.quantity}</td>
-            <td>£${(item.standardItemId?.price || 0).toFixed(2)}</td>
-            <td>£${item.customPrice ? discountedPrice.toFixed(2) : (item.standardItemId?.price || 0).toFixed(2)}</td>
+            <td>£${displayPrice.toFixed(2)}</td>
+            <td>£${item.customPrice ? discountedPrice.toFixed(2) : displayPrice.toFixed(2)}</td>
             <td>${item.Objectsposition}</td>
             <td>£${positionPrice.toFixed(2)}</td>
             <td>£${finalItemTotal.toFixed(2)}</td>
@@ -260,7 +273,7 @@ module.exports = {
               item.standardItemId?.itemName || item.object || 'Unnamed Item'
             }</td>
             <td>${item.quantity}</td>
-            <td>£${(item.standardItemId?.price || 0).toFixed(2)}</td>
+            <td>£${displayPrice.toFixed(2)}</td>
             <td>${item.Objectsposition}</td>
             <td>£${positionPrice.toFixed(2)}</td>
             <td>£${finalItemTotal.toFixed(2)}</td>
@@ -277,8 +290,8 @@ module.exports = {
       phone2: task.phoneNumber2,
       invoiceNumber: task.orderNumber,
       orderNumber: task.orderNumber,
-      invoiceDate: task.createdAt?.toDateString(),
-      orderDate: task.date?.toDateString(),
+      invoiceDate: task.createdAt ? new Date(task.createdAt).toLocaleDateString('en-GB') : '',
+      orderDate: task.date ? new Date(task.date).toLocaleDateString('en-GB') : '',
       serviceDate: new Date(task.date).toLocaleDateString('en-GB'),
       available: task.available === 'AnyTime' ? 'Any time (6:30am to 8:30pm)' : 
       task.available === '7am-12pm' ? 'Morning (7am to 12pm)' :
@@ -294,6 +307,12 @@ module.exports = {
       additionalNotes: task.additionalNotes,
       privateNotes: task.privateNotes,
       businessName: task.bussinessName,
+      collectionAddress: task.collectionAddress,
+      // Payment status for stamps
+      paymentStatusUnpaid: (task.paymentStatus === 'Paid' || 
+        (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid')) ? 'block' : 'none',
+      paymentStatusPaid: (task.paymentStatus !== 'Paid' && 
+        (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid')) ? 'block' : 'none',
       // Discount display logic based on discount type
       showDiscountRow:
         task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0

@@ -168,9 +168,40 @@
         color: #000;
         border-radius: 0 0 12px 12px;
       }
+
+      .payment-stamp {
+        position: absolute;
+        top: 20%;
+        left: 20%;
+        transform: translate(-50%, -50%) rotate(-15deg);
+        z-index: 1000;
+        opacity: 0.8;
+        pointer-events: none;
+      }
+
+      .payment-stamp img {
+        width: 200px;
+        height: auto;
+      }
+
+      .stamp-paid {
+        display: none;
+      }
+
+      .stamp-unpaid {
+        display: none;
+      }
     </style>
   </head>
   <body>
+    <!-- Payment Status Stamps -->
+    <div class="payment-stamp stamp-paid" style="display: {{paymentStatusPaid}};">
+      <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1752858987/pngwing.com_dnvshv.png" alt="PAID" />
+    </div>
+    <div class="payment-stamp stamp-unpaid" style="display: {{paymentStatusUnpaid}};">
+      <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1752858987/aaz_ehe1nc.png" alt="NOT PAID" />
+    </div>
+
     <div class="header">
       <img src="{{logoPath}}" width="150" alt="Logo" />
       <img
@@ -275,14 +306,14 @@
         style="
           display: flex;
           justify-content: row;
-          gap: 200px;
+          gap: 100px;
           padding: 10px;
           align-items: flex-start;
           flex-wrap: wrap;
         "
       >
         <div class="datetime-box">
-          <div><img src="{{calendarIcon}}" /> <strong>collection date:</strong> {{serviceDate}}</div>
+          <div><img src="{{calendarIcon}}" /> <strong>Collection date:</strong> {{serviceDate}}</div>
           <hr
             style="
               border: none;
@@ -291,7 +322,7 @@
               margin: 10px 0;
             "
           />
-          <div><img src="{{clockIcon}}" /> <strong>time slot:</strong> {{available}}</div>
+          <div><img src="{{clockIcon}}" /> <strong>Time slot:</strong> {{available}}</div>
           <hr
           style="
             border: none;
@@ -300,7 +331,7 @@
             margin: 10px 0;
           "
         />
-          <div><img src="{{clockIcon}}" /> <strong>collection address:</strong> {{collectionAddress}}</div>
+          <div><img src="{{clockIcon}}" /> <strong>Collection address:</strong> {{collectionAddress}}</div>
         </div>
 
         <div class="summary-box">

@@ -136,7 +136,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     // Task details with green icons
     const taskDetailsHtml = `
       <ul style="padding-left: 0; list-style: none; margin: 0 0 18px 0;">
-        <li style="margin-bottom: 6px;"><span style="color:#8DC044;font-size:18px;vertical-align:middle;">●</span> <strong>Date :</strong> ${new Date(taskDetails.date).toLocaleDateString()}</li>
+        <li style="margin-bottom: 6px;"><span style="color:#8DC044;font-size:18px;vertical-align:middle;">●</span> <strong>Date :</strong> ${new Date(taskDetails.date).toLocaleDateString('en-GB')}</li>
         <li style="margin-bottom: 6px;"><span style="color:#8DC044;font-size:18px;vertical-align:middle;">●</span> <strong>Available Time Slot:</strong> ${taskDetails.available}</li>
         <li><span style="color:#8DC044;font-size:18px;vertical-align:middle;">●</span> <strong>Additional Notes:</strong> ${taskDetails.additionalNotes || "N/A"}</li>
       </ul>
@@ -145,8 +145,8 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     // Buttons (green, rounded, modern)
     const buttonsHtml = `
       <div style="text-align: center; margin: 32px 0 18px 0;">
-        <a href="${stripeLink}" style="background: #8DC044; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 600; margin-right: 12px; box-shadow:0 2px 8px #e0f2f1; transition: background 0.2s; display:inline-block;">Pay with Stripe</a>
-        <a href="${paypalLink}" style="border:1px solid #8DC044;background:rgb(255, 255, 255); color: #8DC044; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 600; box-shadow:0 2px 8px #e0f2f1; transition: background 0.2s; display:inline-block;">Pay with Paypal</a>
+        <a href="${stripeLink}" style="background: #8DC044; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 600; margin-right: 12px; box-shadow:0 2px 8px #e0f2f1; transition: background 0.2s; display:inline-block; margin:10px; width: 200px; text-align: center;">Pay with Credit Card</a>
+        <a href="${paypalLink}" style="border:1px solid #8DC044;background:rgb(255, 255, 255); color: #8DC044; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 600; box-shadow:0 2px 8px #e0f2f1; transition: background 0.2s; display:inline-block; width: 200px; text-align: center;">Pay with Paypal</a>
           </div>
         `;
 
@@ -155,7 +155,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         to: customerEmail,
         subject: `${getPaymentTypeDescription(paymentType)} Request for Task #${taskDetails.orderNumber}`,
         html: `
-        <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 32px auto; padding: 0; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff'); background-size: cover; background-position: center; background-repeat: no-repeat; border-radius: 18px; box-shadow: 0 4px 24px #e8f5e9; border: 1.5px solid #e0e0e0;">
+        <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 32px auto; padding: 0; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff'); background-size: cover; background-position: center; background-repeat: no-repeat; border-radius: 18px; box-shadow: 0 4px 24px #e8f5e9; border: 1.5px solid #e0e0e0;background-color:rgb(255, 255, 255);">
             <div style="background: #ffffff43; border-top-left-radius: 18px; border-top-right-radius: 18px; padding: 32px 32px 18px 32px; border-bottom: 1.5px solid #e0e0e0;">
                 <div style="text-align: center; margin-bottom: 18px;">
                     <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/logo_cr9bor.png" width="140" alt="London Waste Management" style="display:block;margin:auto;"/>
