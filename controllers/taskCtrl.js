@@ -191,6 +191,7 @@ const taskCtrl = {
       }
       // If you want to keep supporting "objects" as a separate array, merge them too:
       if (objects && Array.isArray(objects)) {
+        console.log("objects",objects);
         allItems.push(
           ...objects.map((item) => ({
             object: item.object || null,
@@ -701,6 +702,23 @@ const taskCtrl = {
         console.log('Calculated totalPrice with VAT:', totalPrice);
         
         updates.totalPrice = totalPrice;
+      }
+      
+      // Before saving or updating a task, sanitize customPrice for all items
+      if (updates.items) {
+        updates.items = updates.items.map(item => {
+          if (
+            item.customPrice === '' ||
+            item.customPrice === null ||
+            typeof item.customPrice === 'undefined' ||
+            isNaN(Number(item.customPrice))
+          ) {
+            delete item.customPrice;
+          } else {
+            item.customPrice = Number(item.customPrice);
+          }
+          return item;
+        });
       }
       
       console.log(updates.totalPrice); // Update the task
