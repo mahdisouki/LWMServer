@@ -17,7 +17,9 @@ const {
 } = require('../services/paymentService.js');
 const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
+const loggingService = require('../services/loggingService');
 
+const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
@@ -36,13 +38,12 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASSWORD,
   },
 });
-const loggingService = require('../services/loggingService');
 
 function validateBreakdown(breakdown) {
   if (
     !Array.isArray(breakdown) ||
     breakdown.some((item) => {
-    return isNaN(parseFloat(item.price)) && isNaN(parseFloat(item.amount));
+      return isNaN(parseFloat(item.price)) && isNaN(parseFloat(item.amount));
     })
   ) {
     console.error('Invalid breakdown: ', breakdown);
@@ -57,7 +58,7 @@ async function calculateTotalPrice({
   objects = [],
   customDiscountPercent,
   discountType,
-  hasDiscount
+  hasDiscount,
 }) {
   let subtotal = 0;
 
@@ -87,24 +88,32 @@ async function calculateTotalPrice({
       let positionFee = 0;
       if (item.Objectsposition === 'InsideWithDismantling') positionFee = 18;
       else if (item.Objectsposition === 'Inside') positionFee = 6;
-      
+
       const itemSubtotal = price * quantity + positionFee;
-      
+
       // Handle item-specific discount if discountType is "perItem"
       let finalItemTotal = itemSubtotal;
-      if (hasDiscount && discountType === "perItem" && 
-          typeof item.customPrice !== 'undefined' && !isNaN(Number(item.customPrice))) {
+      if (
+        hasDiscount &&
+        discountType === 'perItem' &&
+        typeof item.customPrice !== 'undefined' &&
+        !isNaN(Number(item.customPrice))
+      ) {
         finalItemTotal = Number(item.customPrice) * quantity;
       }
-      
+
       subtotal += finalItemTotal;
     }
   }
 
   // 3. Apply percentage discount if discountType is "percentage"
-  if (hasDiscount && discountType === "percentage" && 
-      typeof customDiscountPercent !== 'undefined' && 
-      !isNaN(customDiscountPercent) && customDiscountPercent > 0) {
+  if (
+    hasDiscount &&
+    discountType === 'percentage' &&
+    typeof customDiscountPercent !== 'undefined' &&
+    !isNaN(customDiscountPercent) &&
+    customDiscountPercent > 0
+  ) {
     const percentageDiscount = (subtotal * customDiscountPercent) / 100;
     subtotal -= percentageDiscount;
   }
@@ -142,7 +151,7 @@ const taskCtrl = {
         billingAddress,
         collectionAddress,
         objects, // Custom items (optional)
-        items,   // Standard items (from frontend)
+        items, // Standard items (from frontend)
         paymentStatus,
         paymentMethod,
         cloneClientObjectPhotos,
@@ -150,31 +159,34 @@ const taskCtrl = {
         customDiscountPercent,
         additionalNotes,
         privateNotes,
-        discountType
+        discountType,
       } = req.body;
-  
+
       // For debugging: see what you get from frontend
       console.log('Received items:', req.body.items);
-      console.log("additionalNotes",additionalNotes);
-      console.log("privateNotes",privateNotes);
+      console.log('additionalNotes', additionalNotes);
+      console.log('privateNotes', privateNotes);
       let clientObjectPhotos = [];
       if (cloneClientObjectPhotos) {
         clientObjectPhotos = cloneClientObjectPhotos;
       } else if (req.files && req.files.length > 0) {
         clientObjectPhotos = req.files.map((file) => file.path);
       }
-  
+
       const taskDate = new Date(date);
-  
+
       // Calculate price using new logic
       const { totalPrice, vat } = await calculateTotalPrice({
         items, // Use items for price calculation
         objects,
         customDiscountPercent,
         discountType,
-        hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0
+        hasDiscount:
+          customDiscountPercent !== undefined &&
+          !isNaN(customDiscountPercent) &&
+          customDiscountPercent > 0,
       });
-  
+
       // Prepare items array for DB (merge standard and custom if needed)
       let allItems = [];
       if (items && Array.isArray(items)) {
@@ -183,26 +195,32 @@ const taskCtrl = {
             standardItemId: item.standardItemId || null,
             quantity: Number(item.quantity) || 1,
             Objectsposition: item.Objectsposition || 'Outside',
-            customPrice: item.customPrice !== undefined ? Number(item.customPrice) : undefined,
+            customPrice:
+              item.customPrice !== undefined
+                ? Number(item.customPrice)
+                : undefined,
             object: item.object || undefined,
             price: item.price !== undefined ? Number(item.price) : undefined,
-          }))
+          })),
         );
       }
       // If you want to keep supporting "objects" as a separate array, merge them too:
       if (objects && Array.isArray(objects)) {
-        console.log("objects",objects);
+        console.log('objects', objects);
         allItems.push(
           ...objects.map((item) => ({
             object: item.object || null,
             quantity: Number(item.quantity) || 1,
             price: Number(item.price) || 0,
-            customPrice: item.customPrice !== undefined ? Number(item.customPrice) : undefined,
+            customPrice:
+              item.customPrice !== undefined
+                ? Number(item.customPrice)
+                : undefined,
             Objectsposition: item.Objectsposition || 'Outside',
-          }))
+          })),
         );
       }
-  
+
       // Create the task
       const newTask = new Task({
         firstName,
@@ -227,11 +245,14 @@ const taskCtrl = {
         postcode,
         customDiscountPercent,
         discountType,
-        hasDiscount: customDiscountPercent !== undefined && !isNaN(customDiscountPercent) && customDiscountPercent > 0,
+        hasDiscount:
+          customDiscountPercent !== undefined &&
+          !isNaN(customDiscountPercent) &&
+          customDiscountPercent > 0,
         additionalNotes,
         privateNotes,
       });
-  
+
       await newTask.save();
       res.status(201).json({
         message: 'Task created successfully',
@@ -577,11 +598,11 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      console.log("dddddddddddddddddddddddddddddddddddddddddd",req.body);
+      console.log('dddddddddddddddddddddddddddddddddddddddddd', req.body);
       const oldTask = await Task.findById(taskId);
       console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh');
-      console.log("additionalNotes",updates.additionalNotes);
-      console.log("privateNotes",updates.privateNotes);
+      console.log('additionalNotes', updates.additionalNotes);
+      console.log('privateNotes', updates.privateNotes);
       if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -589,40 +610,47 @@ const taskCtrl = {
       // If items are being updated, recalculate totalPrice
       if (updates.items) {
         // Clean and filter items
-        updates.items = updates.items.map(item => {
-          // Convert empty string standardItemId to null
-          if (item.standardItemId === '') {
-            item.standardItemId = null;
-          }
-          return item;
-        }).filter(item => {
-          // Keep items that have either:
-          // 1. A valid standardItemId, or
-          // 2. A non-empty object attribute (for custom items)
-          return (item.standardItemId && 
-                 typeof item.standardItemId === 'string' && 
-                 item.standardItemId.trim() !== '' && 
-                 mongoose.Types.ObjectId.isValid(item.standardItemId)) ||
-                 (item.object && item.object.trim() !== '');
-        });
-        
+        updates.items = updates.items
+          .map((item) => {
+            // Convert empty string standardItemId to null
+            if (item.standardItemId === '') {
+              item.standardItemId = null;
+            }
+            return item;
+          })
+          .filter((item) => {
+            // Keep items that have either:
+            // 1. A valid standardItemId, or
+            // 2. A non-empty object attribute (for custom items)
+            return (
+              (item.standardItemId &&
+                typeof item.standardItemId === 'string' &&
+                item.standardItemId.trim() !== '' &&
+                mongoose.Types.ObjectId.isValid(item.standardItemId)) ||
+              (item.object && item.object.trim() !== '')
+            );
+          });
+
         // Also handle objects array (custom items) if present
         if (updates.objects && Array.isArray(updates.objects)) {
-          const customItems = updates.objects.map(obj => ({
+          const customItems = updates.objects.map((obj) => ({
             standardItemId: null, // Custom items don't have standardItemId
             object: obj.object,
             Objectsposition: obj.Objectsposition || 'Outside',
             quantity: Number(obj.quantity) || 1,
-            customPrice: obj.customPrice !== undefined ? Number(obj.customPrice) : undefined,
-            price: Number(obj.price) || 0
+            customPrice:
+              obj.customPrice !== undefined
+                ? Number(obj.customPrice)
+                : undefined,
+            price: Number(obj.price) || 0,
           }));
-          
+
           // Merge items and custom items
           updates.items = [...updates.items, ...customItems];
         }
-        
+
         console.log('Final items to save:', updates.items);
-        
+
         // Save the new items first
         await Task.findByIdAndUpdate(taskId, {
           $set: { items: updates.items },
@@ -631,21 +659,21 @@ const taskCtrl = {
         const populatedTask = await Task.findById(taskId).populate(
           'items.standardItemId',
         );
-        
+
         let subtotal = 0;
-        
+
         // Calculate subtotal with discount handling
         for (const item of populatedTask.items) {
           let price = 0;
           const isCustomItem = !item.standardItemId; // Check if it's a custom item
-          
+
           if (item.standardItemId && item.standardItemId.price) {
             price = Number(item.standardItemId.price);
           } else if (item.price) {
             price = Number(item.price);
           }
           const quantity = Number(item.quantity) || 1;
-          
+
           // Only apply position fees to standard items (not custom items)
           let positionFee = 0;
           if (!isCustomItem) {
@@ -653,15 +681,19 @@ const taskCtrl = {
               positionFee = 18;
             else if (item.Objectsposition === 'Inside') positionFee = 6;
           }
-          
+
           const itemSubtotal = price * quantity + positionFee;
-          
+
           // Handle item-specific discount if discountType is "perItem"
           let finalItemTotal = itemSubtotal;
-          if (populatedTask.hasDiscount && populatedTask.discountType === "perItem" && item.customPrice) {
-            finalItemTotal = (item.customPrice * quantity ) + positionFee;
+          if (
+            populatedTask.hasDiscount &&
+            populatedTask.discountType === 'perItem' &&
+            item.customPrice
+          ) {
+            finalItemTotal = item.customPrice * quantity + positionFee;
           }
-          
+
           console.log(
             'Item:',
             item,
@@ -676,37 +708,49 @@ const taskCtrl = {
             'FinalItemTotal:',
             finalItemTotal,
           );
-          
+
           subtotal += finalItemTotal;
         }
-        
+
         // Handle percentage discount if discountType is "percentage"
-        if (populatedTask.hasDiscount && populatedTask.discountType === "percentage" && populatedTask.customDiscountPercent > 0) {
-          const percentageDiscount = (subtotal * populatedTask.customDiscountPercent) / 100;
+        if (
+          populatedTask.hasDiscount &&
+          populatedTask.discountType === 'percentage' &&
+          populatedTask.customDiscountPercent > 0
+        ) {
+          const percentageDiscount =
+            (subtotal * populatedTask.customDiscountPercent) / 100;
           subtotal -= percentageDiscount;
-          console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
+          console.log(
+            'Applied percentage discount:',
+            percentageDiscount,
+            'New subtotal:',
+            subtotal,
+          );
         }
-        
+
         // Apply minimum price (before VAT) - if under £30, make it £30
         if (subtotal < 30) {
-          console.log('Applying minimum price adjustment: £' + subtotal + ' → £30');
+          console.log(
+            'Applying minimum price adjustment: £' + subtotal + ' → £30',
+          );
           subtotal = 30;
         }
-        
+
         // Add VAT
         const vat = subtotal * 0.2;
         const totalPrice = subtotal + vat;
-        
+
         console.log('Final subtotal:', subtotal);
         console.log('VAT:', vat);
         console.log('Calculated totalPrice with VAT:', totalPrice);
-        
+
         updates.totalPrice = totalPrice;
       }
-      
+
       // Before saving or updating a task, sanitize customPrice for all items
       if (updates.items) {
-        updates.items = updates.items.map(item => {
+        updates.items = updates.items.map((item) => {
           if (
             item.customPrice === '' ||
             item.customPrice === null ||
@@ -720,7 +764,7 @@ const taskCtrl = {
           return item;
         });
       }
-      
+
       console.log(updates.totalPrice); // Update the task
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
@@ -829,13 +873,13 @@ const taskCtrl = {
   processTaskPayment: async (req, res) => {
     const { taskId } = req.params;
     const { paymentType, paymentAmountType } = req.body; // Add paymentAmountType
-  
+
     try {
       const task = await Task.findById(taskId).populate('items.standardItemId');
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-  
+
       // Build breakdown array
       const selectedQuantities = {};
       task.items.forEach((item) => {
@@ -844,7 +888,7 @@ const taskCtrl = {
             item.quantity || 1;
         }
       });
-  
+
       const breakdown = task.items.map((item) => {
         const itemQuantity =
           selectedQuantities[item.standardItemId?._id?.toString()] ||
@@ -862,7 +906,7 @@ const taskCtrl = {
           Objectsposition: item.Objectsposition,
         };
       });
-  
+
       let basePrice = breakdown.reduce(
         (sum, item) => sum + item.price * item.quantity,
         0,
@@ -880,22 +924,22 @@ const taskCtrl = {
       ) {
         finalPrice *= 0.9;
       }
-      
+
       // Apply minimum price (before VAT) - if under £30, make it £30
       if (finalPrice < 30) {
         finalPrice = 30;
       }
-      
+
       const vat = finalPrice * 0.2;
       finalPrice += vat;
-  
+
       // Prepare fullBreakdown for PayPal
       const fullBreakdown = [
         ...breakdown,
         { description: 'VAT (20%)', amount: vat.toFixed(2) },
         { description: 'Final Total Price', amount: finalPrice.toFixed(2) },
       ];
-  
+
       // --- NEW: Determine amount to pay based on paymentAmountType ---
       let amountToPay;
       if (paymentAmountType === 'deposit') {
@@ -925,9 +969,9 @@ const taskCtrl = {
         };
       }
       const amountInPence = Math.round(amountToPay * 100);
-  
+
       await task.save();
-  
+
       // --- Use amountToPay for Stripe/PayPal ---
       let paymentResult;
       switch (paymentType) {
@@ -958,7 +1002,7 @@ const taskCtrl = {
                 paymentAmountType: paymentAmountType,
               },
             });
-  
+
             return res.json({
               message: 'Stripe payment initiated successfully',
               redirectUrl: session.url,
@@ -971,7 +1015,7 @@ const taskCtrl = {
               error: error.message,
             });
           }
-  
+
         case 'paypal':
           paymentResult = await createPayPalOrder(
             amountInPence,
@@ -990,7 +1034,7 @@ const taskCtrl = {
             paymentAmountType, // Return for frontend tracking
             breakdown: fullBreakdown,
           });
-  
+
         default:
           return res.status(400).json({ message: 'Invalid payment method' });
       }
@@ -1010,7 +1054,7 @@ const taskCtrl = {
       const paymentIntent = await stripe.paymentIntents.confirm(
         paymentIntentId,
         {
-        payment_method: paymentMethodId,
+          payment_method: paymentMethodId,
         },
       );
 
@@ -1217,12 +1261,12 @@ const taskCtrl = {
       // Calculate total price and breakdown as before
       let subtotal = 0;
       const breakdown = [];
-      
+
       // Calculate subtotal with discount handling
       for (const item of task.items) {
         let itemPrice = 0;
         let itemDescription = '';
-        
+
         if (item.standardItemId) {
           itemPrice = Number(item.standardItemId.price);
           itemDescription = item.standardItemId.itemName;
@@ -1230,7 +1274,7 @@ const taskCtrl = {
           itemPrice = Number(item.price);
           itemDescription = item.object;
         }
-        
+
         const quantity = Number(item.quantity) || 1;
         let positionFee = 0;
         if (item.Objectsposition === 'InsideWithDismantling') {
@@ -1238,18 +1282,22 @@ const taskCtrl = {
         } else if (item.Objectsposition === 'Inside') {
           positionFee = 6;
         }
-        
+
         // Per-item discount logic: use customPrice if present, and always add positionFee
         let displayPrice = itemPrice;
         let finalItemTotal = itemPrice * quantity + positionFee;
-        if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
-          displayPrice = Number(item.customPrice) + (positionFee / quantity);
-          finalItemTotal = (Number(item.customPrice) * quantity) + positionFee;
+        if (
+          task.hasDiscount &&
+          task.discountType === 'perItem' &&
+          item.customPrice
+        ) {
+          displayPrice = Number(item.customPrice) + positionFee / quantity;
+          finalItemTotal = Number(item.customPrice) * quantity + positionFee;
         } else if (positionFee > 0) {
           // If no discount but there is a position fee, add it to the per-unit price for display
-          displayPrice = itemPrice + (positionFee / quantity);
+          displayPrice = itemPrice + positionFee / quantity;
         }
-        
+
         breakdown.push({
           itemDescription,
           quantity,
@@ -1258,20 +1306,25 @@ const taskCtrl = {
           total: finalItemTotal,
           Objectsposition: item.Objectsposition,
         });
-        
+
         subtotal += finalItemTotal;
       }
-      
+
       // Handle percentage discount if discountType is "percentage"
-      if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
-        const percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
+      if (
+        task.hasDiscount &&
+        task.discountType === 'percentage' &&
+        task.customDiscountPercent > 0
+      ) {
+        const percentageDiscount =
+          (subtotal * task.customDiscountPercent) / 100;
         subtotal -= percentageDiscount;
         breakdown.push({
           description: `Discount (${task.customDiscountPercent}%)`,
           amount: -percentageDiscount,
         });
       }
-      
+
       // Enforce minimum price (before VAT)
       if (subtotal < 30) {
         const adjustment = 30 - subtotal;
@@ -1281,20 +1334,25 @@ const taskCtrl = {
           amount: adjustment,
         });
       }
-      
+
       // Add VAT
       const vat = subtotal * 0.2;
       const totalPrice = subtotal + vat;
-      
+
       breakdown.push({
         description: 'VAT (20%)',
         amount: vat,
       });
-      
+
       validateBreakdown(breakdown);
 
       // Debug log to confirm amountToPay and paymentType
-      console.log('amountToPay for payment link:', amountToPay, 'paymentType:', paymentType);
+      console.log(
+        'amountToPay for payment link:',
+        amountToPay,
+        'paymentType:',
+        paymentType,
+      );
       const orderNumber = task.orderNumber;
       // Generate payment links for the specified amount
       const stripeLink = await createStripePaymentLink(
@@ -1653,77 +1711,165 @@ const taskCtrl = {
 
   sendInvoice: async (req, res) => {
     const { taskId } = req.params;
-  
+    let subtotal = 0;
+    let percentageDiscount = 0;
     try {
       const task = await Task.findById(taskId).populate('items.standardItemId');
-      console.log('task', task.items);
+      // console.log('task', task.items);
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-  
+
       // Ensure directory exists
       const dirPath = path.join(__dirname, '../generated');
       if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
-  
+
       const fileName = `invoice-${task.orderNumber}.pdf`;
       const filePath = path.join(dirPath, fileName);
-  
+
       // Generate the official invoice PDF
       await generateOfficialInvoicePDF(task, filePath);
-  
+
       // Email content in branded design
       const paidAmount = task.paidAmount?.amount || 0;
       const remainingAmount = task.totalPrice - paidAmount;
       const isPartialPaid = task.paymentStatus === 'partial_Paid';
       const subtotalBeforeDiscount = task.totalPrice;
-      const discountAmount =
-        task.customDiscountPercent > 0
-      ? subtotalBeforeDiscount * (task.customDiscountPercent / 100)
-      : 0;
-      const subtotal = subtotalBeforeDiscount - discountAmount;
-    const vat = subtotal * 0.2;
-    const total = subtotal ;
-      
-      // Read the template file
-      const templatePath = path.join(__dirname, '../public/templates/invoiceConfirmation.html');
-      let template = fs.readFileSync(templatePath, 'utf8');
 
-      // Replace template variables
-      template = template.replace('{{firstName}}', task.firstName);
-      template = template.replace('{{lastName}}', task.lastName);
-      template = template.replace('{{orderNumber}}', task.orderNumber);
-      template = template.replace('{{totalPrice}}', task.totalPrice.toFixed(2));
-      
-      // Handle conditional content for partial payment
-      if (isPartialPaid) {
-        const paymentDetails = `
-          <p>Payment Details:</p>
-          <ul>
-            ${discountAmount > 0 ? `<li>Discount (${task.customDiscountPercent}%): -£${discountAmount.toFixed(2)}</li>` : ''}
-            <li>VAT (20%): £${vat.toFixed(2)}</li>
-            <li>Total Amount (Including VAT): £${total.toFixed(2)}</li>
-          </ul>
-          <p>Please settle the remaining balance at your earliest convenience.</p>`;
-        
-        template = template.replace('{{#if isPartialPaid}}', '');
-        template = template.replace('{{/if}}', '');
-        template = template.replace('{{#if hasDiscount}}', '');
-        template = template.replace('{{/if}}', '');
-        template = template.replace('{{customDiscountPercent}}', task.customDiscountPercent);
-        template = template.replace('{{discountAmount}}', discountAmount.toFixed(2));
-        template = template.replace('{{vat}}', vat.toFixed(2));
-        template = template.replace('{{total}}', total.toFixed(2));
-        
-        // Replace the conditional blocks with actual content
-        template = template.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}[\s\S]*?{{\/if}}/g, paymentDetails);
-      } else {
-        // Remove conditional blocks for non-partial payment
-        template = template.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}([\s\S]*?){{\/if}}/g, '$1');
-        template = template.replace(/{{#if hasDiscount}}[\s\S]*?{{\/if}}/g, '');
+      // Calculate subtotal and handle discounts based on discountType
+      task.items.forEach((item) => {
+        // For custom items, use item.price; for standard items, use standardItemId.price
+        const itemPrice = item.standardItemId
+          ? item.standardItemId.price * item.quantity || 0
+          : item.price * item.quantity || 0;
+
+        const positionPrice =
+          item.Objectsposition === 'InsideWithDismantling'
+            ? item.standardItemId?.insideWithDismantlingPrice || 0
+            : item.Objectsposition === 'Inside'
+            ? item.standardItemId?.insidePrice || 0
+            : 0;
+
+        const itemSubtotal = itemPrice + positionPrice;
+
+        // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
+        let finalItemTotal = itemSubtotal;
+        if (
+          task.hasDiscount &&
+          task.discountType === 'perItem' &&
+          item.customPrice
+        ) {
+          finalItemTotal = item.customPrice * item.quantity + positionPrice;
+        }
+
+        subtotal += finalItemTotal;
+        console.log('subtotal', subtotal);
+      });
+
+      // Handle percentage discount on total only if hasDiscount is true and discountType is "percentage"
+      if (
+        task.hasDiscount &&
+        task.discountType === 'percentage' &&
+        task.customDiscountPercent > 0
+      ) {
+        percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
       }
 
-      const emailContent = template;
-  
+      // Apply minimum price (before VAT) - if under £30, make it £30
+      if (subtotal < 30) {
+        subtotal = 30;
+      }
+
+      const vat = (subtotal - percentageDiscount) * 0.2;
+      const total = task.totalPrice;
+      console.log(
+        'total',
+        total,
+        'vat',
+        vat,
+        'subtotal:',
+        subtotal,
+        'percentageDiscount',
+        percentageDiscount,
+      );
+      // // Read the template file
+      // const templatePath = path.join(
+      //   __dirname,
+      //   '../public/templates/invoiceConfirmation.html',
+      // );
+      // let template = fs.readFileSync(templatePath, 'utf8');
+
+      // // Replace template variables
+      // template = template.replace('{{firstName}}', task.firstName);
+      // template = template.replace('{{lastName}}', task.lastName);
+      // template = template.replace('{{orderNumber}}', task.orderNumber);
+      // template = template.replace('{{totalPrice}}', task.totalPrice.toFixed(2));
+
+      // // Handle conditional content for partial payment
+      // if (isPartialPaid) {
+      //   const paymentDetails = `
+      //     <p>Payment Details:</p>
+      //     <ul>
+      //       ${
+      //         discountAmount > 0
+      //           ? `<li>Discount (${
+      //               task.customDiscountPercent
+      //             }%): -£${discountAmount.toFixed(2)}</li>`
+      //           : ''
+      //       }
+      //       <li>VAT (20%): £${vat.toFixed(2)}</li>
+      //       <li>Total Amount (Including VAT): £${total.toFixed(2)}</li>
+      //     </ul>
+      //     <p>Please settle the remaining balance at your earliest convenience.</p>`;
+
+      //   template = template.replace('{{#if isPartialPaid}}', '');
+      //   template = template.replace('{{/if}}', '');
+      //   template = template.replace('{{#if hasDiscount}}', '');
+      //   template = template.replace('{{/if}}', '');
+      //   template = template.replace(
+      //     '{{customDiscountPercent}}',
+      //     task.customDiscountPercent,
+      //   );
+      //   template = template.replace(
+      //     '{{discountAmount}}',
+      //     discountAmount.toFixed(2),
+      //   );
+      //   template = template.replace('{{vat}}', vat.toFixed(2));
+      //   template = template.replace('{{total}}', total.toFixed(2));
+
+      //   // Replace the conditional blocks with actual content
+      //   template = template.replace(
+      //     /{{#if isPartialPaid}}[\s\S]*?{{else}}[\s\S]*?{{\/if}}/g,
+      //     paymentDetails,
+      //   );
+      // } else {
+      //   // Remove conditional blocks for non-partial payment
+      //   template = template.replace(
+      //     /{{#if isPartialPaid}}[\s\S]*?{{else}}([\s\S]*?){{\/if}}/g,
+      //     '$1',
+      //   );
+      //   template = template.replace(/{{#if hasDiscount}}[\s\S]*?{{\/if}}/g, '');
+      // }
+      const templatePath = path.join(
+        __dirname,
+        '../public/templates/invoiceConfirmation.html',
+      );
+      const templateSource = fs.readFileSync(templatePath, 'utf8');
+      const template = Handlebars.compile(templateSource);
+
+      const emailContent = template({
+        firstName: task.firstName,
+        lastName: task.lastName,
+        orderNumber: task.orderNumber,
+        totalPrice: task.totalPrice.toFixed(2),
+        hasDiscount: task.customDiscountPercent > 0,
+        customDiscountPercent: task.customDiscountPercent,
+        discountAmount: percentageDiscount.toFixed(2),
+        vat: vat.toFixed(2),
+        total: total.toFixed(2),
+        isPartialPaid: isPartialPaid,
+        remainingAmount: remainingAmount.toFixed(2),
+      });
       // Send the email with the generated PDF as attachment
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
@@ -1732,10 +1878,10 @@ const taskCtrl = {
         html: emailContent,
         attachments: [{ filename: fileName, path: filePath }],
       });
-  
+
       // Clean up
       fs.unlinkSync(filePath);
-  
+
       res.status(200).json({
         message: 'Invoice sent successfully',
         task,
@@ -1818,7 +1964,7 @@ const taskCtrl = {
 
     try {
       const lock = await OrderLock.findOne({ taskId }).populate('lockedBy');
-      
+
       if (!lock) {
         console.log('task is not locked');
         return res.json({
@@ -1861,7 +2007,7 @@ const taskCtrl = {
 
     try {
       const lock = await OrderLock.findOne({ taskId }).populate('lockedBy');
-      
+
       if (!lock) {
         return res.json({
           isLocked: false,
@@ -1894,10 +2040,15 @@ const taskCtrl = {
     const { taskId } = req.params;
     try {
       await sendWasteTransferNoteEmail(taskId);
-      res.status(200).json({ message: 'Waste Transfer Note sent successfully' });
+      res
+        .status(200)
+        .json({ message: 'Waste Transfer Note sent successfully' });
     } catch (error) {
       console.error('Error sending waste transfer note:', error);
-      res.status(500).json({ message: 'Failed to send waste transfer note', error: error.message });
+      res.status(500).json({
+        message: 'Failed to send waste transfer note',
+        error: error.message,
+      });
     }
   },
 };

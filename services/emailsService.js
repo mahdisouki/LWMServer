@@ -33,32 +33,32 @@ function generatePDF(data, filePath) {
   doc.end();
 }
 async function buildWasteTransferNoteDetails(task) {
-    const itemDetails = await Promise.all(
-      task.items.map(async (item) => {
-        if (!item.standardItemId) {
-          return {
-          name: item.object || 'Other item',
-            quantity: item.quantity || 1,
-            price: item.price || 0,
-          ewcCode: 'N/A',
-          };
-        }
-  
-        const standardItem = await StandardItem.findById(item.standardItemId);
+  const itemDetails = await Promise.all(
+    task.items.map(async (item) => {
+      if (!item.standardItemId) {
         return {
-        name: standardItem?.itemName || 'Unnamed Item',
+          name: item.object || 'Other item',
           quantity: item.quantity || 1,
           price: item.price || 0,
-        ewcCode: standardItem?.ewcCode || 'N/A',
+          ewcCode: 'N/A',
         };
+      }
+
+      const standardItem = await StandardItem.findById(item.standardItemId);
+      return {
+        name: standardItem?.itemName || 'Unnamed Item',
+        quantity: item.quantity || 1,
+        price: item.price || 0,
+        ewcCode: standardItem?.ewcCode || 'N/A',
+      };
     }),
-    );
-  
-    return itemDetails;
-  }
+  );
+
+  return itemDetails;
+}
 
 async function sendEmail({ to, subject, html, attachments = [] }) {
-    try {
+  try {
     return await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to,
@@ -66,44 +66,44 @@ async function sendEmail({ to, subject, html, attachments = [] }) {
       html,
       attachments,
     });
-    } catch (error) {
-        console.log(error);
-        throw error;
-    }
+  } catch (error) {
+    console.log(error);
+    throw error;
+  }
 }
 
 async function loadTaskData(taskId) {
-    const task = await Task.findById(taskId).populate('items.standardItemId');
+  const task = await Task.findById(taskId).populate('items.standardItemId');
   if (!task) throw new Error('Task not found');
-  
-    const subtotal = task.totalPrice * 0.8;
-    const vat = task.totalPrice * 0.2;
-    const paid = task.paidAmount?.amount || 0;
-    const balance = task.totalPrice - paid;
-  
+
+  const subtotal = task.totalPrice * 0.8;
+  const vat = task.totalPrice * 0.2;
+  const paid = task.paidAmount?.amount || 0;
+  const balance = task.totalPrice - paid;
+
   const items = task.items.map((i) => ({
-      name: i.standardItemId?.itemName || i.object || 'Unnamed Item',
-      position: i.Objectsposition,
-      quantity: i.quantity || 1,
-      price: i.price || 0,
-    }));
-  
-    return {
-      firstName: task.firstName,
-      lastName: task.lastName,
-      email: task.email,
-      phoneNumber: task.phoneNumber,
-      orderNumber: task.orderNumber,
-      date: task.date,
-      available: task.available,
-      subtotal,
-      vat,
-      total: task.totalPrice,
-      paidAmount: paid,
-      balanceAmount: balance,
-      items,
-    };
-  }
+    name: i.standardItemId?.itemName || i.object || 'Unnamed Item',
+    position: i.Objectsposition,
+    quantity: i.quantity || 1,
+    price: i.price || 0,
+  }));
+
+  return {
+    firstName: task.firstName,
+    lastName: task.lastName,
+    email: task.email,
+    phoneNumber: task.phoneNumber,
+    orderNumber: task.orderNumber,
+    date: task.date,
+    available: task.available,
+    subtotal,
+    vat,
+    total: task.totalPrice,
+    paidAmount: paid,
+    balanceAmount: balance,
+    items,
+  };
+}
 
 /**
  * Send a refund email with invoice PDF attached
@@ -125,8 +125,8 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
 
   // Replace placeholders in template
   html = html.replace(/<span class="name">.*?<\/span>/, `<span class="name">${name}</span>`)
-             .replace(/<span class="refund-amount">.*?<\/span>/, `<span class="refund-amount">${refundAmountStr}</span>`)
-             .replace(/<span class="order-number">.*?<\/span>/, `<span class="order-number">${orderNumber}</span>`);
+    .replace(/<span class="refund-amount">.*?<\/span>/, `<span class="refund-amount">${refundAmountStr}</span>`)
+    .replace(/<span class="order-number">.*?<\/span>/, `<span class="order-number">${orderNumber}</span>`);
 
   // Generate and attach refund invoice PDF
   const dirPath = path.join(__dirname, '../generated');
@@ -152,9 +152,9 @@ module.exports = {
       '../public/invoice-template.html',
     );
     let template = fs.readFileSync(templatePath, 'utf8');
-    
+
     const iconDir = path.join(__dirname, '../public/invoice-icons');
-    
+
 
     const asset = (name) => {
       const filePath = path.resolve(iconDir, name);
@@ -164,13 +164,13 @@ module.exports = {
       const mimeType = name.endsWith('.png')
         ? 'image/png'
         : name.endsWith('.svg')
-        ? 'image/svg+xml'
-        : name.endsWith('.ttf')
-        ? 'font/ttf'
-        : 'image/png';
+          ? 'image/svg+xml'
+          : name.endsWith('.ttf')
+            ? 'font/ttf'
+            : 'image/png';
       return `data:${mimeType};base64,${base64}`;
     };
-    
+
     let subtotal = 0;
     let vat = 0;
     let total = 0;
@@ -178,16 +178,16 @@ module.exports = {
     // Calculate subtotal and handle discounts based on discountType
     task.items.forEach((item) => {
       // For custom items, use item.price; for standard items, use standardItemId.price
-      const itemPrice = item.standardItemId 
+      const itemPrice = item.standardItemId
         ? (item.standardItemId.price * item.quantity || 0)
         : (item.price * item.quantity || 0);
-        
+
       const positionPrice =
         item.Objectsposition === 'InsideWithDismantling'
           ? (item.standardItemId?.insideWithDismantlingPrice || 0)
           : item.Objectsposition === 'Inside'
-          ? (item.standardItemId?.insidePrice || 0)
-          : 0;
+            ? (item.standardItemId?.insidePrice || 0)
+            : 0;
 
       const itemSubtotal = itemPrice + positionPrice;
 
@@ -196,68 +196,67 @@ module.exports = {
       if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
         finalItemTotal = (item.customPrice * item.quantity) + positionPrice;
       }
-      
+
       subtotal += finalItemTotal;
     });
-
+    let percentageDiscount = 0;
     // Handle percentage discount on total only if hasDiscount is true and discountType is "percentage"
     if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
-      const percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
+      percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
       subtotal -= percentageDiscount;
     }
-    
+
     // Apply minimum price (before VAT) - if under £30, make it £30
     if (subtotal < 30) {
       subtotal = 30;
     }
-    
-    console.log("subtotal",subtotal)
+
+    console.log("subtotal", subtotal)
     vat = subtotal * 0.2;
     total = subtotal + vat;
-    
+
     console.log("task.items", task.items);
     console.log("discountType:", task.discountType);
     console.log("hasDiscount:", task.hasDiscount);
-    
+
     const itemRows = task.items
       .map((item) => {
         // For custom items, use item.price; for standard items, use standardItemId.price
-        const itemPrice = item.standardItemId 
+        const itemPrice = item.standardItemId
           ? (item.standardItemId.price * item.quantity || 0)
           : (item.price * item.quantity || 0);
-          
+
         const positionPrice =
           item.Objectsposition === 'InsideWithDismantling'
             ? (item.standardItemId?.insideWithDismantlingPrice || 0)
             : item.Objectsposition === 'Inside'
-            ? (item.standardItemId?.insidePrice || 0)
-            : 0;
+              ? (item.standardItemId?.insidePrice || 0)
+              : 0;
 
         const itemSubtotal = itemPrice + positionPrice;
-        
+
         // Handle different discount types
         let finalItemTotal = itemSubtotal;
         let discountedPrice = itemSubtotal;
-        
+
         if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
           discountedPrice = item.customPrice;
           finalItemTotal = (discountedPrice * item.quantity) + positionPrice;
         }
-        
+
         // Check if any items have custom prices to determine if we need discount column
         const hasCustomPrices = task.items.some(item => item.customPrice);
         const showDiscountColumn = task.hasDiscount && task.discountType === "perItem" && hasCustomPrices;
-        
+
         // Get the correct price for display
-        const displayPrice = item.standardItemId 
+        const displayPrice = item.standardItemId
           ? (item.standardItemId.price || 0)
           : (item.price || 0);
-          
+
         if (showDiscountColumn) {
           return `
           <tr>
-            <td>${
-              item.standardItemId?.itemName || item.object || 'Unnamed Item'
+            <td>${item.standardItemId?.itemName || item.object || 'Unnamed Item'
             }</td>
             <td>${item.quantity}</td>
             <td>£${displayPrice.toFixed(2)}</td>
@@ -269,8 +268,7 @@ module.exports = {
         } else {
           return `
           <tr>
-            <td>${
-              item.standardItemId?.itemName || item.object || 'Unnamed Item'
+            <td>${item.standardItemId?.itemName || item.object || 'Unnamed Item'
             }</td>
             <td>${item.quantity}</td>
             <td>£${displayPrice.toFixed(2)}</td>
@@ -293,9 +291,9 @@ module.exports = {
       invoiceDate: task.createdAt ? new Date(task.createdAt).toLocaleDateString('en-GB') : '',
       orderDate: task.date ? new Date(task.date).toLocaleDateString('en-GB') : '',
       serviceDate: new Date(task.date).toLocaleDateString('en-GB'),
-      available: task.available === 'AnyTime' ? 'Any time (6:30am to 8:30pm)' : 
-      task.available === '7am-12pm' ? 'Morning (7am to 12pm)' :
-      task.available === '12pm-5pm' ? 'Afternoon (12pm to 5pm)' : task.available,
+      available: task.available === 'AnyTime' ? 'Any time (6:30am to 8:30pm)' :
+        task.available === '7am-12pm' ? 'Morning (7am to 12pm)' :
+          task.available === '12pm-5pm' ? 'Afternoon (12pm to 5pm)' : task.available,
       itemRows,
       subtotal: (subtotal || 0).toFixed(2),
       vat: (vat || 0).toFixed(2),
@@ -309,9 +307,9 @@ module.exports = {
       businessName: task.bussinessName,
       collectionAddress: task.collectionAddress,
       // Payment status for stamps
-      paymentStatusUnpaid: (task.paymentStatus === 'Paid' || 
+      paymentStatusUnpaid: (task.paymentStatus === 'Paid' ||
         (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid')) ? 'block' : 'none',
-      paymentStatusPaid: (task.paymentStatus !== 'Paid' && 
+      paymentStatusPaid: (task.paymentStatus !== 'Paid' &&
         (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid')) ? 'block' : 'none',
       // Discount display logic based on discount type
       showDiscountRow:
@@ -322,12 +320,12 @@ module.exports = {
         task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
           ? `Discount (${task.customDiscountPercent}%)`
           : task.hasDiscount && task.discountType === "perItem"
-          ? 'Item Discounts'
-          : 'Discount',
-      discountAmount: task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
-        ? ((subtotal * task.customDiscountPercent) / 100).toFixed(2)
-        : '0.00',
-
+            ? 'Item Discounts'
+            : 'Discount',
+      // discountAmount: task.hasDiscount && (task.discountType === "percentage" || task.customDiscountPercent > 0)
+      //   ? discountAmount.toFixed(2)
+      //   : '0.00',
+      discountAmount: percentageDiscount.toFixed(2),
       // Asset paths with base64 encoding
       logoPath: asset('london_waste_logo 1.png'),
       bgPath: asset('green-bg.png'),
@@ -462,7 +460,7 @@ module.exports = {
   async sendReviewRequestEmail(taskId) {
     const task = await Task.findById(taskId);
     if (!task) throw new Error('Task not found');
-  
+
     const baseReviewLink = `https://lwmadmin.netlify.app/review/${task.orderNumber}`;
     const trustpilotLink = `https://www.trustpilot.com/evaluate/www.londonwastemanagement.com`;
     const htmlContent = `
@@ -518,7 +516,7 @@ module.exports = {
         </footer>
       </div>
     `;
-  
+
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
@@ -526,7 +524,7 @@ module.exports = {
       html: htmlContent,
     });
   },
-  
+
   async sendQuoteRequestConfirmationEmail(email) {
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; background-image:url('https://res.cloudinary.com/ddcsuzef0/image/upload/v1752624279/Group_91_gbbl5x.png');background-size:cover;background-position:center; border: 1px solid #e0e0e0;">
@@ -541,7 +539,7 @@ module.exports = {
         </div>
       </div>
     `;
-  
+
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -569,7 +567,7 @@ module.exports = {
     // Build EWC codes
     const ewcCodes = task.items
       .filter(i => i.standardItemId?.ewcCode)
-      .map(i => `<p><span class="text-[#8bc53f]">${i.standardItemId.ewcCode}</span> : ${i.standardItemId.itemName}</p>`) 
+      .map(i => `<p><span class="text-[#8bc53f]">${i.standardItemId.ewcCode}</span> : ${i.standardItemId.itemName}</p>`)
       .join('');
 
     // Replace placeholders
@@ -594,15 +592,15 @@ module.exports = {
     const task = await Task.findById(taskId).populate('items.standardItemId');
     if (!task || !task.orderNumber)
       throw new Error('Invalid task or missing order number');
-  
+
     const dirPath = path.join(__dirname, '../generated');
     if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
-  
+
     const fileName = `invoice-${task.orderNumber}.pdf`;
     const filePath = path.join(dirPath, fileName);
-  
+
     await generateOfficialInvoicePDF(task, filePath);
-  
+
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
@@ -610,7 +608,7 @@ module.exports = {
       html: `<p>Please find attached your official invoice for Order #${task.orderNumber}.</p>`,
       attachments: [{ filename: fileName, path: filePath }],
     });
-  
+
     fs.unlinkSync(filePath);
   },
   async sendBookingConfirmationEmail(taskId) {
@@ -630,12 +628,12 @@ module.exports = {
     template = template.replace('{{lastName}}', task.lastName);
     template = template.replace('{{orderNumber}}', task.orderNumber);
     template = template.replace('{{date}}', task.date.toLocaleDateString('en-GB'));
-    template = template.replace('{{available}}', task.available === 'AnyTime' ? 'anytime (6:30am to 8:30pm)' : 
+    template = template.replace('{{available}}', task.available === 'AnyTime' ? 'anytime (6:30am to 8:30pm)' :
       task.available === '7am-12pm' ? 'morning (7am to 12pm)' :
-      task.available === '12pm-5pm' ? 'afternoon (12pm to 5pm)' : task.available);
+        task.available === '12pm-5pm' ? 'afternoon (12pm to 5pm)' : task.available);
     template = template.replace('{{businessName}}', task.bussinessName);
     template = template.replace('{{collectionAddress}}', task.collectionAddress);
-    
+
     // Inline the CSS into the HTML
     const htmlContent = template.replace('</head>', `<style>${css}</style></head>`);
 
@@ -677,13 +675,13 @@ const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
       const mimeType = name.endsWith('.png')
         ? 'image/png'
         : name.endsWith('.svg')
-        ? 'image/svg+xml'
-        : name.endsWith('.ttf')
-        ? 'font/ttf'
-        : 'image/png';
+          ? 'image/svg+xml'
+          : name.endsWith('.ttf')
+            ? 'font/ttf'
+            : 'image/png';
       return `data:${mimeType};base64,${base64}`;
     };
-    console.log("taskData.items",taskData)
+    console.log("taskData.items", taskData)
     const itemRows = taskData.items
       .map(
         (item) => `
