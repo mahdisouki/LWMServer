@@ -48,13 +48,13 @@ async function calculateTotalPrice(taskId) {
     if (finalPrice < MINIMUM_PRICE) {
         // Calculate the adjustment needed to reach £36 total
         const adjustment = MINIMUM_PRICE - finalPrice;
-        
+
         // Add minimum price adjustment to the breakdown
         breakdown.push({
             description: "Minimum price adjustment",
             amount: adjustment.toFixed(2),
         });
-        
+
         finalPrice = MINIMUM_PRICE;
         basePrice = MINIMUM_PRICE / (1 + VAT_RATE); // This will be £30
     }
@@ -119,11 +119,11 @@ const calculateTotalPriceUpdate = async (taskId) => {
     return { total: Math.round(finalPrice * 100) / 100 };
 };
 
-const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentType , orderNumber) => {
+const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentType, orderNumber) => {
     // VAT is already included in amountToPay, so we just convert to pence
     const amountInPence = Math.round(amountToPay * 100);
     console.log('amountInPence:', amountInPence);
-    
+
     // Single line item for the payment amount
     const lineItems = [{
         price_data: {
@@ -131,8 +131,8 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
             product_data: {
                 name: paymentType === 'deposit' ? "Deposit Payment"
                     : paymentType === 'remaining' ? "Remaining Payment"
-                    : paymentType === 'partial' ? "Partial Payment"
-                    : "Payment",
+                        : paymentType === 'partial' ? "Partial Payment"
+                            : "Payment",
                 description: `Payment for Task #${orderNumber}`,
             },
             unit_amount: amountInPence,
@@ -147,7 +147,7 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
     };
 
     const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card", "paypal"],
+        payment_method_types: ["card"],
         line_items: lineItems,
         mode: "payment",
         success_url: `${NGROK_URL}/api/webhooks/payment/success`,
@@ -235,7 +235,7 @@ const createStripePaymentIntent = async (amount) => {
     return stripe.paymentIntents.create({
         amount: amount,
         currency: 'gbp',
-        payment_method_types: ['card', 'paypal'],
+        payment_method_types: ['card'],
     });
 };
 

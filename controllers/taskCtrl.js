@@ -978,7 +978,7 @@ const taskCtrl = {
         case 'stripe':
           try {
             const session = await stripe.checkout.sessions.create({
-              payment_method_types: ['card', 'paypal'],
+              payment_method_types: ['card'],
               mode: 'payment',
               line_items: [
                 {
@@ -1237,16 +1237,19 @@ const taskCtrl = {
 
       let amountToPay;
       if (paymentType === 'deposit') {
-        // Enforce minimum deposit of £36
-        amountToPay = Math.max(task.paidAmount?.amount || 0, 36);
-        if (!task.paidAmount || task.paidAmount.amount < 36) {
-          task.paidAmount = {
-            amount: 36,
-            method: 'online',
-            status: 'Not_Paid',
-          };
-          await task.save();
-        }
+        let requestedDeposit = task.paidAmount?.amount || 0;
+
+        // Si le user a choisi moins de 36, on impose 36
+        amountToPay = Math.max(requestedDeposit, 36);
+
+        task.paidAmount = {
+          amount: amountToPay,
+          method: 'payment_link',
+          status: 'Paid',
+        };
+
+        await task.save();
+
       } else if (paymentType === 'remaining') {
         amountToPay = task.remainingAmount?.amount;
       } else {
@@ -1747,8 +1750,8 @@ const taskCtrl = {
           item.Objectsposition === 'InsideWithDismantling'
             ? item.standardItemId?.insideWithDismantlingPrice || 0
             : item.Objectsposition === 'Inside'
-            ? item.standardItemId?.insidePrice || 0
-            : 0;
+              ? item.standardItemId?.insidePrice || 0
+              : 0;
 
         const itemSubtotal = itemPrice + positionPrice;
 
