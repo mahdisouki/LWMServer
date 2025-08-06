@@ -132,6 +132,14 @@ async function calculateTotalPrice({
     vat: Number(vat.toFixed(2)),
   };
 }
+function hasPerItemDiscount(arr) {
+  if (!Array.isArray(arr)) return false;
+  return arr.some(item =>
+    item.customPrice !== undefined &&
+    !isNaN(Number(item.customPrice)) &&
+    Number(item.customPrice) > 0
+  );
+}
 
 const taskCtrl = {
   createTask: async (req, res) => {
@@ -174,6 +182,12 @@ const taskCtrl = {
       }
 
       const taskDate = new Date(date);
+      const hasDiscount =
+        (customDiscountPercent !== undefined &&
+          !isNaN(customDiscountPercent) &&
+          customDiscountPercent > 0) ||
+        hasPerItemDiscount(items) ||
+        hasPerItemDiscount(objects);
 
       // Calculate price using new logic
       const { totalPrice, vat } = await calculateTotalPrice({
@@ -181,12 +195,11 @@ const taskCtrl = {
         objects,
         customDiscountPercent,
         discountType,
-        hasDiscount:
-          customDiscountPercent !== undefined &&
-          !isNaN(customDiscountPercent) &&
-          customDiscountPercent > 0,
+        hasDiscount,
+        // customDiscountPercent !== undefined &&
+        // !isNaN(customDiscountPercent) &&
+        // customDiscountPercent > 0,
       });
-
       // Prepare items array for DB (merge standard and custom if needed)
       let allItems = [];
       if (items && Array.isArray(items)) {
@@ -220,6 +233,21 @@ const taskCtrl = {
           })),
         );
       }
+      // // Nettoyer allItems avant de sauvegarder (anti NaN, 'undefined', etc)
+      // allItems = allItems.map(item => {
+      //   if (
+      //     item.customPrice === '' ||
+      //     item.customPrice === null ||
+      //     item.customPrice === undefined ||
+      //     item.customPrice === 'undefined' ||
+      //     isNaN(Number(item.customPrice))
+      //   ) {
+      //     delete item.customPrice;
+      //   } else {
+      //     item.customPrice = Number(item.customPrice);
+      //   }
+      //   return item;
+      // });
 
       // Create the task
       const newTask = new Task({
@@ -245,10 +273,10 @@ const taskCtrl = {
         postcode,
         customDiscountPercent,
         discountType,
-        hasDiscount:
-          customDiscountPercent !== undefined &&
-          !isNaN(customDiscountPercent) &&
-          customDiscountPercent > 0,
+        hasDiscount,
+        // customDiscountPercent !== undefined &&
+        // !isNaN(customDiscountPercent) &&
+        // customDiscountPercent > 0,
         additionalNotes,
         privateNotes,
       });
@@ -754,6 +782,8 @@ const taskCtrl = {
           if (
             item.customPrice === '' ||
             item.customPrice === null ||
+            item.customPrice === undefined ||
+            item.customPrice === 'undefined' ||
             typeof item.customPrice === 'undefined' ||
             isNaN(Number(item.customPrice))
           ) {
@@ -1247,19 +1277,34 @@ const taskCtrl = {
           method: 'payment_link',
           status: 'Paid',
         };
-
+        task.remainingAmount = {
+          amount: task.totalPrice - amountToPay,
+          status: 'Not_Paid',
+          method: 'payment_link',
+        };
         await task.save();
 
       } else if (paymentType === 'remaining') {
         amountToPay = task.remainingAmount?.amount;
+
+        task.remainingAmount = {
+          amount: amountToPay,
+          status: 'Not_Paid',
+          method: 'payment_link'
+        }
+        task.paymentMethod = 'payment_link';
+
+        await task.save();
       } else {
         amountToPay = task.totalPrice;
+        await task.save();
       }
       if (!amountToPay || amountToPay <= 0) {
         return res
           .status(400)
           .json({ message: 'No amount to pay for this payment type.' });
       }
+
 
       // Calculate total price and breakdown as before
       let subtotal = 0;
@@ -1407,8 +1452,9 @@ const taskCtrl = {
   handleStripeWebhook: async (req, res) => {
     const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    let event;
     try {
-      const event = stripe.webhooks.constructEvent(
+      event = stripe.webhooks.constructEvent(
         req.body,
         sig,
         endpointSecret,
@@ -1417,7 +1463,7 @@ const taskCtrl = {
       if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
         const taskId = session.metadata.taskId;
-        const paymentAmountType = session.metadata.paymentAmountType; // Get payment type from metadata
+        const paymentAmountType = session.metadata.paymentAmountType || 'full payment'; // Get payment type from metadata
         if (!taskId) {
           console.error('Task ID missing in session metadata');
           return res.status(400).send('Task ID is required');
@@ -1442,13 +1488,18 @@ const taskCtrl = {
         if (paymentAmountType === 'deposit') {
           task.paidAmount.status = 'Paid';
           task.paymentStatus = 'partial_Paid';
+          task.paidAmount.method = task.paidAmount.method || 'online';
         } else {
           // Full payment
           task.paidAmount.status = 'Paid';
           task.remainingAmount.status = 'Paid';
           task.paymentStatus = 'Paid';
+          task.taskStatus = 'Completed';
         }
-
+        const amountInCents = session.amount_total;
+        const amountInGBP = amountInCents / 100;
+        const paymentIntentId = session.payment_intent || session.id;
+        const payerAccount = task.email;
         await task.save();
         console.log('Task payment status updated:', {
           taskId,
@@ -1457,6 +1508,31 @@ const taskCtrl = {
           paidAmountStatus: task.paidAmount.status,
           remainingAmountStatus: task.remainingAmount.status,
         });
+        await PaymentHistory.create({
+          taskId: task._id,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          phoneNumber: task.phoneNumber,
+          amount: amountInGBP,
+          paymentType: 'Stripe',
+          paymentDate: new Date(),
+          transactionId: paymentIntentId,
+          payerAccount,
+        });
+
+        // Envoyer l'email de confirmation
+        await sendPaymentConfirmationEmail({
+          email: payerAccount,
+          firstName: task.firstName,
+          lastName: task.lastName,
+          orderId: taskId,
+          paymentDate: new Date().toLocaleString(),
+          amount: amountInGBP,
+          currency: 'GBP',
+          paymentType: 'Stripe',
+          // breakdown,
+        });
+
         res.status(200).send('Webhook received');
       }
     } catch (err) {
