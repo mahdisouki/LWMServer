@@ -117,7 +117,20 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
   const path = require('path');
   const templatePath = path.join(__dirname, '../public/templates/Refund.html');
   let html = fs.readFileSync(templatePath, 'utf8');
-
+  const vars = {
+    customerName: `${task.firstName} ${task.lastName}`,
+    refundAmount: `£${refundAmount.toFixed(2)}`,
+    orderNumber: task.orderNumber,
+    refundType: `${task.paymentStatus}`, // or 'Partial Refund' based on your logic
+    logoPath: 'https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/logo_cr9bor.png',
+    footerWavesImage: 'https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/image_cefof1.png',
+    contactEmail: 'hello@londonwastemanagement.com',
+    contactPhone: '02030971517',
+    companyName: 'London Waste Management'
+  };
+  for (let key in vars) {
+    html = html.replaceAll(`{{${key}}}`, vars[key]);
+  }
   // Prepare dynamic values
   const name = `${task.firstName} ${task.lastName}`;
   const refundAmountStr = `£${refundAmount.toFixed(2)}`;
