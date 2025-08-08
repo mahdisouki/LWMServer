@@ -11,7 +11,7 @@ const taskSchema = new Schema(
     truckId: { type: Schema.Types.ObjectId, ref: "Truck", required: false },
     firstName: { type: String, required: true },
     billingAddress: { type: String },
-    collectionAddress: {type:String},
+    collectionAddress: { type: String },
     lastName: { type: String, required: true },
     bussinessName: { type: String },
     phoneNumber: { type: String, required: true },
@@ -77,7 +77,7 @@ const taskSchema = new Schema(
     },
 
     createdBy: {
-      type:String, // or 'Admin' depending on your auth model
+      type: String, // or 'Admin' depending on your auth model
       required: false,
     },
     createdByType: {
@@ -87,36 +87,38 @@ const taskSchema = new Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["partial_Paid","Paid","partial_Refunded", "refunded", "Unpaid" ,"Failed"],
+      enum: ["partial_Paid", "Paid", "partial_Refunded", "refunded", "Unpaid", "Failed"],
       default: "Unpaid",
     },
     taskStatus: {
       type: String,
-      enum: ["Not_Completed", "Completed" ,"Cancelled" ,"On_Hold" ,"Processing"],
+      enum: ["Not_Completed", "Completed", "Cancelled", "On_Hold", "Processing"],
       default: "Not_Completed",
     },
     paymentMethod: {
       type: String,
-      enum: ["cash", "BankTransfer", "payment_link" , "partial_payment", "online"],
+      enum: ["cash", "BankTransfer", "payment_link", "partial_payment", "online"],
       default: "cash",
     },
     paidAmount: {
-      amount: { type: Number},
+      amount: { type: Number },
       method: {
-      type: String,
-      enum: ["BankTransfer", "payment_link", "online" , "cash"],
-    },
-    status: {
-      type: String,
-      enum: ["Paid", "Not_Paid"],
-      default: "Not_Paid",
-    },
+        type: String,
+        enum: ["BankTransfer", "payment_link", "online", "cash"],
+        default: "cash",
+      },
+      status: {
+        type: String,
+        enum: ["Paid", "Not_Paid"],
+        default: "Not_Paid",
+      },
     },
     remainingAmount: {
       amount: { type: Number },
       method: {
         type: String,
-        enum: ["BankTransfer", "payment_link", "online" , "cash"],
+        enum: ["BankTransfer", "payment_link", "online", "cash"],
+        default: "cash",
       },
       status: {
         type: String,
@@ -125,7 +127,7 @@ const taskSchema = new Schema(
       },
     },
     hasDiscount: { type: Boolean, default: false },
-    discountType:{type:String , enum :["perItem" , "percentage"]},
+    discountType: { type: String, enum: ["perItem", "percentage"] },
     customDiscountPercent: { type: Number, default: 0 },
     email: { type: String },
     additionalNotes: { type: String, required: false },
@@ -143,18 +145,37 @@ const taskSchema = new Schema(
   },
   { timestamps: true }
 );
-// Add a pre-save hook to clean up empty items
-taskSchema.pre('save', function(next) {
+// Add a pre-save hook to clean up empty items and validate data
+taskSchema.pre('save', function (next) {
   // Filter out items where both standardItemId is null and object is empty
   this.items = this.items.filter(item => {
     return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
   });
+
+  // Validate items have proper pricing
+  this.items.forEach((item, index) => {
+    // If standardItemId is null, ensure item.price exists and is > 0
+    if (!item.standardItemId && (!item.price || item.price <= 0)) {
+      console.warn(`Task ${this.orderNumber}: Item ${index} has no standardItemId and invalid price: ${item.price}`);
+    }
+
+    // Ensure quantity is valid
+    if (!item.quantity || item.quantity <= 0) {
+      item.quantity = 1; // Default to 1 if invalid
+    }
+
+    // Ensure Objectsposition is valid
+    if (!item.Objectsposition) {
+      item.Objectsposition = 'Outside'; // Default to Outside
+    }
+  });
+
   next();
 });
 // Add pre-findOneAndUpdate middleware to clean up empty items
-taskSchema.pre('findOneAndUpdate', function(next) {
+taskSchema.pre('findOneAndUpdate', function (next) {
   const update = this.getUpdate();
-  
+
   // Check if items array is being updated
   if (update.$set && update.$set.items) {
     // Filter out items where both standardItemId is null and object is empty
@@ -166,7 +187,7 @@ taskSchema.pre('findOneAndUpdate', function(next) {
 });
 
 // Add pre-save middleware to auto-increment order number
-taskSchema.pre('save', async function(next) {
+taskSchema.pre('save', async function (next) {
   // Only generate order number for new documents
   if (this.isNew && !this.orderNumber) {
     try {
@@ -186,7 +207,7 @@ taskSchema.pre('save', async function(next) {
 });
 
 // Post-save hook to update DailySheet when task is assigned to a truck
-taskSchema.post('save', async function(doc) {
+taskSchema.post('save', async function (doc) {
   try {
     // Only proceed if the task has a truckId
     if (!doc.truckId) return;
@@ -216,9 +237,9 @@ taskSchema.post('save', async function(doc) {
       });
     } else {
       // Add task to jobsPending if not already in any of the job arrays
-      if (!dailySheet.jobsDone.includes(doc._id) && 
-          !dailySheet.jobsPending.includes(doc._id) && 
-          !dailySheet.jobsCancelled.includes(doc._id)) {
+      if (!dailySheet.jobsDone.includes(doc._id) &&
+        !dailySheet.jobsPending.includes(doc._id) &&
+        !dailySheet.jobsCancelled.includes(doc._id)) {
         dailySheet.jobsPending.push(doc._id);
       }
     }
@@ -230,7 +251,7 @@ taskSchema.post('save', async function(doc) {
 });
 
 // Pre-save hook to handle task status changes
-taskSchema.pre('save', async function(next) {
+taskSchema.pre('save', async function (next) {
   try {
     // Only proceed if taskStatus is being modified
     if (!this.isModified('taskStatus')) {

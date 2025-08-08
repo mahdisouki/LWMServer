@@ -1,5 +1,39 @@
 const SystemLog = require('../models/SystemLog');
+const StandardItem = require('../models/StandardItem');
+async function enrichLogsWithItemNames(logs) {
+  // Collect all unique standardItemIds
+  const itemIds = new Set();
+  logs.forEach(log => {
+    ['before', 'after'].forEach(when => {
+      log.changes?.[when]?.items?.forEach(item => {
+        if (item.standardItemId) itemIds.add(item.standardItemId.toString());
+      });
+    });
+  });
 
+  // Fetch StandardItems (if any IDs found)
+  const standardItems = itemIds.size
+    ? await StandardItem.find({ _id: { $in: Array.from(itemIds) } }).select('_id itemName')
+    : [];
+  const itemMap = {};
+  standardItems.forEach(item => {
+    itemMap[item._id.toString()] = item;
+  });
+
+  // Attach the itemName in place of standardItemId
+  logs.forEach(log => {
+    ['before', 'after'].forEach(when => {
+      log.changes?.[when]?.items?.forEach(item => {
+        if (item.standardItemId && itemMap[item.standardItemId.toString()]) {
+          // Replace just with name, or with the whole object if you want
+          item.standardItemName = itemMap[item.standardItemId.toString()].itemName;
+          // Or, to replace the id with the whole item object:
+          // item.standardItemId = itemMap[item.standardItemId.toString()];
+        }
+      });
+    });
+  });
+}
 const loggingService = {
   async createLog({
     userId,
@@ -34,7 +68,7 @@ const loggingService = {
   async getLogs(filters = {}, page = 1, limit = 10) {
     try {
       const query = {};
-      
+
       // Apply filters
       if (filters.userId) query.userId = filters.userId;
       if (filters.action) query.action = filters.action;
@@ -52,6 +86,8 @@ const loggingService = {
         .skip((page - 1) * limit)
         .limit(limit)
         .populate('userId', 'username email');
+
+      await enrichLogsWithItemNames(logs);
 
       const total = await SystemLog.countDocuments(query);
 
@@ -74,6 +110,7 @@ const loggingService = {
         .skip((page - 1) * limit)
         .limit(limit)
         .populate('userId', 'username email');
+      await enrichLogsWithItemNames(logs);
 
       const total = await SystemLog.countDocuments({ entityType, entityId });
 

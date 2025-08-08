@@ -140,32 +140,32 @@
 
 const express = require('express');
 const router = express.Router();
-const taskCtrl = require('../controllers/taskCtrl'); 
+const taskCtrl = require('../controllers/taskCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
-const { getPayPalOrderDetails,capturePayPalPayment } = require('../services/paymentService.js');
+const { getPayPalOrderDetails, capturePayPalPayment } = require('../services/paymentService.js');
 const Task = require('../models/Task');
 router.post('/tasks/lock/:taskId', isAuth, taskCtrl.lockTask);
 router.post('/tasks/unlock/:taskId', isAuth, taskCtrl.unlockTask);
-router.get('/tasks/lock-status/:taskId', isAuth, taskCtrl.getTaskLockStatus); 
+router.get('/tasks/lock-status/:taskId', isAuth, taskCtrl.getTaskLockStatus);
 router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
 router.get('/tasks', taskCtrl.getAllTasks);
 router.get('/task/:taskId', isAuth, taskCtrl.getTaskById);
 router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
-router.put('/task/:taskId',multer.array('clientObjectPhotos'),isAuth, taskCtrl.updateTask);
+router.put('/task/:taskId', multer.array('clientObjectPhotos'), isAuth, taskCtrl.updateTask);
 router.put('/tasks/:taskId/moveTruck', isAuth, checkRole('Admin'), taskCtrl.moveTaskToAnotherTruck);
-router.put('/tasks/:taskId/deAssignTruck',isAuth, checkRole('Admin'), taskCtrl.deAssignTaskFromTruck);
+router.put('/tasks/:taskId/deAssignTruck', isAuth, checkRole('Admin'), taskCtrl.deAssignTaskFromTruck);
 
-router.put('/tasks/order' ,isAuth, checkRole('Admin'), taskCtrl.updateTaskOrderInTruck)
+router.put('/tasks/order', isAuth, checkRole('Admin'), taskCtrl.updateTaskOrderInTruck)
 router.post('/task/pay/:taskId', taskCtrl.processTaskPayment);
 router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);
 
 router.post('/task/capture-paypal-payment', taskCtrl.capturePayPalTaskPayment);
 
-router.post('/task/sendPayement/:taskId',taskCtrl.generatePaymentLinks);
+router.post('/task/sendPayement/:taskId', taskCtrl.generatePaymentLinks);
 // Stripe Webhook
 // router.post('/webhooks/stripe',express.raw({ type: 'application/json' }),  taskCtrl.handleStripeWebhook);
 
@@ -175,7 +175,7 @@ router.post('/webhooks/paypal', express.json(), taskCtrl.handlePayPalWebhook);
 
 // Route pour le succès du paiement
 router.get('/webhooks/payment/success', (req, res) => {
-    res.send(`
+  res.send(`
     <html>
       <head>
         <title>Paiement réussi - London Waste Management</title>
@@ -206,7 +206,7 @@ router.get('/webhooks/payment/success', (req, res) => {
 
 // Route pour l'annulation du paiement
 router.get('/webhooks/payment/cancel', (req, res) => {
-    res.send(`
+  res.send(`
     <html>
       <head>
         <title>Paiement annulé - London Waste Management</title>

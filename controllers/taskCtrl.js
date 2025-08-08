@@ -1543,226 +1543,118 @@ const taskCtrl = {
 
   handlePayPalWebhook: async (req, res) => {
     try {
-      const event = req.body;
-      console.log('Received PayPal Webhook Event:', JSON.stringify(event));
+      const evt = req.body;
+      console.log('PayPal webhook:', evt.event_type, evt.resource?.id);
 
-      switch (event.event_type) {
-        case 'CHECKOUT.ORDER.APPROVED':
-          console.log('Order approved. Capturing payment...');
+      switch (evt.event_type) {
+        case 'CHECKOUT.ORDER.APPROVED': {
+          const orderId = evt.resource.id;
+          const client = PayPalClient();
 
-          const orderId = event.resource.id; // PayPal Order ID
-          const customId = event.resource.purchase_units[0]?.custom_id; // Custom Task ID
+          // Capture
+          const capReq = new paypal.orders.OrdersCaptureRequest(orderId);
+          capReq.requestBody({});
+          const capRes = await client.execute(capReq);
 
-          if (!customId) {
-            console.error(
-              'custom_id (Task ID) is missing in the webhook event.',
-            );
-            return res
-              .status(400)
-              .send('Task ID is required in the webhook event');
+          if (!(capRes.statusCode === 201 || capRes.result.status === 'COMPLETED')) {
+            console.error('Capture failed', capRes.statusCode, capRes.result?.status);
+            return res.status(500).send('Capture failed');
           }
 
-          try {
-            // Capture the payment
-            const captureRequest = new paypal.orders.OrdersCaptureRequest(
-              orderId,
-            );
-            const paypalClient = new paypal.core.PayPalHttpClient(
-              new paypal.core.SandboxEnvironment(
-                process.env.PAYPAL_CLIENT_ID,
-                process.env.PAYPAL_CLIENT_SECRET,
-              ),
-            );
-            const captureResponse = await paypalClient.execute(captureRequest);
+          // Get order (for custom_id & payer email)
+          const getReq = new paypal.orders.OrdersGetRequest(orderId);
+          const getRes = await client.execute(getReq);
+          const pu = getRes.result.purchase_units?.[0];
+          const customId = pu?.custom_id;
+          const payerEmail = getRes.result.payer?.email_address;
 
-            if (
-              captureResponse.statusCode === 201 ||
-              captureResponse.result.status === 'COMPLETED'
-            ) {
-              console.log(
-                'Payment captured successfully:',
-                captureResponse.result,
-              );
+          if (!customId) return res.status(400).send('Missing custom_id');
 
-              const captureDetail =
-                captureResponse.result.purchase_units[0].payments.captures[0];
+          const task = await Task.findById(customId).populate('items.standardItemId');
+          if (!task) return res.status(404).send('Task not found');
+          if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
 
-              // Trouver la tâche associée
-              const task = await Task.findById(customId).populate(
-                'items.standardItemId',
-              );
-              if (!task) {
-                console.error(`Task not found for ID: ${customId}`);
-                return res.status(404).send('Task not found');
-              }
-
-              // Vérifier si la tâche est déjà payée
-              if (task.paymentStatus === 'Paid') {
-                console.log(
-                  `Payment already processed for Task ID: ${customId}`,
-                );
-                return res.status(200).send('Payment already processed');
-              }
-
-              // Construire le breakdown des items
-              const breakdown = task.items.map((item) => ({
-                itemDescription: item.standardItemId
-                  ? item.standardItemId.itemName
-                  : item.object,
-                quantity: item.quantity || 1,
-                price: item.standardItemId
-                  ? item.standardItemId.price
-                  : item.price || 0,
-                Objectsposition: item.Objectsposition,
-              }));
-
-              // Mettre à jour le statut de paiement de la tâche
-              task.paymentStatus = 'Paid';
-              await task.save();
-
-              const payerAccount =
-                captureDetail.payer?.email_address ||
-                `PayPal ID: ${captureDetail.payer?.payer_id}`;
-              const paymentDate = new Date(captureDetail.create_time);
-
-              // Créer une entrée dans PaymentHistory
-              await PaymentHistory.create({
-                taskId: task._id,
-                firstName: task.firstName,
-                lastName: task.lastName,
-                phoneNumber: task.phoneNumber,
-                amount: parseFloat(captureDetail.amount.value),
-                currency: captureDetail.amount.currency_code,
-                paymentType: 'PayPal',
-                paymentDate,
-                transactionId: captureDetail.id,
-                payerAccount,
-                breakdown,
-              });
-
-              // Envoyer l'email de confirmation
-              await sendPaymentConfirmationEmail({
-                email: task.email,
-                firstName: task.firstName,
-                lastName: task.lastName,
-                orderId: customId,
-                paymentDate: paymentDate.toLocaleString(),
-                amount: parseFloat(captureDetail.amount.value),
-                currency: captureDetail.amount.currency_code,
-                paymentType: 'PayPal',
-                taskDetails: task,
-                breakdown,
-              });
-
-              console.log(
-                `Payment for Task ${customId} confirmed and email sent.`,
-              );
-              res
-                .status(200)
-                .send('Payment captured and processed successfully');
-            } else {
-              console.error('Failed to capture payment:', captureResponse);
-              res.status(500).send('Failed to capture payment');
-            }
-          } catch (captureError) {
-            console.error('Error capturing payment:', captureError);
-            res.status(500).send('Error capturing payment');
-          }
-          break;
-
-        case 'PAYMENT.CAPTURE.COMPLETED':
-          console.log('Processing completed payment...');
-          const captureDetail = event.resource;
-
-          if (!captureDetail.custom_id) {
-            console.error(
-              'custom_id (Task ID) is missing in the webhook event.',
-            );
-            return res
-              .status(400)
-              .send('Task ID is required in the webhook event');
-          }
-
-          const taskId = captureDetail.custom_id;
-
-          // Trouver la tâche associée
-          const task = await Task.findById(taskId).populate(
-            'items.standardItemId',
-          );
-          if (!task) {
-            console.error(`Task not found for ID: ${taskId}`);
-            return res.status(404).send('Task not found');
-          }
-
-          // Vérifier si la tâche est déjà payée
-          if (task.paymentStatus === 'Paid') {
-            console.log(`Payment already processed for Task ID: ${taskId}`);
-            return res.status(200).send('Payment already processed');
-          }
-
-          // Construire le breakdown des items
-          const breakdown = task.items.map((item) => ({
-            itemDescription: item.standardItemId
-              ? item.standardItemId.itemName
-              : item.object,
-            quantity: item.quantity || 1,
-            price: item.standardItemId
-              ? item.standardItemId.price
-              : item.price || 0,
-            Objectsposition: item.Objectsposition,
-          }));
-
-          // Mettre à jour le statut de paiement de la tâche
           task.paymentStatus = 'Paid';
+          task.taskStatus = 'Completed';
           await task.save();
 
-          const payerAccount =
-            captureDetail.payer?.email_address ||
-            `PayPal ID: ${captureDetail.payer?.payer_id}`;
-          const paymentDate = new Date(captureDetail.create_time);
-
-          // Créer une entrée dans PaymentHistory
+          const cap = capRes.result.purchase_units[0].payments.captures[0];
           await PaymentHistory.create({
             taskId: task._id,
             firstName: task.firstName,
             lastName: task.lastName,
             phoneNumber: task.phoneNumber,
-            amount: parseFloat(captureDetail.amount.value),
-            currency: captureDetail.amount.currency_code,
+            amount: Number(cap.amount.value),        // store in GBP consistently
+            currency: cap.amount.currency_code,
             paymentType: 'PayPal',
-            paymentDate,
-            transactionId: captureDetail.id,
-            payerAccount,
-            breakdown,
+            paymentDate: new Date(cap.create_time),
+            transactionId: cap.id,
+            payerAccount: payerEmail || `PayPal ${cap.id}`,
           });
 
-          // Envoyer l'email de confirmation
-          await sendPaymentConfirmationEmail({
-            email: task.email,
+          // fire-and-forget the email (don’t block webhook)
+          sendPaymentConfirmationEmail({
+            email: task.email, firstName: task.firstName, lastName: task.lastName,
+            orderId: String(task._id), paymentDate: new Date().toLocaleString(),
+            amount: Number(cap.amount.value), currency: cap.amount.currency_code,
+            paymentType: 'PayPal', taskDetails: task,
+            breakdown: task.items.map(i => ({
+              itemDescription: i.standardItemId ? i.standardItemId.itemName : i.object,
+              quantity: i.quantity || 1,
+              price: i.standardItemId ? i.standardItemId.price : i.price || 0,
+            })),
+          }).catch(console.error);
+
+          return res.status(200).send('Captured');
+        }
+
+        case 'PAYMENT.CAPTURE.COMPLETED': {
+          const capture = evt.resource;
+          const orderId = capture?.supplementary_data?.related_ids?.order_id;
+          if (!orderId) return res.status(400).send('Missing order id on capture');
+
+          const client = PayPalClient();
+          const getReq = new paypal.orders.OrdersGetRequest(orderId);
+          const getRes = await client.execute(getReq);
+          const pu = getRes.result.purchase_units?.[0];
+          const customId = pu?.custom_id;
+          const payerEmail = getRes.result.payer?.email_address;
+          if (!customId) return res.status(400).send('Missing custom_id');
+
+          const task = await Task.findById(customId).populate('items.standardItemId');
+          if (!task) return res.status(404).send('Task not found');
+          if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
+
+          task.paymentStatus = 'Paid';
+          task.taskStatus = 'Completed';
+          await task.save();
+
+          await PaymentHistory.create({
+            taskId: task._id,
             firstName: task.firstName,
             lastName: task.lastName,
-            orderId: taskId,
-            paymentDate: paymentDate.toLocaleString(),
-            amount: parseFloat(captureDetail.amount.value),
-            currency: captureDetail.amount.currency_code,
+            phoneNumber: task.phoneNumber,
+            amount: Number(capture.amount.value),    // GBP
+            currency: capture.amount.currency_code,
             paymentType: 'PayPal',
-            taskDetails: task,
-            breakdown,
+            paymentDate: new Date(capture.create_time),
+            transactionId: capture.id,
+            payerAccount: payerEmail || `PayPal ${capture.id}`,
           });
 
-          console.log(`Payment for Task ${taskId} confirmed and email sent.`);
-          res.status(200).send('Payment processed successfully');
-          break;
+          // (optional) send email async as above…
+          return res.status(200).send('Processed');
+        }
 
         default:
-          console.log(`Ignoring event type: ${event.event_type}`);
-          res.status(200).send('Event type ignored');
+          return res.status(200).send('Ignored');
       }
-    } catch (error) {
-      console.error('Error processing PayPal webhook:', error);
-      res.status(500).send(`Webhook processing failed: ${error.message}`);
+    } catch (err) {
+      console.error('PayPal webhook error:', err);
+      return res.status(500).send('Webhook processing failed');
     }
   },
+
 
   sendBookingConfirmation: async (req, res) => {
     const { taskId } = req.params;
