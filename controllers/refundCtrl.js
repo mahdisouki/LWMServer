@@ -214,7 +214,7 @@ exports.processRefund = async (req, res) => {
                 console.error('Warning: refund logged failed (non-fatal):', logErr);   // NEW
             }
 
-            const task = await Task.findById(paymentHistory.taskId);
+            const task = await Task.findById(paymentHistory.taskId).populate('items.standardItemId');
             const totalPaid = paymentHistory.amount;
             const remainingAmount = totalPaid - refundAmount;
             console.log("totalPaid", totalPaid, "remainingAmount", remainingAmount, "refundAmount", refundAmount)
