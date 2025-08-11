@@ -1751,8 +1751,9 @@ const taskCtrl = {
         subtotal = 30;
       }
 
-      const vat = (subtotal - percentageDiscount) * 0.2;
-      const total = task.totalPrice;
+      const discountedSubtotal = subtotal - percentageDiscount;
+      const vat = discountedSubtotal * 0.2;
+      const total = discountedSubtotal + vat;
       console.log(
         'total',
         total,
@@ -1832,7 +1833,7 @@ const taskCtrl = {
         firstName: task.firstName,
         lastName: task.lastName,
         orderNumber: task.orderNumber,
-        totalPrice: task.totalPrice.toFixed(2),
+        totalPrice: total.toFixed(2),
         hasDiscount: task.customDiscountPercent > 0,
         customDiscountPercent: task.customDiscountPercent,
         discountAmount: percentageDiscount.toFixed(2),

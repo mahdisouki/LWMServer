@@ -310,7 +310,7 @@ module.exports = {
       itemRows,
       subtotal: (subtotal || 0).toFixed(2),
       vat: (vat || 0).toFixed(2),
-      totalPrice: (task.totalPrice || 0).toFixed(2),
+      totalPrice: (total || 0).toFixed(2),
       hasDiscount: task.hasDiscount,
       discountType: task.discountType || 'percentage',
       customDiscountPercent: (task.customDiscountPercent || 0).toFixed(2),
