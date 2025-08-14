@@ -281,7 +281,22 @@ const taskCtrl = {
         privateNotes,
       });
 
-      await newTask.save();
+      const savedTask = await newTask.save();
+
+      // Create a log of the task creation
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'CREATE',
+        entityType: 'TASK',
+        entityId: savedTask._id,
+        changes: {
+          created: savedTask.toObject(),
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
       res.status(201).json({
         message: 'Task created successfully',
         task: newTask,
@@ -1275,13 +1290,15 @@ const taskCtrl = {
         task.paidAmount = {
           amount: amountToPay,
           method: 'payment_link',
-          status: 'Paid',
+          status: 'Not_Paid',
         };
         task.remainingAmount = {
           amount: task.totalPrice - amountToPay,
           status: 'Not_Paid',
-          method: 'payment_link',
+          method: 'cash',
         };
+        // Reflect partial payment intent on the task
+        task.paymentStatus = 'partial_Paid';
         await task.save();
 
       } else if (paymentType === 'remaining') {
@@ -1304,7 +1321,6 @@ const taskCtrl = {
           .status(400)
           .json({ message: 'No amount to pay for this payment type.' });
       }
-
 
       // Calculate total price and breakdown as before
       let subtotal = 0;
@@ -1452,7 +1468,6 @@ const taskCtrl = {
   handleStripeWebhook: async (req, res) => {
     const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-    let event;
     try {
       event = stripe.webhooks.constructEvent(
         req.body,
@@ -1486,9 +1501,12 @@ const taskCtrl = {
 
         // Update payment status based on payment type
         if (paymentAmountType === 'deposit') {
+          // Deposit paid: mark deposit as Paid, remaining stays Not_Paid, keep overall task as partial
           task.paidAmount.status = 'Paid';
-          task.paymentStatus = 'partial_Paid';
           task.paidAmount.method = task.paidAmount.method || 'online';
+          task.remainingAmount.status = task.remainingAmount.status || 'Not_Paid';
+          task.paymentStatus = 'partial_Paid';
+          // Do NOT auto-complete task on deposit
         } else {
           // Full payment
           task.paidAmount.status = 'Paid';
@@ -1565,17 +1583,31 @@ const taskCtrl = {
           const getReq = new paypal.orders.OrdersGetRequest(orderId);
           const getRes = await client.execute(getReq);
           const pu = getRes.result.purchase_units?.[0];
-          const customId = pu?.custom_id;
+          const customIdRaw = pu?.custom_id; // could be "<taskId>|<paymentType>"
+          const [customId, paymentTypeMeta] = (customIdRaw || '').split('|');
           const payerEmail = getRes.result.payer?.email_address;
 
           if (!customId) return res.status(400).send('Missing custom_id');
 
           const task = await Task.findById(customId).populate('items.standardItemId');
           if (!task) return res.status(404).send('Task not found');
-          if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
-
-          task.paymentStatus = 'Paid';
-          task.taskStatus = 'Completed';
+          // Update based on payment type
+          if (paymentTypeMeta === 'deposit') {
+            task.paidAmount = task.paidAmount || {};
+            task.remainingAmount = task.remainingAmount || {};
+            task.paidAmount.status = 'Paid';
+            task.paidAmount.method = task.paidAmount.method || 'payment_link';
+            task.remainingAmount.status = task.remainingAmount.status || 'Not_Paid';
+            task.paymentStatus = 'partial_Paid';
+          } else {
+            if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
+            task.paymentStatus = 'Paid';
+            task.taskStatus = 'Completed';
+            task.paidAmount = task.paidAmount || {};
+            task.remainingAmount = task.remainingAmount || {};
+            task.paidAmount.status = 'Paid';
+            task.remainingAmount.status = 'Paid';
+          }
           await task.save();
 
           const cap = capRes.result.purchase_units[0].payments.captures[0];
@@ -1617,18 +1649,35 @@ const taskCtrl = {
           const getReq = new paypal.orders.OrdersGetRequest(orderId);
           const getRes = await client.execute(getReq);
           const pu = getRes.result.purchase_units?.[0];
-          const customId = pu?.custom_id;
+          const customIdRaw = pu?.custom_id;
+          const [customId, paymentTypeMeta] = (customIdRaw || '').split('|');
           const payerEmail = getRes.result.payer?.email_address;
           if (!customId) return res.status(400).send('Missing custom_id');
 
           const task = await Task.findById(customId).populate('items.standardItemId');
           if (!task) return res.status(404).send('Task not found');
-          if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
-
-          task.paymentStatus = 'Paid';
-          task.taskStatus = 'Completed';
+          if (paymentTypeMeta === 'deposit') {
+            task.paidAmount = task.paidAmount || {};
+            task.remainingAmount = task.remainingAmount || {};
+            task.paidAmount.status = 'Paid';
+            task.paidAmount.method = task.paidAmount.method || 'payment_link';
+            task.remainingAmount.status = task.remainingAmount.status || 'Not_Paid';
+            task.paymentStatus = 'partial_Paid';
+          } else {
+            if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
+            task.paymentStatus = 'Paid';
+            task.taskStatus = 'Completed';
+            task.paidAmount.status = 'Paid';
+            task.remainingAmount.status = 'Paid';
+          }
           await task.save();
 
+          const payerAccount =
+            capture.payer?.email_address ||
+            `PayPal ID: ${capture.payer?.payer_id}`;
+          const paymentDate = new Date(capture.create_time);
+
+          // Créer une entrée dans PaymentHistory
           await PaymentHistory.create({
             taskId: task._id,
             firstName: task.firstName,
@@ -1654,7 +1703,6 @@ const taskCtrl = {
       return res.status(500).send('Webhook processing failed');
     }
   },
-
 
   sendBookingConfirmation: async (req, res) => {
     const { taskId } = req.params;

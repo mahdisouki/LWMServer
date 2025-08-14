@@ -30,7 +30,7 @@ admin.initializeApp({
 //     },
 //     token: token,
 //   };
-  
+
 //   admin
 //     .messaging()
 //     .send(message)
@@ -41,22 +41,22 @@ admin.initializeApp({
 //       console.error('Error sending message:', error);
 //     });
 // }
-  
+
 // Initialize the Socket.io server and export the io instance
 const initSocket = (server) => {
   io = socketIo(server, {
     cors: {
       origin: [
-        'https://dirverapp.netlify.app' ,
+        'https://dirverapp.netlify.app',
         'https://lwmadmin.netlify.app',
-        'https://localhost:5173' ,
-        'http://localhost:5174'  ,
-        'http://localhost:3001' ,
+        'https://localhost:5173',
+        'http://localhost:5174',
+        'http://localhost:3001',
         'https://adminlondonwaste.netlify.app',
         'https://driver.londonwastemanagement.uk',
         'https://client.londonwastemanagement.uk',
         'https://admin.londonwastemanagement.uk',
-      ], 
+      ],
 
       methods: ['GET', 'POST'],
       credentials: true,
@@ -69,7 +69,7 @@ const initSocket = (server) => {
   //   console.log("Checking for completed tasks to send review requests");
   //   try {
   //     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      
+
   //     // Find completed tasks from 24 hours ago that haven't received a review request
   //     const completedTasks = await Task.find({
   //       taskStatus: 'Completed',
@@ -113,7 +113,7 @@ const initSocket = (server) => {
     console.log("checking unpaid online tasks")
     try {
       const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-      
+
       // Find completed tasks that are online payment method, unpaid, and completed more than 30 minutes ago
       const unpaidTasks = await Task.find({
         paymentMethod: 'online',
@@ -128,7 +128,7 @@ const initSocket = (server) => {
       // Send notification to each admin
       for (const task of unpaidTasks) {
         const notificationMessage = `Task #${task.orderNumber} has been completed but payment is still pending`;
-        
+
         for (const admin of adminUsers) {
           await emitNotificationToUser(admin._id, 'Orders', notificationMessage);
         }
@@ -169,29 +169,29 @@ const initSocket = (server) => {
     sendOfflineNotifications(userId, socket);
 
     socket.on('joinRoom', async (roomId) => {
-      
+
       console.log(`User joined room: ${roomId}`);
 
       const messages = await Message.find({ roomId }).sort({ createdAt: 1 });
       socket.emit('chatHistory', messages);
     });
 
-    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver }) => { 
+    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver, messageType = 'text' }) => {
       console.log(`Received message in room ${roomId} from user ${senderId}:`, isDriver);
       try {
         const user = await User.findById(senderId);
-   
+
         let truck;
-        
+
         if (isDriver) {
           console.log("is driver");
           truck = await Truck.findOne({ driverId: senderId });
         } else {
           console.log("is helper");
-          truck = await Truck.findById(roomId);        
+          truck = await Truck.findById(roomId);
         }
 
-        
+
 
         if (!truck) {
           console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
@@ -200,24 +200,25 @@ const initSocket = (server) => {
             senderId,
             messageText,
             image: user.picture,
+            messageType: messageType,
           });
-      
+
           // Save the message to the database
           await message.save();
-          
+
           console.log(`Message saved in room ${message}`);
           // Emit the new message to the room
           io.to(roomId).emit('newMessage', message);
           return;
         }
-    
+
         const relatedUserId = isDriver ? truck.helperId : truck.driverId;
 
         const relatedUser = await User.findById(relatedUserId);
 
-       
 
-        if(!relatedUser) {
+
+        if (!relatedUser) {
           console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
           return;
         }
@@ -228,49 +229,123 @@ const initSocket = (server) => {
           senderId,
           messageText,
           image: user.picture,
+          messageType: messageType,
         });
-    
+
         // Save the message to the database
         await message.save();
-        
+
         console.log(`Message saved in room ${message}`);
         // Emit the new message to the room
         io.to(roomId).emit('newMessage', message);
- // Get all socket connections in the room
+        // Get all socket connections in the room
 
- const allUserIds = [
-  truck.driverId?.toString(),
-  truck.helperId?.toString(),
-  '67cb6810c9e768ec25d39523' // Replace with actual admin user ID if known
-];
+        const allUserIds = [
+          truck.driverId?.toString(),
+          truck.helperId?.toString(),
+          '67cb6810c9e768ec25d39523' // Replace with actual admin user ID if known
+        ];
 
-for (const receiverId of allUserIds) {
-  console.log("receiverId",receiverId)
-  if (receiverId && receiverId !== senderId) {
-    emitNotificationToUser(receiverId, 'Chat', `New message from ${user.username}`);
-  }
-}      
-    // sendNotification('New Message Received', `You have a new message from ${user.username}`, relatedUser.fcmToken);
-    
+        for (const receiverId of allUserIds) {
+          console.log("receiverId", receiverId)
+          if (receiverId && receiverId !== senderId) {
+            emitNotificationToUser(receiverId, 'Chat', `New message from ${user.username}`);
+          }
+        }
+        // sendNotification('New Message Received', `You have a new message from ${user.username}`, relatedUser.fcmToken);
+
       } catch (error) {
         console.error(`Error processing message in room ${roomId}:`, error);
       }
     });
 
-    socket.on('sendLocation', async ({ driverId, coordinates , role }) => {
+    // Événement pour les messages vocaux
+    socket.on('sendAudioMessage', async ({ roomId, senderId, messageText, isDriver, audioUrl, audioDuration }) => {
+      console.log(`Received audio message in room ${roomId} from user ${senderId}:`, isDriver);
+      try {
+        const user = await User.findById(senderId);
+
+        let truck;
+
+        if (isDriver) {
+          console.log("is driver");
+          truck = await Truck.findOne({ driverId: senderId });
+        } else {
+          console.log("is helper");
+          truck = await Truck.findById(roomId);
+        }
+
+        if (!truck) {
+          console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+          const message = new Message({
+            roomId,
+            senderId,
+            messageText,
+            image: user.picture,
+            audioUrl: audioUrl,
+            audioDuration: audioDuration,
+            messageType: 'audio',
+          });
+
+          await message.save();
+          io.to(roomId).emit('newMessage', message);
+          return;
+        }
+
+        const relatedUserId = isDriver ? truck.helperId : truck.driverId;
+        const relatedUser = await User.findById(relatedUserId);
+
+        if (!relatedUser) {
+          console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+          return;
+        }
+
+        const message = new Message({
+          roomId,
+          senderId,
+          messageText,
+          image: user.picture,
+          audioUrl: audioUrl,
+          audioDuration: audioDuration,
+          messageType: 'audio',
+        });
+
+        await message.save();
+        io.to(roomId).emit('newMessage', message);
+
+        // Envoyer les notifications
+        const allUserIds = [
+          truck.driverId?.toString(),
+          truck.helperId?.toString(),
+          '67cb6810c9e768ec25d39523'
+        ];
+
+        for (const receiverId of allUserIds) {
+          console.log("receiverId", receiverId)
+          if (receiverId && receiverId !== senderId) {
+            emitNotificationToUser(receiverId, 'Chat', `New voice message from ${user.username}`);
+          }
+        }
+
+      } catch (error) {
+        console.error(`Error processing audio message in room ${roomId}:`, error);
+      }
+    });
+
+    socket.on('sendLocation', async ({ driverId, coordinates, role }) => {
       console.log(`Updating location for driver ${driverId}:`, coordinates);
       console.log(role)
       try {
         console.log(`Updating location for driver ${driverId}:`, coordinates);
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
-        role==="Driver"?await Driver.findByIdAndUpdate(driverId, {
+        role === "Driver" ? await Driver.findByIdAndUpdate(driverId, {
           location: { type: 'Point', coordinates: coordinatesArray },
         }) : await Helper.findByIdAndUpdate(driverId, {
           location: { type: 'Point', coordinates: coordinatesArray },
         })
-        
-        const driver = role=="Driver"? await Driver.findById(driverId) : await Helper.findById(driverId);
-        
+
+        const driver = role == "Driver" ? await Driver.findById(driverId) : await Helper.findById(driverId);
+
         console.log('location', driver.location);
         console.log(driver.startTime, 'start time');
 
@@ -305,7 +380,7 @@ for (const receiverId of allUserIds) {
       }
     });
     socket.on('fcmToken', async (fcmToken) => {
-      const { userId , token} = fcmToken;
+      const { userId, token } = fcmToken;
       try {
         await User.findByIdAndUpdate
           (userId, { fcmToken: token });
@@ -318,22 +393,22 @@ for (const receiverId of allUserIds) {
       try {
         const today = new Date();
         const todayKey = today.toISOString().split('T')[0]; // Format date as "YYYY-MM-DD"
-    
+
         const trucks = await Truck.find().populate({
           path: `tasks.${todayKey}`, // Populate tasks for today's date
           model: 'Task', // Specify the model being referenced
         });
-    
+
         let onWorkCount = 0;
-    
+
         // Iterate over trucks to check tasks for today
         for (const truck of trucks) {
-          
+
           console.log(todayKey)
           if (truck.tasks.has(todayKey)) {
             // Get tasks for today's date
             const todayTasks = truck.tasks.get(todayKey);
-            console.log("todayTasks:",todayTasks )
+            console.log("todayTasks:", todayTasks)
             // Count tasks with "Processing" status
             const processingTasks = todayTasks.filter((task) => task.taskStatus === 'Processing');
             if (processingTasks.length > 0) {
@@ -341,14 +416,14 @@ for (const receiverId of allUserIds) {
             }
           }
         }
-    
+
         const allVehiclesCount = await Truck.countDocuments();
         const tippingCount = await TippingRequest.countDocuments({
           status: { $nin: ['Denied', 'Pending'] },
           isShipped: false,
         });
         const onBreakCount = await Driver.countDocuments({ onBreak: true });
-    
+
         // Emit the stats to the client
         io.emit('vehicleStats', {
           allVehicles: allVehiclesCount,
@@ -370,11 +445,11 @@ for (const receiverId of allUserIds) {
 };
 
 // Function to emit a notification to a specific user by userId
-const emitNotificationToUser = async (userId,type ,notificationMessage) => {
+const emitNotificationToUser = async (userId, type, notificationMessage) => {
   const socketId = userSocketMap[userId];
   console.log('entredred to not fun')
   if (socketId && io) {
-    io.to(socketId).emit('notification', {userId:userId,type:type, message: notificationMessage,read: false });
+    io.to(socketId).emit('notification', { userId: userId, type: type, message: notificationMessage, read: false });
   } else {
     try {
       // User is offline, save notification to the database

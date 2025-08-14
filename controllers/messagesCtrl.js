@@ -55,6 +55,94 @@ module.exports = {
     }
   },
 
+  //---> send voice message
+  sendVoiceMessage: async (req, res) => {
+    const { roomId, senderId, messageText, audioUrl, audioDuration } = req.body;
+
+    try {
+      const user = await User.findById(senderId);
+
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const message = new Message({
+        roomId,
+        senderId,
+        messageText,
+        image: user.picture,
+        audioUrl,
+        audioDuration: parseFloat(audioDuration) || 0,
+        messageType: 'audio',
+      });
+
+      await message.save();
+
+      res.status(200).json({
+        success: true,
+        message,
+        messageType: 'audio'
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to send voice message',
+        error: error.message,
+      });
+    }
+  },
+
+  //---> get voice messages for a room
+  getVoiceMessages: async (req, res) => {
+    const { roomId } = req.params;
+
+    try {
+      const messages = await Message.find({
+        roomId,
+        messageType: 'audio'
+      }).sort({ createdAt: 1 });
+
+      res.status(200).json({ messages });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to get voice messages',
+        error: error.message,
+      });
+    }
+  },
+
+  //---> delete voice message
+  deleteVoiceMessage: async (req, res) => {
+    const { messageId } = req.params;
+    const userId = req.user.id;
+
+    try {
+      const message = await Message.findById(messageId);
+
+      if (!message) {
+        return res.status(404).json({ message: 'Message not found' });
+      }
+
+      // Vérifier que l'utilisateur est le propriétaire du message
+      if (message.senderId !== userId) {
+        return res.status(403).json({ message: 'Not authorized to delete this message' });
+      }
+
+      // Vérifier que c'est bien un message vocal
+      if (message.messageType !== 'audio') {
+        return res.status(400).json({ message: 'Can only delete voice messages' });
+      }
+
+      await Message.findByIdAndDelete(messageId);
+
+      res.status(200).json({ message: 'Voice message deleted successfully' });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to delete voice message',
+        error: error.message,
+      });
+    }
+  },
+
   //---> get messages for an admin
   getMessagesWithAdmin: async (req, res) => {
     const userId = req.user.id;
@@ -91,7 +179,7 @@ module.exports = {
       }
 
       const user = await User.findById(truck.helperId);
-      res.status(200).json({ user: {...user._doc, id: user._id}, });
+      res.status(200).json({ user: { ...user._doc, id: user._id }, });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to get assigned helper',
@@ -132,8 +220,8 @@ module.exports = {
           .json({ message: 'No driver assigned to this helper' });
       }
 
-     const user = await User.findById(truck.driverId);
-     res.status(200).json({ user: {...user._doc, id: user._id} });
+      const user = await User.findById(truck.driverId);
+      res.status(200).json({ user: { ...user._doc, id: user._id } });
     } catch (error) {
       res.status(500).json({
         message: 'Failed to get assigned driver',
@@ -145,12 +233,12 @@ module.exports = {
   //---> get the admin id
   getAdminId: async (_, res) => {
     try {
-      const admin = await User.findOne({ roleType : 'Admin' });
+      const admin = await User.findOne({ roleType: 'Admin' });
       return admin
         ? res.status(200).json({ adminId: admin.id })
         : res.status(500).json({
-            message: 'Failed to get admin id',
-          });
+          message: 'Failed to get admin id',
+        });
     } catch (error) {
       return res.status(500).json({
         message: 'An error occurred while getting the admin id',
@@ -159,3 +247,14 @@ module.exports = {
     }
   },
 };
+
+// Helper functions
+async function getHelperIdForDriver(driverId) {
+  const truck = await Truck.findOne({ driverId });
+  return truck ? truck.helperId : null;
+}
+
+async function getDriverIdForHelper(helperId) {
+  const truck = await Truck.findOne({ helperId });
+  return truck ? truck.driverId : null;
+}

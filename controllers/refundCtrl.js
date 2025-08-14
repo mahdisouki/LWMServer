@@ -106,7 +106,7 @@ const { sendRefundEmail } = require('../services/emailsService');
 function PayPalClient() {
     return new paypal.core.PayPalHttpClient(new paypal.core.SandboxEnvironment(
         process.env.PAYPAL_CLIENT_ID,
-        process.env.PAYPAL_SECRET
+        process.env.PAYPAL_CLIENT_SECRET
     ));
 }
 
@@ -159,7 +159,8 @@ exports.processRefund = async (req, res) => {
 
             refundVerified = await verifyStripeRefund(refund.id);
 
-        } else if (paymentHistory.paymentType === 'Paypal') {
+        } else if (paymentHistory.paymentType.toLowerCase() === 'paypal') {
+
             try {
                 const request = new paypal.payments.CapturesRefundRequest(paymentHistory.transactionId);
                 request.requestBody({
@@ -176,7 +177,10 @@ exports.processRefund = async (req, res) => {
                 rawRefundPayload = refund?.result || null;           // NEW
 
                 refundVerified = await verifyPayPalRefund(refund.result.id);
+
             } catch (error) {
+                console.error("PayPal Refund Error:", JSON.stringify(error, null, 2));
+
                 if (error.statusCode === 422 && error.message.includes("CAPTURE_FULLY_REFUNDED")) {
                     // NEW: mark as completed even if already fully refunded
                     createdRefundId = createdRefundId || 'already_fully_refunded'; // NEW
@@ -185,6 +189,7 @@ exports.processRefund = async (req, res) => {
                     refundVerified = true;
                 } else {
                     throw error;
+
                 }
             }
         }

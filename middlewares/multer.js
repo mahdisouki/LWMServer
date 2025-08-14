@@ -9,6 +9,8 @@ const storage = new CloudinaryStorage({
     format: async (req, file) => {
       if (file.mimetype.startsWith('video')) {
         return file.mimetype.split('/')[1]; // Keeps the original video format
+      } else if (file.mimetype.startsWith('audio')) {
+        return file.mimetype.split('/')[1]; // Keeps the original audio format
       } else {
         return 'jpg'; // Converts images to jpg
       }
@@ -16,6 +18,8 @@ const storage = new CloudinaryStorage({
     resource_type: async (req, file) => {
       if (file.mimetype.startsWith('video')) {
         return 'video';
+      } else if (file.mimetype.startsWith('audio')) {
+        return 'video'; // Cloudinary uses 'video' resource type for audio files
       } else {
         return 'image';
       }
@@ -25,10 +29,10 @@ const storage = new CloudinaryStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) {
     cb(null, true);
   } else {
-    cb(new Error('Not an image or video file!'), false);
+    cb(new Error('Not an image, video or audio file!'), false);
   }
 };
 

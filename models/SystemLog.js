@@ -18,7 +18,7 @@ const systemLogSchema = new mongoose.Schema({
   entityType: {
     type: String,
     required: true,
-    enum: ['TASK', 'USER', 'PAYROLL', 'TRUCK', 'DAILY_SHEET', 'OTHER']
+    enum: ['TASK', 'USER', 'PAYROLL', 'TRUCK', 'DAILY_SHEET', 'STAFF', 'OTHER']
   },
   entityId: {
     type: mongoose.Schema.Types.ObjectId,

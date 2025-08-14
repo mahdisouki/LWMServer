@@ -140,10 +140,10 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
         quantity: 1,
     }];
 
-    // Fix: Define metadata object
+    // Include metadata for webhook processing
     const metadata = {
         taskId: String(taskId),
-        paymentType: paymentType || '',
+        paymentAmountType: paymentType || '',
     };
 
     const session = await stripe.checkout.sessions.create({

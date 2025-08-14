@@ -7,6 +7,7 @@ const bcrypt = require('bcrypt');
 const socket = require('../socket'); // Ensure you have the correct path to your socket module
 const APIfeatures = require('../utils/APIFeatures');
 const { optimizeRoute } = require('../helper/OpitomRoute');
+const loggingService = require('../services/loggingService');
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -127,6 +128,21 @@ const staffManagement = {
       }
       console.log(newUser)
       await newUser.save();
+
+      // Create a log of the staff creation
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'CREATE',
+        entityType: 'STAFF',
+        entityId: newUser._id,
+        changes: {
+          created: newUser.toObject(),
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
       res.status(201).json({ message: `${role} created successfully`, user: newUser });
     } catch (error) {
       console.error('Error in addStaff:', error);
@@ -137,17 +153,16 @@ const staffManagement = {
     }
   },
 
-
   getAllStaff: async (req, res) => {
     try {
-      const { page = 1, limit = 9, showAll='true' , pagination = 'true' } = req.query;
+      const { page = 1, limit = 9, showAll = 'true', pagination = 'true' } = req.query;
       console.log(req.query)
       // Base filter
       let filter = {};
       if (!showAll) {
         filter.role = { $in: ['Driver', 'Helper'], $nin: ['Admin'] };
       }
-  
+
       // Keyword search
       if (req.query.keyword) {
         const keyword = req.query.keyword.trim();
@@ -157,33 +172,33 @@ const staffManagement = {
           { phoneNumber: { $regex: keyword, $options: 'i' } },
         ];
       }
-  
+
       // Count
       const total = await User.countDocuments(filter);
-  
+
       // Sort
       let sort = req.query.sort
         ? req.query.sort.split(',').join(' ') + ' _id'
         : '-createdAt _id';
-  
+
       // Query with conditional pagination
       let query = User.find(filter).sort(sort);
-      
+
       if (pagination === 'true') {
         const currentPage = parseInt(page, 10);
         const limitNum = parseInt(limit, 10);
         const skip = (currentPage - 1) * limitNum;
         query = query.skip(skip).limit(limitNum);
       }
-  
+
       const users = await query;
-  
+
       // Trucks
       const userIds = users.map((user) => user._id);
       const trucks = await Truck.find({
         $or: [{ driverId: { $in: userIds } }, { helperId: { $in: userIds } }],
       }).select('name driverId helperId driverSpecificDays helperSpecificDays');
-  
+
       const usersWithTrucks = users.map((user) => {
         const userTrucks = trucks.filter(
           (truck) =>
@@ -192,7 +207,7 @@ const staffManagement = {
         );
         return { ...user.toObject(), trucks: userTrucks };
       });
-  
+
       res.status(200).json({
         message: 'Staff retrieved successfully',
         users: usersWithTrucks,
@@ -211,8 +226,6 @@ const staffManagement = {
       });
     }
   },
-  
-  
 
   getStaffById: async (req, res) => {
     const { id } = req.params;
@@ -232,10 +245,29 @@ const staffManagement = {
   deleteStaff: async (req, res) => {
     const { id } = req.params;
     try {
-      const user = await User.findByIdAndDelete(id);
+      // Get the user data before deleting
+      const user = await User.findById(id);
       if (!user) {
         return res.status(404).json({ message: 'Staff not found' });
       }
+
+      // Delete the user
+      await User.findByIdAndDelete(id);
+
+      // Create a log of the deletion
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'DELETE',
+        entityType: 'STAFF',
+        entityId: id,
+        changes: {
+          deleted: user.toObject(),
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
       res.status(200).json({ message: 'Staff deleted successfully' });
     } catch (error) {
       res
@@ -267,6 +299,12 @@ const staffManagement = {
         updateData.password = await bcrypt.hash(updateData.password, 10);
       }
 
+      // Get the old user data before updating
+      const oldUser = await User.findById(id);
+      if (!oldUser) {
+        return res.status(404).json({ message: 'Staff not found' });
+      }
+
       // Update the staff member in the database
       const user = await User.findByIdAndUpdate(
         id,
@@ -274,9 +312,20 @@ const staffManagement = {
         { new: true }, // Return the updated document
       );
 
-      if (!user) {
-        return res.status(404).json({ message: 'Staff not found' });
-      }
+      // Create a log of the changes
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: id,
+        changes: {
+          before: oldUser.toObject(),
+          after: user.toObject(),
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
 
       res.status(200).json({ message: 'Staff updated successfully', user });
     } catch (error) {
@@ -322,6 +371,27 @@ const staffManagement = {
       driver.designation = truckName; // Adjust as needed
       await driver.save();
 
+      // Create a log of the driver assignment
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: driverId,
+        changes: {
+          assignment: {
+            type: 'driver_to_truck',
+            truckName,
+            startDate,
+            endDate,
+            driverId,
+            truckId: truck._id,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
       res
         .status(200)
         .json({ message: 'Driver assigned to truck successfully', truck });
@@ -331,6 +401,7 @@ const staffManagement = {
         .json({ message: 'Failed to assign driver', error: error.message });
     }
   },
+
   assignHelperToTruck: async (req, res) => {
     const { helperId } = req.params;
     const { truckName, startDate, endDate } = req.body; // Accept start and end dates
@@ -364,6 +435,27 @@ const staffManagement = {
       // Update the helper's designation with the truck name
       helper.designation = truckName; // Adjust as needed
       await helper.save();
+
+      // Create a log of the helper assignment
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: helperId,
+        changes: {
+          assignment: {
+            type: 'helper_to_truck',
+            truckName,
+            startDate,
+            endDate,
+            helperId,
+            truckId: truck._id,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
 
       res
         .status(200)
@@ -403,6 +495,25 @@ const staffManagement = {
         await driver.save();
       }
 
+      // Create a log of the driver deassignment
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: driverId,
+        changes: {
+          deassignment: {
+            type: 'driver_from_truck',
+            truckName,
+            driverId,
+            truckId: truck._id,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
       res
         .status(200)
         .json({ message: 'Driver deassigned from truck successfully', truck });
@@ -440,6 +551,25 @@ const staffManagement = {
         helper.designation = undefined;
         await helper.save();
       }
+
+      // Create a log of the helper deassignment
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: helperId,
+        changes: {
+          deassignment: {
+            type: 'helper_from_truck',
+            truckName,
+            helperId,
+            truckId: truck._id,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
 
       res
         .status(200)
@@ -571,13 +701,30 @@ const staffManagement = {
       }
     }
 
+    // Get the old admin data before updating
+    const oldAdmin = await Admin.findById(adminId);
+    if (!oldAdmin) {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+
     const updatedAdmin = await Admin.findByIdAndUpdate(adminId, updatedData, {
       new: true,
     });
 
-    if (!updatedAdmin) {
-      return res.status(404).json({ message: 'Admin not found' });
-    }
+    // Create a log of the admin profile update
+    await loggingService.createLog({
+      userId: req.user._id,
+      username: req.user.username,
+      action: 'UPDATE',
+      entityType: 'STAFF',
+      entityId: adminId,
+      changes: {
+        before: oldAdmin.toObject(),
+        after: updatedAdmin.toObject(),
+      },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
 
     res.status(200).json({
       message: 'Admin profile updated successfully',
@@ -592,6 +739,7 @@ const staffManagement = {
       });
     }
   },
+
   optimizeTasks: async (req, res) => {
     try {
       const { truckId } = req.params;
@@ -604,6 +752,7 @@ const staffManagement = {
       res.json({ error: error })
     }
   },
+
   updateEmailSignature: async (req, res) => {
     try {
       const { signature } = req.body;
@@ -614,18 +763,38 @@ const staffManagement = {
         return res.status(404).json({ message: 'Admin not found' });
       }
 
+      // Get the old signature before updating
+      const oldSignature = admin.emailSignature;
+
       admin.emailSignature = signature;
       await admin.save();
 
-      res.status(200).json({ 
+      // Create a log of the email signature update
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: adminId,
+        changes: {
+          emailSignature: {
+            before: oldSignature,
+            after: signature,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(200).json({
         message: 'Email signature updated successfully',
-        signature: admin.emailSignature 
+        signature: admin.emailSignature
       });
     } catch (error) {
       console.error('Error updating email signature:', error);
-      res.status(500).json({ 
-        message: 'Failed to update email signature', 
-        error: error.message 
+      res.status(500).json({
+        message: 'Failed to update email signature',
+        error: error.message
       });
     }
   }

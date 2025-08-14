@@ -7,6 +7,9 @@ const MessageSchema = new mongoose.Schema({
   image: { type: String },
   fileUrl: { type: String },
   fileType: { type: String },
+  audioUrl: { type: String }, // URL du fichier audio pour les messages vocaux
+  audioDuration: { type: Number }, // Durée en secondes du message vocal
+  messageType: { type: String, enum: ['text', 'image', 'file', 'audio'], default: 'text' }, // Type de message
   createdAt: { type: Date, default: Date.now },
 });
 

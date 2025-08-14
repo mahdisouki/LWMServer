@@ -269,8 +269,8 @@ module.exports = {
         if (showDiscountColumn) {
           return `
           <tr>
-            <td>${item.standardItemId?.itemName || item.object || 'Unnamed Item'
-            }</td>
+            <td>
+            ${item.standardItemId?.itemName || item.object || 'Unnamed Item'}</td>
             <td>${item.quantity}</td>
             <td>£${displayPrice.toFixed(2)}</td>
             <td>£${item.customPrice ? discountedPrice.toFixed(2) : displayPrice.toFixed(2)}</td>
