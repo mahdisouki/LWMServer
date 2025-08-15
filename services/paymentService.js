@@ -239,12 +239,32 @@ const createStripePaymentIntent = async (amount) => {
     });
 };
 
-async function createPayPalOrder(amount) {
+// async function createPayPalOrder(amount) {
+//     const client = PayPalClient();
+//     const request = new paypal.orders.OrdersCreateRequest();
+//     request.requestBody({
+//         intent: 'CAPTURE',
+//         purchase_units: [{ amount: { currency_code: 'GBP', value: (amount / 100).toFixed(2) } }]
+//     });
+//     return client.execute(request);
+// }
+async function createPayPalOrder(amountInPence, taskId) {
     const client = PayPalClient();
     const request = new paypal.orders.OrdersCreateRequest();
     request.requestBody({
         intent: 'CAPTURE',
-        purchase_units: [{ amount: { currency_code: 'GBP', value: (amount / 100).toFixed(2) } }]
+        purchase_units: [{
+            custom_id: String(taskId),
+            amount: { currency_code: 'GBP', value: (amountInPence / 100).toFixed(2) }
+        }],
+        application_context: {
+            brand_name: 'London Waste Management',
+            landing_page: 'LOGIN',
+            user_action: 'PAY_NOW',
+            // ⬇️ Return to your server, like Stripe does
+            return_url: `${NGROK_URL}/api/webhooks/payment/success`,
+            cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
+        },
     });
     return client.execute(request);
 }

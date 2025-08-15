@@ -149,7 +149,7 @@ const Task = require('../models/Task');
 router.post('/tasks/lock/:taskId', isAuth, taskCtrl.lockTask);
 router.post('/tasks/unlock/:taskId', isAuth, taskCtrl.unlockTask);
 router.get('/tasks/lock-status/:taskId', isAuth, taskCtrl.getTaskLockStatus);
-router.post('/create-request', isAuth, multer.array('clientObjectPhotos'), taskCtrl.createTask);
+router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
 router.get('/tasks', taskCtrl.getAllTasks);
 router.get('/task/:taskId', isAuth, taskCtrl.getTaskById);

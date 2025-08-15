@@ -18,7 +18,7 @@ const {
 const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const loggingService = require('../services/loggingService');
-
+const NGROK_URL = 'https://londonwastemanagement.uk';
 const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
@@ -55,6 +55,7 @@ function validateBreakdown(breakdown) {
 // Fonction auxiliaire pour traiter les événements de commande approuvés
 async function calculateTotalPrice({
   standardItems = [],
+  items = [], // Add items parameter for backward compatibility
   objects = [],
   customDiscountPercent,
   discountType,
@@ -74,8 +75,11 @@ async function calculateTotalPrice({
   }
 
   // 2. Add standard items (with per-item custom price if present) + position fee
-  if (standardItems && Array.isArray(standardItems)) {
-    for (const item of standardItems) {
+  // Use items if provided, otherwise fall back to standardItems for backward compatibility
+  const itemsToProcess = items.length > 0 ? items : standardItems;
+
+  if (itemsToProcess && Array.isArray(itemsToProcess)) {
+    for (const item of itemsToProcess) {
       if (!item.standardItemId) continue;
       const standardItem = await StandardItem.findById(item.standardItemId);
       if (!standardItem) continue;
@@ -190,8 +194,12 @@ const taskCtrl = {
         hasPerItemDiscount(objects);
 
       // Calculate price using new logic
+      console.log('=== PRICE CALCULATION DEBUG ===');
+      console.log('Items being passed to calculateTotalPrice:', items);
+      console.log('Objects being passed to calculateTotalPrice:', objects);
+
       const { totalPrice, vat } = await calculateTotalPrice({
-        items, // Use items for price calculation
+        items, // Pass items directly for the function
         objects,
         customDiscountPercent,
         discountType,
@@ -200,6 +208,9 @@ const taskCtrl = {
         // !isNaN(customDiscountPercent) &&
         // customDiscountPercent > 0,
       });
+
+      console.log('Calculated totalPrice:', totalPrice);
+      console.log('Calculated vat:', vat);
       // Prepare items array for DB (merge standard and custom if needed)
       let allItems = [];
       if (items && Array.isArray(items)) {
@@ -284,18 +295,18 @@ const taskCtrl = {
       const savedTask = await newTask.save();
 
       // Create a log of the task creation
-      await loggingService.createLog({
-        userId: req.user._id,
-        username: req.user.username,
-        action: 'CREATE',
-        entityType: 'TASK',
-        entityId: savedTask._id,
-        changes: {
-          created: savedTask.toObject(),
-        },
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
+      // await loggingService.createLog({
+      //   userId: req.user._id,
+      //   username: req.user.username,
+      //   action: 'CREATE',
+      //   entityType: 'TASK',
+      //   entityId: savedTask._id,
+      //   changes: {
+      //     created: savedTask.toObject(),
+      //   },
+      //   ipAddress: req.ip,
+      //   userAgent: req.headers['user-agent'],
+      // });
 
       res.status(201).json({
         message: 'Task created successfully',
@@ -929,23 +940,23 @@ const taskCtrl = {
       const selectedQuantities = {};
       task.items.forEach((item) => {
         if (item.standardItemId) {
-          selectedQuantities[item.standardItemId._id.toString()] =
+          // standardItemId is a string, not an object
+          selectedQuantities[item.standardItemId.toString()] =
             item.quantity || 1;
         }
       });
 
       const breakdown = task.items.map((item) => {
         const itemQuantity =
-          selectedQuantities[item.standardItemId?._id?.toString()] ||
+          selectedQuantities[item.standardItemId?.toString()] ||
           item.quantity ||
           1;
-        const itemPrice = item.standardItemId
-          ? item.standardItemId.price
-          : item.price || 0;
+
+        // Use the price from the frontend (which already includes position fees)
+        const itemPrice = item.price || 0;
+
         return {
-          itemDescription: item.standardItemId
-            ? item.standardItemId.itemName
-            : item.object,
+          itemDescription: item.object || 'Standard Item', // Use object field or default
           quantity: itemQuantity,
           price: itemPrice,
           Objectsposition: item.Objectsposition,
@@ -1040,8 +1051,8 @@ const taskCtrl = {
                   quantity: 1,
                 },
               ],
-              success_url: `${process.env.CLIENT_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-              cancel_url: `${process.env.CLIENT_URL}/payment-cancel`,
+              success_url: `${NGROK_URL}/api/webhooks/payment/success`,
+              cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
               metadata: {
                 taskId: taskId,
                 paymentAmountType: paymentAmountType,
@@ -1202,6 +1213,7 @@ const taskCtrl = {
 
       if (capture.result.status === 'COMPLETED') {
         task.paymentStatus = 'Paid';
+        task.status = 'Completed';
         await task.save();
 
         const amountInGBP = parseFloat(
