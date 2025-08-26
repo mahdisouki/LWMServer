@@ -168,6 +168,9 @@ const initSocket = (server) => {
     console.log(userSocketMap)
     sendOfflineNotifications(userId, socket);
 
+    // Emit user online status to all connected users
+    io.emit('userStatus', { userId, status: 'online' });
+
     socket.on('joinRoom', async (roomId) => {
 
       console.log(`User joined room: ${roomId}`);
@@ -379,6 +382,39 @@ const initSocket = (server) => {
         socket.emit('error', { message: 'Failed to fetch driver locations' });
       }
     });
+
+    // Get online users
+    socket.on('getOnlineUsers', () => {
+      const onlineUsers = getOnlineUsers();
+      socket.emit('onlineUsersList', onlineUsers);
+    });
+
+    // Get messages by roomId
+    socket.on('getMessagesByRoomId', async ({ roomId }) => {
+      try {
+        if (!roomId) {
+          socket.emit('error', { message: 'Room ID is required' });
+          return;
+        }
+
+        const messages = await Message.find({ roomId })
+          .sort({ createdAt: 1 })
+          .populate('senderId', 'username picture'); // Populate sender info
+
+        socket.emit('messagesByRoomId', {
+          success: true,
+          roomId,
+          messages,
+          count: messages.length
+        });
+      } catch (error) {
+        console.error('Error getting messages by roomId:', error);
+        socket.emit('error', { 
+          message: 'Failed to get messages by roomId',
+          error: error.message 
+        });
+      }
+    });
     socket.on('fcmToken', async (fcmToken) => {
       const { userId, token } = fcmToken;
       try {
@@ -435,9 +471,106 @@ const initSocket = (server) => {
         console.error('Error fetching truck stats:', error);
       }
     });
+    // Typing indicator events
+    socket.on('typingStart', async ({ roomId, senderId, isDriver }) => {
+      try {
+        let truck;
+        console.log("user is typing:", senderId)
+        if (isDriver) {
+          truck = await Truck.findOne({ driverId: senderId });
+        } else {
+          truck = await Truck.findById(roomId);
+        }
+        console.log("truck:", truck)
+        if (truck) {
+          const relatedUserId = isDriver ? truck.helperId : truck.driverId;
+          // Emit typing start to the room
+          io.to(roomId).emit('userTyping', { 
+            userId: senderId, 
+            isTyping: true,
+            roomId 
+          });
+        }
+      } catch (error) {
+        console.error('Error handling typing start:', error);
+      }
+    });
+
+    socket.on('typingStop', async ({ roomId, senderId, isDriver }) => {
+      try {
+        let truck;
+        if (isDriver) {
+          truck = await Truck.findOne({ driverId: senderId });
+        } else {
+          truck = await Truck.findById(roomId);
+        }
+
+        if (truck) {
+          // Emit typing stop to the room
+          io.to(roomId).emit('userTyping', { 
+            userId: senderId, 
+            isTyping: false,
+            roomId 
+          });
+        }
+      } catch (error) {
+        console.error('Error handling typing stop:', error);
+      }
+    });
+
+    // Message seen event
+    socket.on('messageSeen', async ({ roomId, messageId, userId }) => {
+      try {
+        // Update message as seen in database
+        await Message.findByIdAndUpdate(messageId, { 
+          seen: true, 
+          seenAt: new Date() 
+        });
+
+        // Emit message seen to the room
+        io.to(roomId).emit('messageSeenUpdate', { 
+          messageId, 
+          seenBy: userId,
+          seenAt: new Date()
+        });
+      } catch (error) {
+        console.error('Error handling message seen:', error);
+      }
+    });
+
+    // Mark all messages in room as seen
+    socket.on('markAllAsSeen', async ({ roomId, userId }) => {
+      try {
+        // Update all unread messages in the room for this user
+        await Message.updateMany(
+          { 
+            roomId, 
+            senderId: { $ne: userId }, // Not sent by this user
+            seen: { $ne: true } // Not already seen
+          },
+          { 
+            seen: true, 
+            seenAt: new Date() 
+          }
+        );
+
+        // Emit all messages seen to the room
+        io.to(roomId).emit('allMessagesSeen', { 
+          roomId, 
+          seenBy: userId,
+          seenAt: new Date()
+        });
+      } catch (error) {
+        console.error('Error marking all messages as seen:', error);
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
       delete userSocketMap[userId]; // Remove user from map on disconnect
+      
+      // Emit user offline status to all connected users
+      io.emit('userStatus', { userId, status: 'offline' });
     });
   });
 
@@ -495,9 +628,21 @@ const getIo = () => {
   return io;
 };
 
+// Function to get all online users
+const getOnlineUsers = () => {
+  return Object.keys(userSocketMap);
+};
+
+// Function to check if a specific user is online
+const isUserOnline = (userId) => {
+  return userSocketMap.hasOwnProperty(userId);
+};
+
 module.exports = {
   initSocket,
   emitEvent,
   getIo,
   emitNotificationToUser,
+  getOnlineUsers,
+  isUserOnline,
 };

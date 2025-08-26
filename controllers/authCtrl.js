@@ -81,6 +81,34 @@ exports.userSignIn = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+exports.driverSignIn = async (req, res) => {
+  const { email, password } = req.body;
+  const driver = await User.findOne({ email , role: 'Driver' }) || await User.findOne({ email , role: 'Helper' });
+  if (!driver) {
+    return res.status(404).json({ success: false, message: "Driver not found with the given email!" });
+  }
+  const isMatch = await bcrypt.compare(password, driver.password);
+  if (!isMatch) {
+    return res.status(401).json({ success: false, message: "Password is incorrect!" });
+  }
+  const token = generateAccessToken(driver);
+  const refreshToken = generateRefreshToken(driver);
+  driver.refreshToken = refreshToken;
+  await driver.save();
+  res.json({
+    success: true,
+    driver: {
+      ...driver._doc,
+      id: driver._id,
+      startTime: driver.startTime,
+      truckId: driver.truckId,
+      picture: driver.picture || null,
+      permissions: driver.permissions || null,
+    },
+    token,
+    refreshToken,
+  });
+};
 
 
 exports.refresh = async (req, res) => {

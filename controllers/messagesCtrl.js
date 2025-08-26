@@ -148,7 +148,7 @@ module.exports = {
     const userId = req.user.id;
 
     try {
-      const adminId = await getAdminId();
+      const adminId = await module.exports.getAdminId();
 
       if (!adminId) {
         return res.status(404).json({ message: 'Admin not found' });
@@ -160,6 +160,7 @@ module.exports = {
 
       res.status(200).json({ messages });
     } catch (error) {
+      console.log(error);
       res.status(500).json({
         message: 'Failed to get messages with admin',
         error: error.message,
@@ -231,7 +232,7 @@ module.exports = {
   },
 
   //---> get the admin id
-  getAdminId: async (_, res) => {
+  getAdminId: async (req, res) => {
     try {
       const admin = await User.findOne({ roleType: 'Admin' });
       return admin
