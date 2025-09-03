@@ -144,6 +144,21 @@ const truckCtrl = {
       });
     }
   },
+  getTruckMatricules: async (req, res) => {
+    try {
+      const matricules = (await Truck.distinct('matricule')).sort();
+
+      res.status(200).json({
+        message: 'All truck matricules retrieved successfully',
+        matricules,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to retrieve truck matricules',
+        error: error.message,
+      });
+    }
+  },
   deleteTruck: async (req, res) => {
     const { id } = req.params;
     try {

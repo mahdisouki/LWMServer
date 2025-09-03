@@ -18,7 +18,8 @@ const tippingRequestSchema = new Schema({
     status: {
         type: String,
         enum: ['Pending', 'GoToStorage', 'GoToTipping', 'TippingAndStorage', 'Denied'],
-        default: 'Pending'
+        default: 'Pending',
+        required: true
     },
     isShipped: {
         type: Boolean,

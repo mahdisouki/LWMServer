@@ -1,10 +1,23 @@
 const Storage = require('../models/Storage');
 const StoragePlace = require('../models/StroragePlace');
 const Truck = require('../models/Truck');
+const capacities = require('../config/storageCapacities');
 const storageCtrl = {
   addItems: async (req, res) => {
     try {
-      const { driverId, date, items, storagePlace } = req.body;
+      const { driverId, date, storagePlace } = req.body;
+
+      // Parse the items JSON string
+      let items;
+      try {
+        items = typeof req.body.items === 'string' ? JSON.parse(req.body.items) : req.body.items;
+      } catch (parseError) {
+        console.error('Error parsing items JSON:', parseError);
+        return res.status(400).json({ message: 'Invalid items format' });
+      }
+
+      console.log('Parsed items:', items); // Add this for debugging
+
       const storageDate = new Date(date);
       storageDate.setHours(0, 0, 0, 0);
 
@@ -27,13 +40,17 @@ const storageCtrl = {
           mattresses: items.mattresses || 0,
           sofas: items.sofas || 0,
           paint: items.paint || 0,
-          other: items.other || 0,
+          other: (() => {
+            const v = parseFloat(items.other);
+            return Number.isFinite(v) && v >= 0 ? v : 0;
+          })(),
         },
         storagePlace,
         proofs: proofUrls,
       });
 
       const savedStorage = await newStorageRecord.save();
+      console.log(savedStorage)
       res
         .status(201)
         .json({ message: 'Items added to storage', storage: savedStorage });
@@ -44,7 +61,19 @@ const storageCtrl = {
 
   removeItems: async (req, res) => {
     try {
-      const { driverId, date, items } = req.body;
+      const { driverId, date } = req.body;
+
+      // Parse the items JSON string - ADD THIS PART
+      let items;
+      try {
+        items = typeof req.body.items === 'string' ? JSON.parse(req.body.items) : req.body.items;
+      } catch (parseError) {
+        console.error('Error parsing items JSON:', parseError);
+        return res.status(400).json({ message: 'Invalid items format' });
+      }
+
+      console.log('Parsed items:', items); // Add this for debugging
+
       const storageDate = new Date(date);
       storageDate.setHours(0, 0, 0, 0);
 
@@ -67,12 +96,17 @@ const storageCtrl = {
           mattresses: items.mattresses || 0,
           sofas: items.sofas || 0,
           paint: items.paint || 0,
-          other: items.other || 0,
+          other: (() => {
+            const v = parseFloat(items.other);
+            return Number.isFinite(v) && v >= 0 ? v : 0;
+          })(),
         },
         proofs: proofUrls,
       });
 
       const savedStorage = await newStorageRecord.save();
+      console.log("removed", savedStorage)
+
       res
         .status(201)
         .json({ message: 'Items removed from storage', storage: savedStorage });
@@ -83,7 +117,7 @@ const storageCtrl = {
   updateStorageById: async (req, res) => {
     try {
       const { id } = req.params;
-  
+
       const updates = {};
       console.log("REQ BODY:", req.body);
 
@@ -91,41 +125,78 @@ const storageCtrl = {
       if (req.body.type) updates.type = req.body.type;
       if (req.body.notes) updates.notes = req.body.notes;
       if (req.body.storagePlace) updates.storagePlace = req.body.storagePlace;
-  
+
       if (req.body.date) {
         const parsedDate = new Date(req.body.date);
         parsedDate.setHours(0, 0, 0, 0);
         updates.date = parsedDate;
       }
-  
+
       const items = {};
 
-if ('fridges' in req.body) items.fridges = parseInt(req.body.fridges);
-if ('mattresses' in req.body) items.mattresses = parseInt(req.body.mattresses);
-if ('sofas' in req.body) items.sofas = parseInt(req.body.sofas);
-if ('paint' in req.body) items.paint = parseInt(req.body.paint);
-if ('other' in req.body) items.other = parseInt(req.body.other);
+      if ('fridges' in req.body) items.fridges = parseInt(req.body.fridges);
+      if ('mattresses' in req.body) items.mattresses = parseInt(req.body.mattresses);
+      if ('sofas' in req.body) items.sofas = parseInt(req.body.sofas);
+      if ('paint' in req.body) items.paint = parseInt(req.body.paint);
+      if ('other' in req.body) {
+        items.other = req.body.other;
+      }
 
-if (Object.keys(items).length > 0) {
-  updates.items = items;
-}
-  
+      if (Object.keys(items).length > 0) {
+        updates.items = items;
+      }
+
       if (req.files && req.files.length > 0) {
         updates.proofs = req.files.map(file => file.path);
       }
-  
+
       const updatedStorage = await Storage.findByIdAndUpdate(id, updates, { new: true });
-  
+
       if (!updatedStorage) {
         return res.status(404).json({ message: "Storage record not found" });
       }
-  
+
       res.status(200).json({
         message: "Storage record updated successfully",
         storage: updatedStorage,
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
+    }
+  },
+  getAllStorages: async (req, res) => {
+    try {
+      const { driverId, storagePlace, page = 1, limit } = req.query;
+
+      const query = {};
+      if (driverId) query.driverId = driverId;
+      if (storagePlace) query.storagePlace = storagePlace;
+
+      const skip = (Number(page) - 1) * Number(limit);
+
+      const storagesQuery = Storage.find(query)
+        .populate('driverId storagePlace truckId helperId')
+        .skip(skip)
+        .limit(Number(limit))
+        .sort({ date: -1, _id: -1 });
+
+      const [storages, total] = await Promise.all([
+        storagesQuery.exec(),
+        Storage.countDocuments(query),
+      ]);
+
+      return res.status(200).json({
+        message: 'Storages fetched successfully',
+        storages,
+        meta: {
+          currentPage: Number(page),
+          limit: Number(limit),
+          total,
+          count: storages.length,
+        },
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
     }
   },
   getStoragesByDate: async (req, res) => {
@@ -137,23 +208,23 @@ if (Object.keys(items).length > 0) {
       }
 
       const inputDate = new Date(date);
-    const startOfDay = new Date(inputDate);
-    startOfDay.setHours(0, 0, 0, 0); // Set to start of the day
+      const startOfDay = new Date(inputDate);
+      startOfDay.setHours(0, 0, 0, 0); // Set to start of the day
 
-    const endOfDay = new Date(inputDate);
-    endOfDay.setHours(23, 59, 59, 999); // Set to end of the day
+      const endOfDay = new Date(inputDate);
+      endOfDay.setHours(23, 59, 59, 999); // Set to end of the day
 
-    // Construct the query
-    const query = { date: { $gte: startOfDay, $lte: endOfDay } };
+      // Construct the query
+      const query = { date: { $gte: startOfDay, $lte: endOfDay } };
 
 
       if (driverId) query.driverId = driverId;
       if (storagePlace) query.storagePlace = storagePlace;
-      const storagesQuery = Storage.find(query).populate('driverId storagePlace truckId helperId'); 
+      const storagesQuery = Storage.find(query).populate('driverId storagePlace truckId helperId');
       const total = await Storage.countDocuments();
 
       const skip = (page - 1) * limit;
-      
+
       const storages = await storagesQuery
         .skip(skip)
         .limit(Number(limit))
@@ -179,15 +250,10 @@ if (Object.keys(items).length > 0) {
       res.status(500).json({ error: error.message });
     }
   },
+
   getTotalItemsInStorage: async (req, res) => {
     try {
-      const { driverId } = req.query;
-
-      // Optional filter by driverId
-      const matchStage = driverId ? { driverId } : {};
-
       const totals = await Storage.aggregate([
-        { $match: matchStage }, // Filter by driverId if provided
         {
           $group: {
             _id: null,
@@ -246,6 +312,35 @@ if (Object.keys(items).length > 0) {
 
       const netItems = totals[0]; // Aggregation returns an array
 
+      const clampPercent = (value) => {
+        if (!Number.isFinite(value)) return null;
+        const clamped = Math.min(100, Math.max(0, value));
+        return Math.round(clamped * 100) / 100; // 2 decimals
+      };
+
+      const percentFull = {
+        fridges:
+          capacities.fridges && capacities.fridges > 0
+            ? clampPercent((netItems.totalFridges / capacities.fridges) * 100)
+            : null,
+        mattresses:
+          capacities.mattresses && capacities.mattresses > 0
+            ? clampPercent((netItems.totalMattresses / capacities.mattresses) * 100)
+            : null,
+        sofas:
+          capacities.sofas && capacities.sofas > 0
+            ? clampPercent((netItems.totalSofas / capacities.sofas) * 100)
+            : null,
+        paint:
+          capacities.paint && capacities.paint > 0
+            ? clampPercent((netItems.totalPaint / capacities.paint) * 100)
+            : null,
+        other:
+          capacities.other && capacities.other > 0
+            ? clampPercent((netItems.totalOther / capacities.other) * 100)
+            : null,
+      };
+
       res.status(200).json({
         message: "Total items in storage fetched successfully",
         totalItems: {
@@ -255,11 +350,54 @@ if (Object.keys(items).length > 0) {
           paint: netItems.totalPaint,
           other: netItems.totalOther,
         },
+        capacities,
+        percentFull,
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
   },
+
+  // Reset the accumulated 'other' (rubbish) quantity to zero by setting items.other to 0 in all records
+  resetOtherQuantity: async (req, res) => {
+    try {
+      // Compute current net 'other' across the whole database (before reset)
+      const totals = await Storage.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalOther: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$type", "add"] },
+                  "$items.other",
+                  { $multiply: ["$items.other", -1] },
+                ],
+              },
+            },
+          },
+        },
+      ]);
+
+      const netOther = totals.length ? totals[0].totalOther : 0;
+
+      // Hard reset: set items.other to 0 in all storage records
+      const result = await Storage.updateMany(
+        { "items.other": { $ne: 0 } },
+        { $set: { "items.other": 0 } }
+      );
+
+      return res.status(200).json({
+        message: 'Rubbish (other) quantities reset to zero across all records',
+        previousNetOther: netOther,
+        matched: result.matchedCount ?? result.nMatched,
+        modified: result.modifiedCount ?? result.nModified,
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  },
+
   getTotalItemsGroupedByStoragePlace: async (req, res) => {
     try {
       const totals = await Storage.aggregate([
@@ -328,7 +466,7 @@ if (Object.keys(items).length > 0) {
           }
         }
       ]);
-  
+
       res.status(200).json({
         message: "Total items grouped by storage place",
         data: totals.map(item => ({
@@ -347,7 +485,52 @@ if (Object.keys(items).length > 0) {
       res.status(500).json({ error: error.message });
     }
   },
-  
+
+  // Get storages by userId (matches either driverId or helperId)
+  getStoragesByUserId: async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const { date, page = 1, limit = 10 } = req.query;
+
+      const query = {
+        $or: [{ driverId: userId }, { helperId: userId }],
+      };
+
+      if (date) {
+        const inputDate = new Date(date);
+        const startOfDay = new Date(inputDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(inputDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        query.date = { $gte: startOfDay, $lte: endOfDay };
+      }
+
+      const skip = (Number(page) - 1) * Number(limit);
+      const storagesQuery = Storage.find(query)
+        .populate('driverId helperId truckId storagePlace')
+        .skip(skip)
+        .limit(Number(limit));
+
+      const [storages, total] = await Promise.all([
+        storagesQuery.exec(),
+        Storage.countDocuments(query),
+      ]);
+
+      return res.status(200).json({
+        message: 'Storages fetched successfully',
+        storages,
+        meta: {
+          currentPage: Number(page),
+          limit: Number(limit),
+          total,
+          count: storages.length,
+        },
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  },
+
   create: async (req, res) => {
     try {
       const { name, address, location, capacity } = req.body;
@@ -409,6 +592,17 @@ if (Object.keys(items).length > 0) {
       res.status(200).json({ message: 'Deleted successfully' });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  },
+  // Delete a storage record by ID
+  deleteStorageRecord: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await Storage.findByIdAndDelete(id);
+      if (!deleted) return res.status(404).json({ message: 'Storage record not found' });
+      res.status(200).json({ message: 'Storage record deleted successfully' });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
   },
 };

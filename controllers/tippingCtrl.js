@@ -10,7 +10,7 @@ const paginateQuery = require('../utils/paginationHelper');
 const tippingController = {
   createTippingRequest: async (req, res) => {
     const userId = req.user._id;
-    const { truckId, notes } = req.body;
+    const { notes } = req.body;
 
     try {
       const user = await User.findById(userId);
@@ -20,7 +20,11 @@ const tippingController = {
             'Unauthorized: Only drivers and helpers can make tipping requests.',
         });
       }
-      const truck = await Truck.findById(truckId);
+      // Find the truck assigned to this user (as driver or helper)
+      let truck = await Truck.findOne({ driverId: userId });
+      if (!truck) {
+        truck = await Truck.findOne({ helperId: userId });
+      }
 
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
@@ -57,66 +61,67 @@ const tippingController = {
       });
     }
   },
+
   createTippingRequestByAdmin: async (req, res) => {
     const adminId = req.user._id;
-    const { driverId, truckId, tippingPlace, notes , status } = req.body;
+    const { driverId, truckId, tippingPlace, notes, status } = req.body;
 
     try {
-        // Ensure the user making the request is an admin
-        const admin = await User.findById(adminId);
-        if (!admin || admin.roleType !== 'Admin') {
-            return res.status(403).json({
-                message: 'Unauthorized: Only admins can create tipping requests.',
-            });
-        }
-
-        // Find the driver
-        const driver = await User.findById(driverId);
-        if (!driver || driver.roleType !== 'Driver') {
-            return res.status(404).json({ message: 'Driver not found' });
-        }
-
-        // Find the truck
-        const truck = await Truck.findById(truckId);
-        if (!truck) {
-            return res.status(404).json({ message: 'Truck not found' });
-        }
-
-        // Create the tipping request
-        const newTippingRequest = new TippingRequest({
-            userId: driver._id, // Assigning the tipping request to the driver
-            truckId: truck._id,
-            tippingPlace: tippingPlace, // New field for tipping place
-            notes: notes,
-            status: status,
-            createdBy: admin._id, // Storing the admin who created the request
+      // Ensure the user making the request is an admin
+      const admin = await User.findById(adminId);
+      if (!admin || admin.roleType !== 'Admin') {
+        return res.status(403).json({
+          message: 'Unauthorized: Only admins can create tipping requests.',
         });
+      }
 
-        await newTippingRequest.save();
+      // Find the driver
+      const driver = await User.findById(driverId);
+      if (!driver || driver.roleType !== 'Driver') {
+        return res.status(404).json({ message: 'Driver not found' });
+      }
 
-        const response = {
-            message: 'Tipping request created successfully by admin',
-            request: {
-                id: newTippingRequest._id,
-                driverId: newTippingRequest.userId.toString(),
-                truckId: newTippingRequest.truckId.toString(),
-                tippingPlace: newTippingRequest.tippingPlace,
-                notes: newTippingRequest.notes,
-                status: newTippingRequest.status,
-                createdAt: newTippingRequest.createdAt,
-                createdBy: admin.username, // Admin's name
-                driverName: driver.username, // Driver's name
-                truckName: truck.name, // Truck's name
-            },
-        };
+      // Find the truck
+      const truck = await Truck.findById(truckId);
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
 
-        res.status(201).json(response);
+      // Create the tipping request
+      const newTippingRequest = new TippingRequest({
+        userId: driver._id, // Assigning the tipping request to the driver
+        truckId: truck._id,
+        tippingPlace: tippingPlace, // New field for tipping place
+        notes: notes,
+        status: status,
+        createdBy: admin._id, // Storing the admin who created the request
+      });
+
+      await newTippingRequest.save();
+
+      const response = {
+        message: 'Tipping request created successfully by admin',
+        request: {
+          id: newTippingRequest._id,
+          driverId: newTippingRequest.userId.toString(),
+          truckId: newTippingRequest.truckId.toString(),
+          tippingPlace: newTippingRequest.tippingPlace,
+          notes: newTippingRequest.notes,
+          status: newTippingRequest.status,
+          createdAt: newTippingRequest.createdAt,
+          createdBy: admin.username, // Admin's name
+          driverName: driver.username, // Driver's name
+          truckName: truck.name, // Truck's name
+        },
+      };
+
+      res.status(201).json(response);
     } catch (error) {
-        console.error('Error in creating tipping request by admin:', error);
-        res.status(500).json({
-            message: 'Failed to create tipping request',
-            error: error.message,
-        });
+      console.error('Error in creating tipping request by admin:', error);
+      res.status(500).json({
+        message: 'Failed to create tipping request',
+        error: error.message,
+      });
     }
   },
   getAllTippingRequestsForUser: async (req, res) => {
@@ -185,7 +190,7 @@ const tippingController = {
   getAllTippingRequestsForAdmin: async (req, res) => {
     try {
       const { keyword, tippingPlace, storagePlace } = req.query;
-  
+
       // Build query filters
       const queryFilters = {};
       if (tippingPlace) {
@@ -198,10 +203,10 @@ const tippingController = {
       const { data, meta } = await paginateQuery(
         TippingRequest,
         req.query, // Merge filters into req.query if paginateQuery supports it
-        ['collectionDate', 'paymentStatus' , 'tippingPlace' , 'storagePlace'],
+        ['collectionDate', 'paymentStatus', 'tippingPlace', 'storagePlace'],
         []
       );
-  
+
       // Populate related fields, including _id
       const populatedData = await TippingRequest.populate(data, [
         { path: 'truckId', select: 'name' },
@@ -209,9 +214,9 @@ const tippingController = {
         { path: 'tippingPlace', select: 'name address _id' },
         { path: 'storagePlace', select: 'name address _id' }
       ]);
-  
+
       let filteredData = populatedData;
-  
+
       // Apply keyword search if provided
       if (keyword) {
         const lowerKeyword = keyword.toLowerCase();
@@ -229,7 +234,7 @@ const tippingController = {
           );
         });
       }
-  
+
       // Enrich and format response
       const enrichedRequests = filteredData
         .filter(req => !!req)
@@ -247,7 +252,7 @@ const tippingController = {
           } : null;
           return obj;
         });
-  
+
       // Return result
       res.status(200).json({
         message: 'All tipping requests retrieved successfully',
@@ -267,8 +272,8 @@ const tippingController = {
       });
     }
   },
-  
-  
+
+
 
   // Update the status of a tipping request (Admin only)
   updateTippingRequestStatus: async (req, res) => {
@@ -304,7 +309,7 @@ const tippingController = {
 
           // Find the nearest tipping place
           const tippingPlaces = await TippingPlace.find();
-          
+
 
           emitEvent('driverOnTheWay', {
             helperId,
@@ -403,7 +408,7 @@ const tippingController = {
 
       // Fetch all tipping places with their locations
       const tippingPlaces = await TippingPlace.find();
-      
+
       // Format the response
       const response = {
         driverLocation: {
@@ -415,10 +420,10 @@ const tippingController = {
           name: place.name,
           latitude: place.location.coordinates[1], // Assuming [lng, lat]
           longitude: place.location.coordinates[0],
-          operatingHours:place.operatingHours,
-          itemsAllowed:place.itemsAllowed,
-          itemsNotAllowed:place.itemsNotAllowed,
-          daysClosed:place.daysClosed
+          operatingHours: place.operatingHours,
+          itemsAllowed: place.itemsAllowed,
+          itemsNotAllowed: place.itemsNotAllowed,
+          daysClosed: place.daysClosed
         })),
       };
 

@@ -28,19 +28,19 @@ async function getUserModel(userId) {
       return { user, model: 'User', type: 'Helper' };
     }
   }
-  
+
   // If not found in User model, try Driver model
   user = await Driver.findById(userId);
   if (user) {
     return { user, model: 'Driver', type: 'Driver' };
   }
-  
+
   // If not found in Driver model, try Helper model
   user = await Helper.findById(userId);
   if (user) {
     return { user, model: 'Helper', type: 'Helper' };
   }
-  
+
   return null;
 }
 
@@ -51,13 +51,13 @@ async function getTruckForUser(userId) {
   if (truck) {
     return truck;
   }
-  
+
   // If not found, try to find truck by helperId
   truck = await Truck.findOne({ helperId: userId });
   if (truck) {
     return truck;
   }
-  
+
   return null;
 }
 
@@ -165,28 +165,28 @@ const driverManagement = {
 
       // If user is a driver, get helper location
       if (type === 'Driver') {
-      if (!truck.helperId) {
-        return res
-          .status(404)
-          .json({ message: 'No helper assigned to this truck' });
-      }
+        if (!truck.helperId) {
+          return res
+            .status(404)
+            .json({ message: 'No helper assigned to this truck' });
+        }
 
-      const helper = await Helper.findById(truck.helperId);
-      if (!helper) {
-        return res.status(404).json({ message: 'Helper not found' });
-      }
+        const helper = await Helper.findById(truck.helperId);
+        if (!helper) {
+          return res.status(404).json({ message: 'Helper not found' });
+        }
 
-      if (!helper.location) {
-        return res
-          .status(404)
-          .json({ message: 'Location for this helper is not set' });
-      }
+        if (!helper.location) {
+          return res
+            .status(404)
+            .json({ message: 'Location for this helper is not set' });
+        }
 
-      res.status(200).json({
-        message: 'Helper location retrieved successfully',
-        location: helper.location,
-      });
-      } 
+        res.status(200).json({
+          message: 'Helper location retrieved successfully',
+          location: helper.location,
+        });
+      }
       // If user is a helper, get driver location
       else if (type === 'Helper') {
         if (!truck.driverId) {
@@ -221,7 +221,7 @@ const driverManagement = {
 
   getTasksForDriver: async (req, res) => {
     const userId = req.user._id;
-  
+
     try {
       // Get user info to determine if they're a driver or helper
       const userInfo = await getUserModel(userId);
@@ -233,40 +233,40 @@ const driverManagement = {
 
       // Determine today's date range
       const startOfDay = new Date();
-      console.log("startOfDayB:",startOfDay)
+      console.log("startOfDayB:", startOfDay)
       // startOfDay.setHours(0, 0, 0, 0);
       console.log(startOfDay)
       const endOfDay = new Date();
       endOfDay.setHours(23, 59, 59, 999);
       console.log(endOfDay)
       const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
-      console.log("formatted date:",formattedDate)
+      console.log("formatted date:", formattedDate)
 
       // Find the truck for this user
       const truck = await getTruckForUser(userId);
-  
+
       if (!truck) {
         return res
           .status(404)
           .json({ message: 'No truck found for the given user.' });
       }
-  
+
       // Get the task IDs for today's date from `tasksByDate`
       const taskIdsForToday = truck.tasks.get(formattedDate);
-      console.log("taskIdsForToday:",taskIdsForToday)
-      
+      console.log("taskIdsForToday:", taskIdsForToday)
+
       // Fetch the tasks for the current day
       // const tasks = await Task.find({
       //   _id: { $in: taskIdsForToday }
       // });
-         const tasks = await Task.find();
-  
+      const tasks = await Task.find();
+
       res
         .status(200)
-        .json({ 
-          message: `Tasks for today retrieved successfully for ${type}`, 
+        .json({
+          message: `Tasks for today retrieved successfully for ${type}`,
           tasks,
-          userType: type 
+          userType: type
         });
     } catch (error) {
       console.error('Error retrieving tasks for user:', error);
@@ -276,15 +276,15 @@ const driverManagement = {
       });
     }
   },
-  
+
 
   updateTruckStart: async (req, res) => {
     const { truckId } = req.params;
-    const { fuelLevel, mileageStart , conditionReport } = req.body;
+    const { fuelLevel, mileageStart, conditionReport } = req.body;
     const uploads = req.files.map((file) => file.path);
-  
+
     const { start, end } = getTodayDateRange();
-  
+
     try {
       const statusUpdate = {
         truckId,
@@ -293,7 +293,7 @@ const driverManagement = {
         mileageStart,
         conditionReport
       };
-  
+
       const truckStatus = await TruckStatus.findOneAndUpdate(
         {
           truckId,
@@ -302,7 +302,7 @@ const driverManagement = {
         { $set: statusUpdate },
         { new: true, upsert: true, setDefaultsOnInsert: true }
       );
-  
+
       res.status(200).json({
         message: 'Truck start status updated successfully',
         truckStatus,
@@ -314,15 +314,15 @@ const driverManagement = {
       });
     }
   },
-  
+
 
   updateTruckEnd: async (req, res) => {
     const { truckId } = req.params;
     const { fuelLevelBefore, fuelLevelAfter, mileageEnd, conditionReport } = req.body;
     const uploads = req.files.map((file) => file.path);
-  
+
     const { start, end } = getTodayDateRange();
-  
+
     try {
       const statusUpdate = {
         truckId,
@@ -332,7 +332,7 @@ const driverManagement = {
         mileageEnd,
         conditionReport,
       };
-  
+
       const truckStatus = await TruckStatus.findOneAndUpdate(
         {
           truckId,
@@ -341,7 +341,7 @@ const driverManagement = {
         { $set: statusUpdate },
         { new: true, upsert: true, setDefaultsOnInsert: true }
       );
-  
+
       res.status(200).json({
         message: 'Truck end status updated successfully',
         truckStatus,
@@ -353,77 +353,77 @@ const driverManagement = {
       });
     }
   },
-  
 
-  uploadInitialConditionPhotos : async (req, res) => {
+
+  uploadInitialConditionPhotos: async (req, res) => {
     const { taskId } = req.params;
     const description = req.body.description;
     const uploads = req.files.map((file) => file.path);
     const userId = req.user._id;
 
     try {
-        // Get user info
-        const userInfo = await getUserModel(userId);
-        if (!userInfo) {
-          return res.status(404).json({ message: 'User not found' });
-        }
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
 
-        const { type } = userInfo;
+      const { type } = userInfo;
 
-        // Fetch the truck containing the task
-        const truck = await getTruckForUser(userId);
-        if (!truck) {
-            return res.status(404).json({ message: 'No truck found for the given user.' });
-        }
+      // Fetch the truck containing the task
+      const truck = await getTruckForUser(userId);
+      if (!truck) {
+        return res.status(404).json({ message: 'No truck found for the given user.' });
+      }
 
-        // Get the current job (task)
-        const currentTask = await Task.findById(taskId);
-        if (!currentTask) {
-            return res.status(404).json({ message: 'Current task not found.' });
-        }
+      // Get the current job (task)
+      const currentTask = await Task.findById(taskId);
+      if (!currentTask) {
+        return res.status(404).json({ message: 'Current task not found.' });
+      }
 
-        // Update the task with initial condition photos
-        const taskUpdate = {
-            $push: {
-                initialConditionPhotos: {
-                    items: uploads,
-                    description: description,
-                },
-            },
+      // Update the task with initial condition photos
+      const taskUpdate = {
+        $push: {
+          initialConditionPhotos: {
+            items: uploads,
+            description: description,
+          },
+        },
+      };
+
+      const updatedTask = await Task.findByIdAndUpdate(taskId, taskUpdate, { new: true });
+      if (!updatedTask) {
+        return res.status(404).json({ message: 'Failed to update the task with initial condition photos.' });
+      }
+
+      // Update the user's current job address based on type
+      if (type === 'Driver') {
+        const driverUpdate = {
+          currentJobAddress: currentTask.location ? currentTask.location.address : null,
         };
+        await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
+      } else if (type === 'Helper') {
+        const helperUpdate = {
+          currentJobAddress: currentTask.location ? currentTask.location.address : null,
+        };
+        await Helper.findByIdAndUpdate(userId, helperUpdate, { new: true });
+      }
 
-        const updatedTask = await Task.findByIdAndUpdate(taskId, taskUpdate, { new: true });
-        if (!updatedTask) {
-            return res.status(404).json({ message: 'Failed to update the task with initial condition photos.' });
-        }
-
-        // Update the user's current job address based on type
-        if (type === 'Driver') {
-            const driverUpdate = {
-                currentJobAddress: currentTask.location ? currentTask.location.address : null,
-            };
-            await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
-        } else if (type === 'Helper') {
-            const helperUpdate = {
-                currentJobAddress: currentTask.location ? currentTask.location.address : null,
-            };
-            await Helper.findByIdAndUpdate(userId, helperUpdate, { new: true });
-        }
-
-        // Send response
-        res.status(200).json({
-            message: `Initial condition photos uploaded successfully by ${type}`,
-            task: updatedTask,
-            userType: type
-        });
+      // Send response
+      res.status(200).json({
+        message: `Initial condition photos uploaded successfully by ${type}`,
+        task: updatedTask,
+        userType: type
+      });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            message: 'Failed to upload initial condition photos',
-            error: error.message,
-        });
+      console.error(error);
+      res.status(500).json({
+        message: 'Failed to upload initial condition photos',
+        error: error.message,
+      });
     }
-},
+  },
 
   intermediateConditionPhotos: async (req, res) => {
     const { taskId } = req.params;
@@ -433,7 +433,7 @@ const driverManagement = {
 
     try {
       console.log('Processing intermediate condition photos for task:', taskId);
-      
+
       // Get user info
       const userInfo = await getUserModel(userId);
       if (!userInfo) {
@@ -441,7 +441,7 @@ const driverManagement = {
       }
 
       const { type } = userInfo;
-      
+
       // Fetch the truck associated with the current user
       const truck = await getTruckForUser(userId);
       if (!truck) {
@@ -482,7 +482,7 @@ const driverManagement = {
 
       // Update the user's current job address based on type
       if (type === 'Driver') {
-      const driverUpdate = {
+        const driverUpdate = {
           currentJobAddress: currentTask.currentJobAddress,
         };
         await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
@@ -502,16 +502,16 @@ const driverManagement = {
       });
     } catch (error) {
       console.error('Error in intermediateConditionPhotos:', error);
-      
+
       // Check if it's a Map error
       if (error.message && error.message.includes('Iterator value')) {
         console.error('Map error detected, attempting to clean up truck data...');
-        
+
         try {
           const Truck = require('../models/Truck');
           await Truck.cleanupTasks();
           console.log('Truck tasks cleaned up successfully');
-          
+
           // Retry the operation
           return res.status(500).json({
             message: 'Database cleanup required. Please try again.',
@@ -521,7 +521,7 @@ const driverManagement = {
           console.error('Cleanup failed:', cleanupError);
         }
       }
-      
+
       res.status(500).json({
         message: 'Failed to upload intermediate condition photos',
         error: error.message,
@@ -603,10 +603,10 @@ const driverManagement = {
 
       res
         .status(200)
-        .json({ 
-          message: `Additional items added successfully by ${type}`, 
+        .json({
+          message: `Additional items added successfully by ${type}`,
           task,
-          userType: type 
+          userType: type
         });
     } catch (error) {
       res.status(500).json({
@@ -640,10 +640,10 @@ const driverManagement = {
       await task.save();
       res
         .status(200)
-        .json({ 
-          message: `Task status updated successfully by ${type}`, 
+        .json({
+          message: `Task status updated successfully by ${type}`,
           task,
-          userType: type 
+          userType: type
         });
     } catch (error) {
       console.error('Error updating task status:', error);
@@ -654,7 +654,7 @@ const driverManagement = {
     }
   },
 
-rateTask: async (req, res) => {
+  rateTask: async (req, res) => {
     const { taskId } = req.params;
     const { clientFeedback, clientFeedbackScale } = req.body;
     // const userId = req.user._id;
@@ -679,11 +679,11 @@ rateTask: async (req, res) => {
       task.taskStatus = "Completed"
 
       // Check if this is the first task completed by this client (using email)
-    const previousCompletedTasks = await Task.find({
-      email: task.email,
-      taskStatus: "Completed",
+      const previousCompletedTasks = await Task.find({
+        email: task.email,
+        taskStatus: "Completed",
         _id: { $ne: task._id }
-    });
+      });
 
       // Send review email
       await sendReviewRequestEmail({
@@ -693,10 +693,10 @@ rateTask: async (req, res) => {
       });
 
       await task.save();
-      res.status(200).json({ 
-        message: `Task rated successfully by `, 
+      res.status(200).json({
+        message: `Task rated successfully by `,
         task,
-        userType: type 
+        userType: type
       });
     } catch (error) {
       console.error('Error rating task:', error);
@@ -766,13 +766,13 @@ rateTask: async (req, res) => {
       user.onBreak = true;
       user.breakStartTime = Date.now();
       await user.save();
-      
+
       emitNotificationToUser(adminId, 'Driver_Tracking', `A ${type.toLowerCase()} ${user.username} is taking a break`);
-      
-      return res.status(200).json({ 
-        message: 'Break started', 
+
+      return res.status(200).json({
+        message: 'Break started',
         newBreak,
-        userType: type 
+        userType: type
       });
     } catch (error) {
       console.error(error);
@@ -812,10 +812,10 @@ rateTask: async (req, res) => {
       user.onBreak = false;
       await user.save();
 
-      return res.status(200).json({ 
-        message: 'Break ended', 
+      return res.status(200).json({
+        message: 'Break ended',
         lastBreak,
-        userType: type 
+        userType: type
       });
     } catch (error) {
       console.error(error);
