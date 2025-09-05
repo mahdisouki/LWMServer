@@ -11,7 +11,8 @@ router.post('/trucks/start/:truckId', isAuth, multer.array('uploads'), driverCtr
 router.put('/driver', isAuth, multer.fields([{ name: 'picture', maxCount: 1 },{ name: 'DriverLicense', maxCount: 1 },{ name: 'addressProof', maxCount: 1 },{ name: 'NatInsurance', maxCount: 1 }]), driverCtrl.updateDriverProfile);
 router.post('/driver/mark-day-start', isAuth, multer.none(), driverCtrl.markDayStart);
 
-//router.get('/driver/helper-location', isAuth, driverCtrl.getHelperLocationForDriver);
+router.get('/driver/helper-location', isAuth, driverCtrl.getHelperLocationForDriver);
+router.get('/driver/helper-info', isAuth, driverCtrl.getHelperInfoForDriver);
 router.post('/trucks/end/:truckId', isAuth, multer.array('uploads'), driverCtrl.updateTruckEnd);
 router.put('/tasks/update-status/:taskId', isAuth, driverCtrl.updateJobStatus);
 router.put('/tasks/rate/:taskId',  driverCtrl.rateTask);
