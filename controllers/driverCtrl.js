@@ -144,7 +144,7 @@ const driverManagement = {
 
   getHelperLocationForDriver: async (req, res) => {
     const userId = req.user._id;
-
+    console.log("userId:",userId)
     try {
       // Get user info to determine if they're a driver or helper
       const userInfo = await getUserModel(userId);
@@ -171,7 +171,7 @@ const driverManagement = {
             .json({ message: 'No helper assigned to this truck' });
         }
 
-        const helper = await Helper.findById(truck.helperId);
+        const helper = await User.findById(truck.helperId);
         if (!helper) {
           return res.status(404).json({ message: 'Helper not found' });
         }
@@ -212,12 +212,87 @@ const driverManagement = {
         });
       }
     } catch (error) {
+      console.log("error:",error)
       res.status(500).json({
         message: 'Failed to retrieve location',
         error: error.message,
       });
     }
   },
+
+  getHelperInfoForDriver: async (req, res) => {
+    const userId = req.user._id;
+
+    try {
+      // Get user info to determine if they're a driver or helper
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+
+      // Find the truck for this user
+      const truck = await getTruckForUser(userId);
+
+      if (!truck) {
+        return res
+          .status(404)
+          .json({ message: 'No truck found for the given user.' });
+      }
+
+      // If user is a driver, get helper info
+      if (type === 'Driver') {
+        if (!truck.helperId) {
+          return res
+            .status(404)
+            .json({ message: 'No helper assigned to this truck' });
+        }
+
+        const helper = await User.findById(truck.helperId);
+        if (!helper) {
+          return res.status(404).json({ message: 'Helper not found' });
+        }
+
+        res.status(200).json({
+          message: 'Helper information retrieved successfully',
+          helperInfo: {
+            name:helper.username,
+            phoneNumber: helper.phoneNumber || '',
+            address: helper.address || ''
+          }
+        });
+      }
+      // If user is a helper, get driver info
+      else if (type === 'Helper') {
+        if (!truck.driverId) {
+          return res
+            .status(404)
+            .json({ message: 'No driver assigned to this truck' });
+        }
+
+        const driver = await Driver.findById(truck.driverId);
+        if (!driver) {
+          return res.status(404).json({ message: 'Driver not found' });
+        }
+
+        res.status(200).json({
+          message: 'Driver information retrieved successfully',
+          driverInfo: {
+            name: `${driver.firstName || ''} ${driver.lastName || ''}`.trim(),
+            phoneNumber: driver.phoneNumber || '',
+            address: driver.address || ''
+          }
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to retrieve information',
+        error: error.message,
+      });
+    }
+  },
+  
 
   getTasksForDriver: async (req, res) => {
     const userId = req.user._id;
@@ -233,14 +308,15 @@ const driverManagement = {
 
       // Determine today's date range
       const startOfDay = new Date();
-      console.log("startOfDayB:", startOfDay)
-      // startOfDay.setHours(0, 0, 0, 0);
-      console.log(startOfDay)
+      startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date();
       endOfDay.setHours(23, 59, 59, 999);
-      console.log(endOfDay)
-      const formattedDate = startOfDay.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
-      console.log("formatted date:", formattedDate)
+      
+      // Format date in local timezone to avoid UTC conversion issues
+      const year = startOfDay.getFullYear();
+      const month = String(startOfDay.getMonth() + 1).padStart(2, '0');
+      const day = String(startOfDay.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`; // Format: 'YYYY-MM-DD'
 
       // Find the truck for this user
       const truck = await getTruckForUser(userId);
@@ -250,16 +326,14 @@ const driverManagement = {
           .status(404)
           .json({ message: 'No truck found for the given user.' });
       }
-
+      console.log("formattedDate:",formattedDate)
       // Get the task IDs for today's date from `tasksByDate`
       const taskIdsForToday = truck.tasks.get(formattedDate);
-      console.log("taskIdsForToday:", taskIdsForToday)
 
       // Fetch the tasks for the current day
-      // const tasks = await Task.find({
-      //   _id: { $in: taskIdsForToday }
-      // });
-      const tasks = await Task.find();
+      const tasks = await Task.find({
+        _id: { $in: taskIdsForToday || [] }
+      });
 
       res
         .status(200)
@@ -308,6 +382,7 @@ const driverManagement = {
         truckStatus,
       });
     } catch (error) {
+      console.log("error:",error)
       res.status(500).json({
         message: 'Failed to update truck start status',
         error: error.message,

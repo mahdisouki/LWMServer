@@ -1004,6 +1004,7 @@ const taskCtrl = {
 
       if (action === 'mark_start') {
         task.startDate = now;
+        task.taskStatus = 'Processing';
         await task.save();
         return res.status(200).json({
           message: 'Task marked as started successfully',
@@ -1012,6 +1013,7 @@ const taskCtrl = {
       }
 
       if (action === 'mark_finish') {
+        task.taskStatus = 'Completed';
         if (!task.startDate) {
           return res.status(400).json({
             message: "Task hasn't been started yet",
