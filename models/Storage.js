@@ -20,6 +20,7 @@ const storageSchema = new Schema(
     proofs: [{ type: String }],
     notes: { type: String },
     storagePlace: { type: Schema.Types.ObjectId, ref: "StoragePlace" },
+    isReset: { type: Boolean, default: false }, // Flag to distinguish historical vs new records for rubbish quantity calculations
   },
   { timestamps: true }
 );

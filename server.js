@@ -5,13 +5,13 @@ const http = require("http");
 const bodyParser = require('body-parser');
 const fs = require("fs");
 const TippingPlace = require('./models/TippingPlaces')
-const mongoose=require('mongoose')
+const mongoose = require('mongoose')
 const { initSocket } = require("./socket");
 const connectToDatabase = require("./config/db");
-const { sendWasteTransferNoteEmail , sendGeneralInvoiceEmail , sendPartialPaymentNotification , sendBookingConfirmationEmail } = require("./services/emailsService");
+const { sendWasteTransferNoteEmail, sendGeneralInvoiceEmail, sendPartialPaymentNotification, sendBookingConfirmationEmail } = require("./services/emailsService");
 const { handleStripeWebhook } = require('./controllers/taskCtrl');
 
-const server = http.createServer(app); 
+const server = http.createServer(app);
 connectToDatabase()
   .then(() => {
     console.log("✅ MongoDB Connected");
@@ -36,27 +36,27 @@ const cors = require("cors");
 const path = require("path");
 
 
-require('./jobs/dailySheetCron'); 
+require('./jobs/dailySheetCron');
 require('./jobs/AssignedStaffCron');
-const setupSwagger = require('./config/swaggerConfig'); 
+const setupSwagger = require('./config/swaggerConfig');
 // Apply raw body for Stripe webhook first
 
 
 
 const corsOptions = {
-  origin: ['https://dirverapp.netlify.app' ,
-   'https://lwmadmin.netlify.app',
-   'https://localhost:5173' ,
-   'http://localhost:5174'  ,
-   'http://localhost:3001',
-   'https://adminlondonwaste.netlify.app',
-   'http://localhost:5173',
-   'http://localhost:5175',
-   'https://admin.londonwastemanagement.uk',
-   'https://driver.londonwastemanagement.uk',
-   'https://client.londonwastemanagement.uk',
-   ], 
-  optionsSuccessStatus: 200 
+  origin: ['https://dirverapp.netlify.app',
+    'https://lwmadmin.netlify.app',
+    'https://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3001',
+    'https://adminlondonwaste.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:5175',
+    'https://admin.londonwastemanagement.uk',
+    'https://driver.londonwastemanagement.uk',
+    'https://client.londonwastemanagement.uk',
+  ],
+  optionsSuccessStatus: 200
 };
 
 app.use('/public', express.static(path.join(__dirname, 'public')));
@@ -120,45 +120,45 @@ const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
 const customerRoutes = require('./routes/customerRoutes');
 
-const {optimizeRoute } = require("./helper/OpitomRoute");
+const { optimizeRoute } = require("./helper/OpitomRoute");
 
-setupSwagger(app); 
+setupSwagger(app);
 app.use("/api", taskRouter);
-app.use('/api',authRouter);
-app.use('/api',staffRouter);
-app.use('/api',logRouter);
-app.use('/api',truckRouter);
-app.use('/api',driverRouter);
+app.use('/api', authRouter);
+app.use('/api', staffRouter);
+app.use('/api', logRouter);
+app.use('/api', truckRouter);
+app.use('/api', driverRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
 app.use("/api/dailySheets", dailySheetRoutes);
 app.use("/api", payrollsRoutes);
 app.use("/api", messageRoutes);
 app.use('/api/tippingPlaces', tippingPlacesRoutes);
-app.use('/api/blockingDays' , blockingDaysRoutes)
-app.use('/api/standard' , standardItemsRoutes)
-app.use('/api/refund' , refundRoutes)
-app.use('/api/payment' , paymentHistoRoutes)
+app.use('/api/blockingDays', blockingDaysRoutes)
+app.use('/api/standard', standardItemsRoutes)
+app.use('/api/refund', refundRoutes)
+app.use('/api/payment', paymentHistoRoutes)
 app.use('/api/upload', uploadRouter)
 app.use('/api', quotationRoutes);
 app.use('/api/gmail', gmailRoutes);
-app.use('/api/blog',blogRoutes);
-app.use('/api',storageRoutes)
+app.use('/api/blog', blogRoutes);
+app.use('/api', storageRoutes)
 app.use('/api', statsRoute)
 app.use('/api', contactRequestRoutes);
-app.use('/api' , serviceCategoryRoutes);
-app.use('/api' , notificationRoutes);
-app.use('/api' , emailTemplateRoutes)
-app.use('/api/customers', customerRoutes); 
-app.post('/optimise/:truckId' , async(req,res)=>{
+app.use('/api', serviceCategoryRoutes);
+app.use('/api', notificationRoutes);
+app.use('/api', emailTemplateRoutes)
+app.use('/api/customers', customerRoutes);
+app.post('/optimise/:truckId', async (req, res) => {
   try {
-    const {truckId} = req.params;
+    const { truckId } = req.params;
     console.log(truckId)
-    const response = await optimizeRoute(truckId , "2024-12-03");
-    res.json({response:response})
+    const response = await optimizeRoute(truckId, "2024-12-03");
+    res.json({ response: response })
   } catch (error) {
     console.log(error)
-    res.json({error:error})
+    res.json({ error: error })
   }
 })
 

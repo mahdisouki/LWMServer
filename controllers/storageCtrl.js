@@ -296,9 +296,25 @@ const storageCtrl = {
             totalOther: {
               $sum: {
                 $cond: [
-                  { $eq: ["$type", "add"] },
+                  {
+                    $and: [
+                      { $eq: ["$type", "add"] },
+                      { $ne: ["$isReset", true] } // Only count non-reset records for rubbish
+                    ]
+                  },
                   "$items.other",
-                  { $multiply: ["$items.other", -1] },
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$type", "take"] },
+                          { $ne: ["$isReset", true] } // Only count non-reset records for rubbish
+                        ]
+                      },
+                      { $multiply: ["$items.other", -1] },
+                      0 // Don't count reset records
+                    ]
+                  }
                 ],
               },
             },
@@ -358,11 +374,14 @@ const storageCtrl = {
     }
   },
 
-  // Reset the accumulated 'other' (rubbish) quantity to zero by setting items.other to 0 in all records
+  // Reset the accumulated 'other' (rubbish) quantity by marking existing records as historical
   resetOtherQuantity: async (req, res) => {
     try {
-      // Compute current net 'other' across the whole database (before reset)
+      // Compute current net 'other' across non-reset records only (before reset)
       const totals = await Storage.aggregate([
+        {
+          $match: { isReset: { $ne: true } } // Only consider non-reset records
+        },
         {
           $group: {
             _id: null,
@@ -381,17 +400,18 @@ const storageCtrl = {
 
       const netOther = totals.length ? totals[0].totalOther : 0;
 
-      // Hard reset: set items.other to 0 in all storage records
+      // Mark all existing records as reset (historical) - this preserves their data
       const result = await Storage.updateMany(
-        { "items.other": { $ne: 0 } },
-        { $set: { "items.other": 0 } }
+        { isReset: { $ne: true } },
+        { $set: { isReset: true } }
       );
 
       return res.status(200).json({
-        message: 'Rubbish (other) quantities reset to zero across all records',
+        message: 'Rubbish (other) quantities reset - historical records preserved, new calculations will start from zero',
         previousNetOther: netOther,
-        matched: result.matchedCount ?? result.nMatched,
+        historicalRecordsMarked: result.matchedCount ?? result.nMatched,
         modified: result.modifiedCount ?? result.nModified,
+        note: 'All existing records are now marked as historical. New records will start fresh rubbish calculations.'
       });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -443,9 +463,25 @@ const storageCtrl = {
             totalOther: {
               $sum: {
                 $cond: [
-                  { $eq: ["$type", "add"] },
+                  {
+                    $and: [
+                      { $eq: ["$type", "add"] },
+                      { $ne: ["$isReset", true] } // Only count non-reset records for rubbish
+                    ]
+                  },
                   "$items.other",
-                  { $multiply: ["$items.other", -1] }
+                  {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$type", "take"] },
+                          { $ne: ["$isReset", true] } // Only count non-reset records for rubbish
+                        ]
+                      },
+                      { $multiply: ["$items.other", -1] },
+                      0 // Don't count reset records
+                    ]
+                  }
                 ]
               }
             }
