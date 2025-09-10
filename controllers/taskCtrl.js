@@ -38,6 +38,7 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASSWORD,
   },
 });
+const cloudinary = require('../helper/cloudinaryConfig');
 
 function validateBreakdown(breakdown) {
   if (
@@ -660,6 +661,139 @@ const taskCtrl = {
       if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
       }
+
+      // Handle clientObjectPhotos updates and deletions
+      // - Build next photo list from cloneClientObjectPhotos OR existing task photos
+      // - Remove any URLs listed in deletedMedia
+      // - Add newly uploaded files (req.files)
+      // - Merge any clientObjectPhotos provided in body
+      try {
+        // Collect deleted media from various possible encodings
+        let deletedMedia = [];
+        if (Array.isArray(updates.deletedMedia)) {
+          deletedMedia = updates.deletedMedia.filter(Boolean);
+        } else if (typeof updates.deletedMedia === 'string') {
+          try {
+            const parsedDel = JSON.parse(updates.deletedMedia);
+            if (Array.isArray(parsedDel)) deletedMedia = parsedDel.filter(Boolean);
+            else if (parsedDel) deletedMedia = [parsedDel];
+          } catch (_) {
+            deletedMedia = [updates.deletedMedia];
+          }
+        } else if (updates && typeof updates === 'object') {
+          // Handle deletedMedia[0], deletedMedia[1], ... style
+          const dmKeys = Object.keys(updates).filter((k) => k.startsWith('deletedMedia['));
+          if (dmKeys.length > 0) {
+            // Sort by index inside brackets to be deterministic
+            dmKeys.sort((a, b) => {
+              const ai = Number(a.match(/deletedMedia\[(\d+)\]/)?.[1] || 0);
+              const bi = Number(b.match(/deletedMedia\[(\d+)\]/)?.[1] || 0);
+              return ai - bi;
+            });
+            deletedMedia = dmKeys.map((k) => updates[k]).filter(Boolean);
+            // Clean these helper keys from updates
+            dmKeys.forEach((k) => delete updates[k]);
+          }
+        }
+
+        // Determine base set of photos
+        let basePhotos = [];
+        if (
+          updates.cloneClientObjectPhotos &&
+          Array.isArray(updates.cloneClientObjectPhotos)
+        ) {
+          basePhotos = updates.cloneClientObjectPhotos.filter(Boolean);
+        } else if (oldTask && Array.isArray(oldTask.clientObjectPhotos)) {
+          basePhotos = oldTask.clientObjectPhotos.slice();
+        }
+
+        // Remove deleted URLs from base
+        if (deletedMedia.length > 0 && basePhotos.length > 0) {
+          const toDeleteSet = new Set(deletedMedia);
+          basePhotos = basePhotos.filter((url) => !toDeleteSet.has(url));
+        }
+
+        // Add newly uploaded files
+        if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+          const uploaded = req.files.map((file) => file.path).filter(Boolean);
+          basePhotos = basePhotos.concat(uploaded);
+        }
+
+        // Merge any photos provided in body
+        if (typeof updates.clientObjectPhotos === 'string') {
+          try {
+            const parsed = JSON.parse(updates.clientObjectPhotos);
+            if (Array.isArray(parsed)) {
+              basePhotos = basePhotos.concat(parsed.filter(Boolean));
+            } else if (parsed) {
+              basePhotos = basePhotos.concat([parsed]);
+            }
+          } catch (_) {
+            basePhotos = basePhotos.concat([updates.clientObjectPhotos]);
+          }
+        } else if (Array.isArray(updates.clientObjectPhotos)) {
+          basePhotos = basePhotos.concat(updates.clientObjectPhotos.filter(Boolean));
+        }
+
+        // De-duplicate and finalize
+        let nextPhotos = Array.from(new Set(basePhotos.filter(Boolean)));
+
+        if (nextPhotos.length > 0) {
+          updates.clientObjectPhotos = nextPhotos;
+        } else {
+          // Allow clearing all photos if nothing remains and deletions were requested
+          if (deletedMedia.length > 0 || updates.clientObjectPhotos === '[]') {
+            updates.clientObjectPhotos = [];
+          } else {
+            delete updates.clientObjectPhotos;
+          }
+        }
+
+        // Attempt to delete removed Cloudinary assets
+        if (deletedMedia.length > 0) {
+          const parseCloudinaryInfo = (url) => {
+            try {
+              const u = new URL(url);
+              if (!u.hostname.includes('res.cloudinary.com')) return null;
+              const path = decodeURIComponent(u.pathname); // e.g., /<cloud_name>/image/upload/v123/uploads/abc.png.jpg
+              const parts = path.split('/').filter(Boolean);
+              // parts: [cloud_name, resource_type, 'upload', 'v123', ...public_id_parts]
+              const resourceType = parts[1];
+              const uploadIndex = parts.indexOf('upload');
+              if (uploadIndex === -1) return null;
+              const rest = parts.slice(uploadIndex + 1); // ['v123', 'uploads', 'abc.png.jpg']
+              const withoutVersion = rest[0] && rest[0].startsWith('v') ? rest.slice(1) : rest;
+              if (withoutVersion.length === 0) return null;
+              const filePath = withoutVersion.join('/'); // 'uploads/abc.png.jpg'
+              const publicId = filePath.replace(/\.[^/.]+$/, ''); // remove only last extension
+              return { resourceType: resourceType === 'video' ? 'video' : 'image', publicId };
+            } catch (_) {
+              return null;
+            }
+          };
+
+          const deletions = deletedMedia
+            .map((url) => parseCloudinaryInfo(url))
+            .filter(Boolean)
+            .map(({ resourceType, publicId }) =>
+              cloudinary.uploader
+                .destroy(publicId, { resource_type: resourceType })
+                .catch((err) =>
+                  console.warn('Cloudinary deletion failed for', publicId, err?.message || err),
+                ),
+            );
+
+          if (deletions.length > 0) {
+            await Promise.allSettled(deletions);
+          }
+        }
+      } catch (e) {
+        console.error('Error processing clientObjectPhotos/deletedMedia during update:', e);
+      }
+
+      // Do not persist helper fields
+      delete updates.cloneClientObjectPhotos;
+      delete updates.deletedMedia;
 
       // If items are being updated, recalculate totalPrice
       if (updates.items) {

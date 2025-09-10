@@ -354,6 +354,50 @@ const driverManagement = {
     }
   },
 
+  getTruckFullStatus: async (req, res) => {
+    const { truckId } = req.params;
+    const { date } = req.query;
+
+    try {
+      let start, end;
+
+      if (date) {
+        // If date is provided, use that date
+        const targetDate = new Date(date);
+        start = new Date(targetDate);
+        start.setHours(0, 0, 0, 0);
+        end = new Date(targetDate);
+        end.setHours(23, 59, 59, 999);
+      } else {
+        // Default to today
+        const dateRange = getTodayDateRange();
+        start = dateRange.start;
+        end = dateRange.end;
+      }
+
+      const truckStatus = await TruckStatus.findOne({
+        truckId,
+        createdAt: { $gte: start, $lte: end },
+      }).populate('truckId', 'name matricule');
+
+      if (!truckStatus) {
+        return res.status(200).json({
+          message: 'No truck status found for the specified date'
+        });
+      }
+
+      res.status(200).json({
+        message: 'Truck full status retrieved successfully',
+        truckStatus
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to retrieve truck status',
+        error: error.message,
+      });
+    }
+  },
+
 
   uploadInitialConditionPhotos: async (req, res) => {
     const { taskId } = req.params;

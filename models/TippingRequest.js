@@ -7,17 +7,17 @@ const tippingRequestSchema = new Schema({
         ref: 'User',
         required: true
     },
-    truckId: {
-        type: Schema.Types.ObjectId,
-        ref: 'Truck',
-        required: true
-    },
+    // truckId: {
+    //     type: Schema.Types.ObjectId,
+    //     ref: 'Truck',
+    //     required: false
+    // },
     notes: {
         type: String
     },
     status: {
         type: String,
-        enum: ['Pending', 'GoToStorage', 'GoToTipping', 'TippingAndStorage', 'Denied'],
+        enum: ['Pending', 'Accepted', 'Denied'],
         default: 'Pending',
         required: true
     },
@@ -38,6 +38,10 @@ const tippingRequestSchema = new Schema({
     storagePlace: {
         type: Schema.Types.ObjectId,
         ref: "StoragePlace"
+    },
+    createdBy: {
+        type: Schema.Types.ObjectId,
+        ref: "User"
     },
     createdAt: {
         type: Date,

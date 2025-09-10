@@ -28,10 +28,24 @@ const storageSchema = new Schema(
 storageSchema.pre("validate", async function (next) {
   try {
     if (!this.storagePlace) {
-      const localPlace = await StoragePlace.findOne({ name: /^local$/i });
-      if (localPlace) {
-        this.storagePlace = localPlace._id;
+      let localPlace = await StoragePlace.findOne({ name: /^local$/i });
+
+      // If no local storage place exists, create one
+      if (!localPlace) {
+        localPlace = new StoragePlace({
+          name: "Local",
+          address: "Local Storage ",
+          location: {
+            latitude: 51.5074, // London coordinates as default
+            longitude: -0.1278
+          },
+          capacity: 1000,
+          availableCapacity: 1000
+        });
+        await localPlace.save();
       }
+
+      this.storagePlace = localPlace._id;
     }
     next();
   } catch (err) {

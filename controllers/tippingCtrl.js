@@ -64,7 +64,9 @@ const tippingController = {
 
   createTippingRequestByAdmin: async (req, res) => {
     const adminId = req.user._id;
-    const { driverId, truckId, tippingPlace, notes, status } = req.body;
+    // const { driverId, truckId, tippingPlace, notes, status } = req.body;
+    const { driverId, notes, status } = req.body;
+
 
     try {
       // Ensure the user making the request is an admin
@@ -81,17 +83,17 @@ const tippingController = {
         return res.status(404).json({ message: 'Driver not found' });
       }
 
-      // Find the truck
-      const truck = await Truck.findById(truckId);
-      if (!truck) {
-        return res.status(404).json({ message: 'Truck not found' });
-      }
+      // // Find the truck
+      // const truck = await Truck.findById(truckId);
+      // if (!truck) {
+      //   return res.status(404).json({ message: 'Truck not found' });
+      // }
 
       // Create the tipping request
       const newTippingRequest = new TippingRequest({
         userId: driver._id, // Assigning the tipping request to the driver
-        truckId: truck._id,
-        tippingPlace: tippingPlace, // New field for tipping place
+        // truckId: truck._id,
+        // tippingPlace: tippingPlace, // New field for tipping place
         notes: notes,
         status: status,
         createdBy: admin._id, // Storing the admin who created the request
@@ -104,14 +106,14 @@ const tippingController = {
         request: {
           id: newTippingRequest._id,
           driverId: newTippingRequest.userId.toString(),
-          truckId: newTippingRequest.truckId.toString(),
-          tippingPlace: newTippingRequest.tippingPlace,
+          // truckId: newTippingRequest.truckId.toString(),
+          // tippingPlace: newTippingRequest.tippingPlace,
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
           createdAt: newTippingRequest.createdAt,
           createdBy: admin.username, // Admin's name
           driverName: driver.username, // Driver's name
-          truckName: truck.name, // Truck's name
+          // truckName: truck.name, // Truck's name
         },
       };
 
@@ -281,35 +283,64 @@ const tippingController = {
     const { status, tippingPlace } = req.body; // New status to be set
 
     try {
-      // Fetch the tipping request and populate truck to access helperId
-      const request = await TippingRequest.findById(id).populate({
-        path: 'truckId',
-        select: 'helperId', // Only fetch helperId from the truck
-        model: 'Truck',
-      });
+      // Fetch the tipping request
+      const request = await TippingRequest.findById(id);
 
       if (!request) {
         return res.status(404).json({ message: 'Tipping request not found' });
       }
 
-      const helperId = request.truckId.helperId;
+      // Find the truck assigned to this driver to get helperId
+      let truck = await Truck.findOne({ driverId: request.userId });
+      if (!truck) {
+        truck = await Truck.findOne({ helperId: request.userId });
+      }
+
+      const helperId = truck ? truck.helperId : null;
 
       // Update status
       request.status = status;
-      request.tippingPlace = tippingPlace
+      request.tippingPlace = tippingPlace;
+
+      // Handle storage place logic based on status
+      if (status === 'Accepted') {
+        // Set storage place to local storage (default storage place)
+        const StoragePlace = require('../models/StroragePlace');
+        let localPlace = await StoragePlace.findOne({ name: /^local$/i });
+
+        // If no local storage place exists, create one
+        if (!localPlace) {
+          localPlace = new StoragePlace({
+            name: "Local",
+            address: "Local Storage",
+            location: {
+              latitude: 51.5074, // London coordinates as default
+              longitude: -0.1278
+            },
+            capacity: 1000,
+            availableCapacity: 1000
+          });
+          await localPlace.save();
+        }
+
+        request.storagePlace = localPlace._id;
+      } else if (status === 'Denied') {
+        // Clear storage place when denied
+        request.storagePlace = undefined;
+      }
+
       await request.save();
 
       if (status === 'GoToTipping' || status === 'TippingAndStorage') {
         // Fetch the driver's location
         const driver = await Driver.findById(request.userId).select('location');
 
-        if (driver) {
+        if (driver && helperId) {
           const driverLocation = driver.location;
           console.log('Driver Location:', driverLocation);
 
           // Find the nearest tipping place
           const tippingPlaces = await TippingPlace.find();
-
 
           emitEvent('driverOnTheWay', {
             helperId,
@@ -447,7 +478,7 @@ const tippingController = {
         updateFields,
         { new: true }  // Return the updated document
       ).populate([
-        { path: 'truckId', select: 'name' },
+        // { path: 'truckId', select: 'name' },
         { path: 'userId', select: 'username roleType' },
         { path: 'tippingPlace', select: 'name address' },
         { path: 'storagePlace', select: 'name address' }

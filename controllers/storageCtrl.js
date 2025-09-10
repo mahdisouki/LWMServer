@@ -45,7 +45,7 @@ const storageCtrl = {
             return Number.isFinite(v) && v >= 0 ? v : 0;
           })(),
         },
-        storagePlace,
+        storagePlace: storagePlace,
         proofs: proofUrls,
       });
 

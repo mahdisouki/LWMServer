@@ -8,8 +8,7 @@ router.post('/trucks', isAuth, checkRole('Admin'), truckCtrl.createTruck);
 router.get('/trucks', truckCtrl.getAllTrucks);
 router.get('/trucks/matricules', truckCtrl.getTruckMatricules);
 router.put('/trucks/:id', isAuth, checkRole('Admin'), truckCtrl.updateTruck);
-router.get(
-  '/trucks-chat',
+router.get('/trucks-chat',
   isAuth,
   checkRole('Admin'),
   truckCtrl.getAllTrucksForChat,
