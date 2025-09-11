@@ -389,23 +389,38 @@ const initSocket = (server) => {
       socket.emit('onlineUsersList', onlineUsers);
     });
 
-    // Get messages by roomId
-    socket.on('getMessagesByRoomId', async ({ roomId }) => {
+    // Get messages by roomId with pagination
+    socket.on('getMessagesByRoomId', async ({ roomId, skip = 0, limit = 20 }) => {
       try {
         if (!roomId) {
           socket.emit('error', { message: 'Room ID is required' });
           return;
         }
 
+        // Get total count of messages for this room
+        const totalMessages = await Message.countDocuments({ roomId });
+
         const messages = await Message.find({ roomId })
-          .sort({ createdAt: 1 })
+          .sort({ createdAt: -1 }) // Sort by newest first
+          .skip(skip) // Skip messages for pagination
+          .limit(limit) // Get specified number of messages
           .populate('senderId', 'username picture'); // Populate sender info
+
+        // Reverse to get chronological order (oldest to newest)
+        const sortedMessages = messages.reverse();
+
+        // Check if there are more messages to load
+        const hasMore = skip + limit < totalMessages;
 
         socket.emit('messagesByRoomId', {
           success: true,
           roomId,
-          messages,
-          count: messages.length
+          messages: sortedMessages,
+          count: sortedMessages.length,
+          totalMessages,
+          skip,
+          limit,
+          hasMore
         });
       } catch (error) {
         console.error('Error getting messages by roomId:', error);

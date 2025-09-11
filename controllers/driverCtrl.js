@@ -519,12 +519,12 @@ const driverManagement = {
       // Update the user's current job address based on type
       if (type === 'Driver') {
         const driverUpdate = {
-          currentJobAddress: currentTask.location ? currentTask.location.address : null,
+          currentJobAddress: currentTask.collectionAddress ? currentTask.collectionAddress : null,
         };
         await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
       } else if (type === 'Helper') {
         const helperUpdate = {
-          currentJobAddress: currentTask.location ? currentTask.location.address : null,
+          currentJobAddress: currentTask.collectionAddress ? currentTask.collectionAddress : null,
         };
         await Helper.findByIdAndUpdate(userId, helperUpdate, { new: true });
       }
@@ -602,13 +602,13 @@ const driverManagement = {
       // Update the user's current job address based on type
       if (type === 'Driver') {
         const driverUpdate = {
-          currentJobAddress: currentTask.currentJobAddress,
+          currentJobAddress: currentTask.collectionAddress,
         };
         await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
         console.log('Driver updated successfully');
       } else if (type === 'Helper') {
         const helperUpdate = {
-          currentJobAddress: currentTask.currentJobAddress,
+          currentJobAddress: currentTask.collectionAddress,
         };
         await Helper.findByIdAndUpdate(userId, helperUpdate, { new: true });
         console.log('Helper updated successfully');
@@ -789,6 +789,7 @@ const driverManagement = {
 
       const task = await Task.findById(taskId);
       if (!task) {
+        console.log("task not found")
         return res.status(404).json({ message: 'Task not found' });
       }
 
@@ -815,7 +816,6 @@ const driverManagement = {
       res.status(200).json({
         message: `Task rated successfully by `,
         task,
-        userType: type
       });
     } catch (error) {
       console.error('Error rating task:', error);
@@ -854,6 +854,7 @@ const driverManagement = {
       console.log('azeazeaz', user);
       return res.status(200).json({ message: 'Start time updated', user });
     } catch (error) {
+      console.log("error:",error)
       console.error(error);
       return res.status(500).json({ message: 'An error occurred', error });
     }
