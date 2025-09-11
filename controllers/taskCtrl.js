@@ -1140,25 +1140,29 @@ const taskCtrl = {
         task.paidAmount = {
           amount: 36,
           method: 'online',
-          status: 'Not_Paid', // Will be updated to Paid after successful payment
+          status: 'Paid', // Deposit is considered paid when processed
         };
         task.remainingAmount = {
           amount: finalPrice - 36,
           method: 'online',
           status: 'Not_Paid',
         };
+        // Do NOT update task status to completed for partial payments
       } else {
         amountToPay = finalPrice; // Set full amount
         task.paidAmount = {
           amount: finalPrice,
           method: 'online',
-          status: 'Not_Paid', // Will be updated to Paid after successful payment
+          status: 'Paid', // Full payment is considered paid when processed
         };
+
         task.remainingAmount = {
           amount: 0,
           method: 'online',
-          status: 'Not_Paid',
+          status: 'Paid',
         };
+        task.paymentStatus = 'Paid';
+        // Only complete task for full payments
       }
       const amountInPence = Math.round(amountToPay * 100);
 
@@ -1256,12 +1260,36 @@ const taskCtrl = {
         );
         if (!task) return res.status(404).json({ message: 'Task not found' });
 
-        task.paymentStatus = 'Paid';
-        await task.save();
-
-        // Montant en GBP
+        // Determine if this is a partial payment (deposit) or full payment
         const amountInCents = paymentIntent.amount;
         const amountInGBP = Number((amountInCents / 100).toFixed(2));
+
+        // Check if this is a deposit payment (36 GBP) or full payment
+        if (amountInGBP === 36) {
+          // This is a deposit payment
+          task.paymentStatus = 'partial_Paid';
+          task.paidAmount = {
+            amount: 36,
+            method: 'online',
+            status: 'Paid',
+          };
+          // Do NOT update task status to completed for partial payments
+        } else {
+          // This is a full payment
+          task.paymentStatus = 'Paid';
+          task.paidAmount = {
+            amount: amountInGBP,
+            method: 'online',
+            status: 'Paid',
+          };
+          task.remainingAmount = {
+            amount: 0,
+            method: 'online',
+            status: 'Paid',
+          };
+        }
+
+        await task.save();
 
         // Récupérer les informations du paiement
         const charges = await stripe.charges.list({
@@ -1348,13 +1376,36 @@ const taskCtrl = {
       const capture = await PayPalClient().execute(request);
 
       if (capture.result.status === 'COMPLETED') {
-        task.paymentStatus = 'Paid';
-        task.status = 'Completed';
-        await task.save();
-
         const amountInGBP = parseFloat(
           capture.result.purchase_units[0].payments.captures[0].amount.value,
         );
+
+        // Check if this is a deposit payment (36 GBP) or full payment
+        if (amountInGBP === 36) {
+          // This is a deposit payment
+          task.paymentStatus = 'partial_Paid';
+          task.paidAmount = {
+            amount: 36,
+            method: 'online',
+            status: 'Paid',
+          };
+          // Do NOT update task status to completed for partial payments
+        } else {
+          // This is a full payment
+          task.paymentStatus = 'Paid';
+          task.paidAmount = {
+            amount: amountInGBP,
+            method: 'online',
+            status: 'Paid',
+          };
+          task.remainingAmount = {
+            amount: 0,
+            method: 'online',
+            status: 'Paid',
+          };
+        }
+
+        await task.save();
         const transactionId =
           capture.result.purchase_units[0].payments.captures[0].id;
         const payerAccount = capture.result.payer.email_address;
