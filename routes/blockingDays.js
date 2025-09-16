@@ -5,6 +5,7 @@ const router = express.Router();
 
 router.post('/blocking-days', blockingDaysCtrl.createBlockingDay);
 router.get('/blocking-days', blockingDaysCtrl.getAllBlockingDays);
+router.get('/blocking-days/available-time-slots', blockingDaysCtrl.getAvailableTimeSlots);
 router.get('/blocking-days/:id', blockingDaysCtrl.getBlockingDayById);
 router.put('/blocking-days/:id', blockingDaysCtrl.updateBlockingDay);
 router.delete('/blocking-days/:id', blockingDaysCtrl.deleteBlockingDay);

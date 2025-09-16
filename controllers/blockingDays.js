@@ -4,9 +4,30 @@ const APIfeatures = require('../utils/APIFeatures'); // If you're using a utilit
 const blockingDaysCtrl = {
     createBlockingDay: async (req, res) => {
         try {
-            const { date, type } = req.body;
+            const { date, type, timeSlots } = req.body;
 
-            const newBlockingDay = new BlockingDays({ date, type });
+            // Validate that timeSlots is provided and not empty
+            if (!timeSlots || timeSlots.length === 0) {
+                return res.status(400).json({
+                    message: "At least one time slot must be provided in 'timeSlots' array"
+                });
+            }
+
+
+            // Validate time slots if provided
+            if (timeSlots && Array.isArray(timeSlots)) {
+                const validTimeSlots = ['AnyTime', '7am-12pm', '12pm-5pm'];
+                const invalidSlots = timeSlots.filter(slot => !validTimeSlots.includes(slot));
+                if (invalidSlots.length > 0) {
+                    return res.status(400).json({
+                        message: "Invalid time slots provided",
+                        invalidSlots,
+                        validTimeSlots
+                    });
+                }
+            }
+
+            const newBlockingDay = new BlockingDays({ date, type, timeSlots });
             await newBlockingDay.save();
             res.status(201).json({ message: "Blocking day created successfully", blockingDay: newBlockingDay });
         } catch (error) {
@@ -56,10 +77,31 @@ const blockingDaysCtrl = {
 
     updateBlockingDay: async (req, res) => {
         const { id } = req.params;
-        const { date, type } = req.body;
+        const { date, type, timeSlots } = req.body;
 
         try {
-            const updatedBlockingDay = await BlockingDays.findByIdAndUpdate(id, { date, type }, { new: true });
+            // Validate that timeSlots is provided and not empty
+            if (!timeSlots || timeSlots.length === 0) {
+                return res.status(400).json({
+                    message: "At least one time slot must be provided in 'timeSlots' array"
+                });
+            }
+
+
+            // Validate time slots if provided
+            if (timeSlots && Array.isArray(timeSlots)) {
+                const validTimeSlots = ['AnyTime', '7am-12pm', '12pm-5pm'];
+                const invalidSlots = timeSlots.filter(slot => !validTimeSlots.includes(slot));
+                if (invalidSlots.length > 0) {
+                    return res.status(400).json({
+                        message: "Invalid time slots provided",
+                        invalidSlots,
+                        validTimeSlots
+                    });
+                }
+            }
+
+            const updatedBlockingDay = await BlockingDays.findByIdAndUpdate(id, { date, type, timeSlots }, { new: true });
             if (!updatedBlockingDay) {
                 return res.status(404).json({ message: "Blocking day not found" });
             }
@@ -79,6 +121,42 @@ const blockingDaysCtrl = {
             res.status(200).json({ message: "Blocking day deleted successfully" });
         } catch (error) {
             res.status(500).json({ message: "Failed to delete blocking day", error: error.message });
+        }
+    },
+
+    getAvailableTimeSlots: async (req, res) => {
+        try {
+            const { date } = req.query;
+
+            if (!date) {
+                return res.status(400).json({ message: "Date parameter is required" });
+            }
+
+            const queryDate = new Date(date);
+            const blockingDay = await BlockingDays.findOne({ date: queryDate });
+
+            const allTimeSlots = ['AnyTime', '7am-12pm', '12pm-5pm'];
+
+            if (!blockingDay || !blockingDay.timeSlots || blockingDay.timeSlots.length === 0) {
+                // If no blocking day exists or no time slots are blocked, all slots are available
+                return res.status(200).json({
+                    message: "Available time slots retrieved successfully",
+                    date: queryDate,
+                    availableTimeSlots: allTimeSlots,
+                    blockedTimeSlots: []
+                });
+            }
+
+            const availableTimeSlots = allTimeSlots.filter(slot => !blockingDay.timeSlots.includes(slot));
+
+            res.status(200).json({
+                message: "Available time slots retrieved successfully",
+                date: queryDate,
+                availableTimeSlots,
+                blockedTimeSlots: blockingDay.timeSlots
+            });
+        } catch (error) {
+            res.status(500).json({ message: "Failed to retrieve available time slots", error: error.message });
         }
     },
 };
