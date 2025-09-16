@@ -75,7 +75,7 @@ const dayOffController = {
             // Push the day-off request ID to the user's dayOffRequests array
             user.dayOffRequests.push(newDayOffRequest._id);
             await user.save();
-            emitNotificationToUser(adminId, 'Day_Off', `a driver ${user.username} is requesting a day off`)
+            emitNotificationToUser(adminId, 'Day_Off', `${user.username} is requesting a day off`, user.username)
             res.status(201).json({ message: "Day off request submitted successfully", request: newDayOffRequest });
         } catch (error) {
             console.log("Error in requestDayOff:", error);

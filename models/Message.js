@@ -12,6 +12,12 @@ const MessageSchema = new mongoose.Schema({
   messageType: { type: String, enum: ['text', 'image', 'file', 'audio'], default: 'text' }, // Type de message
   seen: { type: Boolean, default: false }, // Whether the message has been seen
   seenAt: { type: Date }, // When the message was seen
+  seenBy: [{
+    userId: { type: String, required: true },
+    username: { type: String, required: true },
+    picture: { type: String, required: true },
+    seenAt: { type: Date, default: Date.now }
+  }], // Array of users who have seen this message
   createdAt: { type: Date, default: Date.now },
 });
 

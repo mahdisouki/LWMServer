@@ -32,7 +32,6 @@ const tippingController = {
 
       const newTippingRequest = new TippingRequest({
         userId: userId,
-        truckId: truck._id,
         notes: notes,
         status: 'Pending',
       });
@@ -43,7 +42,6 @@ const tippingController = {
         request: {
           id: newTippingRequest._id,
           userId: newTippingRequest.userId.toString(),
-          truckId: newTippingRequest.truckId.toString(),
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
           createdAt: newTippingRequest.createdAt,
@@ -211,7 +209,6 @@ const tippingController = {
 
       // Populate related fields, including _id
       const populatedData = await TippingRequest.populate(data, [
-        { path: 'truckId', select: 'name' },
         { path: 'userId', select: 'username roleType' },
         { path: 'tippingPlace', select: 'name address _id' },
         { path: 'storagePlace', select: 'name address _id' }
@@ -224,12 +221,10 @@ const tippingController = {
         const lowerKeyword = keyword.toLowerCase();
         filteredData = filteredData.filter((req) => {
           if (!req) return false;
-          const truckName = req.truckId?.name?.toLowerCase() || '';
           const username = req.userId?.username?.toLowerCase() || '';
           const tippingPlaceName = req.tippingPlace?.name?.toLowerCase() || '';
           const storagePlaceName = req.storagePlace?.name?.toLowerCase() || '';
           return (
-            truckName.includes(lowerKeyword) ||
             username.includes(lowerKeyword) ||
             tippingPlaceName.includes(lowerKeyword) ||
             storagePlaceName.includes(lowerKeyword)
@@ -243,7 +238,6 @@ const tippingController = {
         .map((req) => {
           const obj = req.toObject();
           obj.username = req.userId?.username ?? 'Unknown User';
-          obj.truckName = req.truckId?.name ?? 'Unknown Truck';
           obj.tippingPlace = req.tippingPlace ? {
             name: req.tippingPlace.name,
             address: req.tippingPlace.address
@@ -361,10 +355,10 @@ const tippingController = {
   },
 
   markShipped: async (req, res) => {
-    const { truckId } = req.body;
+    const userId = req.user._id;
     try {
       const request = await TippingRequest.findOne({
-        truckId,
+        userId,
         isShipped: false,
       }).sort({ createdAt: -1 });
 
@@ -478,7 +472,6 @@ const tippingController = {
         updateFields,
         { new: true }  // Return the updated document
       ).populate([
-        // { path: 'truckId', select: 'name' },
         { path: 'userId', select: 'username roleType' },
         { path: 'tippingPlace', select: 'name address' },
         { path: 'storagePlace', select: 'name address' }

@@ -36,7 +36,8 @@ function startMailListener() {
             emitNotificationToUser(
               user._id.toString(),
               'Emails',
-              `New email from ${latestEmail.senderName || latestEmail.senderEmail}: ${latestEmail.subject}`
+              `New email from ${latestEmail.senderName || latestEmail.senderEmail}: ${latestEmail.subject}`,
+              latestEmail.senderName || latestEmail.senderEmail
             );
           }
         }

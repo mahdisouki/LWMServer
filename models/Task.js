@@ -92,7 +92,7 @@ const taskSchema = new Schema(
     },
     taskStatus: {
       type: String,
-      enum: ["Not_Completed", "Completed", "Cancelled", "On_Hold", "Processing"],
+      enum: ["Not_Completed", "Completed", "Cancelled", "On_Hold", "Processing", "New"],
       default: "Not_Completed",
     },
     paymentMethod: {

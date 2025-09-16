@@ -4,11 +4,12 @@ const router = express.Router();
 const parser = require('../middlewares/multer');
 const Message = require('../models/Message');
 const { User } = require('../models/User');
-const { getIo } = require('../socket');
+const { getIo, emitNotificationToUser } = require('../socket');
+const Truck = require('../models/Truck');
 
 // Route pour les fichiers généraux (images, vidéos, documents)
 router.post('/', parser.single('file'), async (req, res) => {
-  const { roomId, senderId, messageText } = req.body;
+  const { roomId, senderId, messageText, isDriver, isAdmin = false } = req.body;
   const file = req.file;
 
   if (!file) {
@@ -42,6 +43,40 @@ router.post('/', parser.single('file'), async (req, res) => {
     const io = getIo();
     io.to(roomId).emit('newMessage', message);
 
+    // Send notifications
+    try {
+      let truck;
+      if (isAdmin) {
+        truck = await Truck.findById(roomId);
+      } else if (isDriver) {
+        truck = await Truck.findOne({ driverId: senderId });
+      } else {
+        truck = await Truck.findById(roomId);
+      }
+
+      if (truck) {
+        // Determine who should receive notifications
+        const allUserIds = [
+          truck.driverId?.toString(),
+          truck.helperId?.toString()
+        ];
+
+        // Only add admin to notifications if sender is not admin
+        if (!isAdmin) {
+          allUserIds.push('67cb6810c9e768ec25d39523'); // Replace with actual admin user ID if known
+        }
+
+        for (const receiverId of allUserIds) {
+          if (receiverId && receiverId !== senderId) {
+            const messageTypeText = messageType === 'image' ? 'image' : 'file';
+            emitNotificationToUser(receiverId, 'Chat', `New ${messageTypeText} from ${user.username}`, user.username);
+          }
+        }
+      }
+    } catch (notificationError) {
+      console.error('Error sending notifications for file upload:', notificationError);
+    }
+
     res.status(200).json({ success: true, message });
   } catch (error) {
     console.error('Error saving message with file:', error);
@@ -51,7 +86,7 @@ router.post('/', parser.single('file'), async (req, res) => {
 
 // Route spécifique pour les messages vocaux
 router.post('/audio', parser.single('audio'), async (req, res) => {
-  const { roomId, senderId, messageText, audioDuration } = req.body;
+  const { roomId, senderId, messageText, audioDuration, isDriver, isAdmin = false } = req.body;
   const file = req.file;
 
   if (!file) {
@@ -81,6 +116,39 @@ router.post('/audio', parser.single('audio'), async (req, res) => {
 
     const io = getIo();
     io.to(roomId).emit('newMessage', message);
+
+    // Send notifications
+    try {
+      let truck;
+      if (isAdmin) {
+        truck = await Truck.findById(roomId);
+      } else if (isDriver) {
+        truck = await Truck.findOne({ driverId: senderId });
+      } else {
+        truck = await Truck.findById(roomId);
+      }
+
+      if (truck) {
+        // Determine who should receive notifications
+        const allUserIds = [
+          truck.driverId?.toString(),
+          truck.helperId?.toString()
+        ];
+
+        // Only add admin to notifications if sender is not admin
+        if (!isAdmin) {
+          allUserIds.push('67cb6810c9e768ec25d39523'); // Replace with actual admin user ID if known
+        }
+
+        for (const receiverId of allUserIds) {
+          if (receiverId && receiverId !== senderId) {
+            emitNotificationToUser(receiverId, 'Chat', `New voice message from ${user.username}`, user.username);
+          }
+        }
+      }
+    } catch (notificationError) {
+      console.error('Error sending notifications for audio upload:', notificationError);
+    }
 
     res.status(200).json({ success: true, message });
   } catch (error) {

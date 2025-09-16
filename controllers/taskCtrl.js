@@ -281,7 +281,7 @@ const taskCtrl = {
         clientObjectPhotos,
         totalPrice,
         items: allItems,
-        taskStatus: 'Processing',
+        taskStatus: 'New',
         postcode,
         customDiscountPercent,
         discountType,

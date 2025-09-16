@@ -172,21 +172,121 @@ const initSocket = (server) => {
     io.emit('userStatus', { userId, status: 'online' });
 
     socket.on('joinRoom', async (roomId) => {
-
       console.log(`User joined room: ${roomId}`);
 
-      const messages = await Message.find({ roomId }).sort({ createdAt: 1 });
+      // Join the socket room for real-time communication
+      socket.join(roomId);
+
+      const messages = await Message.find({ roomId })
+        .sort({ createdAt: 1 })
+        .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration messageType seen seenAt seenBy createdAt');
       socket.emit('chatHistory', messages);
+
+      // Notify other users in the room that someone joined
+      socket.to(roomId).emit('userJoinedRoom', {
+        userId: userId,
+        roomId: roomId,
+        timestamp: new Date()
+      });
     });
 
-    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver, messageType = 'text' }) => {
-      console.log(`Received message in room ${roomId} from user ${senderId}:`, isDriver);
+    // Admin-specific event to join any room for monitoring
+    socket.on('adminJoinRoom', async (roomId) => {
+      try {
+        // Verify user is admin
+        const user = await User.findById(userId);
+        if (!user || user.roleType !== 'Admin') {
+          socket.emit('error', { message: 'Unauthorized: Admin access required' });
+          return;
+        }
+
+        console.log(`Admin ${userId} joined room: ${roomId}`);
+
+        // Join the socket room
+        socket.join(roomId);
+        console.log(`Admin socket ${socket.id} joined room ${roomId}`);
+
+        // Get room messages
+        const messages = await Message.find({ roomId })
+          .sort({ createdAt: 1 })
+          .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration messageType seen seenAt seenBy createdAt');
+        socket.emit('chatHistory', messages);
+
+        // Confirm admin is in the room
+        const roomSockets = await io.in(roomId).fetchSockets();
+        console.log(`Room ${roomId} now has ${roomSockets.length} sockets:`, roomSockets.map(s => s.id));
+
+        // Get truck information for context
+        const truck = await Truck.findById(roomId).populate('driverId helperId', 'username picture');
+        if (truck) {
+          socket.emit('roomInfo', {
+            roomId,
+            truck: {
+              id: truck._id,
+              driver: truck.driverId,
+              helper: truck.helperId
+            }
+          });
+        }
+
+        // Notify other users that admin joined
+        socket.to(roomId).emit('adminJoinedRoom', {
+          adminId: userId,
+          adminName: user.username,
+          roomId: roomId,
+          timestamp: new Date()
+        });
+
+      } catch (error) {
+        console.error('Error in adminJoinRoom:', error);
+        socket.emit('error', { message: 'Failed to join room' });
+      }
+    });
+
+    // Admin event to get all available rooms (trucks)
+    socket.on('getAllRooms', async () => {
+      try {
+        // Verify user is admin
+        const user = await User.findById(userId);
+        if (!user || user.roleType !== 'Admin') {
+          socket.emit('error', { message: 'Unauthorized: Admin access required' });
+          return;
+        }
+
+        // Get all trucks with their driver and helper info
+        const trucks = await Truck.find()
+          .populate('driverId', 'username picture')
+          .populate('helperId', 'username picture')
+          .select('_id driverId helperId');
+
+        const rooms = trucks.map(truck => ({
+          roomId: truck._id,
+          truck: {
+            id: truck._id,
+            driver: truck.driverId,
+            helper: truck.helperId
+          }
+        }));
+
+        socket.emit('allRooms', rooms);
+
+      } catch (error) {
+        console.error('Error getting all rooms:', error);
+        socket.emit('error', { message: 'Failed to get rooms' });
+      }
+    });
+
+    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver, messageType = 'text', isAdmin = false }) => {
+      console.log(`Received message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
       try {
         const user = await User.findById(senderId);
 
         let truck;
 
-        if (isDriver) {
+        if (isAdmin) {
+          console.log("is admin");
+          truck = await Truck.findById(roomId);
+        } else if (isDriver) {
           console.log("is driver");
           truck = await Truck.findOne({ driverId: senderId });
         } else {
@@ -201,6 +301,7 @@ const initSocket = (server) => {
           const message = new Message({
             roomId,
             senderId,
+            senderName: user.username,
             messageText,
             image: user.picture,
             messageType: messageType,
@@ -215,15 +316,16 @@ const initSocket = (server) => {
           return;
         }
 
-        const relatedUserId = isDriver ? truck.helperId : truck.driverId;
+        // For admin messages, we don't need to find a related user
+        let relatedUser = null;
+        if (!isAdmin) {
+          const relatedUserId = isDriver ? truck.helperId : truck.driverId;
+          relatedUser = await User.findById(relatedUserId);
 
-        const relatedUser = await User.findById(relatedUserId);
-
-
-
-        if (!relatedUser) {
-          console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
-          return;
+          if (!relatedUser) {
+            console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+            return;
+          }
         }
 
         // Create a new message
@@ -239,20 +341,30 @@ const initSocket = (server) => {
         await message.save();
 
         console.log(`Message saved in room ${message}`);
+
+        // Debug: Check who's in the room before sending
+        const roomSockets = await io.in(roomId).fetchSockets();
+        console.log(`Sending message to room ${roomId} with ${roomSockets.length} sockets:`, roomSockets.map(s => s.id));
+
         // Emit the new message to the room
         io.to(roomId).emit('newMessage', message);
         // Get all socket connections in the room
 
+        // Determine who should receive notifications
         const allUserIds = [
           truck.driverId?.toString(),
-          truck.helperId?.toString(),
-          '67cb6810c9e768ec25d39523' // Replace with actual admin user ID if known
+          truck.helperId?.toString()
         ];
+
+        // Only add admin to notifications if sender is not admin
+        if (!isAdmin) {
+          allUserIds.push('67cb6810c9e768ec25d39523'); // Replace with actual admin user ID if known
+        }
 
         for (const receiverId of allUserIds) {
           console.log("receiverId", receiverId)
           if (receiverId && receiverId !== senderId) {
-            emitNotificationToUser(receiverId, 'Chat', `New message from ${user.username}`);
+            emitNotificationToUser(receiverId, 'Chat', `New message from ${user.username}`, user.username);
           }
         }
         // sendNotification('New Message Received', `You have a new message from ${user.username}`, relatedUser.fcmToken);
@@ -263,14 +375,17 @@ const initSocket = (server) => {
     });
 
     // Événement pour les messages vocaux
-    socket.on('sendAudioMessage', async ({ roomId, senderId, messageText, isDriver, audioUrl, audioDuration }) => {
-      console.log(`Received audio message in room ${roomId} from user ${senderId}:`, isDriver);
+    socket.on('sendAudioMessage', async ({ roomId, senderId, messageText, isDriver, audioUrl, audioDuration, isAdmin = false }) => {
+      console.log(`Received audio message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
       try {
         const user = await User.findById(senderId);
 
         let truck;
 
-        if (isDriver) {
+        if (isAdmin) {
+          console.log("is admin");
+          truck = await Truck.findById(roomId);
+        } else if (isDriver) {
           console.log("is driver");
           truck = await Truck.findOne({ driverId: senderId });
         } else {
@@ -295,12 +410,16 @@ const initSocket = (server) => {
           return;
         }
 
-        const relatedUserId = isDriver ? truck.helperId : truck.driverId;
-        const relatedUser = await User.findById(relatedUserId);
+        // For admin messages, we don't need to find a related user
+        let relatedUser = null;
+        if (!isAdmin) {
+          const relatedUserId = isDriver ? truck.helperId : truck.driverId;
+          relatedUser = await User.findById(relatedUserId);
 
-        if (!relatedUser) {
-          console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
-          return;
+          if (!relatedUser) {
+            console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+            return;
+          }
         }
 
         const message = new Message({
@@ -319,14 +438,18 @@ const initSocket = (server) => {
         // Envoyer les notifications
         const allUserIds = [
           truck.driverId?.toString(),
-          truck.helperId?.toString(),
-          '67cb6810c9e768ec25d39523'
+          truck.helperId?.toString()
         ];
+
+        // Only add admin to notifications if sender is not admin
+        if (!isAdmin) {
+          allUserIds.push('67cb6810c9e768ec25d39523');
+        }
 
         for (const receiverId of allUserIds) {
           console.log("receiverId", receiverId)
           if (receiverId && receiverId !== senderId) {
-            emitNotificationToUser(receiverId, 'Chat', `New voice message from ${user.username}`);
+            emitNotificationToUser(receiverId, 'Chat', `New voice message from ${user.username}`, user.username);
           }
         }
 
@@ -404,7 +527,8 @@ const initSocket = (server) => {
           .sort({ createdAt: -1 }) // Sort by newest first
           .skip(skip) // Skip messages for pagination
           .limit(limit) // Get specified number of messages
-          .populate('senderId', 'username picture'); // Populate sender info
+          .populate('senderId', 'username picture') // Populate sender info
+          .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration messageType seen seenAt seenBy createdAt'); // Include seenBy information
 
         // Reverse to get chronological order (oldest to newest)
         const sortedMessages = messages.reverse();
@@ -424,9 +548,9 @@ const initSocket = (server) => {
         });
       } catch (error) {
         console.error('Error getting messages by roomId:', error);
-        socket.emit('error', { 
+        socket.emit('error', {
           message: 'Failed to get messages by roomId',
-          error: error.message 
+          error: error.message
         });
       }
     });
@@ -487,23 +611,40 @@ const initSocket = (server) => {
       }
     });
     // Typing indicator events
-    socket.on('typingStart', async ({ roomId, senderId, isDriver }) => {
+    socket.on('typingStart', async ({ roomId, senderId, isDriver, isAdmin = false }) => {
       try {
         let truck;
-        console.log("user is typing:", senderId)
-        if (isDriver) {
+        console.log("user is typing:", senderId, "isDriver:", isDriver, "isAdmin:", isAdmin)
+
+        // Get user information
+        const user = await User.findById(senderId);
+        if (!user) {
+          console.error(`User ${senderId} not found`);
+          return;
+        }
+
+        if (isAdmin) {
+          console.log("admin is typing");
+          truck = await Truck.findById(roomId);
+        } else if (isDriver) {
+          console.log("driver is typing");
           truck = await Truck.findOne({ driverId: senderId });
         } else {
+          console.log("helper is typing");
           truck = await Truck.findById(roomId);
         }
+
         console.log("truck:", truck)
         if (truck) {
-          const relatedUserId = isDriver ? truck.helperId : truck.driverId;
-          // Emit typing start to the room
-          io.to(roomId).emit('userTyping', { 
-            userId: senderId, 
+          // Emit typing start to the room with user details
+          io.to(roomId).emit('userTyping', {
+            userId: senderId,
+            username: user.username,
+            userPicture: user.picture,
             isTyping: true,
-            roomId 
+            roomId,
+            userRole: isAdmin ? 'Admin' : (isDriver ? 'Driver' : 'Helper'),
+            timestamp: new Date()
           });
         }
       } catch (error) {
@@ -511,21 +652,38 @@ const initSocket = (server) => {
       }
     });
 
-    socket.on('typingStop', async ({ roomId, senderId, isDriver }) => {
+    socket.on('typingStop', async ({ roomId, senderId, isDriver, isAdmin = false }) => {
       try {
         let truck;
-        if (isDriver) {
+
+        // Get user information
+        const user = await User.findById(senderId);
+        if (!user) {
+          console.error(`User ${senderId} not found`);
+          return;
+        }
+
+        if (isAdmin) {
+          console.log("admin stopped typing");
+          truck = await Truck.findById(roomId);
+        } else if (isDriver) {
+          console.log("driver stopped typing");
           truck = await Truck.findOne({ driverId: senderId });
         } else {
+          console.log("helper stopped typing");
           truck = await Truck.findById(roomId);
         }
 
         if (truck) {
-          // Emit typing stop to the room
-          io.to(roomId).emit('userTyping', { 
-            userId: senderId, 
+          // Emit typing stop to the room with user details
+          io.to(roomId).emit('userTyping', {
+            userId: senderId,
+            username: user.username,
+            userPicture: user.picture,
             isTyping: false,
-            roomId 
+            roomId,
+            userRole: isAdmin ? 'Admin' : (isDriver ? 'Driver' : 'Helper'),
+            timestamp: new Date()
           });
         }
       } catch (error) {
@@ -533,47 +691,210 @@ const initSocket = (server) => {
       }
     });
 
+    // Recording indicator events
+    socket.on('recordingStart', async ({ roomId, senderId, isDriver, isAdmin = false }) => {
+      try {
+        let truck;
+        console.log("user is recording:", senderId, "isDriver:", isDriver, "isAdmin:", isAdmin)
+
+        // Get user information
+        const user = await User.findById(senderId);
+        if (!user) {
+          console.error(`User ${senderId} not found`);
+          return;
+        }
+
+        if (isAdmin) {
+          console.log("admin is recording");
+          truck = await Truck.findById(roomId);
+        } else if (isDriver) {
+          console.log("driver is recording");
+          truck = await Truck.findOne({ driverId: senderId });
+        } else {
+          console.log("helper is recording");
+          truck = await Truck.findById(roomId);
+        }
+
+        console.log("truck:", truck)
+        if (truck) {
+          // Emit recording start to the room with user details
+          io.to(roomId).emit('userRecording', {
+            userId: senderId,
+            username: user.username,
+            userPicture: user.picture,
+            isRecording: true,
+            roomId,
+            userRole: isAdmin ? 'Admin' : (isDriver ? 'Driver' : 'Helper'),
+            timestamp: new Date()
+          });
+        }
+      } catch (error) {
+        console.error('Error handling recording start:', error);
+      }
+    });
+
+    socket.on('recordingStop', async ({ roomId, senderId, isDriver, isAdmin = false }) => {
+      try {
+        let truck;
+
+        // Get user information
+        const user = await User.findById(senderId);
+        if (!user) {
+          console.error(`User ${senderId} not found`);
+          return;
+        }
+
+        if (isAdmin) {
+          console.log("admin stopped recording");
+          truck = await Truck.findById(roomId);
+        } else if (isDriver) {
+          console.log("driver stopped recording");
+          truck = await Truck.findOne({ driverId: senderId });
+        } else {
+          console.log("helper stopped recording");
+          truck = await Truck.findById(roomId);
+        }
+
+        if (truck) {
+          // Emit recording stop to the room with user details
+          io.to(roomId).emit('userRecording', {
+            userId: senderId,
+            username: user.username,
+            userPicture: user.picture,
+            isRecording: false,
+            roomId,
+            userRole: isAdmin ? 'Admin' : (isDriver ? 'Driver' : 'Helper'),
+            timestamp: new Date()
+          });
+        }
+      } catch (error) {
+        console.error('Error handling recording stop:', error);
+      }
+    });
+
     // Message seen event
     socket.on('messageSeen', async ({ roomId, messageId, userId }) => {
       try {
-        // Update message as seen in database
-        await Message.findByIdAndUpdate(messageId, { 
-          seen: true, 
-          seenAt: new Date() 
+        console.log(`Message ${messageId} marked as seen by user ${userId} in room ${roomId}`);
+
+        // Get user information
+        const user = await User.findById(userId);
+        if (!user) {
+          console.error(`User ${userId} not found`);
+          return;
+        }
+
+        // Check if user has already seen this message
+        const message = await Message.findById(messageId);
+        if (!message) {
+          console.error(`Message ${messageId} not found`);
+          return;
+        }
+
+        const alreadySeen = message.seenBy.some(seen => seen.userId === userId);
+        if (alreadySeen) {
+          console.log(`User ${userId} has already seen message ${messageId}`);
+          return;
+        }
+
+        // Add user to seenBy array
+        await Message.findByIdAndUpdate(messageId, {
+          $push: {
+            seenBy: {
+              userId: userId,
+              username: user.username,
+              picture: user.picture,
+              seenAt: new Date()
+            }
+          },
+          seen: true,
+          seenAt: new Date()
         });
 
-        // Emit message seen to the room
-        io.to(roomId).emit('messageSeenUpdate', { 
-          messageId, 
-          seenBy: userId,
-          seenAt: new Date()
+        // Emit message seen to the room with user details
+        io.to(roomId).emit('messageSeenUpdate', {
+          messageId,
+          seenBy: {
+            userId: userId,
+            username: user.username,
+            picture: user.picture,
+            seenAt: new Date()
+          }
         });
       } catch (error) {
         console.error('Error handling message seen:', error);
       }
     });
 
+    // Get seen by information for a specific message
+    socket.on('getMessageSeenBy', async ({ messageId }) => {
+      try {
+        const message = await Message.findById(messageId).select('seenBy');
+        if (!message) {
+          socket.emit('error', { message: 'Message not found' });
+          return;
+        }
+
+        socket.emit('messageSeenBy', {
+          messageId,
+          seenBy: message.seenBy || []
+        });
+      } catch (error) {
+        console.error('Error getting message seen by:', error);
+        socket.emit('error', { message: 'Failed to get seen by information' });
+      }
+    });
+
     // Mark all messages in room as seen
     socket.on('markAllAsSeen', async ({ roomId, userId }) => {
       try {
-        // Update all unread messages in the room for this user
-        await Message.updateMany(
-          { 
-            roomId, 
-            senderId: { $ne: userId }, // Not sent by this user
-            seen: { $ne: true } // Not already seen
-          },
-          { 
-            seen: true, 
-            seenAt: new Date() 
-          }
-        );
+        console.log(`User ${userId} marking all messages as seen in room ${roomId}`);
 
-        // Emit all messages seen to the room
-        io.to(roomId).emit('allMessagesSeen', { 
-          roomId, 
-          seenBy: userId,
-          seenAt: new Date()
+        // Get user information
+        const user = await User.findById(userId);
+        if (!user) {
+          console.error(`User ${userId} not found`);
+          return;
+        }
+
+        // Find all unread messages in the room for this user
+        const unreadMessages = await Message.find({
+          roomId,
+          senderId: { $ne: userId }, // Not sent by this user
+          'seenBy.userId': { $ne: userId } // Not already seen by this user
+        });
+
+        let markedCount = 0;
+
+        // Update each message individually to add user to seenBy array
+        for (const message of unreadMessages) {
+          await Message.findByIdAndUpdate(message._id, {
+            $push: {
+              seenBy: {
+                userId: userId,
+                username: user.username,
+                picture: user.picture,
+                seenAt: new Date()
+              }
+            },
+            seen: true,
+            seenAt: new Date()
+          });
+          markedCount++;
+        }
+
+        console.log(`Marked ${markedCount} messages as seen by ${user.username}`);
+
+        // Emit all messages seen to the room with user details
+        io.to(roomId).emit('allMessagesSeen', {
+          roomId,
+          seenBy: {
+            userId: userId,
+            username: user.username,
+            picture: user.picture,
+            seenAt: new Date()
+          },
+          markedCount: markedCount
         });
       } catch (error) {
         console.error('Error marking all messages as seen:', error);
@@ -583,7 +904,7 @@ const initSocket = (server) => {
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
       delete userSocketMap[userId]; // Remove user from map on disconnect
-      
+
       // Emit user offline status to all connected users
       io.emit('userStatus', { userId, status: 'offline' });
     });
@@ -593,11 +914,17 @@ const initSocket = (server) => {
 };
 
 // Function to emit a notification to a specific user by userId
-const emitNotificationToUser = async (userId, type, notificationMessage) => {
+const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null) => {
   const socketId = userSocketMap[userId];
   console.log('entredred to not fun')
   if (socketId && io) {
-    io.to(socketId).emit('notification', { userId: userId, type: type, message: notificationMessage, read: false });
+    io.to(socketId).emit('notification', {
+      userId: userId,
+      type: type,
+      message: notificationMessage,
+      senderName: senderName,
+      read: false
+    });
   } else {
     try {
       // User is offline, save notification to the database
@@ -605,6 +932,7 @@ const emitNotificationToUser = async (userId, type, notificationMessage) => {
         userId,
         type,
         message: notificationMessage,
+        senderName: senderName,
         read: false,
       });
       console.log(`Notification saved for offline user: ${userId}`, newNotification);

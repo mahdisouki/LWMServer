@@ -7,6 +7,7 @@ const multer = require('../middlewares/multer');
 
 
 router.get('/driver', isAuth, driverCtrl.getTasksForDriver);
+router.get('/driver/tasks-by-date', isAuth, driverCtrl.getTasksPerDate);
 router.post('/trucks/start/:truckId', isAuth, multer.array('uploads'), driverCtrl.updateTruckStart);
 router.put('/driver', isAuth, multer.fields([{ name: 'picture', maxCount: 1 }, { name: 'DriverLicense', maxCount: 1 }, { name: 'addressProof', maxCount: 1 }, { name: 'NatInsurance', maxCount: 1 }]), driverCtrl.updateDriverProfile);
 router.post('/driver/mark-day-start', isAuth, multer.none(), driverCtrl.markDayStart);
