@@ -157,7 +157,7 @@ const tippingController = {
   getTippingRequestByUserId: async (req, res) => {
     const { userId } = req.params;
     try {
-      const requests = await TippingRequest.findOne({
+      const requests = await TippingRequest.find({
         userId,
         isShipped: false,
       }).sort({ createdAt: -1 });

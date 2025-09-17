@@ -2,6 +2,97 @@ const Storage = require('../models/Storage');
 const StoragePlace = require('../models/StroragePlace');
 const Truck = require('../models/Truck');
 const capacities = require('../config/storageCapacities');
+
+// Helper function to get current available quantities for each item type
+const getCurrentQuantities = async () => {
+  const totals = await Storage.aggregate([
+    {
+      $group: {
+        _id: null,
+        totalFridges: {
+          $sum: {
+            $cond: [
+              { $eq: ["$type", "add"] },
+              "$items.fridges",
+              { $multiply: ["$items.fridges", -1] },
+            ],
+          },
+        },
+        totalMattresses: {
+          $sum: {
+            $cond: [
+              { $eq: ["$type", "add"] },
+              "$items.mattresses",
+              { $multiply: ["$items.mattresses", -1] },
+            ],
+          },
+        },
+        totalSofas: {
+          $sum: {
+            $cond: [
+              { $eq: ["$type", "add"] },
+              "$items.sofas",
+              { $multiply: ["$items.sofas", -1] },
+            ],
+          },
+        },
+        totalPaint: {
+          $sum: {
+            $cond: [
+              { $eq: ["$type", "add"] },
+              "$items.paint",
+              { $multiply: ["$items.paint", -1] },
+            ],
+          },
+        },
+        totalOther: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$type", "add"] },
+                  { $ne: ["$isReset", true] }
+                ]
+              },
+              "$items.other",
+              {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$type", "take"] },
+                      { $ne: ["$isReset", true] }
+                    ]
+                  },
+                  { $multiply: ["$items.other", -1] },
+                  0
+                ]
+              }
+            ],
+          },
+        },
+      },
+    },
+  ]);
+
+  if (!totals.length) {
+    return {
+      fridges: 0,
+      mattresses: 0,
+      sofas: 0,
+      paint: 0,
+      other: 0
+    };
+  }
+
+  return {
+    fridges: Math.max(0, totals[0].totalFridges || 0),
+    mattresses: Math.max(0, totals[0].totalMattresses || 0),
+    sofas: Math.max(0, totals[0].totalSofas || 0),
+    paint: Math.max(0, totals[0].totalPaint || 0),
+    other: Math.max(0, totals[0].totalOther || 0)
+  };
+};
+
 const storageCtrl = {
   addItems: async (req, res) => {
     try {
@@ -74,6 +165,79 @@ const storageCtrl = {
 
       console.log('Parsed items:', items); // Add this for debugging
 
+      // Get current available quantities
+      const currentQuantities = await getCurrentQuantities();
+
+      // Validate that we have enough items to remove
+      const itemsToRemove = {
+        fridges: items.fridges || 0,
+        mattresses: items.mattresses || 0,
+        sofas: items.sofas || 0,
+        paint: items.paint || 0,
+        other: (() => {
+          const v = parseFloat(items.other);
+          return Number.isFinite(v) && v >= 0 ? v : 0;
+        })(),
+      };
+
+      // Check if any removal quantity exceeds available quantity
+      const validationErrors = {};
+      let hasErrors = false;
+
+      if (itemsToRemove.fridges > currentQuantities.fridges) {
+        validationErrors.fridges = {
+          requested: itemsToRemove.fridges,
+          available: currentQuantities.fridges,
+          message: `Cannot remove ${itemsToRemove.fridges} fridges. Only ${currentQuantities.fridges} available.`
+        };
+        hasErrors = true;
+      }
+
+      if (itemsToRemove.mattresses > currentQuantities.mattresses) {
+        validationErrors.mattresses = {
+          requested: itemsToRemove.mattresses,
+          available: currentQuantities.mattresses,
+          message: `Cannot remove ${itemsToRemove.mattresses} mattresses. Only ${currentQuantities.mattresses} available.`
+        };
+        hasErrors = true;
+      }
+
+      if (itemsToRemove.sofas > currentQuantities.sofas) {
+        validationErrors.sofas = {
+          requested: itemsToRemove.sofas,
+          available: currentQuantities.sofas,
+          message: `Cannot remove ${itemsToRemove.sofas} sofas. Only ${currentQuantities.sofas} available.`
+        };
+        hasErrors = true;
+      }
+
+      if (itemsToRemove.paint > currentQuantities.paint) {
+        validationErrors.paint = {
+          requested: itemsToRemove.paint,
+          available: currentQuantities.paint,
+          message: `Cannot remove ${itemsToRemove.paint} paint. Only ${currentQuantities.paint} available.`
+        };
+        hasErrors = true;
+      }
+
+      if (itemsToRemove.other > currentQuantities.other) {
+        validationErrors.other = {
+          requested: itemsToRemove.other,
+          available: currentQuantities.other,
+          message: `Cannot remove ${itemsToRemove.other} other items. Only ${currentQuantities.other} available.`
+        };
+        hasErrors = true;
+      }
+
+      // If there are validation errors, return them
+      if (hasErrors) {
+        return res.status(422).json({
+          message: 'Insufficient quantity in storage',
+          validationErrors: validationErrors,
+          availableQuantities: currentQuantities
+        });
+      }
+
       const storageDate = new Date(date);
       storageDate.setHours(0, 0, 0, 0);
 
@@ -91,16 +255,7 @@ const storageCtrl = {
         truckId: truck._id,
         type: 'take',
         date: storageDate,
-        items: {
-          fridges: items.fridges || 0,
-          mattresses: items.mattresses || 0,
-          sofas: items.sofas || 0,
-          paint: items.paint || 0,
-          other: (() => {
-            const v = parseFloat(items.other);
-            return Number.isFinite(v) && v >= 0 ? v : 0;
-          })(),
-        },
+        items: itemsToRemove,
         proofs: proofUrls,
       });
 
@@ -544,6 +699,7 @@ const storageCtrl = {
       const skip = (Number(page) - 1) * Number(limit);
       const storagesQuery = Storage.find(query)
         .populate('driverId helperId truckId storagePlace')
+        .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit));
 
