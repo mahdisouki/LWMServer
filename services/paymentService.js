@@ -18,7 +18,23 @@ async function calculateTotalPrice(taskId) {
 
     task.items.forEach((item) => {
         const quantity = item.quantity || 1;
-        const price = item.standardItemId ? item.standardItemId.price * quantity : item.price * quantity;
+        let price = 0;
+
+        if (item.standardItemId) {
+            // Use position-specific prices for standard items
+            if (item.Objectsposition === 'InsideWithDismantling') {
+                price = (item.standardItemId.insideWithDismantlingPrice || 18) * quantity;
+            } else if (item.Objectsposition === 'Inside') {
+                price = (item.standardItemId.insidePrice || 6) * quantity;
+            } else {
+                // Default to Outside position
+                price = item.standardItemId.price * quantity;
+            }
+        } else {
+            // Custom items use their own price
+            price = item.price * quantity;
+        }
+
         basePrice += price;
 
         const itemDescription = `${item.standardItemId ? "Standard Item - " + item.standardItemId.itemName : "Custom Item - " + item.object} (x${quantity})`;
@@ -28,17 +44,6 @@ async function calculateTotalPrice(taskId) {
             price: price.toFixed(2),
             Objectsposition: item.Objectsposition || "Outside",
         });
-
-        // Add additional fees based on item position
-        if (["InsideWithDismantling", "Inside"].includes(item.Objectsposition)) {
-            const additionalFee = item.Objectsposition === "InsideWithDismantling" ? 18 : 6;
-            basePrice += additionalFee;
-
-            breakdown.push({
-                description: `${item.Objectsposition} fee for '${item.object || "item"}'`,
-                amount: additionalFee.toFixed(2),
-            });
-        }
     });
 
     const vat = basePrice * VAT_RATE;
@@ -82,7 +87,15 @@ const calculateTotalPriceUpdate = async (taskId) => {
         if (item.standardItemId) {
             const standardItem = await StandardItem.findById(item.standardItemId);
             if (standardItem) {
-                price = standardItem.price * quantity;
+                // Use position-specific prices for standard items
+                if (item.Objectsposition === 'InsideWithDismantling') {
+                    price = (standardItem.insideWithDismantlingPrice || 18) * quantity;
+                } else if (item.Objectsposition === 'Inside') {
+                    price = (standardItem.insidePrice || 6) * quantity;
+                } else {
+                    // Default to Outside position
+                    price = standardItem.price * quantity;
+                }
             }
         } else if (item.price) {
             price = Number(item.price) * quantity;
@@ -90,14 +103,8 @@ const calculateTotalPriceUpdate = async (taskId) => {
 
         basePrice += price;
 
-        // Add extra fee
-        if (item.Objectsposition === "InsideWithDismantling") {
-            basePrice += 18;
-            allOutside = false;
-        } else if (item.Objectsposition === "Inside") {
-            basePrice += 6;
-            allOutside = false;
-        } else if (item.Objectsposition !== "Outside") {
+        // Track if all items are outside for discount calculation
+        if (item.Objectsposition !== "Outside") {
             allOutside = false;
         }
     }

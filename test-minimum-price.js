@@ -138,12 +138,21 @@ async function testMinimumPriceLogic() {
 
   subtotal = 0;
   testTask4.items.forEach((item) => {
-    const itemPrice = item.standardItemId?.price * item.quantity || 0;
-    let positionPrice = 0;
-    if (item.Objectsposition === 'InsideWithDismantling') positionPrice = 18;
-    else if (item.Objectsposition === 'Inside') positionPrice = 6;
-    const itemSubtotal = itemPrice + positionPrice;
-    subtotal += itemSubtotal;
+    let itemPrice = 0;
+    if (item.standardItemId) {
+      // Use position-specific prices for standard items
+      if (item.Objectsposition === 'InsideWithDismantling') {
+        itemPrice = (item.standardItemId.insideWithDismantlingPrice || 18) * item.quantity;
+      } else if (item.Objectsposition === 'Inside') {
+        itemPrice = (item.standardItemId.insidePrice || 6) * item.quantity;
+      } else {
+        // Default to Outside position
+        itemPrice = item.standardItemId.price * item.quantity;
+      }
+    } else {
+      itemPrice = item.price * item.quantity || 0;
+    }
+    subtotal += itemPrice;
   });
 
   console.log('Original subtotal:', subtotal); // Should be £26 (£20 + £6)
