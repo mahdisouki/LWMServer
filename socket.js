@@ -179,7 +179,7 @@ const initSocket = (server) => {
 
       const messages = await Message.find({ roomId })
         .sort({ createdAt: 1 })
-        .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration messageType seen seenAt seenBy createdAt');
+        .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration videoUrl videoDuration videoThumbnail messageType seen seenAt seenBy createdAt');
       socket.emit('chatHistory', messages);
 
       // Notify other users in the room that someone joined
@@ -209,7 +209,7 @@ const initSocket = (server) => {
         // Get room messages
         const messages = await Message.find({ roomId })
           .sort({ createdAt: 1 })
-          .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration messageType seen seenAt seenBy createdAt');
+          .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration videoUrl videoDuration videoThumbnail messageType seen seenAt seenBy createdAt');
         socket.emit('chatHistory', messages);
 
         // Confirm admin is in the room
@@ -458,6 +458,92 @@ const initSocket = (server) => {
       }
     });
 
+    // Event for video messages
+    socket.on('sendVideoMessage', async ({ roomId, senderId, messageText, isDriver, videoUrl, videoDuration, videoThumbnail, isAdmin = false }) => {
+      console.log(`Received video message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
+      try {
+        const user = await User.findById(senderId);
+
+        let truck;
+
+        if (isAdmin) {
+          console.log("is admin");
+          truck = await Truck.findById(roomId);
+        } else if (isDriver) {
+          console.log("is driver");
+          truck = await Truck.findOne({ driverId: senderId });
+        } else {
+          console.log("is helper");
+          truck = await Truck.findById(roomId);
+        }
+
+        if (!truck) {
+          console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+          const message = new Message({
+            roomId,
+            senderId,
+            messageText,
+            image: user.picture,
+            videoUrl: videoUrl,
+            videoDuration: videoDuration,
+            videoThumbnail: videoThumbnail,
+            messageType: 'video',
+          });
+
+          await message.save();
+          io.to(roomId).emit('newMessage', message);
+          return;
+        }
+
+        // For admin messages, we don't need to find a related user
+        let relatedUser = null;
+        if (!isAdmin) {
+          const relatedUserId = isDriver ? truck.helperId : truck.driverId;
+          relatedUser = await User.findById(relatedUserId);
+
+          if (!relatedUser) {
+            console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+            return;
+          }
+        }
+
+        const message = new Message({
+          roomId,
+          senderId,
+          messageText,
+          image: user.picture,
+          videoUrl: videoUrl,
+          videoDuration: videoDuration,
+          videoThumbnail: videoThumbnail,
+          messageType: 'video',
+        });
+
+        await message.save();
+        io.to(roomId).emit('newMessage', message);
+
+        // Send notifications
+        const allUserIds = [
+          truck.driverId?.toString(),
+          truck.helperId?.toString()
+        ];
+
+        // Only add admin to notifications if sender is not admin
+        if (!isAdmin) {
+          allUserIds.push('67cb6810c9e768ec25d39523');
+        }
+
+        for (const receiverId of allUserIds) {
+          console.log("receiverId", receiverId)
+          if (receiverId && receiverId !== senderId) {
+            emitNotificationToUser(receiverId, 'Chat', `New video message from ${user.username}`, user.username);
+          }
+        }
+
+      } catch (error) {
+        console.error(`Error processing video message in room ${roomId}:`, error);
+      }
+    });
+
     socket.on('sendLocation', async ({ driverId, coordinates, role }) => {
       console.log(`Updating location for driver ${driverId}:`, coordinates);
       console.log(role)
@@ -528,7 +614,7 @@ const initSocket = (server) => {
           .skip(skip) // Skip messages for pagination
           .limit(limit) // Get specified number of messages
           .populate('senderId', 'username picture') // Populate sender info
-          .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration messageType seen seenAt seenBy createdAt'); // Include seenBy information
+          .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration videoUrl videoDuration videoThumbnail messageType seen seenAt seenBy createdAt'); // Include seenBy information
 
         // Reverse to get chronological order (oldest to newest)
         const sortedMessages = messages.reverse();

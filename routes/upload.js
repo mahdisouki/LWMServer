@@ -157,4 +157,78 @@ router.post('/audio', parser.single('audio'), async (req, res) => {
   }
 });
 
+// Route spécifique pour les messages vidéo
+router.post('/video', parser.single('video'), async (req, res) => {
+  const { roomId, senderId, messageText, videoDuration, videoThumbnail, isDriver, isAdmin = false } = req.body;
+  const file = req.file;
+
+  if (!file) {
+    return res.status(400).json({ error: 'No video file uploaded' });
+  }
+
+  // Vérifier que c'est bien un fichier vidéo
+  if (!file.mimetype.startsWith('video/')) {
+    return res.status(400).json({ error: 'File must be a video file' });
+  }
+
+  try {
+    const user = await User.findById(senderId);
+
+    const message = new Message({
+      roomId,
+      senderId,
+      messageText,
+      image: user.picture,
+      videoUrl: file.path,
+      videoDuration: parseFloat(videoDuration) || 0,
+      videoThumbnail: videoThumbnail || null,
+      messageType: 'video',
+      createdAt: new Date(),
+    });
+
+    await message.save();
+
+    const io = getIo();
+    io.to(roomId).emit('newMessage', message);
+
+    // Send notifications
+    try {
+      let truck;
+      if (isAdmin) {
+        truck = await Truck.findById(roomId);
+      } else if (isDriver) {
+        truck = await Truck.findOne({ driverId: senderId });
+      } else {
+        truck = await Truck.findById(roomId);
+      }
+
+      if (truck) {
+        // Determine who should receive notifications
+        const allUserIds = [
+          truck.driverId?.toString(),
+          truck.helperId?.toString()
+        ];
+
+        // Only add admin to notifications if sender is not admin
+        if (!isAdmin) {
+          allUserIds.push('67cb6810c9e768ec25d39523'); // Replace with actual admin user ID if known
+        }
+
+        for (const receiverId of allUserIds) {
+          if (receiverId && receiverId !== senderId) {
+            emitNotificationToUser(receiverId, 'Chat', `New video message from ${user.username}`, user.username);
+          }
+        }
+      }
+    } catch (notificationError) {
+      console.error('Error sending notifications for video upload:', notificationError);
+    }
+
+    res.status(200).json({ success: true, message });
+  } catch (error) {
+    console.error('Error saving video message:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;
