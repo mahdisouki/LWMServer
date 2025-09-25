@@ -5,11 +5,19 @@ const MessageSchema = new mongoose.Schema({
   senderId: { type: String, required: true },
   messageText: { type: String },
   image: { type: String },
-  fileUrl: { type: String },
-  fileType: { type: String },
+  fileUrl: { type: String }, // Keep for backward compatibility
+  fileType: { type: String }, // Keep for backward compatibility
+  fileUrls: [{ type: String }], // Array of file URLs for multiple files
+  fileTypes: [{ type: String }], // Array of file types for multiple files
   audioUrl: { type: String }, // URL du fichier audio pour les messages vocaux
   audioDuration: { type: Number }, // Durée en secondes du message vocal
-  messageType: { type: String, enum: ['text', 'image', 'file', 'audio'], default: 'text' }, // Type de message
+  videoUrl: { type: String }, // Keep for backward compatibility
+  videoUrls: [{ type: String }], // Array of video URLs for multiple videos
+  videoDuration: { type: Number }, // Durée en secondes du message vidéo
+  videoDurations: [{ type: Number }], // Array of video durations for multiple videos
+  videoThumbnail: { type: String }, // URL de la miniature de la vidéo
+  videoThumbnails: [{ type: String }], // Array of video thumbnails for multiple videos
+  messageType: { type: String, enum: ['text', 'image', 'file', 'audio', 'video', 'multiple'], default: 'text' }, // Type de message
   seen: { type: Boolean, default: false }, // Whether the message has been seen
   seenAt: { type: Date }, // When the message was seen
   seenBy: [{
