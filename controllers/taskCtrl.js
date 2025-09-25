@@ -432,6 +432,7 @@ const taskCtrl = {
         task,
       });
     } catch (error) {
+      console.log(error)
       res.status(500).json({
         message: 'Failed to assign truck',
         error: error.message,
@@ -495,6 +496,7 @@ const taskCtrl = {
         task,
       });
     } catch (error) {
+      console.log(error)
       res.status(500).json({
         message: 'Failed to de-assign task from truck',
         error: error.message,
@@ -586,9 +588,21 @@ const taskCtrl = {
     }
 
     try {
+      // Validate the reorderedTasks structure
+      const validatedTasks = reorderedTasks.map((task, index) => {
+        if (!task.taskId || !task.type) {
+          throw new Error(`Invalid task structure at index ${index}. Must have taskId and type.`);
+        }
+        return {
+          taskId: task.taskId,
+          type: task.type,
+          order: index + 1 // Set order based on array position
+        };
+      });
+
       const updatedTruck = await Truck.findOneAndUpdate(
         { _id: truckId }, // Query to find the truck
-        { $set: { [`tasks.${date}`]: reorderedTasks } }, // Dynamically update the tasks for the specific date
+        { $set: { [`tasks.${date}`]: validatedTasks } }, // Dynamically update the tasks for the specific date
         { new: true }, // Return the updated document
       );
 
@@ -599,6 +613,7 @@ const taskCtrl = {
       res.status(200).json({
         message: 'Task order updated successfully',
         tasks: updatedTruck.tasks.get(date), // Get the updated tasks for the specific date
+        totalTasks: validatedTasks.length
       });
     } catch (error) {
       console.error('Error updating truck:', error);

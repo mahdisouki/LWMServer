@@ -3,6 +3,7 @@ const { Helper } = require('../models/Helper');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
 const TruckStatus = require('../models/TruckStatus');
+const TippingRequest = require('../models/TippingRequest');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser } = require('../socket');
@@ -29,17 +30,7 @@ async function getUserModel(userId) {
     }
   }
 
-  // If not found in User model, try Driver model
-  user = await Driver.findById(userId);
-  if (user) {
-    return { user, model: 'Driver', type: 'Driver' };
-  }
-
-  // If not found in Driver model, try Helper model
-  user = await Helper.findById(userId);
-  if (user) {
-    return { user, model: 'Helper', type: 'Helper' };
-  }
+  
 
   return null;
 }
@@ -59,6 +50,83 @@ async function getTruckForUser(userId) {
   }
 
   return null;
+}
+
+// Helper function to format tipping request as task
+function formatTippingRequestAsTask(tippingRequest) {
+  return {
+    _id: `tipping_${tippingRequest._id}`,
+    type: 'tipping_request',
+    orderNumber: `TIP-${tippingRequest._id.toString().slice(-6)}`,
+    firstName: 'Tipping Request',
+    lastName: '',
+    phoneNumber: '',
+    email: '',
+    totalPrice: tippingRequest.price || 0,
+    taskStatus: tippingRequest.status === 'Accepted' ? 'Completed' : 
+                tippingRequest.status === 'Denied' ? 'Declined' : 'Processing',
+    paymentStatus: tippingRequest.status === 'Accepted' ? 'Paid' : 'Not_Paid',
+    paymentMethod: 'cash',
+    date: new Date(tippingRequest.createdAt).toISOString().split('T')[0],
+    available: 'AnyTime',
+    location: {
+      type: 'Point',
+      coordinates: [0, 0],
+      address: 'Tipping Request'
+    },
+    items: [{
+      object: 'Tipping Request',
+      Objectsposition: 'Outside',
+      quantity: 1,
+      price: tippingRequest.price || 0
+    }],
+    clientObjectPhotos: tippingRequest.tippingProof || [],
+    initialConditionPhotos: [],
+    intermediateConditionPhotos: [],
+    finalConditionPhotos: [],
+    additionalItems: [],
+    additionalNotes: tippingRequest.notes || '',
+    privateNotes: '',
+    createdAt: tippingRequest.createdAt,
+    updatedAt: tippingRequest.updatedAt,
+    // Tipping request specific fields
+    tippingRequestId: tippingRequest._id,
+    tippingPlace: tippingRequest.tippingPlace,
+    storagePlace: tippingRequest.storagePlace,
+    isShipped: tippingRequest.isShipped,
+    createdByType: 'driver'
+  };
+}
+
+// Helper function to get unified tasks and tipping requests
+async function getUnifiedTasksForDate(truck, date) {
+  const tasksForDate = truck.getTasksForDate(date);
+  const unifiedTasks = [];
+
+  for (const taskRef of tasksForDate) {
+    if (taskRef.type === 'Task' || taskRef.type === 'task') {
+      const task = await Task.findById(taskRef.taskId);
+      if (task) {
+        const taskObj = task.toObject ? task.toObject() : task;
+        taskObj.type = 'regular_task';
+        taskObj.customOrder = taskRef.order;
+        unifiedTasks.push(taskObj);
+      }
+    } else if (taskRef.type === 'TippingRequest') {
+      const tippingRequest = await TippingRequest.findById(taskRef.taskId)
+        .populate('tippingPlace', 'name address')
+        .populate('storagePlace', 'name address');
+      if (tippingRequest) {
+        const tippingObj = formatTippingRequestAsTask(tippingRequest);
+        tippingObj.customOrder = taskRef.order;
+        unifiedTasks.push(tippingObj);
+      }
+    }
+  }
+
+  // Sort by custom order to maintain the sequence
+  unifiedTasks.sort((a, b) => a.customOrder - b.customOrder);
+  return unifiedTasks;
 }
 
 const driverManagement = {
@@ -317,7 +385,7 @@ const driverManagement = {
       const month = String(startOfDay.getMonth() + 1).padStart(2, '0');
       const day = String(startOfDay.getDate()).padStart(2, '0');
       const formattedDate = `${year}-${month}-${day}`; // Format: 'YYYY-MM-DD'
-
+      
       // Find the truck for this user
       const truck = await getTruckForUser(userId);
 
@@ -327,20 +395,17 @@ const driverManagement = {
           .json({ message: 'No truck found for the given user.' });
       }
       console.log("formattedDate:", formattedDate)
-      // Get the task IDs for today's date from `tasksByDate`
-      const taskIdsForToday = truck.tasks.get(formattedDate);
-
-      // Fetch the tasks for the current day
-      const tasks = await Task.find({
-        _id: { $in: taskIdsForToday || [] }
-      });
+      
+      // Get unified tasks and tipping requests for today
+      const allTasks = await getUnifiedTasksForDate(truck, formattedDate);
 
       res
         .status(200)
         .json({
           message: `Tasks for today retrieved successfully for ${type}`,
-          tasks,
-          userType: type
+          tasks: allTasks,
+          userType: type,
+          totalTasksCount: allTasks.length
         });
     } catch (error) {
       console.error('Error retrieving tasks for user:', error);
@@ -390,28 +455,65 @@ const driverManagement = {
 
       console.log("Requested date:", date);
 
-      // Get the task IDs for the specified date from `tasksByDate`
-      const taskIdsForDate = truck.tasks.get(date);
-
-      // Fetch the tasks for the specified date
-      const tasks = await Task.find({
-        _id: { $in: taskIdsForDate || [] }
-      });
+      // Get unified tasks and tipping requests for the specified date
+      const allTasks = await getUnifiedTasksForDate(truck, date);
 
       res
         .status(200)
         .json({
           message: `Tasks for ${date} retrieved successfully for ${type}`,
-          tasks,
+          tasks: allTasks,
           userType: type,
           date: date,
-          taskCount: tasks.length
+          totalTasksCount: allTasks.length
         });
     } catch (error) {
       console.error('Error retrieving tasks for date:', error);
       res.status(500).json({
         message: 'Failed to retrieve tasks for the specified date',
         error: error.message || 'Unknown error occurred',
+      });
+    }
+  },
+
+  addTippingRequestToTruck: async (req, res) => {
+    const userId = req.user._id;
+    const { tippingRequestId, date, order } = req.body;
+
+    try {
+      // Get user info
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Find the truck for this user
+      const truck = await getTruckForUser(userId);
+      if (!truck) {
+        return res.status(404).json({ message: 'No truck found for the given user.' });
+      }
+
+      // Verify tipping request exists and belongs to user
+      const tippingRequest = await TippingRequest.findById(tippingRequestId);
+      if (!tippingRequest || tippingRequest.userId.toString() !== userId.toString()) {
+        return res.status(404).json({ message: 'Tipping request not found or not authorized' });
+      }
+
+      // Add tipping request to truck's task list
+      truck.addTippingRequest(date, tippingRequestId, order || 0);
+      await truck.save();
+
+      res.status(200).json({
+        message: 'Tipping request added to truck tasks successfully',
+        date: date,
+        order: order || 0
+      });
+
+    } catch (error) {
+      console.error('Error adding tipping request to truck:', error);
+      res.status(500).json({
+        message: 'Failed to add tipping request to truck',
+        error: error.message
       });
     }
   },

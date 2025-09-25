@@ -1,5 +1,6 @@
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
+const TippingRequest = require('../models/TippingRequest');
 const APIfeatures = require('../utils/APIFeatures');
 const loggingService = require('../services/loggingService');
 const formatDate = (date) => {
@@ -9,6 +10,52 @@ const formatDate = (date) => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+// Helper function to format tipping request as task
+function formatTippingRequestAsTask(tippingRequest) {
+  return {
+    _id: `tipping_${tippingRequest._id}`,
+    type: 'tipping_request',
+    orderNumber: `TIP-${tippingRequest._id.toString().slice(-6)}`,
+    firstName: 'Tipping Request',
+    lastName: '',
+    phoneNumber: '',
+    email: '',
+    totalPrice: tippingRequest.price || 0,
+    taskStatus: tippingRequest.status === 'Accepted' ? 'Completed' : 
+                tippingRequest.status === 'Denied' ? 'Declined' : 'Processing',
+    paymentStatus: tippingRequest.status === 'Accepted' ? 'Paid' : 'Not_Paid',
+    paymentMethod: 'cash',
+    date: new Date(tippingRequest.createdAt).toISOString().split('T')[0],
+    available: 'AnyTime',
+    location: {
+      type: 'Point',
+      coordinates: [0, 0],
+      address: 'Tipping Request'
+    },
+    items: [{
+      object: 'Tipping Request',
+      Objectsposition: 'Outside',
+      quantity: 1,
+      price: tippingRequest.price || 0
+    }],
+    clientObjectPhotos: tippingRequest.tippingProof || [],
+    initialConditionPhotos: [],
+    intermediateConditionPhotos: [],
+    finalConditionPhotos: [],
+    additionalItems: [],
+    additionalNotes: tippingRequest.notes || '',
+    privateNotes: '',
+    createdAt: tippingRequest.createdAt,
+    updatedAt: tippingRequest.updatedAt,
+    // Tipping request specific fields
+    tippingRequestId: tippingRequest._id,
+    tippingPlace: tippingRequest.tippingPlace,
+    storagePlace: tippingRequest.storagePlace,
+    isShipped: tippingRequest.isShipped,
+    createdByType: 'driver'
+  };
+}
 const truckCtrl = {
   createTruck: async (req, res) => {
     try {
@@ -52,19 +99,59 @@ const truckCtrl = {
       const trucks = await features.query
         .populate('driverId')
         .populate('helperId')
-        .populate({
-          path: 'tasks',
-          populate: {
-            path: dateOfTasks ? dateOfTasks : formatDate(new Date()),
-            model: 'Task',
-            populate: {
-              path: 'items.standardItemId',
-              select: 'itemName',
-            },
-          },
-        })
-
         .exec();
+
+      // Manually populate tasks for the specified date
+      const targetDate = dateOfTasks ? dateOfTasks : formatDate(new Date());
+      
+      for (const truck of trucks) {
+        if (truck.tasks && truck.tasks.has(targetDate)) {
+          const tasksForDate = truck.tasks.get(targetDate);
+          const populatedTasks = [];
+          
+          for (const taskRef of tasksForDate) {
+            let taskId, taskType;
+            
+            // Handle both old format (ObjectId directly) and new format (object with taskId/type/order)
+            if (taskRef._id || (typeof taskRef === 'string')) {
+              // Old format: taskRef is an ObjectId or string
+              taskId = taskRef._id || taskRef;
+              taskType = 'Task'; // Default to Task for old format
+            } else {
+              // New format: taskRef is an object with taskId, type, order
+              taskId = taskRef.taskId;
+              taskType = taskRef.type;
+            }
+
+            if (taskType === 'Task' || taskType === 'task') {
+              const task = await Task.findById(taskId)
+                .populate('truckId', 'name matricule')
+                .populate('items.standardItemId', 'itemName');
+              
+              if (task) {
+                const taskObj = task.toObject ? task.toObject() : task;
+                taskObj.type = 'regular_task';
+                taskObj.customOrder = taskRef.order || 0;
+                populatedTasks.push(taskObj);
+              }
+            } else if (taskType === 'TippingRequest') {
+              const tippingRequest = await TippingRequest.findById(taskId)
+                .populate('tippingPlace', 'name address')
+                .populate('storagePlace', 'name address')
+                .populate('userId', 'firstName lastName phoneNumber email');
+              
+              if (tippingRequest) {
+                const tippingObj = formatTippingRequestAsTask(tippingRequest);
+                tippingObj.customOrder = taskRef.order || 0;
+                populatedTasks.push(tippingObj);
+              }
+            }
+          }
+          
+          // Replace the raw task references with populated tasks
+          truck.tasks.set(targetDate, populatedTasks);
+        }
+      }
       const total = await Truck.countDocuments(features.query.getFilter());
       const currentPage = parseInt(req.query.page, 10) || 1;
       const limitNum = parseInt(req.query.limit, 10) || 9;
