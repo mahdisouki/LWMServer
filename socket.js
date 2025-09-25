@@ -46,6 +46,7 @@ admin.initializeApp({
 const initSocket = (server) => {
   io = socketIo(server, {
     cors: {
+
       origin: [
         'https://dirverapp.netlify.app',
         'https://lwmadmin.netlify.app',
@@ -56,11 +57,17 @@ const initSocket = (server) => {
         'https://driver.londonwastemanagement.uk',
         'https://client.londonwastemanagement.uk',
         'https://admin.londonwastemanagement.uk',
+        'http://localhost:8081',  // React Native Metro bundler
+        'http://192.168.1.15:8081',  // React Native on your network
+        'http://10.0.2.2:3000',  // Android emulator
+        'http://192.168.1.15:3000',
+        'https://192.168.1.15:3000',
       ],
 
-      methods: ['GET', 'POST'],
+
       credentials: true,
-      allowedHeaders: ['Authorization'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],  // Add OPTIONS
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     },
   });
 
@@ -179,7 +186,7 @@ const initSocket = (server) => {
 
       const messages = await Message.find({ roomId })
         .sort({ createdAt: 1 })
-        .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration videoUrl videoDuration videoThumbnail messageType seen seenAt seenBy createdAt');
+        .select('roomId senderId messageText image fileUrl fileType fileUrls fileTypes audioUrl audioDuration videoUrl videoDuration videoThumbnail videoUrls videoDurations videoThumbnails messageType seen seenAt seenBy createdAt');
       socket.emit('chatHistory', messages);
 
       // Notify other users in the room that someone joined
@@ -209,7 +216,7 @@ const initSocket = (server) => {
         // Get room messages
         const messages = await Message.find({ roomId })
           .sort({ createdAt: 1 })
-          .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration videoUrl videoDuration videoThumbnail messageType seen seenAt seenBy createdAt');
+          .select('roomId senderId messageText image fileUrl fileType fileUrls fileTypes audioUrl audioDuration videoUrl videoDuration videoThumbnail videoUrls videoDurations videoThumbnails messageType seen seenAt seenBy createdAt');
         socket.emit('chatHistory', messages);
 
         // Confirm admin is in the room
@@ -276,7 +283,7 @@ const initSocket = (server) => {
       }
     });
 
-    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver, messageType = 'text', isAdmin = false }) => {
+    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver, messageType = 'text', isAdmin = false, fileUrl, fileType, fileUrls, fileTypes, videoUrl, videoDuration, videoThumbnail, videoUrls, videoDurations, videoThumbnails }) => {
       console.log(`Received message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
       try {
         const user = await User.findById(senderId);
@@ -294,24 +301,48 @@ const initSocket = (server) => {
           truck = await Truck.findById(roomId);
         }
 
-
+        // Determine if it's single or multiple files
+        const isMultipleFiles = fileUrls && fileUrls.length > 0;
+        const isMultipleVideos = videoUrls && videoUrls.length > 0;
+        const isSingleFile = fileUrl && !isMultipleFiles;
+        const isSingleVideo = videoUrl && !isMultipleVideos;
 
         if (!truck) {
           console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
-          const message = new Message({
+
+          let messageData = {
             roomId,
             senderId,
             senderName: user.username,
             messageText,
             image: user.picture,
             messageType: messageType,
-          });
+          };
 
-          // Save the message to the database
+          // Add file data based on what's provided
+          if (isSingleFile) {
+            messageData.fileUrl = fileUrl;
+            messageData.fileType = fileType;
+          } else if (isMultipleFiles) {
+            messageData.fileUrls = fileUrls;
+            messageData.fileTypes = fileTypes;
+            messageData.messageType = 'multiple';
+          } else if (isSingleVideo) {
+            messageData.videoUrl = videoUrl;
+            messageData.videoDuration = videoDuration;
+            messageData.videoThumbnail = videoThumbnail;
+            messageData.messageType = 'video';
+          } else if (isMultipleVideos) {
+            messageData.videoUrls = videoUrls;
+            messageData.videoDurations = videoDurations;
+            messageData.videoThumbnails = videoThumbnails;
+            messageData.messageType = 'multiple';
+          }
+
+          const message = new Message(messageData);
           await message.save();
 
           console.log(`Message saved in room ${message}`);
-          // Emit the new message to the room
           io.to(roomId).emit('newMessage', message);
           return;
         }
@@ -329,15 +360,35 @@ const initSocket = (server) => {
         }
 
         // Create a new message
-        const message = new Message({
+        let messageData = {
           roomId,
           senderId,
           messageText,
           image: user.picture,
           messageType: messageType,
-        });
+        };
 
-        // Save the message to the database
+        // Add file data based on what's provided
+        if (isSingleFile) {
+          messageData.fileUrl = fileUrl;
+          messageData.fileType = fileType;
+        } else if (isMultipleFiles) {
+          messageData.fileUrls = fileUrls;
+          messageData.fileTypes = fileTypes;
+          messageData.messageType = 'multiple';
+        } else if (isSingleVideo) {
+          messageData.videoUrl = videoUrl;
+          messageData.videoDuration = videoDuration;
+          messageData.videoThumbnail = videoThumbnail;
+          messageData.messageType = 'video';
+        } else if (isMultipleVideos) {
+          messageData.videoUrls = videoUrls;
+          messageData.videoDurations = videoDurations;
+          messageData.videoThumbnails = videoThumbnails;
+          messageData.messageType = 'multiple';
+        }
+
+        const message = new Message(messageData);
         await message.save();
 
         console.log(`Message saved in room ${message}`);
@@ -348,7 +399,6 @@ const initSocket = (server) => {
 
         // Emit the new message to the room
         io.to(roomId).emit('newMessage', message);
-        // Get all socket connections in the room
 
         // Determine who should receive notifications
         const allUserIds = [
@@ -364,13 +414,140 @@ const initSocket = (server) => {
         for (const receiverId of allUserIds) {
           console.log("receiverId", receiverId)
           if (receiverId && receiverId !== senderId) {
-            emitNotificationToUser(receiverId, 'Chat', `New message from ${user.username}`, user.username);
+            let notificationText = `New message from ${user.username}`;
+
+            // Customize notification based on message type
+            if (isMultipleFiles) {
+              notificationText = `New ${fileUrls.length} files from ${user.username}`;
+            } else if (isMultipleVideos) {
+              notificationText = `New ${videoUrls.length} videos from ${user.username}`;
+            } else if (isSingleFile) {
+              notificationText = `New file from ${user.username}`;
+            } else if (isSingleVideo) {
+              notificationText = `New video from ${user.username}`;
+            }
+
+            emitNotificationToUser(receiverId, 'Chat', notificationText, user.username);
           }
         }
-        // sendNotification('New Message Received', `You have a new message from ${user.username}`, relatedUser.fcmToken);
 
       } catch (error) {
         console.error(`Error processing message in room ${roomId}:`, error);
+      }
+    });
+
+
+
+    // Event for video messages (handles both single and multiple videos)
+    socket.on('sendVideoMessage', async ({ roomId, senderId, messageText, isDriver, videoUrl, videoDuration, videoThumbnail, videoUrls, videoDurations, videoThumbnails, isAdmin = false }) => {
+      console.log(`Received video message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
+      try {
+        const user = await User.findById(senderId);
+
+        let truck;
+
+        if (isAdmin) {
+          console.log("is admin");
+          truck = await Truck.findById(roomId);
+        } else if (isDriver) {
+          console.log("is driver");
+          truck = await Truck.findOne({ driverId: senderId });
+        } else {
+          console.log("is helper");
+          truck = await Truck.findById(roomId);
+        }
+
+        // Determine if it's single or multiple videos
+        const isMultiple = videoUrls && videoUrls.length > 0;
+        const isSingle = videoUrl && !isMultiple;
+
+        if (!truck) {
+          console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+
+          let messageData = {
+            roomId,
+            senderId,
+            messageText,
+            image: user.picture,
+            messageType: isMultiple ? 'multiple' : 'video',
+          };
+
+          if (isSingle) {
+            messageData.videoUrl = videoUrl;
+            messageData.videoDuration = videoDuration;
+            messageData.videoThumbnail = videoThumbnail;
+          } else if (isMultiple) {
+            messageData.videoUrls = videoUrls;
+            messageData.videoDurations = videoDurations;
+            messageData.videoThumbnails = videoThumbnails;
+          }
+
+          const message = new Message(messageData);
+          await message.save();
+          io.to(roomId).emit('newMessage', message);
+          return;
+        }
+
+        // For admin messages, we don't need to find a related user
+        let relatedUser = null;
+        if (!isAdmin) {
+          const relatedUserId = isDriver ? truck.helperId : truck.driverId;
+          relatedUser = await User.findById(relatedUserId);
+
+          if (!relatedUser) {
+            console.error(`Related user not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
+            return;
+          }
+        }
+
+        let messageData = {
+          roomId,
+          senderId,
+          messageText,
+          image: user.picture,
+          messageType: isMultiple ? 'multiple' : 'video',
+        };
+
+        if (isSingle) {
+          messageData.videoUrl = videoUrl;
+          messageData.videoDuration = videoDuration;
+          messageData.videoThumbnail = videoThumbnail;
+        } else if (isMultiple) {
+          messageData.videoUrls = videoUrls;
+          messageData.videoDurations = videoDurations;
+          messageData.videoThumbnails = videoThumbnails;
+        }
+
+        const message = new Message(messageData);
+        await message.save();
+        io.to(roomId).emit('newMessage', message);
+
+        // Send notifications
+        const allUserIds = [
+          truck.driverId?.toString(),
+          truck.helperId?.toString()
+        ];
+
+        // Only add admin to notifications if sender is not admin
+        if (!isAdmin) {
+          allUserIds.push('67cb6810c9e768ec25d39523');
+        }
+
+        for (const receiverId of allUserIds) {
+          console.log("receiverId", receiverId)
+          if (receiverId && receiverId !== senderId) {
+            let notificationText;
+            if (isMultiple) {
+              notificationText = `New ${videoUrls.length} videos from ${user.username}`;
+            } else {
+              notificationText = `New video message from ${user.username}`;
+            }
+            emitNotificationToUser(receiverId, 'Chat', notificationText, user.username);
+          }
+        }
+
+      } catch (error) {
+        console.error(`Error processing video message in room ${roomId}:`, error);
       }
     });
 
@@ -457,10 +634,9 @@ const initSocket = (server) => {
         console.error(`Error processing audio message in room ${roomId}:`, error);
       }
     });
-
-    // Event for video messages
-    socket.on('sendVideoMessage', async ({ roomId, senderId, messageText, isDriver, videoUrl, videoDuration, videoThumbnail, isAdmin = false }) => {
-      console.log(`Received video message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
+    // Event for image/file messages (handles both single and multiple files)
+    socket.on('sendImageMessage', async ({ roomId, senderId, messageText, isDriver, imageUrl, imageWidth, imageHeight, fileUrls, fileTypes, isAdmin = false }) => {
+      console.log(`Received image/file message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
       try {
         const user = await User.findById(senderId);
 
@@ -477,19 +653,30 @@ const initSocket = (server) => {
           truck = await Truck.findById(roomId);
         }
 
+        // Determine if it's single or multiple files
+        const isMultiple = fileUrls && fileUrls.length > 0;
+        const isSingle = imageUrl && !isMultiple;
+
         if (!truck) {
           console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
-          const message = new Message({
+
+          let messageData = {
             roomId,
             senderId,
             messageText,
             image: user.picture,
-            videoUrl: videoUrl,
-            videoDuration: videoDuration,
-            videoThumbnail: videoThumbnail,
-            messageType: 'video',
-          });
+            messageType: isMultiple ? 'multiple' : 'image',
+          };
 
+          if (isSingle) {
+            messageData.fileUrl = imageUrl;
+            messageData.fileType = 'image/jpeg';
+          } else if (isMultiple) {
+            messageData.fileUrls = fileUrls;
+            messageData.fileTypes = fileTypes;
+          }
+
+          const message = new Message(messageData);
           await message.save();
           io.to(roomId).emit('newMessage', message);
           return;
@@ -507,17 +694,23 @@ const initSocket = (server) => {
           }
         }
 
-        const message = new Message({
+        let messageData = {
           roomId,
           senderId,
           messageText,
           image: user.picture,
-          videoUrl: videoUrl,
-          videoDuration: videoDuration,
-          videoThumbnail: videoThumbnail,
-          messageType: 'video',
-        });
+          messageType: isMultiple ? 'multiple' : 'image',
+        };
 
+        if (isSingle) {
+          messageData.fileUrl = imageUrl;
+          messageData.fileType = 'image/jpeg';
+        } else if (isMultiple) {
+          messageData.fileUrls = fileUrls;
+          messageData.fileTypes = fileTypes;
+        }
+
+        const message = new Message(messageData);
         await message.save();
         io.to(roomId).emit('newMessage', message);
 
@@ -535,12 +728,18 @@ const initSocket = (server) => {
         for (const receiverId of allUserIds) {
           console.log("receiverId", receiverId)
           if (receiverId && receiverId !== senderId) {
-            emitNotificationToUser(receiverId, 'Chat', `New video message from ${user.username}`, user.username);
+            let notificationText;
+            if (isMultiple) {
+              notificationText = `New ${fileUrls.length} files from ${user.username}`;
+            } else {
+              notificationText = `New image from ${user.username}`;
+            }
+            emitNotificationToUser(receiverId, 'Chat', notificationText, user.username);
           }
         }
 
       } catch (error) {
-        console.error(`Error processing video message in room ${roomId}:`, error);
+        console.error(`Error processing image/file message in room ${roomId}:`, error);
       }
     });
 
@@ -614,7 +813,7 @@ const initSocket = (server) => {
           .skip(skip) // Skip messages for pagination
           .limit(limit) // Get specified number of messages
           .populate('senderId', 'username picture') // Populate sender info
-          .select('roomId senderId messageText image fileUrl fileType audioUrl audioDuration videoUrl videoDuration videoThumbnail messageType seen seenAt seenBy createdAt'); // Include seenBy information
+          .select('roomId senderId messageText image fileUrl fileType fileUrls fileTypes audioUrl audioDuration videoUrl videoDuration videoThumbnail videoUrls videoDurations videoThumbnails messageType seen seenAt seenBy createdAt'); // Include seenBy information
 
         // Reverse to get chronological order (oldest to newest)
         const sortedMessages = messages.reverse();
