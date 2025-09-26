@@ -367,8 +367,9 @@ const staffManagement = {
 
       await truck.save();
 
-      // Update the driver's designation with the truck name
+      // Update the driver's designation with the truck name and assign truck ID
       driver.designation = truckName; // Adjust as needed
+      driver.truckId = truck._id; // Assign the truck ID to the driver
       await driver.save();
 
       // Create a log of the driver assignment
@@ -432,8 +433,9 @@ const staffManagement = {
 
       await truck.save();
 
-      // Update the helper's designation with the truck name
+      // Update the helper's designation with the truck name and assign truck ID
       helper.designation = truckName; // Adjust as needed
+      helper.truckId = truck._id; // Assign the truck ID to the helper
       await helper.save();
 
       // Create a log of the helper assignment

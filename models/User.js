@@ -69,6 +69,11 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  truckId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Truck',
+
+  },
   breaks: [breakSchema],
 }, { discriminatorKey: 'roleType' });
 
