@@ -3,10 +3,13 @@ const { User } = require("../models/User");
 const { emitNotificationToUser } = require('../socket');
 const adminId = "67cb6810c9e768ec25d39523"
 const dayOffController = {
+
     requestDayOff: async (req, res) => {
         const userId = req.user._id;
         const { startDate, endDate, reason } = req.body;
         console.log("Requesting day off:", { userId, startDate, endDate, reason });
+        // Extract file URLs from uploaded files
+        const proofs = req.files ? req.files.map(file => file.path) : [];
         try {
             const user = await User.findById(userId);
             if (!user || (user.roleType !== 'Driver' && user.roleType !== 'Helper')) {
@@ -60,13 +63,13 @@ const dayOffController = {
                 return res.status(400).json({ message: `You can only request ${remainingDays} more day(s) off this month.` });
             }
 
-
             // Create a new day-off request
             const newDayOffRequest = new Dayoff({
                 userId,
                 startDate: new Date(startDate), // Convert string to Date
                 endDate: new Date(endDate), // Convert string to Date
-                reason
+                reason,
+                proofs
             });
 
             // Save the new day-off request
@@ -84,11 +87,11 @@ const dayOffController = {
         }
     },
 
-    getAllDayOffRequests: async (req, res) => {
+    getAllDayOffRequestsForUser: async (req, res) => {
         const userId = req.user._id; // Extract userId from the request object, provided by your authentication middleware
         try {
-            // Find day off requests only for the logged-in user
-            const requests = await Dayoff.find({ userId: userId });
+            // Find day off requests only for the logged-in user, sorted by creation date (newest first)
+            const requests = await Dayoff.find({ userId: userId }).sort({ requestDate: -1 });
             res.status(200).json({ message: "Day off requests retrieved successfully", requests });
         } catch (error) {
             res.status(500).json({ message: "Failed to retrieve day off requests", error: error.message });
@@ -113,6 +116,9 @@ const dayOffController = {
         const { startDate, endDate, reason } = req.body; // Allow users to update these fields only
         const userId = req.user._id;
 
+        // Extract file URLs from uploaded files
+        const proofs = req.files ? req.files.map(file => file.path) : undefined;
+
         try {
             // Ensure the request belongs to the logged-in user
             const request = await Dayoff.findOne({ _id: requestId, userId: userId });
@@ -123,6 +129,7 @@ const dayOffController = {
             request.startDate = startDate || request.startDate;
             request.endDate = endDate || request.endDate;
             request.reason = reason || request.reason;
+            request.proofs = proofs !== undefined ? proofs : request.proofs;
 
             await request.save();
 
@@ -150,6 +157,9 @@ const dayOffController = {
     addDayOffForUser: async (req, res) => {
         const { userId, startDate, endDate, reason } = req.body;
 
+        // Extract file URLs from uploaded files
+        const proofs = req.files ? req.files.map(file => file.path) : [];
+
         try {
             const user = await User.findById(userId);
             if (!user || (user.roleType !== 'Driver' && user.roleType !== 'Helper')) {
@@ -161,6 +171,7 @@ const dayOffController = {
                 startDate: new Date(startDate),
                 endDate: new Date(endDate),
                 reason,
+                proofs,
                 status: 'Approved' // Automatically approve
             });
 
@@ -214,10 +225,17 @@ const dayOffController = {
         const { id } = req.params; // Request ID
         const { status } = req.body; // Only allow status updates
 
-
-
         try {
-            const updatedRequest = await Dayoff.findByIdAndUpdate(id, { status }, { new: true });
+            // Update the status and set the statusUpdateDate to current date
+            const updatedRequest = await Dayoff.findByIdAndUpdate(
+                id,
+                {
+                    status,
+                    statusUpdateDate: new Date()
+                },
+                { new: true }
+            );
+
             if (!updatedRequest) {
                 return res.status(404).json({ message: "Day off request not found" });
             }
