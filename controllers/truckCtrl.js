@@ -86,93 +86,133 @@ const truckCtrl = {
         .json({ message: 'Failed to create truck', error: error.message });
     }
   },
-  getAllTrucks: async (req, res) => {
-    const { dateOfTasks } = req.query
+getAllTrucks: async (req, res) => {
+    const { dateOfTasks } = req.query;
     try {
-      const { page = 1, limit = 9, filters } = req.query;
-      let query = Truck.find();
-      const features = new APIfeatures(query, req.query);
-      if (filters) {
-        features.filtering();
-      }
-      features.sorting().paginating();
-      const trucks = await features.query
-        .populate('driverId')
-        .populate('helperId')
-        .exec();
-
-      // Manually populate tasks for the specified date
-      const targetDate = dateOfTasks ? dateOfTasks : formatDate(new Date());
-      
-      for (const truck of trucks) {
-        if (truck.tasks && truck.tasks.has(targetDate)) {
-          const tasksForDate = truck.tasks.get(targetDate);
-          const populatedTasks = [];
-          
-          for (const taskRef of tasksForDate) {
-            let taskId, taskType;
-            
-            // Handle both old format (ObjectId directly) and new format (object with taskId/type/order)
-            if (taskRef._id || (typeof taskRef === 'string')) {
-              // Old format: taskRef is an ObjectId or string
-              taskId = taskRef._id || taskRef;
-              taskType = 'Task'; // Default to Task for old format
-            } else {
-              // New format: taskRef is an object with taskId, type, order
-              taskId = taskRef.taskId;
-              taskType = taskRef.type;
-            }
-
-            if (taskType === 'Task' || taskType === 'task') {
-              const task = await Task.findById(taskId)
-                .populate('truckId', 'name matricule')
-                .populate('items.standardItemId', 'itemName');
-              
-              if (task) {
-                const taskObj = task.toObject ? task.toObject() : task;
-                taskObj.type = 'regular_task';
-                taskObj.customOrder = taskRef.order || 0;
-                populatedTasks.push(taskObj);
-              }
-            } else if (taskType === 'TippingRequest') {
-              const tippingRequest = await TippingRequest.findById(taskId)
-                .populate('tippingPlace', 'name address')
-                .populate('storagePlace', 'name address')
-                .populate('userId', 'firstName lastName phoneNumber email');
-              
-              if (tippingRequest) {
-                const tippingObj = formatTippingRequestAsTask(tippingRequest);
-                tippingObj.customOrder = taskRef.order || 0;
-                populatedTasks.push(tippingObj);
-              }
-            }
-          }
-          
-          // Replace the raw task references with populated tasks
-          truck.tasks.set(targetDate, populatedTasks);
+        const { page = 1, limit = 9, filters } = req.query;
+        let query = Truck.find();
+        const features = new APIfeatures(query, req.query);
+        if (filters) {
+            features.filtering();
         }
-      }
-      const total = await Truck.countDocuments(features.query.getFilter());
-      const currentPage = parseInt(req.query.page, 10) || 1;
-      const limitNum = parseInt(req.query.limit, 10) || 9;
+        features.sorting().paginating();
+        const trucks = await features.query
+            .populate('driverId')
+            .populate('helperId')
+            .exec();
 
-      res.status(200).json({
-        message: 'All trucks retrieved successfully',
-        trucks,
-        meta: {
-          currentPage,
-          limit: limitNum,
-          total,
-          count: trucks.length,
-        },
-      });
+        // Convert trucks to plain objects and manually populate tasks for ALL dates in each truck
+        const trucksWithPopulatedTasks = [];
+        
+        for (const truck of trucks) {
+            // Convert truck to plain object first
+            const truckObj = truck.toObject();
+            
+            if (truckObj.tasks) {
+                // Convert tasks Map/Object to plain object and populate taskId references
+                const populatedTasksObject = {};
+                
+                // Handle both Map and Object formats
+                const tasksEntries = truckObj.tasks instanceof Map ? 
+                    Array.from(truckObj.tasks.entries()) : 
+                    Object.entries(truckObj.tasks);
+                
+                for (const [date, tasksForDate] of tasksEntries) {
+                    if (tasksForDate && tasksForDate.length > 0) {
+                        const populatedTasks = [];
+                        
+                        for (const taskRef of tasksForDate) {
+                            let taskId, taskType, order, refId;
+                            
+                            // Handle both old format (ObjectId directly) and new format (object with taskId/type/order)
+                            if (taskRef.taskId) {
+                                // New format: taskRef is an object with taskId, type, order
+                                taskId = taskRef.taskId;
+                                taskType = taskRef.type;
+                                order = taskRef.order || 0;
+                                refId = taskRef._id;
+                            } else if (taskRef._id || (typeof taskRef === 'string')) {
+                                // Old format: taskRef is an ObjectId or string
+                                taskId = taskRef._id || taskRef;
+                                taskType = 'task'; // Default to task for old format
+                                order = 0;
+                                refId = taskRef._id || taskRef;
+                            }
+
+                            if (taskType === 'Task' || taskType === 'task') {
+                                const task = await Task.findById(taskId)
+                                    .populate('truckId', 'name matricule')
+                                    .populate('items.standardItemId', 'itemName');
+                                
+                                if (task) {
+                                    const taskObj = task.toObject();
+                                    populatedTasks.push({
+                                        taskId: taskObj,  // Full task object here
+                                        type: taskType,
+                                        order: order,
+                                        _id: refId
+                                    });
+                                } else {
+                                    // Keep the original reference if task not found
+                                    populatedTasks.push({
+                                        taskId: taskId,
+                                        type: taskType,
+                                        order: order,
+                                        _id: refId
+                                    });
+                                }
+                            } else if (taskType === 'TippingRequest') {
+                                const tippingRequest = await TippingRequest.findById(taskId)
+                                    .populate('tippingPlace', 'name address')
+                                    .populate('storagePlace', 'name address')
+                                    .populate('userId', 'firstName lastName phoneNumber email');
+                                
+                                if (tippingRequest) {
+                                    const tippingObj = tippingRequest.toObject();
+                                    populatedTasks.push({
+                                        taskId: tippingObj,  // Full tipping object here
+                                        type: taskType,
+                                        order: order,
+                                        _id: refId
+                                    });
+                                }
+                            }
+                        }
+                        
+                        populatedTasksObject[date] = populatedTasks;
+                    } else {
+                        populatedTasksObject[date] = [];
+                    }
+                }
+                
+                // Replace the truck's tasks with the populated version
+                truckObj.tasks = populatedTasksObject;
+            }
+            
+            trucksWithPopulatedTasks.push(truckObj);
+        }
+
+        const total = await Truck.countDocuments(features.query.getFilter());
+        const currentPage = parseInt(req.query.page, 10) || 1;
+        const limitNum = parseInt(req.query.limit, 10) || 9;
+
+        res.status(200).json({
+            message: 'All trucks retrieved successfully',
+            trucks: trucksWithPopulatedTasks,
+            meta: {
+                currentPage,
+                limit: limitNum,
+                total,
+                count: trucksWithPopulatedTasks.length,
+            },
+        });
     } catch (error) {
-      res.status(500).json({
-        message: 'Failed to retrieve trucks',
-        error: error.message,
-      });
+        res.status(500).json({
+            message: 'Failed to retrieve trucks',
+            error: error.message,
+        });
     }
-  },
+},
   updateTruck: async (req, res) => {
     try {
       const { id } = req.params;

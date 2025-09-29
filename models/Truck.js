@@ -18,7 +18,7 @@ const truckSchema = new Schema({
       taskId: { type: Schema.Types.ObjectId },
       type: { 
         type: String, 
-        enum: ['Task', 'TippingRequest'], 
+        enum: ['task', 'TippingRequest'], 
        
       },
       order: { type: Number, default: 0 }

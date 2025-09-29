@@ -27,6 +27,8 @@ async function getUserModel(userId) {
       return { user, model: 'User', type: 'Driver' };
     } else if (user.role.includes('Helper')) {
       return { user, model: 'User', type: 'Helper' };
+    }else if (user.role.includes('Admin')) {
+      return { user, model: 'User', type: 'Admin' };
     }
   }
 
@@ -478,26 +480,43 @@ const driverManagement = {
 
   addTippingRequestToTruck: async (req, res) => {
     const userId = req.user._id;
-    const { tippingRequestId, date, order } = req.body;
-
+    const { tippingRequestId, date, order, truckId } = req.body;
+    console.log("tippingRequestId:", tippingRequestId)
+    console.log("date:", date)
+    console.log("order:", order)
+    console.log("userId:", userId)
+    console.log("truckId:", truckId)
     try {
       // Get user info
       const userInfo = await getUserModel(userId);
+      console.log("userInfo:", userInfo)
       if (!userInfo) {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      // Find the truck for this user
-      const truck = await getTruckForUser(userId);
-      if (!truck) {
-        return res.status(404).json({ message: 'No truck found for the given user.' });
+      // Find the truck - either by truckId (for admin) or by user assignment (for drivers)
+      let truck;
+      if (truckId) {
+        // Admin specifying which truck to use
+        truck = await Truck.findById(truckId);
+        if (!truck) {
+          return res.status(404).json({ message: 'Truck not found.' });
+        }
+      } else {
+        // Driver using their assigned truck
+        truck = await getTruckForUser(userId);
+        if (!truck) {
+          return res.status(404).json({ message: 'No truck found for the given user.' });
+        }
       }
 
-      // Verify tipping request exists and belongs to user
+      // Verify tipping request exists
       const tippingRequest = await TippingRequest.findById(tippingRequestId);
-      if (!tippingRequest || tippingRequest.userId.toString() !== userId.toString()) {
-        return res.status(404).json({ message: 'Tipping request not found or not authorized' });
+      if (!tippingRequest) {
+        return res.status(404).json({ message: 'Tipping request not found' });
       }
+
+
 
       // Add tipping request to truck's task list
       truck.addTippingRequest(date, tippingRequestId, order || 0);
@@ -505,6 +524,8 @@ const driverManagement = {
 
       res.status(200).json({
         message: 'Tipping request added to truck tasks successfully',
+        truckId: truck._id,
+        truckName: truck.name,
         date: date,
         order: order || 0
       });
