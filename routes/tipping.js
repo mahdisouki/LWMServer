@@ -8,6 +8,7 @@ const multer = require('../middlewares/multer');
 router.post('/create-tipping', isAuth, checkRole('Driver', 'Helper'), tippingCtrl.createTippingRequest);
 router.post('/create-tipping/admin', isAuth, checkRole('Admin'), tippingCtrl.createTippingRequestByAdmin);
 router.post('/ship-tipping', isAuth, checkRole('Driver', 'Helper'), tippingCtrl.markShipped);
+router.post('/ship-tipping-with-proof/:id', isAuth, checkRole('Driver', 'Helper'), multer.array('files'), tippingCtrl.markShippedWithProof);
 router.get('/tipping-driver', isAuth, tippingCtrl.getAllTippingRequestsForUser);
 router.get('/tipping-driver/:id', isAuth, checkRole('Driver', 'Helper'), tippingCtrl.getTippingRequestById);
 router.get('/tipping-driver-helper/:userId', isAuth, checkRole('Driver', 'Helper'), tippingCtrl.getTippingRequestByUserId);

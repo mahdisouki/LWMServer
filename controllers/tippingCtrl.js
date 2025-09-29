@@ -380,6 +380,7 @@ const tippingController = {
       });
     }
   },
+
   uploadTippingProof: async (req, res) => {
     const { id } = req.params; // Tipping request ID
     try {
@@ -412,6 +413,7 @@ const tippingController = {
       });
     }
   },
+
   getTippingRequestLocations: async (req, res) => {
     const { tippingRequestId } = req.params; // Get tipping request ID from URL params
 
@@ -489,6 +491,60 @@ const tippingController = {
       console.error('Error updating tipping request:', error);
       res.status(500).json({
         message: 'Failed to update tipping request',
+        error: error.message,
+      });
+    }
+  },
+
+  markShippedWithProof: async (req, res) => {
+    const userId = req.user._id;
+    const { id } = req.params; // Required tipping request ID
+
+    try {
+      // Find the specific tipping request
+      const request = await TippingRequest.findById(id);
+      if (!request) {
+        return res.status(404).json({ message: 'Tipping request not found' });
+      }
+
+      // Verify the request belongs to the current user
+      if (request.userId.toString() !== userId.toString()) {
+        return res.status(403).json({
+          message: 'Unauthorized: You can only update your own tipping requests'
+        });
+      }
+
+      // Check if files were uploaded
+      if (req.files && req.files.length > 0) {
+        // Extract Cloudinary URLs from uploaded files
+        const proofUrls = req.files.map(file => file.path);
+
+        // Append new proof files to existing ones
+        request.tippingProof = [...(request.tippingProof || []), ...proofUrls];
+      }
+
+      // Mark as shipped
+      request.isShipped = true;
+      await request.save();
+
+      // Populate the response with user and place information
+      const populatedRequest = await TippingRequest.findById(request._id)
+        .populate([
+          { path: 'userId', select: 'username roleType' },
+          { path: 'tippingPlace', select: 'name address' },
+          { path: 'storagePlace', select: 'name address' }
+        ]);
+
+      res.status(200).json({
+        message: 'Tipping request marked as shipped successfully' +
+          (req.files && req.files.length > 0 ? ' with proof uploaded' : ''),
+        request: populatedRequest,
+        proofUrls: req.files ? req.files.map(file => file.path) : null
+      });
+    } catch (error) {
+      console.error('Error in markShippedWithProof:', error);
+      res.status(500).json({
+        message: 'Failed to mark tipping request as shipped',
         error: error.message,
       });
     }
