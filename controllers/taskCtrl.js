@@ -290,7 +290,7 @@ const taskCtrl = {
         date: taskDate,
         createdBy,
         createdByType,
-        paymentStatus,
+        paymentStatus: paymentStatus || 'Unpaid',
         billingAddress,
         collectionAddress,
         paymentMethod,
@@ -1107,7 +1107,7 @@ const taskCtrl = {
 
   processTaskPayment: async (req, res) => {
     const { taskId } = req.params;
-    const { paymentType, paymentAmountType } = req.body; // Add paymentAmountType
+    const { paymentType, paymentAmountType } = req.body;
 
     try {
       const task = await Task.findById(taskId).populate('items.standardItemId');
@@ -1183,44 +1183,46 @@ const taskCtrl = {
         { description: 'Final Total Price', amount: finalPrice.toFixed(2) },
       ];
 
-      // --- NEW: Determine amount to pay based on paymentAmountType ---
+      // ✅ Mettre à jour les montants pour les paiements partiels
       let amountToPay;
       if (paymentAmountType === 'deposit') {
-        task.paymentStatus = 'partial_Paid';
-        amountToPay = 36; // Set deposit amount
+        amountToPay = 36; // Dépôt de £36
+
+        // Mettre à jour les montants de dépôt et restant
         task.paidAmount = {
           amount: 36,
           method: 'online',
-          status: 'Paid', // Deposit is considered paid when processed
+          status: 'Not_Paid', // Pas encore payé, sera confirmé après paiement
         };
         task.remainingAmount = {
           amount: finalPrice - 36,
           method: 'online',
           status: 'Not_Paid',
         };
-        // Do NOT update task status to completed for partial payments
+        task.paymentStatus = 'Unpaid'; // Reste 'Unpaid' jusqu'à confirmation
       } else {
-        amountToPay = finalPrice; // Set full amount
+        amountToPay = finalPrice; // Paiement complet
+
+        // Pour paiement complet, tout sera payé
         task.paidAmount = {
           amount: finalPrice,
           method: 'online',
-          status: 'Paid', // Full payment is considered paid when processed
+          status: 'Not_Paid', // Pas encore payé, sera confirmé après paiement
         };
-
         task.remainingAmount = {
           amount: 0,
           method: 'online',
-          status: 'Paid',
+          status: 'Not_Paid',
         };
-        task.paymentStatus = 'Paid';
-        // Only complete task for full payments
+        task.paymentStatus = 'Unpaid'; // Reste 'Unpaid' jusqu'à confirmation
       }
+
       const amountInPence = Math.round(amountToPay * 100);
 
+      // Sauvegarder les montants mis à jour
       await task.save();
 
-      // --- Use amountToPay for Stripe/PayPal ---
-      let paymentResult;
+      // Créer la session de paiement
       switch (paymentType) {
         case 'stripe':
           try {
@@ -1242,8 +1244,8 @@ const taskCtrl = {
                   quantity: 1,
                 },
               ],
-              success_url: `${NGROK_URL}/api/webhooks/payment/success`,
-              cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
+              success_url: `http://localhost:5173/payment/success?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
+              cancel_url: `http://localhost:5173/payment/failed?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
               metadata: {
                 taskId: taskId,
                 paymentAmountType: paymentAmountType,
@@ -1264,11 +1266,12 @@ const taskCtrl = {
           }
 
         case 'paypal':
-          paymentResult = await createPayPalOrder(
+          const paymentResult = await createPayPalOrder(
             amountInPence,
             taskId,
             fullBreakdown,
             task,
+            paymentAmountType,
           );
           return res.json({
             message: 'PayPal payment initiated successfully',
@@ -1311,22 +1314,62 @@ const taskCtrl = {
         );
         if (!task) return res.status(404).json({ message: 'Task not found' });
 
-        // Determine if this is a partial payment (deposit) or full payment
         const amountInCents = paymentIntent.amount;
         const amountInGBP = Number((amountInCents / 100).toFixed(2));
 
-        // Check if this is a deposit payment (36 GBP) or full payment
+        // Recalculer le prix final pour le remainingAmount
+        let basePrice = 0;
+        task.items.forEach((item) => {
+          const quantity = item.quantity || 1;
+          let itemPrice = 0;
+
+          if (item.standardItemId) {
+            if (item.Objectsposition === 'InsideWithDismantling') {
+              itemPrice = item.standardItemId.insideWithDismantlingPrice || 18;
+            } else if (item.Objectsposition === 'Inside') {
+              itemPrice = item.standardItemId.insidePrice || 6;
+            } else {
+              itemPrice = item.standardItemId.price;
+            }
+          } else {
+            itemPrice = item.price || 0;
+          }
+
+          basePrice += itemPrice * quantity;
+        });
+
+        let finalPrice = basePrice;
+        if (
+          task.available === 'AnyTime' &&
+          task.items.every((i) => i.Objectsposition === 'Outside')
+        ) {
+          finalPrice *= 0.9;
+        }
+
+        if (finalPrice < 30) {
+          finalPrice = 30;
+        }
+
+        const vat = finalPrice * 0.2;
+        finalPrice += vat;
+
+        // ✅ Mettre à jour le statut de paiement SEULEMENT après confirmation
+        // ❌ NE PAS modifier taskStatus - il reste inchangé
         if (amountInGBP === 36) {
-          // This is a deposit payment
+          // Dépôt partiel
           task.paymentStatus = 'partial_Paid';
           task.paidAmount = {
             amount: 36,
             method: 'online',
             status: 'Paid',
           };
-          // Do NOT update task status to completed for partial payments
+          task.remainingAmount = {
+            amount: finalPrice - 36, // Utiliser finalPrice calculé
+            method: 'online',
+            status: 'Not_Paid', // ✅ Reste à payer
+          };
         } else {
-          // This is a full payment
+          // Paiement complet
           task.paymentStatus = 'Paid';
           task.paidAmount = {
             amount: amountInGBP,
@@ -1340,7 +1383,7 @@ const taskCtrl = {
           };
         }
 
-        await task.save();
+        await task.save(); // ✅ Sauvegarder SEULEMENT après confirmation
 
         // Récupérer les informations du paiement
         const charges = await stripe.charges.list({
@@ -1431,18 +1474,59 @@ const taskCtrl = {
           capture.result.purchase_units[0].payments.captures[0].amount.value,
         );
 
-        // Check if this is a deposit payment (36 GBP) or full payment
+        // Recalculer le prix final pour le remainingAmount
+        let basePrice = 0;
+        task.items.forEach((item) => {
+          const quantity = item.quantity || 1;
+          let itemPrice = 0;
+
+          if (item.standardItemId) {
+            if (item.Objectsposition === 'InsideWithDismantling') {
+              itemPrice = item.standardItemId.insideWithDismantlingPrice || 18;
+            } else if (item.Objectsposition === 'Inside') {
+              itemPrice = item.standardItemId.insidePrice || 6;
+            } else {
+              itemPrice = item.standardItemId.price;
+            }
+          } else {
+            itemPrice = item.price || 0;
+          }
+
+          basePrice += itemPrice * quantity;
+        });
+
+        let finalPrice = basePrice;
+        if (
+          task.available === 'AnyTime' &&
+          task.items.every((i) => i.Objectsposition === 'Outside')
+        ) {
+          finalPrice *= 0.9;
+        }
+
+        if (finalPrice < 30) {
+          finalPrice = 30;
+        }
+
+        const vat = finalPrice * 0.2;
+        finalPrice += vat;
+
+        // ✅ Mettre à jour le statut de paiement SEULEMENT après confirmation
+        // ❌ NE PAS modifier taskStatus - il reste inchangé
         if (amountInGBP === 36) {
-          // This is a deposit payment
+          // Dépôt partiel
           task.paymentStatus = 'partial_Paid';
           task.paidAmount = {
             amount: 36,
             method: 'online',
             status: 'Paid',
           };
-          // Do NOT update task status to completed for partial payments
+          task.remainingAmount = {
+            amount: finalPrice - 36, // Utiliser finalPrice calculé
+            method: 'online',
+            status: 'Not_Paid', // ✅ Reste à payer
+          };
         } else {
-          // This is a full payment
+          // Paiement complet
           task.paymentStatus = 'Paid';
           task.paidAmount = {
             amount: amountInGBP,
@@ -1760,7 +1844,7 @@ const taskCtrl = {
           task.paidAmount.status = 'Paid';
           task.remainingAmount.status = 'Paid';
           task.paymentStatus = 'Paid';
-          task.taskStatus = 'Completed';
+          // ❌ NE PAS modifier taskStatus - il reste inchangé
         }
         const amountInCents = session.amount_total;
         const amountInGBP = amountInCents / 100;
@@ -1786,9 +1870,25 @@ const taskCtrl = {
           payerAccount,
         });
 
+        // Construire le breakdown complet pour l'email
+        const breakdown = task.items.map((item) => ({
+          itemDescription: item.standardItemId
+            ? item.standardItemId.itemName
+            : 'Custom Item',
+          quantity: item.quantity || 1,
+          price: item.standardItemId
+            ? item.standardItemId.price
+            : item.price || 0,
+        }));
+
+        breakdown.push(
+          { description: 'Total Amount (includes VAT)', amount: amountInGBP },
+          { description: 'Payment Method', amount: payerAccount },
+        );
+
         // Envoyer l'email de confirmation
         await sendPaymentConfirmationEmail({
-          email: payerAccount,
+          email: task.email,
           firstName: task.firstName,
           lastName: task.lastName,
           orderId: taskId,
@@ -1796,7 +1896,7 @@ const taskCtrl = {
           amount: amountInGBP,
           currency: 'GBP',
           paymentType: 'Stripe',
-          // breakdown,
+          breakdown,
         });
 
         res.status(200).send('Webhook received');
@@ -1850,7 +1950,7 @@ const taskCtrl = {
           } else {
             if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
             task.paymentStatus = 'Paid';
-            task.taskStatus = 'Completed';
+            // ❌ NE PAS modifier taskStatus - il reste inchangé
             task.paidAmount = task.paidAmount || {};
             task.remainingAmount = task.remainingAmount || {};
             task.paidAmount.status = 'Paid';
@@ -1872,7 +1972,7 @@ const taskCtrl = {
             payerAccount: payerEmail || `PayPal ${cap.id}`,
           });
 
-          // fire-and-forget the email (don’t block webhook)
+          // fire-and-forget the email (don't block webhook)
           sendPaymentConfirmationEmail({
             email: task.email, firstName: task.firstName, lastName: task.lastName,
             orderId: String(task._id), paymentDate: new Date().toLocaleString(),
@@ -1914,7 +2014,7 @@ const taskCtrl = {
           } else {
             if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
             task.paymentStatus = 'Paid';
-            task.taskStatus = 'Completed';
+            // ❌ NE PAS modifier taskStatus - il reste inchangé
             task.paidAmount.status = 'Paid';
             task.remainingAmount.status = 'Paid';
           }

@@ -55,12 +55,12 @@ const dayOffController = {
             const remainingDays = 3 - approvedDaysCount;
             if (remainingDays <= 0) {
                 console.log("User has already used 3 approved days this month:", approvedDaysCount);
-                return res.status(400).json({ message: "You have already used your 3 approved day-off days this month." });
+                return res.status(500).json({ message: "You have already used your 3 approved day-off days this month." });
             }
 
             if (newRequestDays > remainingDays) {
                 console.log("New request days exceed remaining days:", newRequestDays, remainingDays);
-                return res.status(400).json({ message: `You can only request ${remainingDays} more day(s) off this month.` });
+                return res.status(500).json({ message: `You can only request ${remainingDays} more day(s) off this month.` });
             }
 
             // Create a new day-off request

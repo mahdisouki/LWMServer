@@ -23,9 +23,9 @@ const sendPaymentConfirmationEmail = async ({
     });
 
     // Logo Path
-    const logoPath = "../logo/Green-Log.png";
+    const logoPath = path.join(__dirname, "..", "logo", "Green-Log.png");
     if (!fs.existsSync(logoPath)) {
-        console.error("Logo file not found. Ensure the path is correct.");
+        console.error("Logo file not found at:", logoPath);
         return;
     }
 
@@ -58,8 +58,7 @@ const sendPaymentConfirmationEmail = async ({
     doc.fontSize(14).fillColor("#4CAF50").text("Task Items:");
     breakdown.forEach((item) => {
         doc.fontSize(12).fillColor("#000000").text(
-            `${item.itemDescription || item.description}: £${item.price || item.amount} (Quantity: ${
-                item.quantity || 1
+            `${item.itemDescription || item.description}: £${item.price || item.amount} (Quantity: ${item.quantity || 1
             })`
         );
     });
@@ -96,15 +95,15 @@ const sendPaymentConfirmationEmail = async ({
                 </thead>
                 <tbody>
                     ${breakdown
-                        .map(
-                            (item) => `
+                .map(
+                    (item) => `
                         <tr>
                             <td style="border: 1px solid #ddd; padding: 8px;">${item.itemDescription || item.description}</td>
                             <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${item.quantity || 1}</td>
                             <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">£${item.price || item.amount}</td>
                         </tr>`
-                        )
-                        .join("")}
+                )
+                .join("")}
                 </tbody>
             </table>
             <p><strong>Total Paid:</strong> £${amount.toFixed(2)} ${currency}</p>

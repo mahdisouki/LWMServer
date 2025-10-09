@@ -222,8 +222,8 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
             items: itemDetails
         }],
         application_context: {
-            return_url: `${NGROK_URL}/api/webhooks/payment/success`,
-            cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
+            return_url: `http://localhost:5173/payment/success?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=paypal`,
+            cancel_url: `http://localhost:5173/payment/failed?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=paypal`,
         }
     });
 
@@ -255,7 +255,7 @@ const createStripePaymentIntent = async (amount) => {
 //     });
 //     return client.execute(request);
 // }
-async function createPayPalOrder(amountInPence, taskId) {
+async function createPayPalOrder(amountInPence, taskId, fullBreakdown, task, paymentAmountType = 'full') {
     const client = PayPalClient();
     const request = new paypal.orders.OrdersCreateRequest();
     request.requestBody({
@@ -268,9 +268,9 @@ async function createPayPalOrder(amountInPence, taskId) {
             brand_name: 'London Waste Management',
             landing_page: 'LOGIN',
             user_action: 'PAY_NOW',
-            // ⬇️ Return to your server, like Stripe does
-            return_url: `${NGROK_URL}/api/webhooks/payment/success`,
-            cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
+            // ⬇️ Return to frontend with proper parameters
+            return_url: `http://localhost:5173/payment/success?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=paypal`,
+            cancel_url: `http://localhost:5173/payment/failed?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=paypal`,
         },
     });
     return client.execute(request);
