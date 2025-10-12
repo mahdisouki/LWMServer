@@ -62,6 +62,10 @@ async function calculateTotalPrice({
   discountType,
   hasDiscount,
 }) {
+  console.log('🚀 CALCULATE TOTAL PRICE FUNCTION CALLED');
+  console.log('Items received:', items);
+  console.log('StandardItems received:', standardItems);
+  console.log('Objects received:', objects);
   let subtotal = 0;
 
   // 1. Add custom items (objects) - NO position fee
@@ -85,21 +89,41 @@ async function calculateTotalPrice({
       const standardItem = await StandardItem.findById(item.standardItemId);
       if (!standardItem) continue;
 
-      // Calculate base item subtotal using position-specific prices
+      // Calculate base item subtotal using the price from the item itself
       let price = 0;
       const quantity = Number(item.quantity) || 1;
 
-      // Use the correct price based on position
-      if (item.Objectsposition === 'InsideWithDismantling') {
-        price = Number(standardItem.insideWithDismantlingPrice) || 18;
-      } else if (item.Objectsposition === 'Inside') {
-        price = Number(standardItem.insidePrice) || 6;
+      // Calculate base item price (without position fees) multiplied by quantity
+      let baseItemPrice = 0;
+      let positionFee = 0;
+
+      if (item.price && !isNaN(Number(item.price))) {
+        // If item has a custom price, we need to extract the base price
+        // For now, we'll use the base price from StandardItem and add position fee separately
+        baseItemPrice = Number(standardItem.price); // Use base price from StandardItem
       } else {
-        // Default to Outside position
-        price = Number(standardItem.price);
+        // Use base price from StandardItem
+        baseItemPrice = Number(standardItem.price);
       }
 
-      const itemSubtotal = price * quantity;
+      // Calculate position fee (added once, not multiplied by quantity)
+      if (item.Objectsposition === 'InsideWithDismantling') {
+        positionFee = Number(standardItem.insideWithDismantlingPrice) || 18;
+      } else if (item.Objectsposition === 'Inside') {
+        positionFee = Number(standardItem.insidePrice) || 6;
+      }
+      // Outside position has no additional fee
+
+      console.log('=== CALCULATE TOTAL PRICE DEBUG ===');
+      console.log('Item:', item);
+      console.log('StandardItem:', standardItem);
+      console.log('Position:', item.Objectsposition);
+      console.log('Base item price (without position fees):', baseItemPrice);
+      console.log('Position fee (added once):', positionFee);
+      console.log('Quantity:', quantity);
+
+      const itemSubtotal = (baseItemPrice * quantity) + positionFee;
+      console.log('Item subtotal (basePrice*quantity + positionFee):', itemSubtotal);
 
       // Handle item-specific discount if discountType is "perItem"
       let finalItemTotal = itemSubtotal;
@@ -140,6 +164,7 @@ async function calculateTotalPrice({
   }
 
   // 4. Enforce minimum price (before VAT) - if under £30, make it £30
+  // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
   if (subtotal < 30) {
     subtotal = 30;
   }
@@ -961,6 +986,7 @@ const taskCtrl = {
         }
 
         // Apply minimum price (before VAT) - if under £30, make it £30
+        // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
         if (subtotal < 30) {
           console.log(
             'Applying minimum price adjustment: £' + subtotal + ' → £30',
@@ -1115,49 +1141,47 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
 
-      // Build breakdown array
-      const selectedQuantities = {};
-      task.items.forEach((item) => {
-        if (item.standardItemId) {
-          // standardItemId is a string, not an object
-          selectedQuantities[item.standardItemId.toString()] =
-            item.quantity || 1;
-        }
-      });
+      // Build breakdown array - ONLY standard items with position fees
+      const breakdown = task.items
+        .filter((item) => item.standardItemId) // Only process standard items
+        .map((item) => {
+          const itemQuantity = item.quantity || 1;
 
-      const breakdown = task.items.map((item) => {
-        const itemQuantity =
-          selectedQuantities[item.standardItemId?.toString()] ||
-          item.quantity ||
-          1;
+          // Calculate base item price (without position fees) multiplied by quantity
+          let baseItemPrice = 0;
+          let positionFee = 0;
 
-        // Calculate the correct price based on position
-        let itemPrice = 0;
-        if (item.standardItemId) {
-          // Use position-specific prices for standard items
-          if (item.Objectsposition === 'InsideWithDismantling') {
-            itemPrice = item.standardItemId.insideWithDismantlingPrice || 18;
-          } else if (item.Objectsposition === 'Inside') {
-            itemPrice = item.standardItemId.insidePrice || 6;
+          if (item.price && !isNaN(Number(item.price))) {
+            // If item has a custom price, we need to extract the base price
+            // For now, we'll use the base price from StandardItem and add position fee separately
+            baseItemPrice = Number(item.standardItemId.price); // Use base price from StandardItem
           } else {
-            // Default to Outside position
-            itemPrice = item.standardItemId.price;
+            // Use base price from StandardItem
+            baseItemPrice = Number(item.standardItemId.price);
           }
-        } else {
-          // Custom items use their own price
-          itemPrice = item.price || 0;
-        }
 
-        return {
-          itemDescription: item.object || 'Standard Item', // Use object field or default
-          quantity: itemQuantity,
-          price: itemPrice,
-          Objectsposition: item.Objectsposition,
-        };
-      });
+          // Calculate position fee (added once, not multiplied by quantity)
+          if (item.Objectsposition === 'InsideWithDismantling') {
+            positionFee = item.standardItemId.insideWithDismantlingPrice || 18;
+          } else if (item.Objectsposition === 'Inside') {
+            positionFee = item.standardItemId.insidePrice || 6;
+          }
+          // Outside position has no additional fee
+
+          // Total price for this item: (baseItemPrice * quantity) + positionFee
+          const totalItemPrice = (baseItemPrice * itemQuantity) + positionFee;
+
+          return {
+            itemDescription: item.standardItemId.itemName,
+            quantity: itemQuantity,
+            price: baseItemPrice,
+            totalPrice: totalItemPrice, // Include the total price with position fee
+            Objectsposition: item.Objectsposition,
+          };
+        });
 
       let basePrice = breakdown.reduce(
-        (sum, item) => sum + item.price * item.quantity,
+        (sum, item) => sum + item.totalPrice,
         0,
       );
       let finalPrice = basePrice;
@@ -1169,6 +1193,7 @@ const taskCtrl = {
       }
 
       // Apply minimum price (before VAT) - if under £30, make it £30
+      // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
       if (finalPrice < 30) {
         finalPrice = 30;
       }
@@ -1185,21 +1210,42 @@ const taskCtrl = {
 
       // ✅ Mettre à jour les montants pour les paiements partiels
       let amountToPay;
+      let actualPaymentType = paymentAmountType; // Store the actual payment type for metadata
+
       if (paymentAmountType === 'deposit') {
         amountToPay = 36; // Dépôt de £36
 
-        // Mettre à jour les montants de dépôt et restant
-        task.paidAmount = {
-          amount: 36,
-          method: 'online',
-          status: 'Not_Paid', // Pas encore payé, sera confirmé après paiement
-        };
-        task.remainingAmount = {
-          amount: finalPrice - 36,
-          method: 'online',
-          status: 'Not_Paid',
-        };
-        task.paymentStatus = 'Unpaid'; // Reste 'Unpaid' jusqu'à confirmation
+        // Si le total final est £36, c'est un paiement complet, pas un dépôt
+        if (finalPrice === 36) {
+          actualPaymentType = 'full'; // Override to full payment
+          amountToPay = finalPrice; // Use the full price
+
+          // Pour paiement complet, tout sera payé
+          task.paidAmount = {
+            amount: finalPrice,
+            method: 'online',
+            status: 'Not_Paid', // Pas encore payé, sera confirmé après paiement
+          };
+          task.remainingAmount = {
+            amount: 0,
+            method: 'online',
+            status: 'Not_Paid',
+          };
+          task.paymentStatus = 'Unpaid'; // Reste 'Unpaid' jusqu'à confirmation
+        } else {
+          // Vrai dépôt partiel
+          task.paidAmount = {
+            amount: 36,
+            method: 'online',
+            status: 'Not_Paid', // Pas encore payé, sera confirmé après paiement
+          };
+          task.remainingAmount = {
+            amount: finalPrice - 36,
+            method: 'online',
+            status: 'Not_Paid',
+          };
+          task.paymentStatus = 'Unpaid'; // Reste 'Unpaid' jusqu'à confirmation
+        }
       } else {
         amountToPay = finalPrice; // Paiement complet
 
@@ -1248,7 +1294,7 @@ const taskCtrl = {
               cancel_url: `http://localhost:5173/payment/failed?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
               metadata: {
                 taskId: taskId,
-                paymentAmountType: paymentAmountType,
+                paymentAmountType: actualPaymentType,
               },
             });
 
@@ -1281,7 +1327,7 @@ const taskCtrl = {
                 ?.href || null,
             amount: amountInPence,
             paymentType,
-            paymentAmountType, // Return for frontend tracking
+            paymentAmountType: actualPaymentType, // Return for frontend tracking
             breakdown: fullBreakdown,
           });
 
@@ -1317,26 +1363,35 @@ const taskCtrl = {
         const amountInCents = paymentIntent.amount;
         const amountInGBP = Number((amountInCents / 100).toFixed(2));
 
-        // Recalculer le prix final pour le remainingAmount
+        // Recalculer le prix final pour le remainingAmount - ONLY standard items with position fees
         let basePrice = 0;
-        task.items.forEach((item) => {
-          const quantity = item.quantity || 1;
-          let itemPrice = 0;
+        task.items
+          .filter((item) => item.standardItemId) // Only process standard items
+          .forEach((item) => {
+            const quantity = item.quantity || 1;
+            let itemPrice = 0;
 
-          if (item.standardItemId) {
-            if (item.Objectsposition === 'InsideWithDismantling') {
-              itemPrice = item.standardItemId.insideWithDismantlingPrice || 18;
-            } else if (item.Objectsposition === 'Inside') {
-              itemPrice = item.standardItemId.insidePrice || 6;
+            // Calculate base item price (without position fees) multiplied by quantity
+            if (item.price && !isNaN(Number(item.price))) {
+              // If item has a custom price, we need to extract the base price
+              // For now, we'll use the base price from StandardItem and add position fee separately
+              itemPrice = Number(item.standardItemId.price); // Use base price from StandardItem
             } else {
-              itemPrice = item.standardItemId.price;
+              // Use base price from StandardItem
+              itemPrice = Number(item.standardItemId.price);
             }
-          } else {
-            itemPrice = item.price || 0;
-          }
 
-          basePrice += itemPrice * quantity;
-        });
+            // Calculate position fee (added once, not multiplied by quantity)
+            let positionFee = 0;
+            if (item.Objectsposition === 'InsideWithDismantling') {
+              positionFee = item.standardItemId.insideWithDismantlingPrice || 18;
+            } else if (item.Objectsposition === 'Inside') {
+              positionFee = item.standardItemId.insidePrice || 6;
+            }
+            // Outside position has no additional fee
+
+            basePrice += (itemPrice * quantity) + positionFee;
+          });
 
         let finalPrice = basePrice;
         if (
@@ -1355,8 +1410,8 @@ const taskCtrl = {
 
         // ✅ Mettre à jour le statut de paiement SEULEMENT après confirmation
         // ❌ NE PAS modifier taskStatus - il reste inchangé
-        if (amountInGBP === 36) {
-          // Dépôt partiel
+        if (amountInGBP === 36 && finalPrice > 36) {
+          // Dépôt partiel (seulement si le total final est > £36)
           task.paymentStatus = 'partial_Paid';
           task.paidAmount = {
             amount: 36,
@@ -1369,7 +1424,7 @@ const taskCtrl = {
             status: 'Not_Paid', // ✅ Reste à payer
           };
         } else {
-          // Paiement complet
+          // Paiement complet (y compris quand amountInGBP === 36 et finalPrice === 36)
           task.paymentStatus = 'Paid';
           task.paidAmount = {
             amount: amountInGBP,
@@ -1397,16 +1452,31 @@ const taskCtrl = {
           charge.billing_details.email ||
           `Card ending in ${charge.payment_method_details.card.last4}`;
 
-        // Construire le breakdown complet
-        const breakdown = task.items.map((item) => ({
-          itemDescription: item.standardItemId
-            ? item.standardItemId.itemName
-            : 'Custom Item',
-          quantity: item.quantity || 1,
-          price: item.standardItemId
-            ? item.standardItemId.price
-            : item.price || 0,
-        }));
+        // Construire le breakdown complet - ONLY standard items
+        const breakdown = task.items
+          .filter((item) => item.standardItemId) // Only process standard items
+          .map((item) => {
+            let itemPrice = 0;
+            // Use the price from the item if available, otherwise use position-specific prices
+            if (item.price && !isNaN(Number(item.price))) {
+              itemPrice = Number(item.price);
+            } else {
+              // Fallback to position-specific prices from StandardItem
+              if (item.Objectsposition === 'InsideWithDismantling') {
+                itemPrice = item.standardItemId.insideWithDismantlingPrice || 18;
+              } else if (item.Objectsposition === 'Inside') {
+                itemPrice = item.standardItemId.insidePrice || 6;
+              } else {
+                itemPrice = item.standardItemId.price;
+              }
+            }
+
+            return {
+              itemDescription: item.standardItemId.itemName,
+              quantity: item.quantity || 1,
+              price: itemPrice,
+            };
+          });
 
         // Ajouter le total et les détails de la méthode de paiement
         breakdown.push(
@@ -1474,26 +1544,35 @@ const taskCtrl = {
           capture.result.purchase_units[0].payments.captures[0].amount.value,
         );
 
-        // Recalculer le prix final pour le remainingAmount
+        // Recalculer le prix final pour le remainingAmount - ONLY standard items with position fees
         let basePrice = 0;
-        task.items.forEach((item) => {
-          const quantity = item.quantity || 1;
-          let itemPrice = 0;
+        task.items
+          .filter((item) => item.standardItemId) // Only process standard items
+          .forEach((item) => {
+            const quantity = item.quantity || 1;
+            let itemPrice = 0;
 
-          if (item.standardItemId) {
-            if (item.Objectsposition === 'InsideWithDismantling') {
-              itemPrice = item.standardItemId.insideWithDismantlingPrice || 18;
-            } else if (item.Objectsposition === 'Inside') {
-              itemPrice = item.standardItemId.insidePrice || 6;
+            // Calculate base item price (without position fees) multiplied by quantity
+            if (item.price && !isNaN(Number(item.price))) {
+              // If item has a custom price, we need to extract the base price
+              // For now, we'll use the base price from StandardItem and add position fee separately
+              itemPrice = Number(item.standardItemId.price); // Use base price from StandardItem
             } else {
-              itemPrice = item.standardItemId.price;
+              // Use base price from StandardItem
+              itemPrice = Number(item.standardItemId.price);
             }
-          } else {
-            itemPrice = item.price || 0;
-          }
 
-          basePrice += itemPrice * quantity;
-        });
+            // Calculate position fee (added once, not multiplied by quantity)
+            let positionFee = 0;
+            if (item.Objectsposition === 'InsideWithDismantling') {
+              positionFee = item.standardItemId.insideWithDismantlingPrice || 18;
+            } else if (item.Objectsposition === 'Inside') {
+              positionFee = item.standardItemId.insidePrice || 6;
+            }
+            // Outside position has no additional fee
+
+            basePrice += (itemPrice * quantity) + positionFee;
+          });
 
         let finalPrice = basePrice;
         if (
@@ -1722,6 +1801,7 @@ const taskCtrl = {
       }
 
       // Enforce minimum price (before VAT)
+      // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
       if (subtotal < 30) {
         const adjustment = 30 - subtotal;
         subtotal = 30;
@@ -2161,6 +2241,7 @@ const taskCtrl = {
       }
 
       // Apply minimum price (before VAT) - if under £30, make it £30
+      // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
       if (subtotal < 30) {
         subtotal = 30;
       }
