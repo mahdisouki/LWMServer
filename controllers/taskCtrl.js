@@ -18,7 +18,7 @@ const {
 const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const loggingService = require('../services/loggingService');
-const NGROK_URL = 'https://londonwastemanagement.uk';
+const NGROK_URL = 'https://api.londonwastemanagement.uk';
 const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');

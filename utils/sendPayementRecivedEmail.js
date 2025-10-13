@@ -70,7 +70,7 @@ const sendPaymentConfirmationEmail = async ({
     doc.end();
 
     // Public Download Link
-    const downloadLink = `https://7026-197-0-13-187.ngrok-free.app/public/${pdfFileName}`;
+    const downloadLink = `https://api.londonwastemanagement.uk/public/${pdfFileName}`;
 
     // Email Content with inline logo
     const mailOptions = {

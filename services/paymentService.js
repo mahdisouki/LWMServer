@@ -7,7 +7,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key he
 const VAT_RATE = 0.2; // VAT rate (20%)
 const MINIMUM_PRICE = 36; // Minimum price including VAT (£30 + £6 VAT)
 
-const NGROK_URL = 'https://londonwastemanagement.uk';
+const NGROK_URL = 'https://api.londonwastemanagement.uk';
 
 async function calculateTotalPrice(taskId) {
     const task = await Task.findById(taskId).populate("items.standardItemId");
