@@ -5,7 +5,8 @@
   "scripts": {
     "start": "nodemon serverjs",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "seed": "node seeder.js && npm start"
+    "seed": "node seeder.js && npm start",
+    "postinstall": "npx playwright install chromium"
   },
   "author": "",
   "license": "ISC",
