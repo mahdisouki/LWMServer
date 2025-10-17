@@ -44,7 +44,13 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
             <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${parseFloat(item.price).toFixed(2)}</td>
             ${showDiscounted ? `<td style=\"padding:10px 6px;text-align:right;border-bottom:1px solid #eee;\">${discountedPrice}</td>` : (taskDetails.hasDiscount && taskDetails.discountType === "perItem" ? '<td></td>' : '')}
             <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #eee;">${item.Objectsposition || ''}</td>
-            <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${parseFloat(item.positionFee || 0).toFixed(2)}</td>
+            <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${
+              !item.standardItemId ? "0" :
+              item.Objectsposition === "Outside" ? "0" : 
+              item.Objectsposition === "InsideWithDismantling" ? parseFloat(item.insideWithDismantlingPrice || 0).toFixed(2) :
+              item.Objectsposition === "Inside" ? parseFloat(item.insidePrice || 0).toFixed(2) : 
+              "0"
+            }</td>
             <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${parseFloat(item.total).toFixed(2)}</td>
           </tr>
         `;

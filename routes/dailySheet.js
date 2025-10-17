@@ -6,6 +6,9 @@ const parser = require('../middlewares/multer'); // adjust path if needed
 // Generate daily sheets for all drivers
 router.post("/generate", dailySheetController.generateDailySheetsForAllDrivers);
 
+// Update existing daily sheets when there are changes
+router.post("/update-existing", dailySheetController.updateExistingDailySheets);
+
 // Get daily sheets for all drivers by date
 router.get("/sheets/:date", dailySheetController.getDailySheetsForAllDrivers);
 

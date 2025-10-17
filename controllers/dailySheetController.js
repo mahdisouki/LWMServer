@@ -30,41 +30,67 @@ const dailySheetController = {
         const allTaskIdsForDate = [];
   
         for (const truck of trucks) {
-          if (!truck.tasks || !(truck.tasks instanceof Map || typeof truck.tasks.get === 'function')) {
-            console.log(`Truck ${truck.name} has no valid tasks map`);
+          if (!truck.tasks) {
+            console.log(`Truck ${truck.name} has no tasks`);
             continue;
           }
-  
-          const taskKeys = Array.from(truck.tasks.keys());
-          console.log(`Truck ${truck.name} task keys:`, taskKeys);
-          if (!taskKeys.includes(formattedDate)) {
-            console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
+
+          let tasksForDate = [];
+          
+          // Handle both Map and Object structures
+          if (truck.tasks instanceof Map) {
+            // If it's a Map
+            const taskKeys = Array.from(truck.tasks.keys());
+            console.log(`Truck ${truck.name} task keys (Map):`, taskKeys);
+            if (!taskKeys.includes(formattedDate)) {
+              console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
+            }
+            tasksForDate = truck.tasks.get(formattedDate) || [];
+          } else if (typeof truck.tasks === 'object') {
+            // If it's an Object
+            const taskKeys = Object.keys(truck.tasks);
+            console.log(`Truck ${truck.name} task keys (Object):`, taskKeys);
+            if (!taskKeys.includes(formattedDate)) {
+              console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
+            }
+            tasksForDate = truck.tasks[formattedDate] || [];
           }
-          const tasksForDate = truck.tasks?.get(formattedDate) || [];
-          console.log(truck.tasks)
+
           console.log(`Tasks for ${formattedDate} in truck ${truck.name}:`, tasksForDate);
-  
-          allTaskIdsForDate.push(...tasksForDate);
+
+          // Extract task IDs from the tasks array
+          if (Array.isArray(tasksForDate)) {
+            const taskIds = tasksForDate.map(task => {
+              // Handle both string IDs and objects with taskId property
+              if (typeof task === 'string') {
+                return task;
+              } else if (task && task.taskId) {
+                return task.taskId;
+              }
+              return null;
+            }).filter(id => id !== null);
+            
+            allTaskIdsForDate.push(...taskIds);
+            console.log(`Extracted task IDs for ${formattedDate}:`, taskIds);
+          }
         }
   
         // Fetch jobs based on task IDs and status
         const jobsDone = await Task.find({
           _id: { $in: allTaskIdsForDate },
           taskStatus: 'Completed',
-          
         });
-  
+
         const jobsPending = await Task.find({
           _id: { $in: allTaskIdsForDate },
-          taskStatus: 'Processing',
-          
+          taskStatus: { $in: ['Processing', 'New'] },
         });
-  
+
         const jobsCancelled = await Task.find({
           _id: { $in: allTaskIdsForDate },
           taskStatus: 'Declined',
-          
         });
+
   
         // Fetch tipping requests made on that day
         const tippingRequests = await TippingRequest.find({
@@ -72,13 +98,23 @@ const dailySheetController = {
           createdAt: { $gte: startOfDay, $lt: endOfDay },
         });
   
-        // Calculate income
+        // Calculate income from tasks
         const totalCashIncome = jobsDone.reduce((acc, job) => {
           if (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash') {
             return acc + job.totalPrice;
           }
           return acc;
         }, 0);
+
+        // Calculate income from accepted tipping requests
+        const totalTippingIncome = tippingRequests.reduce((acc, tip) => {
+          if (tip.status === 'Accepted' && tip.price) {
+            return acc + tip.price;
+          }
+          return acc;
+        }, 0);
+
+        const totalIncome = totalCashIncome + totalTippingIncome;
   
         // Upsert daily sheet
         const dailySheet = await DailySheet.findOneAndUpdate(
@@ -451,30 +487,199 @@ const dailySheetController = {
   deleteExpense: async (req, res) => {
     try {
       const { driverId, date, expenseId } = req.params;
-  
+
       const startDate = new Date(date);
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
       endDate.setHours(23, 59, 59, 999);
-  
+
       const dailySheet = await DailySheet.findOne({
         driverId,
         date: { $gte: startDate, $lte: endDate },
       });
-  
+
       if (!dailySheet) return res.status(404).json({ message: 'Daily sheet not found' });
-  
+
       const exists = dailySheet.expenses.id(expenseId);
       if (!exists) return res.status(404).json({ message: 'Expense not found' });
-  
+
       dailySheet.expenses.pull({ _id: expenseId });
-  
+
       await dailySheet.save();
-  
+
       res.status(200).json({ message: 'Expense deleted' });
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: 'Failed to delete expense', error: error.message });
+    }
+  },
+
+  // Function to update existing daily sheets when there are changes
+  updateExistingDailySheets: async (req, res) => {
+    console.log('Updating existing daily sheets');
+    try {
+      // Parse and validate input date
+      const inputDate = req.body.date ? new Date(req.body.date) : new Date();
+      if (isNaN(inputDate)) {
+        return res.status(400).json({ message: 'Invalid date format' });
+      }
+
+      // Start and end of the day
+      const startOfDay = new Date(inputDate);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(inputDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const formattedDate = req.body.date || new Date().toISOString().split('T')[0];
+      
+      const drivers = await Driver.find();
+      const updatedDailySheets = [];
+
+      for (const driver of drivers) {
+        // Check if daily sheet exists for this driver and date
+        const existingDailySheet = await DailySheet.findOne({
+          driverId: driver._id,
+          date: { $gte: startOfDay, $lte: endOfDay },
+        });
+
+        if (!existingDailySheet) {
+          console.log(`No existing daily sheet found for driver ${driver._id} on ${formattedDate}`);
+          continue; // Skip if no existing daily sheet
+        }
+
+        console.log(`Updating existing daily sheet for driver ${driver._id} on ${formattedDate}`);
+
+        const trucks = await Truck.find({ driverId: driver._id });
+        const allTaskIdsForDate = [];
+
+        for (const truck of trucks) {
+          if (!truck.tasks) {
+            console.log(`Truck ${truck.name} has no tasks`);
+            continue;
+          }
+
+          let tasksForDate = [];
+          
+          // Handle both Map and Object structures
+          if (truck.tasks instanceof Map) {
+            // If it's a Map
+            const taskKeys = Array.from(truck.tasks.keys());
+            console.log(`Truck ${truck.name} task keys (Map):`, taskKeys);
+            if (!taskKeys.includes(formattedDate)) {
+              console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
+            }
+            tasksForDate = truck.tasks.get(formattedDate) || [];
+          } else if (typeof truck.tasks === 'object') {
+            // If it's an Object
+            const taskKeys = Object.keys(truck.tasks);
+            console.log(`Truck ${truck.name} task keys (Object):`, taskKeys);
+            if (!taskKeys.includes(formattedDate)) {
+              console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
+            }
+            tasksForDate = truck.tasks[formattedDate] || [];
+          }
+
+          console.log(`Tasks for ${formattedDate} in truck ${truck.name}:`, tasksForDate);
+
+          // Extract task IDs from the tasks array
+          if (Array.isArray(tasksForDate)) {
+            const taskIds = tasksForDate.map(task => {
+              // Handle both string IDs and objects with taskId property
+              if (typeof task === 'string') {
+                return task;
+              } else if (task && task.taskId) {
+                return task.taskId;
+              }
+              return null;
+            }).filter(id => id !== null);
+            
+            allTaskIdsForDate.push(...taskIds);
+            console.log(`Extracted task IDs for ${formattedDate}:`, taskIds);
+          }
+        }
+
+        // Fetch jobs based on task IDs and status
+        const jobsDone = await Task.find({
+          _id: { $in: allTaskIdsForDate },
+          taskStatus: 'Completed',
+        });
+
+        const jobsPending = await Task.find({
+          _id: { $in: allTaskIdsForDate },
+          taskStatus: { $in: ['Processing', 'New'] },
+        });
+
+        const jobsCancelled = await Task.find({
+          _id: { $in: allTaskIdsForDate },
+          taskStatus: 'Declined',
+        });
+
+
+        // Fetch tipping requests made on that day
+        const tippingRequests = await TippingRequest.find({
+          userId: driver._id,
+          createdAt: { $gte: startOfDay, $lt: endOfDay },
+        });
+
+        // Calculate income from tasks
+        const totalCashIncome = jobsDone.reduce((acc, job) => {
+          if (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash') {
+            return acc + job.totalPrice;
+          }
+          return acc;
+        }, 0);
+
+        // Calculate income from accepted tipping requests
+        const totalTippingIncome = tippingRequests.reduce((acc, tip) => {
+          if (tip.status === 'Accepted' && tip.price) {
+            return acc + tip.price;
+          }
+          return acc;
+        }, 0);
+
+        const totalIncome = totalCashIncome + totalTippingIncome;
+
+        // Update the existing daily sheet
+        const updatedDailySheet = await DailySheet.findByIdAndUpdate(
+          existingDailySheet._id,
+          {
+            jobsDone: jobsDone.map(job => job._id),
+            jobsPending: jobsPending.map(job => job._id),
+            jobsCancelled: jobsCancelled.map(job => job._id),
+            tippingRequests: tippingRequests.map(tip => tip._id),
+            income: {
+              cash: totalCashIncome,
+              tipping: totalTippingIncome,
+              total: totalIncome,
+            },
+          },
+          { new: true }
+        );
+
+        updatedDailySheets.push(updatedDailySheet);
+        console.log(`Daily sheet updated for driver ${driver._id}:`, {
+          jobsDone: jobsDone.length,
+          jobsPending: jobsPending.length,
+          jobsCancelled: jobsCancelled.length,
+          tippingRequests: tippingRequests.length,
+          totalIncome: totalIncome,
+          cashIncome: totalCashIncome,
+          tippingIncome: totalTippingIncome
+        });
+      }
+
+      res.status(200).json({ 
+        message: 'Existing daily sheets updated successfully', 
+        updatedDailySheets,
+        totalUpdated: updatedDailySheets.length
+      });
+    } catch (error) {
+      console.error('Error updating existing daily sheets:', error);
+      res.status(500).json({
+        message: 'Error updating existing daily sheets',
+        error: error.message || 'Unknown error occurred',
+      });
     }
   },
       

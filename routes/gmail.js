@@ -31,32 +31,19 @@ router.get('/auth/google', (req, res) => {
       res.status(500).send('❌ Failed to connect Gmail.');
     }
   });
-router.post('/send',isAuth,  gmailCtrl.sendEmail);
-router.get('/list',isAuth, gmailCtrl.listEmails);
-// Get email details
-router.get('/email/:emailId',isAuth,  gmailCtrl.listEmailDetails);
+// Send email with optional attachments
+router.post('/send', isAuth, upload.array('attachments', 10), gmailCtrl.sendEmail);
 
-// Reply to an email
-router.post('/reply/:emailId',isAuth,  gmailCtrl.replyToEmail);
+// Reply to an email with optional attachments
+router.post('/reply', isAuth, upload.array('attachments', 10), gmailCtrl.replyToEmail);
 
-// Mark an email as read
-router.post('/email/:emailId/read',isAuth,  gmailCtrl.markAsRead);
-// Search emails
-router.get('/search',isAuth,  gmailCtrl.searchEmails);
-
-// Forward email
-router.post('/forward/:emailId',isAuth,  gmailCtrl.forwardEmail);
-
-router.post('/moveToTrash',isAuth,  gmailCtrl.moveToTrash);
-
-router.get('/attachments',isAuth,  gmailCtrl.getAttachments);
+// Forward email with optional attachments
+router.post('/forward', isAuth, upload.array('attachments', 10), gmailCtrl.forwardEmail);
 
 // Test email endpoint
-router.post('/test',isAuth,  gmailCtrl.testEmail);
+router.post('/test', isAuth, gmailCtrl.testEmail);
 
-// New routes with attachment support
-router.post('/send-with-attachments', isAuth, upload.array('attachments', 10), gmailCtrl.sendEmailWithAttachments);
-router.post('/reply-with-attachments/:emailId', isAuth, upload.array('attachments', 10), gmailCtrl.replyToEmailWithAttachments);
-router.post('/forward-with-attachments/:emailId', isAuth, upload.array('attachments', 10), gmailCtrl.forwardEmailWithAttachments);
+// Note: Gmail-specific routes (list, search, details, markAsRead, moveToTrash, getAttachments) removed
+// These would need to be implemented separately if needed
 
 module.exports = router;

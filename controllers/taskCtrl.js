@@ -18,6 +18,7 @@ const {
 const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const loggingService = require('../services/loggingService');
+const dailySheetController = require('./dailySheetController');
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
 const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
@@ -468,6 +469,27 @@ const taskCtrl = {
       truck.tasks = new Map(Object.entries(tasksByDate));
       await truck.save();
 
+      // Update daily sheets for the driver
+      try {
+        if (truck.driverId) {
+          console.log('Updating daily sheets for the driver1');
+          // Call the updateExistingDailySheets function
+          const mockReq = {
+            body: { date: taskDate }
+          };
+          const mockRes = {
+            status: () => ({ json: () => {} }),
+            json: () => {}
+          };
+          
+          await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+          console.log('Daily sheets updated after task assignment for date:', taskDate);
+        }
+      } catch (dailySheetError) {
+        console.error('Error updating daily sheets after task assignment:', dailySheetError);
+        // Don't fail the main operation if daily sheet update fails
+      }
+
       res.status(200).json({
         message: 'Truck assigned to task successfully',
         task,
@@ -531,6 +553,26 @@ const taskCtrl = {
       // Remove the truck assignment from the task
       task.truckId = null;
       await task.save();
+
+      // Update daily sheets for the driver
+      try {
+        if (truck.driverId) {
+          // Call the updateExistingDailySheets function
+          const mockReq = {
+            body: { date: taskDate }
+          };
+          const mockRes = {
+            status: () => ({ json: () => {} }),
+            json: () => {}
+          };
+          
+          await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+          console.log('Daily sheets updated after task de-assignment for date:', taskDate);
+        }
+      } catch (dailySheetError) {
+        console.error('Error updating daily sheets after task de-assignment:', dailySheetError);
+        // Don't fail the main operation if daily sheet update fails
+      }
 
       res.status(200).json({
         message: 'Task de-assigned from truck successfully',
@@ -649,6 +691,28 @@ const taskCtrl = {
 
       if (!updatedTruck) {
         return res.status(404).json({ message: 'Truck not found' });
+      }
+
+      // Update daily sheets for the driver
+      try {
+        if (updatedTruck.driverId) {
+          console.log('Updating daily sheets after task order change for driver:', updatedTruck.driverId);
+          
+          // Call the updateExistingDailySheets function
+          const mockReq = {
+            body: { date: date }
+          };
+          const mockRes = {
+            status: () => ({ json: () => {} }),
+            json: () => {}
+          };
+          
+          await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+          console.log('Daily sheets updated after task order change for date:', date);
+        }
+      } catch (dailySheetError) {
+        console.error('Error updating daily sheets after task order change:', dailySheetError);
+        // Don't fail the main operation if daily sheet update fails
       }
 
       res.status(200).json({
@@ -908,61 +972,68 @@ const taskCtrl = {
 
         // Calculate subtotal with discount handling
         for (const item of populatedTask.items) {
-          let price = 0;
+          let itemPrice = 0;
+          let positionFee = 0; // Declare positionFee at the proper scope
           const isCustomItem = !item.standardItemId; // Check if it's a custom item
 
           if (item.standardItemId) {
-            // Use position-specific prices for standard items
+            // Base item price (outside position)
+            itemPrice = Number(item.standardItemId.price);
+            
+            // Position fee (added once, not per quantity)
             if (item.Objectsposition === 'InsideWithDismantling') {
-              price = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
+              positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
             } else if (item.Objectsposition === 'Inside') {
-              price = Number(item.standardItemId.insidePrice) || 6;
-            } else {
-              // Default to Outside position
-              price = Number(item.standardItemId.price);
+              positionFee = Number(item.standardItemId.insidePrice) || 6;
             }
           } else if (item.price) {
             // Custom items use their own price
-            price = Number(item.price);
+            itemPrice = Number(item.price);
           }
+          
           const quantity = Number(item.quantity) || 1;
 
-          const itemSubtotal = price * quantity;
+          // Calculate total: (itemPrice * quantity) + positionFee
+          let finalItemTotal;
+          
+          if (item.standardItemId) {
+            // For standard items: (itemPrice * quantity) + positionFee
+            finalItemTotal = (itemPrice * quantity) + positionFee;
+          } else {
+            // For custom items: itemPrice * quantity (no position fee)
+            finalItemTotal = itemPrice * quantity;
+          }
 
           // Handle item-specific discount if discountType is "perItem"
-          let finalItemTotal = itemSubtotal;
           if (
             populatedTask.hasDiscount &&
             populatedTask.discountType === 'perItem' &&
             item.customPrice
           ) {
-            // For custom prices, we still need to add position fees if they're not already included
             let customPrice = Number(item.customPrice);
-            let positionFee = 0;
-
-            // Add position fee if the custom price doesn't already include it
-            if (!isCustomItem && item.standardItemId) {
-              if (item.Objectsposition === 'InsideWithDismantling') {
-                positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
-              } else if (item.Objectsposition === 'Inside') {
-                positionFee = Number(item.standardItemId.insidePrice) || 6;
-              }
+            
+            if (item.standardItemId) {
+              // For standard items with discount: (customPrice * quantity) + positionFee
+              finalItemTotal = (customPrice * quantity) + positionFee;
+            } else {
+              // For custom items with discount: customPrice * quantity
+              finalItemTotal = customPrice * quantity;
             }
-
-            finalItemTotal = customPrice * quantity + positionFee;
           }
 
           console.log(
             'Item:',
-            item,
-            'Price:',
-            price,
+            item.standardItemId?.itemName || item.object,
+            'Base Price:',
+            itemPrice,
+            'Position Fee:',
+            positionFee,
             'Quantity:',
             quantity,
-            'ItemSubtotal:',
-            itemSubtotal,
             'FinalItemTotal:',
             finalItemTotal,
+            'Formula:',
+            item.standardItemId ? `(${itemPrice} × ${quantity}) + ${positionFee} = ${finalItemTotal}` : `${itemPrice} × ${quantity} = ${finalItemTotal}`
           );
 
           subtotal += finalItemTotal;
@@ -1177,6 +1248,9 @@ const taskCtrl = {
             price: baseItemPrice,
             totalPrice: totalItemPrice, // Include the total price with position fee
             Objectsposition: item.Objectsposition,
+            insidePrice: item.standardItemId.insidePrice || 6,
+            insideWithDismantlingPrice: item.standardItemId.insideWithDismantlingPrice || 18,
+            positionFee: positionFee,
           };
         });
 
@@ -1743,18 +1817,19 @@ const taskCtrl = {
       for (const item of task.items) {
         let itemPrice = 0;
         let itemDescription = '';
+        let positionFee = 0; // Declare positionFee at the proper scope
 
         if (item.standardItemId) {
-          // Use position-specific prices for standard items
-          if (item.Objectsposition === 'InsideWithDismantling') {
-            itemPrice = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
-          } else if (item.Objectsposition === 'Inside') {
-            itemPrice = Number(item.standardItemId.insidePrice) || 6;
-          } else {
-            // Default to Outside position
-            itemPrice = Number(item.standardItemId.price);
-          }
+          // Base item price (outside position)
+          itemPrice = Number(item.standardItemId.price);
           itemDescription = item.standardItemId.itemName;
+          
+          // Position fee (added once, not per quantity)
+          if (item.Objectsposition === 'InsideWithDismantling') {
+            positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
+          } else if (item.Objectsposition === 'Inside') {
+            positionFee = Number(item.standardItemId.insidePrice) || 6;
+          }
         } else if (item.object) {
           itemPrice = Number(item.price);
           itemDescription = item.object;
@@ -1762,16 +1837,32 @@ const taskCtrl = {
 
         const quantity = Number(item.quantity) || 1;
 
-        // Per-item discount logic: use customPrice if present
+        // Calculate total: (itemPrice * quantity) + positionFee
+        let finalItemTotal;
         let displayPrice = itemPrice;
-        let finalItemTotal = itemPrice * quantity;
+        
+        if (item.standardItemId) {
+          // For standard items: (itemPrice * quantity) + positionFee
+          finalItemTotal = (itemPrice * quantity) + positionFee;
+        } else {
+          // For custom items: itemPrice * quantity (no position fee)
+          finalItemTotal = itemPrice * quantity;
+        }
+
+        // Per-item discount logic: use customPrice if present
         if (
           task.hasDiscount &&
           task.discountType === 'perItem' &&
           item.customPrice
         ) {
           displayPrice = Number(item.customPrice);
-          finalItemTotal = Number(item.customPrice) * quantity;
+          if (item.standardItemId) {
+            // For standard items with discount: (customPrice * quantity) + positionFee
+            finalItemTotal = (Number(item.customPrice) * quantity) + positionFee;
+          } else {
+            // For custom items with discount: customPrice * quantity
+            finalItemTotal = Number(item.customPrice) * quantity;
+          }
         }
 
         breakdown.push({
@@ -1780,6 +1871,10 @@ const taskCtrl = {
           price: displayPrice,
           total: finalItemTotal,
           Objectsposition: item.Objectsposition,
+          standardItemId: item.standardItemId,
+          insidePrice: item.standardItemId?.insidePrice || 6,
+          insideWithDismantlingPrice: item.standardItemId?.insideWithDismantlingPrice || 18,
+          positionFee: positionFee,
         });
 
         subtotal += finalItemTotal;
@@ -2186,49 +2281,68 @@ const taskCtrl = {
       // Calculate subtotal and handle discounts based on discountType
       task.items.forEach((item) => {
         let itemPrice = 0;
+        let positionFee = 0; // Declare positionFee at the proper scope
 
         if (item.standardItemId) {
-          // Use position-specific prices for standard items
+          // Base item price (outside position)
+          itemPrice = Number(item.standardItemId.price);
+          
+          // Position fee (added once, not per quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
-            itemPrice = (item.standardItemId.insideWithDismantlingPrice || 18) * (item.quantity || 1);
+            positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
           } else if (item.Objectsposition === 'Inside') {
-            itemPrice = (item.standardItemId.insidePrice || 6) * (item.quantity || 1);
-          } else {
-            // Default to Outside position
-            itemPrice = item.standardItemId.price * (item.quantity || 1);
+            positionFee = Number(item.standardItemId.insidePrice) || 6;
           }
         } else {
           // Custom items use their own price
-          itemPrice = item.price * (item.quantity || 1);
+          itemPrice = Number(item.price);
         }
 
-        const itemSubtotal = itemPrice;
+        const quantity = Number(item.quantity) || 1;
+
+        // Calculate total: (itemPrice * quantity) + positionFee
+        let finalItemTotal;
+        
+        if (item.standardItemId) {
+          // For standard items: (itemPrice * quantity) + positionFee
+          finalItemTotal = (itemPrice * quantity) + positionFee;
+        } else {
+          // For custom items: itemPrice * quantity (no position fee)
+          finalItemTotal = itemPrice * quantity;
+        }
 
         // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
-        let finalItemTotal = itemSubtotal;
         if (
           task.hasDiscount &&
           task.discountType === 'perItem' &&
           item.customPrice
         ) {
-          // For custom prices, we still need to add position fees if they're not already included
           let customPrice = Number(item.customPrice);
-          let positionFee = 0;
-
-          // Add position fee if the custom price doesn't already include it
+          
           if (item.standardItemId) {
-            if (item.Objectsposition === 'InsideWithDismantling') {
-              positionFee = item.standardItemId.insideWithDismantlingPrice || 18;
-            } else if (item.Objectsposition === 'Inside') {
-              positionFee = item.standardItemId.insidePrice || 6;
-            }
+            // For standard items with discount: (customPrice * quantity) + positionFee
+            finalItemTotal = (customPrice * quantity) + positionFee;
+          } else {
+            // For custom items with discount: customPrice * quantity
+            finalItemTotal = customPrice * quantity;
           }
-
-          finalItemTotal = customPrice * (item.quantity || 1) + positionFee;
         }
 
         subtotal += finalItemTotal;
-        console.log('subtotal', subtotal);
+        console.log(
+          'Invoice Item:',
+          item.standardItemId?.itemName || item.object,
+          'Base Price:',
+          itemPrice,
+          'Position Fee:',
+          positionFee,
+          'Quantity:',
+          quantity,
+          'FinalItemTotal:',
+          finalItemTotal,
+          'Formula:',
+          item.standardItemId ? `(${itemPrice} × ${quantity}) + ${positionFee} = ${finalItemTotal}` : `${itemPrice} × ${quantity} = ${finalItemTotal}`
+        );
       });
 
       // Handle percentage discount on total only if hasDiscount is true and discountType is "percentage"
