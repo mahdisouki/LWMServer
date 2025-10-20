@@ -7,61 +7,59 @@ const axios = require('axios');
 const { emitNotificationToUser } = require('../socket');
 const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
 const quotationRequestController = {
-    createQuotationRequest : async (req, res) => {
+    createQuotationRequest: async (req, res) => {
         try {
             const {
                 firstName,
                 lastName,
-                DoorNumber,
-                RoadName,
+                address,
                 email,
                 phoneNumber,
-                Town,
                 postcode,
                 comments,
             } = req.body;
-            console.log("req.body",req.body)
-            if (!req.files || req.files.length === 0) {
-                return res.status(400).json({ message: "No files uploaded" });
-            }
-    
-            const items = req.files.map((file) => file.path);
+            console.log("req.body", req.body)
+
+            // Handle optional file uploads
+            const items = req.files ? req.files.map((file) => file.path) : [];
             const predictions = [];
-    
-            // Download the image from Cloudinary and send it to the Flask API
-            for (const file of req.files) {
-                const response = await fetch(file.path); // Download the file from Cloudinary
-                const arrayBuffer = await response.arrayBuffer(); // Convert to ArrayBuffer
-                const buffer = Buffer.from(arrayBuffer); // Convert to Buffer for formData
-    
-                const formData = new FormData();
-                formData.append('file', buffer, {
-                    filename: file.originalname,
-                    contentType: file.mimetype,
-                });
-    
-                const aiResponse = await axios.post('http://147.93.85.229/predict', formData, {
-                    headers: {
-                        ...formData.getHeaders(),
-                    },
-                });
-    
-                if (aiResponse.data && aiResponse.data.predictions) {
-                    predictions.push(...aiResponse.data.predictions);
+            let estimatedPrices = [];
+
+            // Process files through AI prediction only if files are uploaded
+            if (req.files && req.files.length > 0) {
+                // Download the image from Cloudinary and send it to the Flask API
+                for (const file of req.files) {
+                    const response = await fetch(file.path); // Download the file from Cloudinary
+                    const arrayBuffer = await response.arrayBuffer(); // Convert to ArrayBuffer
+                    const buffer = Buffer.from(arrayBuffer); // Convert to Buffer for formData
+
+                    const formData = new FormData();
+                    formData.append('file', buffer, {
+                        filename: file.originalname,
+                        contentType: file.mimetype,
+                    });
+
+                    const aiResponse = await axios.post('http://147.93.85.229/predict', formData, {
+                        headers: {
+                            ...formData.getHeaders(),
+                        },
+                    });
+
+                    if (aiResponse.data && aiResponse.data.predictions) {
+                        predictions.push(...aiResponse.data.predictions);
+                    }
                 }
+
+                // Transform AI predictions into estimatedPrices format
+                estimatedPrices = predictions.map(pred => ({
+                    name: pred.classe,
+                    price: pred.price_inc_vat.toString(),
+                }));
             }
-    
-            // Transform AI predictions into estimatedPrices format
-            const estimatedPrices = predictions.map(pred => ({
-                name: pred.classe,
-                price: pred.price_inc_vat.toString(),
-            }));
-    
+
             const newQuotation = new QuotationRequest({
                 Name: `${firstName} ${lastName}`,
-                DoorNumber,
-                RoadName,
-                Town,
+                address,
                 email,
                 phoneNumber,
                 postcode,
@@ -72,12 +70,12 @@ const quotationRequestController = {
             sendQuoteRequestConfirmationEmail(email)
             await newQuotation.save();
             emitNotificationToUser("67cb6810c9e768ec25d39523", "New Quotation Request", "A new quotation request has been submitted");
-    
+
             res.status(201).json({
                 message: 'Quotation request submitted successfully',
                 quotation: newQuotation,
             });
-    
+
         } catch (error) {
             console.error('Error creating quotation request:', error);
             res.status(500).json({
@@ -86,24 +84,24 @@ const quotationRequestController = {
             });
         }
     },
-      
 
- 
+
+
     getAllQuotations: async (req, res) => {
         try {
-            const { 
-                page = 1, 
-                limit = 10, 
+            const {
+                page = 1,
+                limit = 10,
                 keyword,
                 startDate,
                 endDate,
                 sortBy = 'createdAt',
                 sortOrder = 'desc'
             } = req.query;
-    
+
             // Build the query
             let query = {};
-    
+
             // Add search condition if keyword exists
             if (keyword) {
                 query = {
@@ -112,12 +110,11 @@ const quotationRequestController = {
                         { email: { $regex: keyword, $options: 'i' } },
                         { phoneNumber: { $regex: keyword, $options: 'i' } },
                         { postcode: { $regex: keyword, $options: 'i' } },
-                        { Town: { $regex: keyword, $options: 'i' } },
-                        { RoadName: { $regex: keyword, $options: 'i' } }
+                        { address: { $regex: keyword, $options: 'i' } }
                     ]
                 };
             }
-    
+
             // Add date range if provided
             if (startDate || endDate) {
                 query.createdAt = {};
@@ -128,24 +125,24 @@ const quotationRequestController = {
                     query.createdAt.$lte = new Date(endDate);
                 }
             }
-    
+
             // Calculate skip value for pagination
             const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-    
+
             // Build sort object
             const sort = {};
             sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
-    
+
             // Execute query with pagination and sorting
             const quotations = await QuotationRequest
                 .find(query)
                 .sort(sort)
                 .skip(skip)
                 .limit(parseInt(limit, 10));
-    
+
             // Get total count for pagination
             const total = await QuotationRequest.countDocuments(query);
-    
+
             res.status(200).json({
                 message: "All quotations retrieved successfully",
                 quotations,
@@ -174,13 +171,13 @@ const quotationRequestController = {
                     .status(404)
                     .json({ message: 'Quotation not found' });
             }
-            
+
             // Mark as read when viewed
             if (!quotation.read) {
                 quotation.read = true;
                 await quotation.save();
             }
-            
+
             res.status(200).json(quotation);
         } catch (error) {
             res.status(500).json({
@@ -203,18 +200,16 @@ const quotationRequestController = {
             const {
                 firstName,
                 lastName,
-                DoorNumber,
-                RoadName,
+                address,
                 email,
                 phoneNumber,
-                Town,
                 postcode,
                 comments,
             } = req.body;
 
-            // Compose the address lines for the email template
-            const line1 = `${DoorNumber} ${RoadName}`;
-            const line2 = Town;
+            // Use the single address field for email template
+            const line1 = address;
+            const line2 = '';
 
             // Compose the quotationData object as expected by sendQuotationEmail
             const quotationData = {
@@ -254,7 +249,7 @@ const quotationRequestController = {
                 accessInfo,
                 extraInfo,
             } = req.body;
-            console.log("req.body",req.body)
+            console.log("req.body", req.body)
             const files = req.files ? req.files.map((file) => file.path) : [];
 
             const contactData = {
@@ -290,11 +285,11 @@ const quotationRequestController = {
                 { read: true },
                 { new: true }
             );
-            
+
             if (!quotation) {
                 return res.status(404).json({ message: 'Quotation not found' });
             }
-            
+
             res.status(200).json({
                 message: 'Quotation marked as read',
                 quotation
@@ -315,11 +310,11 @@ const quotationRequestController = {
                 { read: false },
                 { new: true }
             );
-            
+
             if (!quotation) {
                 return res.status(404).json({ message: 'Quotation not found' });
             }
-            
+
             res.status(200).json({
                 message: 'Quotation marked as unread',
                 quotation
