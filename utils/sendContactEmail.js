@@ -24,43 +24,32 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
         <p style="font-size: 14px; color: #888;">A customer has submitted a moving service request.</p>
       </div>
       <div style="padding: 15px; background-color: #fff; border-radius: 8px; border: 1px solid #ddd;">
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Full Name:</strong> ${
-          contactData.fullName
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Contact Number:</strong> ${
-          contactData.contactNumber
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Email:</strong> ${
-          contactData.email
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Pick Up Location:</strong> ${
-          contactData.pickUpLocation
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Drop Off Location:</strong> ${
-          contactData.dropOffLocation
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Pick Up Property Type:</strong> ${
-          contactData.pickUpPropertyType
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Drop Off Property Type:</strong> ${
-          contactData.dropOffPropertyType
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Packing Required:</strong> ${
-          contactData.packingRequired
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Access Info:</strong> ${
-          contactData.accessInfo
-        }</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Extra Info:</strong> ${
-          contactData.extraInfo
-        }</p>
-        ${
-          contactData.files && contactData.files.length > 0
-            ? `<div style='margin-top: 15px;'><strong>Uploaded Files:</strong><ul>${contactData.files
-                .map((f) => `<li><a href='${f}'>${f}</a></li>`)
-                .join('')}</ul></div>`
-            : ''
-        }
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Full Name:</strong> ${contactData.fullName
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Contact Number:</strong> ${contactData.contactNumber
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Email:</strong> ${contactData.email
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Pick Up Location:</strong> ${contactData.pickUpLocation
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Drop Off Location:</strong> ${contactData.dropOffLocation
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Pick Up Property Type:</strong> ${contactData.pickUpPropertyType
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Drop Off Property Type:</strong> ${contactData.dropOffPropertyType
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Packing Required:</strong> ${contactData.packingRequired
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Access Info:</strong> ${contactData.accessInfo
+      }</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Extra Info:</strong> ${contactData.extraInfo
+      }</p>
+        ${contactData.files && contactData.files.length > 0
+        ? `<div style='margin-top: 15px;'><strong>Uploaded Files:</strong><ul>${contactData.files
+          .map((f) => `<li><a href='${f}'>${f}</a></li>`)
+          .join('')}</ul></div>`
+        : ''
+      }
       </div>
       <div style="text-align: center; margin-top: 20px;">
         <p style="font-size: 14px; color: #888;">London Waste Management</p>

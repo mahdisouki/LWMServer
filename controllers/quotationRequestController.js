@@ -266,7 +266,7 @@ const quotationRequestController = {
                 files,
             };
 
-            const responsibleEmail = 'soukimahdi@gmail.com';
+            const responsibleEmail = 'eyatrk24@gmail.com';
             const sendContactEmail = require('../utils/sendContactEmail');
             await sendContactEmail({ responsibleEmail, contactData });
 

@@ -55,7 +55,8 @@ const corsOptions = {
     'https://admin.londonwastemanagement.uk',
     'https://driver.londonwastemanagement.uk',
     'https://client.londonwastemanagement.uk',
-    'http://192.168.100.13:5173',
+    'http://192.168.100.11:5173',
+
   ],
   optionsSuccessStatus: 200
 };

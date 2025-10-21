@@ -1,17 +1,17 @@
 // controllers/contactRequestController.js
 const ContactRequest = require('../models/ContactRequest');
-const sendContactEmail = require('../utils/sendContactEmail');
+const sendContact2Email = require('../utils/sendContact2Email');
 
 const createContactRequest = async (req, res) => {
   try {
-    const { fullName, email, message } = req.body;
+    const { firstName, lastName, email, phone, subject, message } = req.body;
 
     // Save the contact request to the database
-    const newContact = new ContactRequest({ fullName, email, message });
+    const newContact = new ContactRequest({ firstName, lastName, email, phone, subject, message });
     await newContact.save();
 
     // Send emails: to the responsible person and the user
-    await sendContactEmail({
+    await sendContact2Email({
       responsibleEmail: process.env.RESPONSIBLE_EMAIL,
       contactData: newContact,
     });
