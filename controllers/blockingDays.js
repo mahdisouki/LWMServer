@@ -159,6 +159,74 @@ const blockingDaysCtrl = {
             res.status(500).json({ message: "Failed to retrieve available time slots", error: error.message });
         }
     },
+
+    getFullBlockingDays: async (req, res) => {
+        try {
+            const allTimeSlots = ['AnyTime', '7am-12pm', '12pm-5pm'];
+
+            // Find blocking days where all 3 time slots are blocked
+            const fullBlockingDays = await BlockingDays.find({
+                timeSlots: { $all: allTimeSlots }
+            }).sort({ date: 1 }); // Sort by date ascending
+
+            res.status(200).json({
+                message: "Full blocking days retrieved successfully",
+                fullBlockingDays,
+                count: fullBlockingDays.length
+            });
+        } catch (error) {
+            res.status(500).json({ message: "Failed to retrieve full blocking days", error: error.message });
+        }
+    },
+
+
+    getAllBlockingDaysWithTimeSlots: async (req, res) => {
+        try {
+            const { page = 1, limit = 9 } = req.query;
+            const allTimeSlots = ['AnyTime', '7am-12pm', '12pm-5pm'];
+
+            // Get all blocking days with pagination
+            const query = BlockingDays.find();
+            const total = await BlockingDays.countDocuments(query);
+
+            const features = new APIfeatures(query, req.query);
+            features.sorting().paginating();
+            const blockingDays = await features.query.exec();
+            const currentPage = parseInt(req.query.page, 10) || 1;
+            const limitNum = parseInt(req.query.limit, 10) || 9;
+
+            // Process each blocking day to include time slot information
+            const blockingDaysWithTimeSlots = blockingDays.map(blockingDay => {
+                const availableTimeSlots = allTimeSlots.filter(slot => !blockingDay.timeSlots.includes(slot));
+                const isFullyBlocked = availableTimeSlots.length === 0;
+
+                return {
+                    _id: blockingDay._id,
+                    date: blockingDay.date,
+                    type: blockingDay.type,
+                    timeSlots: blockingDay.timeSlots,
+                    availableTimeSlots,
+                    blockedTimeSlots: blockingDay.timeSlots,
+                    isFullyBlocked,
+                    createdAt: blockingDay.createdAt,
+                    updatedAt: blockingDay.updatedAt
+                };
+            });
+
+            res.status(200).json({
+                message: "All blocking days with time slots retrieved successfully",
+                blockingDays: blockingDaysWithTimeSlots,
+                meta: {
+                    currentPage,
+                    limit: limitNum,
+                    total,
+                    count: blockingDaysWithTimeSlots.length,
+                },
+            });
+        } catch (error) {
+            res.status(500).json({ message: "Failed to retrieve blocking days with time slots", error: error.message });
+        }
+    },
 };
 
 module.exports = blockingDaysCtrl;
