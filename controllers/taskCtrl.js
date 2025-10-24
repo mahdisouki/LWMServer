@@ -773,20 +773,18 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      console.log('dddddddddddddddddddddddddddddddddddddddddd', req.body);
+      
+      console.log('=== UPDATE TASK START ===');
+      console.log('Task ID:', taskId);
+      console.log('Request body:', JSON.stringify(req.body, null, 2));
+      
       const oldTask = await Task.findById(taskId);
-      console.log('hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh');
-      console.log('additionalNotes', updates.additionalNotes);
-      console.log('privateNotes', updates.privateNotes);
       if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
       }
-
+  
+      console.log('=== PHOTO HANDLING ===');
       // Handle clientObjectPhotos updates and deletions
-      // - Build next photo list from cloneClientObjectPhotos OR existing task photos
-      // - Remove any URLs listed in deletedMedia
-      // - Add newly uploaded files (req.files)
-      // - Merge any clientObjectPhotos provided in body
       try {
         // Collect deleted media from various possible encodings
         let deletedMedia = [];
@@ -815,7 +813,7 @@ const taskCtrl = {
             dmKeys.forEach((k) => delete updates[k]);
           }
         }
-
+  
         // Determine base set of photos
         let basePhotos = [];
         if (
@@ -826,19 +824,19 @@ const taskCtrl = {
         } else if (oldTask && Array.isArray(oldTask.clientObjectPhotos)) {
           basePhotos = oldTask.clientObjectPhotos.slice();
         }
-
+  
         // Remove deleted URLs from base
         if (deletedMedia.length > 0 && basePhotos.length > 0) {
           const toDeleteSet = new Set(deletedMedia);
           basePhotos = basePhotos.filter((url) => !toDeleteSet.has(url));
         }
-
+  
         // Add newly uploaded files
         if (req.files && Array.isArray(req.files) && req.files.length > 0) {
           const uploaded = req.files.map((file) => file.path).filter(Boolean);
           basePhotos = basePhotos.concat(uploaded);
         }
-
+  
         // Merge any photos provided in body
         if (typeof updates.clientObjectPhotos === 'string') {
           try {
@@ -854,10 +852,10 @@ const taskCtrl = {
         } else if (Array.isArray(updates.clientObjectPhotos)) {
           basePhotos = basePhotos.concat(updates.clientObjectPhotos.filter(Boolean));
         }
-
+  
         // De-duplicate and finalize
         let nextPhotos = Array.from(new Set(basePhotos.filter(Boolean)));
-
+  
         if (nextPhotos.length > 0) {
           updates.clientObjectPhotos = nextPhotos;
         } else {
@@ -868,30 +866,29 @@ const taskCtrl = {
             delete updates.clientObjectPhotos;
           }
         }
-
+  
         // Attempt to delete removed Cloudinary assets
         if (deletedMedia.length > 0) {
           const parseCloudinaryInfo = (url) => {
             try {
               const u = new URL(url);
               if (!u.hostname.includes('res.cloudinary.com')) return null;
-              const path = decodeURIComponent(u.pathname); // e.g., /<cloud_name>/image/upload/v123/uploads/abc.png.jpg
+              const path = decodeURIComponent(u.pathname);
               const parts = path.split('/').filter(Boolean);
-              // parts: [cloud_name, resource_type, 'upload', 'v123', ...public_id_parts]
               const resourceType = parts[1];
               const uploadIndex = parts.indexOf('upload');
               if (uploadIndex === -1) return null;
-              const rest = parts.slice(uploadIndex + 1); // ['v123', 'uploads', 'abc.png.jpg']
+              const rest = parts.slice(uploadIndex + 1);
               const withoutVersion = rest[0] && rest[0].startsWith('v') ? rest.slice(1) : rest;
               if (withoutVersion.length === 0) return null;
-              const filePath = withoutVersion.join('/'); // 'uploads/abc.png.jpg'
-              const publicId = filePath.replace(/\.[^/.]+$/, ''); // remove only last extension
+              const filePath = withoutVersion.join('/');
+              const publicId = filePath.replace(/\.[^/.]+$/, '');
               return { resourceType: resourceType === 'video' ? 'video' : 'image', publicId };
             } catch (_) {
               return null;
             }
           };
-
+  
           const deletions = deletedMedia
             .map((url) => parseCloudinaryInfo(url))
             .filter(Boolean)
@@ -902,7 +899,7 @@ const taskCtrl = {
                   console.warn('Cloudinary deletion failed for', publicId, err?.message || err),
                 ),
             );
-
+  
           if (deletions.length > 0) {
             await Promise.allSettled(deletions);
           }
@@ -910,16 +907,20 @@ const taskCtrl = {
       } catch (e) {
         console.error('Error processing clientObjectPhotos/deletedMedia during update:', e);
       }
-
+  
       // Do not persist helper fields
       delete updates.cloneClientObjectPhotos;
       delete updates.deletedMedia;
-
+  
+      console.log('=== ITEMS PROCESSING ===');
       // If items are being updated, recalculate totalPrice
       if (updates.items) {
+        console.log('Original items from request:', JSON.stringify(updates.items, null, 2));
+        
         // Clean and filter items
         updates.items = updates.items
           .map((item) => {
+            console.log('Processing item:', JSON.stringify(item, null, 2));
             // Convert empty string standardItemId to null
             if (item.standardItemId === '') {
               item.standardItemId = null;
@@ -930,55 +931,76 @@ const taskCtrl = {
             // Keep items that have either:
             // 1. A valid standardItemId, or
             // 2. A non-empty object attribute (for custom items)
-            return (
+            const isValid = (
               (item.standardItemId &&
                 typeof item.standardItemId === 'string' &&
                 item.standardItemId.trim() !== '' &&
                 mongoose.Types.ObjectId.isValid(item.standardItemId)) ||
               (item.object && item.object.trim() !== '')
             );
+            console.log('Item validation result:', isValid, 'for item:', item);
+            return isValid;
           });
-
+  
+        console.log('Filtered items:', JSON.stringify(updates.items, null, 2));
+  
         // Also handle objects array (custom items) if present
         if (updates.objects && Array.isArray(updates.objects)) {
-          const customItems = updates.objects.map((obj) => ({
-            standardItemId: null, // Custom items don't have standardItemId
-            object: obj.object,
-            Objectsposition: obj.Objectsposition || 'Outside',
-            quantity: Number(obj.quantity) || 1,
-            customPrice:
-              obj.customPrice !== undefined
-                ? Number(obj.customPrice)
-                : undefined,
-            price: Number(obj.price) || 0,
-          }));
-
+          console.log('Processing objects array:', JSON.stringify(updates.objects, null, 2));
+          
+          const customItems = updates.objects.map((obj) => {
+            console.log('Processing custom object:', JSON.stringify(obj, null, 2));
+            const customItem = {
+              standardItemId: null, // Custom items don't have standardItemId
+              object: obj.object,
+              Objectsposition: obj.Objectsposition || 'Outside',
+              quantity: Number(obj.quantity) || 1,
+              customPrice: obj.customPrice !== undefined ? Number(obj.customPrice) : undefined,
+              price: Number(obj.price) || 0,
+            };
+            console.log('Converted custom item:', JSON.stringify(customItem, null, 2));
+            return customItem;
+          });
+  
           // Merge items and custom items
           updates.items = [...updates.items, ...customItems];
+          console.log('Merged items and custom items:', JSON.stringify(updates.items, null, 2));
         }
-
-        console.log('Final items to save:', updates.items);
-
+  
+        console.log('Final items to save:', JSON.stringify(updates.items, null, 2));
+  
         // Save the new items first
         await Task.findByIdAndUpdate(taskId, {
           $set: { items: updates.items },
         });
+        
         // Re-fetch the task with populated items
-        const populatedTask = await Task.findById(taskId).populate(
-          'items.standardItemId',
-        );
-
+        const populatedTask = await Task.findById(taskId).populate('items.standardItemId');
+        console.log('Populated task items:', JSON.stringify(populatedTask.items, null, 2));
+  
         let subtotal = 0;
-
+  
+        console.log('=== PRICE CALCULATION ===');
+        console.log('Task hasDiscount:', populatedTask.hasDiscount);
+        console.log('Task discountType:', populatedTask.discountType);
+        console.log('Task customDiscountPercent:', populatedTask.customDiscountPercent);
+  
         // Calculate subtotal with discount handling
         for (const item of populatedTask.items) {
+          console.log('\n--- Processing Item ---');
+          console.log('Item:', JSON.stringify(item, null, 2));
+          
           let itemPrice = 0;
-          let positionFee = 0; // Declare positionFee at the proper scope
-          const isCustomItem = !item.standardItemId; // Check if it's a custom item
-
+          let positionFee = 0;
+          const isCustomItem = !item.standardItemId;
+  
+          console.log('Is custom item:', isCustomItem);
+          console.log('Item customPrice:', item.customPrice, 'Type:', typeof item.customPrice);
+  
           if (item.standardItemId) {
             // Base item price (outside position)
             itemPrice = Number(item.standardItemId.price);
+            console.log('Standard item base price:', itemPrice);
             
             // Position fee (added once, not per quantity)
             if (item.Objectsposition === 'InsideWithDismantling') {
@@ -986,13 +1008,16 @@ const taskCtrl = {
             } else if (item.Objectsposition === 'Inside') {
               positionFee = Number(item.standardItemId.insidePrice) || 6;
             }
+            console.log('Position fee:', positionFee);
           } else if (item.price) {
             // Custom items use their own price
             itemPrice = Number(item.price);
+            console.log('Custom item price:', itemPrice);
           }
           
           const quantity = Number(item.quantity) || 1;
-
+          console.log('Quantity:', quantity);
+  
           // Calculate total: (itemPrice * quantity) + positionFee
           let finalItemTotal;
           
@@ -1003,105 +1028,118 @@ const taskCtrl = {
             // For custom items: itemPrice * quantity (no position fee)
             finalItemTotal = itemPrice * quantity;
           }
-
+  
+          console.log('Initial finalItemTotal:', finalItemTotal);
+  
           // Handle item-specific discount if discountType is "perItem"
-          if (
+          const discountCondition = (
             populatedTask.hasDiscount &&
             populatedTask.discountType === 'perItem' &&
-            item.customPrice
-          ) {
+            item.customPrice !== undefined &&
+            item.customPrice !== null
+          );
+          
+          console.log('Discount condition check:');
+          console.log('- hasDiscount:', populatedTask.hasDiscount);
+          console.log('- discountType === "perItem":', populatedTask.discountType === 'perItem');
+          console.log('- customPrice !== undefined:', item.customPrice !== undefined);
+          console.log('- customPrice !== null:', item.customPrice !== null);
+          console.log('- Final discount condition:', discountCondition);
+  
+          if (discountCondition) {
             let customPrice = Number(item.customPrice);
+            console.log('Applying custom price discount:', customPrice);
             
             if (item.standardItemId) {
               // For standard items with discount: (customPrice * quantity) + positionFee
               finalItemTotal = (customPrice * quantity) + positionFee;
+              console.log('Standard item with discount formula:', `(${customPrice} × ${quantity}) + ${positionFee} = ${finalItemTotal}`);
             } else {
               // For custom items with discount: customPrice * quantity
               finalItemTotal = customPrice * quantity;
+              console.log('Custom item with discount formula:', `${customPrice} × ${quantity} = ${finalItemTotal}`);
             }
           }
-
-          console.log(
-            'Item:',
-            item.standardItemId?.itemName || item.object,
-            'Base Price:',
-            itemPrice,
-            'Position Fee:',
-            positionFee,
-            'Quantity:',
-            quantity,
-            'FinalItemTotal:',
-            finalItemTotal,
-            'Formula:',
-            item.standardItemId ? `(${itemPrice} × ${quantity}) + ${positionFee} = ${finalItemTotal}` : `${itemPrice} × ${quantity} = ${finalItemTotal}`
-          );
-
+  
+          console.log('Final item total:', finalItemTotal);
           subtotal += finalItemTotal;
+          console.log('Running subtotal:', subtotal);
         }
-
+  
         // Handle percentage discount if discountType is "percentage"
         if (
           populatedTask.hasDiscount &&
           populatedTask.discountType === 'percentage' &&
           populatedTask.customDiscountPercent > 0
         ) {
-          const percentageDiscount =
-            (subtotal * populatedTask.customDiscountPercent) / 100;
+          const percentageDiscount = (subtotal * populatedTask.customDiscountPercent) / 100;
           subtotal -= percentageDiscount;
-          console.log(
-            'Applied percentage discount:',
-            percentageDiscount,
-            'New subtotal:',
-            subtotal,
-          );
+          console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
         }
-
+  
         // Apply minimum price (before VAT) - if under £30, make it £30
-        // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
         if (subtotal < 30) {
-          console.log(
-            'Applying minimum price adjustment: £' + subtotal + ' → £30',
-          );
+          console.log('Applying minimum price adjustment: £' + subtotal + ' → £30');
           subtotal = 30;
         }
-
+  
         // Add VAT
         const vat = subtotal * 0.2;
         const totalPrice = subtotal + vat;
-
+  
         console.log('Final subtotal:', subtotal);
         console.log('VAT:', vat);
         console.log('Calculated totalPrice with VAT:', totalPrice);
-
+  
         updates.totalPrice = totalPrice;
       }
-
+  
+      console.log('=== CUSTOM PRICE SANITIZATION ===');
       // Before saving or updating a task, sanitize customPrice for all items
       if (updates.items) {
+        console.log('Items before sanitization:', JSON.stringify(updates.items, null, 2));
+        
         updates.items = updates.items.map((item) => {
+          console.log('Sanitizing item:', JSON.stringify(item, null, 2));
+          
           if (
             item.customPrice === '' ||
             item.customPrice === null ||
             item.customPrice === undefined ||
             item.customPrice === 'undefined' ||
-            typeof item.customPrice === 'undefined' ||
-            isNaN(Number(item.customPrice))
+            typeof item.customPrice === 'undefined'
           ) {
+            console.log('Deleting customPrice for item:', item);
             delete item.customPrice;
           } else {
-            item.customPrice = Number(item.customPrice);
+            // Convert to number, but preserve 0 as a valid value
+            const numValue = Number(item.customPrice);
+            if (!isNaN(numValue)) {
+              item.customPrice = numValue;
+              console.log('Set customPrice to:', numValue);
+            } else {
+              console.log('Deleting customPrice (NaN):', item.customPrice);
+              delete item.customPrice;
+            }
           }
           return item;
         });
+        
+        console.log('Items after sanitization:', JSON.stringify(updates.items, null, 2));
       }
-
-      console.log(updates.totalPrice); // Update the task
+  
+      console.log('=== FINAL UPDATE ===');
+      console.log('Updates to apply:', JSON.stringify(updates, null, 2));
+      
+      // Update the task
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
         { $set: updates },
         { new: true },
       );
-
+  
+      console.log('Updated task:', JSON.stringify(updatedTask, null, 2));
+  
       // Create a log of the changes
       await loggingService.createLog({
         userId: req.user._id,
@@ -1116,12 +1154,15 @@ const taskCtrl = {
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
-
+  
+      console.log('=== UPDATE TASK COMPLETE ===');
       res.status(200).json({
         message: 'Task updated successfully',
         task: updatedTask,
       });
     } catch (error) {
+      console.error('=== UPDATE TASK ERROR ===');
+      console.error('Error:', error);
       res.status(500).json({
         message: 'Failed to update task',
         error: error.message,

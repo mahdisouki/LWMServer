@@ -15,10 +15,23 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   // Extract VAT and build item rows
   const vatRow = breakdown.find(item => item.description === "VAT (20%)");
   const vatAmount = vatRow ? parseFloat(vatRow.amount) : 0;
-  const subtotal = totalPrice - vatAmount;
-  console.log("taskDetails", taskDetails, "totalPrice", totalPrice, "vatAmount", vatAmount, "subtotal", subtotal, "amountToPay", amountToPay, "paymentType", paymentType)
+  
+  // Calculate subtotal from the full task total (totall), not the partial payment (totalPrice)
+  const subtotal = Number(totall) - vatAmount;
+  
+  console.log("taskDetails", taskDetails, "totalPrice (partial payment)", totalPrice, "totall (full task total)", totall, "vatAmount", vatAmount, "subtotal", subtotal, "amountToPay", amountToPay, "paymentType", paymentType)
+  
   // Compute remaining based on paid so far plus this payment
-  const paidSoFar = taskDetails.paidAmount?.amount || 0;
+  // For deposit payments, we need to check if the paidAmount is already set to the deposit amount
+  // If so, we should use 0 as the base since this payment hasn't been made yet
+  let paidSoFar = taskDetails.paidAmount?.amount || 0;
+  
+  // If this is a deposit payment and the paidAmount equals the amountToPay, 
+  // it means the deposit amount was just set but not actually paid yet
+  if (paymentType === 'deposit' && paidSoFar === Number(amountToPay)) {
+    paidSoFar = 0; // Reset to 0 since this payment hasn't been made yet
+  }
+  
   const projectedPaid = paidSoFar + (Number(amountToPay) || 0);
   let remainingBalance = Math.max(Number(totall) - projectedPaid, 0);
   if (remainingBalance < 0) remainingBalance = 0;
@@ -31,18 +44,38 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
       const taskItem = (taskDetails.items || []).find(
         t => (t.standardItemId?.itemName || t.object) === item.itemDescription
       );
+      
+      // Determine if we should show discounted price column
+      const showDiscounted = taskDetails.hasDiscount && taskDetails.discountType === "perItem";
+      
+      // Get original price (before discount) and discounted price
+      let originalPrice = parseFloat(item.price);
       let discountedPrice = '';
-      let showDiscounted = false;
-      if (taskDetails.hasDiscount && taskDetails.discountType === "perItem" && taskItem && taskItem.customPrice) {
+      
+      if (showDiscounted && taskItem && taskItem.customPrice) {
+        // Show the custom price as discounted price
         discountedPrice = `£${parseFloat(taskItem.customPrice).toFixed(2)}`;
-        showDiscounted = true;
+        
+        // For standard items, get original price from standardItemId.price
+        // For custom items, get original price from taskItem.price
+        if (taskItem.standardItemId) {
+          // Standard item - get original price from standard item
+          originalPrice = parseFloat(taskItem.standardItemId.price);
+        } else {
+          // Custom item - get original price from taskItem.price
+          originalPrice = parseFloat(taskItem.price);
+        }
+      } else {
+        // No discount, so the price shown is the original price
+        discountedPrice = `£${originalPrice.toFixed(2)}`;
       }
+      
       return `
           <tr>
             <td style="padding:10px 6px;border-bottom:1px solid #eee;">${item.itemDescription}${item.Objectsposition ? ` (${item.Objectsposition})` : ''}</td>
             <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #eee;">${item.quantity || 1}</td>
-            <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${parseFloat(item.price).toFixed(2)}</td>
-            ${showDiscounted ? `<td style=\"padding:10px 6px;text-align:right;border-bottom:1px solid #eee;\">${discountedPrice}</td>` : (taskDetails.hasDiscount && taskDetails.discountType === "perItem" ? '<td></td>' : '')}
+            <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${originalPrice.toFixed(2)}</td>
+            ${showDiscounted ? `<td style=\"padding:10px 6px;text-align:right;border-bottom:1px solid #eee;\">${discountedPrice || '£' + originalPrice.toFixed(2)}</td>` : ''}
             <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #eee;">${item.Objectsposition || ''}</td>
             <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${
               !item.standardItemId ? "0" :
