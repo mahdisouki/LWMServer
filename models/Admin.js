@@ -16,7 +16,8 @@ const adminSchema = new mongoose.Schema({
         Day_Off: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
         Busy_Days: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
         Emails: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
-        Quotations: { type: [String], enum: ["View", "Edit", "Delete"], default: [] }
+        Quotations: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
+        Feedback: { type: [String], enum: ["View", "Edit", "Delete"], default: [] },
     },
     gmailTokens: {
         access_token: String,

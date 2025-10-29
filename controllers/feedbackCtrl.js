@@ -5,17 +5,22 @@ const APIfeatures = require('../utils/APIFeatures');
 const feedbackCtrl = {
     createFeedback: async (req, res) => {
         try {
-            const { name, description } = req.body;
+            const { name, description, rate } = req.body;
             const image = req.file ? req.file.path : null; // Handle image upload via Cloudinary
 
             if (!image) {
                 return res.status(400).json({ message: "Image is required" });
             }
 
+            if (!rate || rate < 0 || rate > 5) {
+                return res.status(400).json({ message: "Rate is required and must be between 0 and 5" });
+            }
+
             const newFeedback = new Feedback({
                 name,
                 description,
-                image
+                image,
+                rate
             });
 
             await newFeedback.save();
@@ -33,7 +38,7 @@ const feedbackCtrl = {
 
     getAllFeedbacks: async (req, res) => {
         try {
-            const { page = 1, limit = 9, search, status } = req.query;
+            const { page = 1, limit = 9, search, minRate, maxRate } = req.query;
 
             let filters = {};
             if (req.query.filters) {
@@ -58,9 +63,11 @@ const feedbackCtrl = {
                 };
             }
 
-            // Add status filter
-            if (status) {
-                filters.status = status;
+            // Add rate filters
+            if (minRate || maxRate) {
+                filters.rate = {};
+                if (minRate) filters.rate.$gte = parseFloat(minRate);
+                if (maxRate) filters.rate.$lte = parseFloat(maxRate);
             }
 
             const query = Feedback.find(filters);
@@ -112,14 +119,19 @@ const feedbackCtrl = {
 
     updateFeedback: async (req, res) => {
         const { id } = req.params;
-        const { name, description, status } = req.body;
+        const { name, description, rate } = req.body;
         const image = req.file ? req.file.path : undefined;
 
         // Create a dynamic update object
         const updates = {};
         if (name) updates.name = name;
         if (description) updates.description = description;
-        if (status) updates.status = status;
+        if (rate !== undefined) {
+            if (rate < 0 || rate > 5) {
+                return res.status(400).json({ message: "Rate must be between 0 and 5" });
+            }
+            updates.rate = rate;
+        }
         if (image) updates.image = image;
 
         try {
