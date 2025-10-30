@@ -8,9 +8,9 @@ const feedbackCtrl = {
             const { name, description, rate } = req.body;
             const image = req.file ? req.file.path : null; // Handle image upload via Cloudinary
 
-            if (!image) {
-                return res.status(400).json({ message: "Image is required" });
-            }
+            // if (!image) {
+            //     return res.status(400).json({ message: "Image is required" });
+            // }
 
             if (!rate || rate < 0 || rate > 5) {
                 return res.status(400).json({ message: "Rate is required and must be between 0 and 5" });
@@ -24,14 +24,14 @@ const feedbackCtrl = {
             });
 
             await newFeedback.save();
-            res.status(201).json({ 
-                message: "Feedback created successfully", 
-                feedback: newFeedback 
+            res.status(201).json({
+                message: "Feedback created successfully",
+                feedback: newFeedback
             });
         } catch (error) {
-            res.status(500).json({ 
-                message: "Failed to create feedback", 
-                error: error.message 
+            res.status(500).json({
+                message: "Failed to create feedback",
+                error: error.message
             });
         }
     },
@@ -71,7 +71,7 @@ const feedbackCtrl = {
             }
 
             const query = Feedback.find(filters);
-            
+
             const features = new APIfeatures(query, req.query)
                 .sorting()
                 .paginating();
@@ -91,9 +91,9 @@ const feedbackCtrl = {
             });
 
         } catch (error) {
-            res.status(500).json({ 
-                message: "Failed to retrieve feedbacks", 
-                error: error.message 
+            res.status(500).json({
+                message: "Failed to retrieve feedbacks",
+                error: error.message
             });
         }
     },
@@ -110,9 +110,9 @@ const feedbackCtrl = {
                 feedback
             });
         } catch (error) {
-            res.status(500).json({ 
-                message: "Failed to fetch feedback", 
-                error: error.message 
+            res.status(500).json({
+                message: "Failed to fetch feedback",
+                error: error.message
             });
         }
     },
@@ -136,21 +136,21 @@ const feedbackCtrl = {
 
         try {
             const updatedFeedback = await Feedback.findByIdAndUpdate(
-                id, 
-                updates, 
+                id,
+                updates,
                 { new: true }
             );
             if (!updatedFeedback) {
                 return res.status(404).json({ message: "Feedback not found" });
             }
-            res.status(200).json({ 
-                message: "Feedback updated successfully", 
-                feedback: updatedFeedback 
+            res.status(200).json({
+                message: "Feedback updated successfully",
+                feedback: updatedFeedback
             });
         } catch (error) {
-            res.status(500).json({ 
-                message: "Failed to update feedback", 
-                error: error.message 
+            res.status(500).json({
+                message: "Failed to update feedback",
+                error: error.message
             });
         }
     },
@@ -164,9 +164,9 @@ const feedbackCtrl = {
             }
             res.status(200).json({ message: "Feedback deleted successfully" });
         } catch (error) {
-            res.status(500).json({ 
-                message: "Failed to delete feedback", 
-                error: error.message 
+            res.status(500).json({
+                message: "Failed to delete feedback",
+                error: error.message
             });
         }
     }
