@@ -86,7 +86,11 @@ router.post('/', (req, res, next) => {
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
-          allUserIds.push('67cb6810c9e768ec25d39523'); // Replace with actual admin user ID if known
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          adminUsers.forEach((admin) => {
+            const id = admin._id?.toString();
+            if (id) allUserIds.push(id);
+          });
         }
 
         for (const receiverId of allUserIds) {
@@ -194,7 +198,11 @@ router.post('/video', (req, res, next) => {
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
-          allUserIds.push('67cb6810c9e768ec25d39523'); // Replace with actual admin user ID if known
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          adminUsers.forEach((admin) => {
+            const id = admin._id?.toString();
+            if (id) allUserIds.push(id);
+          });
         }
 
         for (const receiverId of allUserIds) {
@@ -268,7 +276,11 @@ router.post('/audio', upload.single('audio'), async (req, res) => {
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
-          allUserIds.push('67cb6810c9e768ec25d39523'); // Replace with actual admin user ID if known
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          adminUsers.forEach((admin) => {
+            const id = admin._id?.toString();
+            if (id) allUserIds.push(id);
+          });
         }
 
         for (const receiverId of allUserIds) {

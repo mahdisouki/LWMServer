@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "start": "nodemon serverjs",
+    "start": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed": "node seeder.js && npm start",
     "postinstall": "npx playwright install-deps chromium && npx playwright install chromium"

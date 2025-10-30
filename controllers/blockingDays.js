@@ -5,7 +5,7 @@ const blockingDaysCtrl = {
     createBlockingDay: async (req, res) => {
         try {
             const { date, type, timeSlots } = req.body;
-
+            console.log(req.body)
             // Validate that timeSlots is provided and not empty
             if (!timeSlots || timeSlots.length === 0) {
                 return res.status(400).json({

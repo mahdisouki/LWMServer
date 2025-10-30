@@ -11,14 +11,9 @@ const TippingRequest = require('./models/TippingRequest');
 const sendReviewRequestEmail = require('./utils/sendReviewEmail');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
-
-const admin = require('firebase-admin');
-const serviceAccount = require('./waste-app-10e23-firebase-adminsdk-3miif-a9179d3e0a.json');
 const Helper = require('./models/Helper');
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+
 
 // const sendNotification = async (title, textMessage, token) => {
 //   console.log('Sending notification to:', token);
@@ -408,7 +403,11 @@ const initSocket = (server) => {
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
-          allUserIds.push('67cb6810c9e768ec25d39523'); // Replace with actual admin user ID if known
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          adminUsers.forEach((admin) => {
+            const id = admin._id?.toString();
+            if (id) allUserIds.push(id);
+          });
         }
 
         for (const receiverId of allUserIds) {
@@ -530,7 +529,11 @@ const initSocket = (server) => {
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
-          allUserIds.push('67cb6810c9e768ec25d39523');
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          adminUsers.forEach((admin) => {
+            const id = admin._id?.toString();
+            if (id) allUserIds.push(id);
+          });
         }
 
         for (const receiverId of allUserIds) {
@@ -620,7 +623,11 @@ const initSocket = (server) => {
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
-          allUserIds.push('67cb6810c9e768ec25d39523');
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          adminUsers.forEach((admin) => {
+            const id = admin._id?.toString();
+            if (id) allUserIds.push(id);
+          });
         }
 
         for (const receiverId of allUserIds) {
@@ -722,7 +729,11 @@ const initSocket = (server) => {
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
-          allUserIds.push('67cb6810c9e768ec25d39523');
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          adminUsers.forEach((admin) => {
+            const id = admin._id?.toString();
+            if (id) allUserIds.push(id);
+          });
         }
 
         for (const receiverId of allUserIds) {

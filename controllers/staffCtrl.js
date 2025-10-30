@@ -281,6 +281,23 @@ const staffManagement = {
     let updateData = req.body; // Take all incoming fields for potential update
     console.log(updateData)
     try {
+      // Normalize incoming types
+      if (typeof updateData.permissions === 'string') {
+        try {
+          updateData.permissions = JSON.parse(updateData.permissions);
+        } catch (e) {
+          return res.status(400).json({ message: 'Invalid permissions format. Must be JSON.' });
+        }
+      }
+
+      if (updateData.role && typeof updateData.role === 'string') {
+        updateData.role = [updateData.role];
+      }
+
+      if (typeof updateData.csvPermission === 'string') {
+        updateData.csvPermission = updateData.csvPermission === 'true';
+      }
+
       // Handle empty phone number
       if (updateData.phoneNumber === '') {
         updateData.phoneNumber = null;
@@ -305,11 +322,20 @@ const staffManagement = {
         return res.status(404).json({ message: 'Staff not found' });
       }
 
-      // Update the staff member in the database
-      const user = await User.findByIdAndUpdate(
+      // Choose correct discriminator model for update (ensures proper casting/validation)
+      const Model = oldUser.roleType === 'Admin'
+        ? Admin
+        : oldUser.roleType === 'Driver'
+          ? Driver
+          : oldUser.roleType === 'Helper'
+            ? Helper
+            : User;
+
+      // Update the staff member in the database (apply validators)
+      const user = await Model.findByIdAndUpdate(
         id,
         { $set: updateData },
-        { new: true }, // Return the updated document
+        { new: true, runValidators: true },
       );
 
       // Create a log of the changes
