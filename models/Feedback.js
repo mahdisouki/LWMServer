@@ -1,23 +1,23 @@
 const mongoose = require('mongoose');
 
 const feedbackSchema = new mongoose.Schema({
-    name: { 
-        type: String, 
+    name: {
+        type: String,
         required: true,
         trim: true
     },
-    description: { 
-        type: String, 
+    description: {
+        type: String,
         required: true,
         trim: true
     },
-    image: { 
-        type: String, 
-        required: true
+    image: {
+        type: String,
+
     },
-    date: { 
-        type: Date, 
-        default: Date.now 
+    date: {
+        type: Date,
+        default: Date.now
     },
     rate: {
         type: Number,
