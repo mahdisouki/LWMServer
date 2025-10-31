@@ -5,6 +5,7 @@ const standardItemSchema = new mongoose.Schema({
   image: { type: String, required: true },
   images: [{ type: String }],
   price: { type: Number, required: true },
+  isHidden: { type: Boolean, default: false },
   category: [{ type: mongoose.Types.ObjectId, ref: "serviceCategory" }],
   description: { type: String, required: false },
   insidePrice: { type: Number, required: false },
