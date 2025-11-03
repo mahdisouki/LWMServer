@@ -5,7 +5,7 @@ const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key here
 
 const VAT_RATE = 0.2; // VAT rate (20%)
-const MINIMUM_PRICE = 36; // Minimum price including VAT (£30 + £6 VAT)
+const MINIMUM_PRICE = 45; // Minimum price including VAT (£37.5 + £7.5 VAT)
 
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
 
@@ -23,9 +23,9 @@ async function calculateTotalPrice(taskId) {
         if (item.standardItemId) {
             // Use position-specific prices for standard items
             if (item.Objectsposition === 'InsideWithDismantling') {
-                price = (item.standardItemId.insideWithDismantlingPrice || 18) * quantity;
+                price = (item.standardItemId.insideWithDismantlingPrice) * quantity;
             } else if (item.Objectsposition === 'Inside') {
-                price = (item.standardItemId.insidePrice || 6) * quantity;
+                price = (item.standardItemId.insidePrice) * quantity;
             } else {
                 // Default to Outside position
                 price = item.standardItemId.price * quantity;
@@ -49,9 +49,9 @@ async function calculateTotalPrice(taskId) {
     const vat = basePrice * VAT_RATE;
     let finalPrice = basePrice + vat;
 
-    // Apply minimum price of £36 (including VAT) - if under £30 base price, make it £30 + £6 VAT
+    // Apply minimum price of £45 (including VAT) - if under £37.5 base price, make it £37.5 + £7.5 VAT
     if (finalPrice < MINIMUM_PRICE) {
-        // Calculate the adjustment needed to reach £36 total
+        // Calculate the adjustment needed to reach £45 total
         const adjustment = MINIMUM_PRICE - finalPrice;
 
         // Add minimum price adjustment to the breakdown
@@ -61,7 +61,7 @@ async function calculateTotalPrice(taskId) {
         });
 
         finalPrice = MINIMUM_PRICE;
-        basePrice = MINIMUM_PRICE / (1 + VAT_RATE); // This will be £30
+        basePrice = MINIMUM_PRICE / (1 + VAT_RATE); // This will be £37.5
     }
 
     breakdown.push({ description: "VAT (20%)", amount: vat.toFixed(2) });
@@ -89,9 +89,9 @@ const calculateTotalPriceUpdate = async (taskId) => {
             if (standardItem) {
                 // Use position-specific prices for standard items
                 if (item.Objectsposition === 'InsideWithDismantling') {
-                    price = (standardItem.insideWithDismantlingPrice || 18) * quantity;
+                    price = (standardItem.insideWithDismantlingPrice) * quantity;
                 } else if (item.Objectsposition === 'Inside') {
-                    price = (standardItem.insidePrice || 6) * quantity;
+                    price = (standardItem.insidePrice) * quantity;
                 } else {
                     // Default to Outside position
                     price = standardItem.price * quantity;
@@ -109,16 +109,16 @@ const calculateTotalPriceUpdate = async (taskId) => {
         }
     }
 
-    // Apply Discount if all items are "Outside" and time is "AnyTime"
-    if (task.available === "AnyTime" && allOutside) {
-        basePrice *= 0.9;
-    }
+    // // Apply Discount if all items are "Outside" and time is "AnyTime"
+    // if (task.available === "AnyTime" && allOutside) {
+    //     basePrice *= 0.9;
+    // }
 
     const VAT_RATE = 0.2;
     const vat = basePrice * VAT_RATE;
     let finalPrice = basePrice + vat;
 
-    // Apply minimum price of £36 (including VAT) - if under £30 base price, make it £30 + £6 VAT
+    // Apply minimum price of £45 (including VAT) - if under £37.5 base price, make it £37.5 + £7.5 VAT
     if (finalPrice < MINIMUM_PRICE) {
         finalPrice = MINIMUM_PRICE;
     }
