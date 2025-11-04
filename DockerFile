@@ -13,16 +13,19 @@ RUN npm install --omit=dev --legacy-peer-deps --ignore-scripts
 FROM node:20-alpine
 WORKDIR /app
 
-# Install system dependencies for Playwright/Puppeteer
-RUN apk add --no-cache \
+# Install build dependencies for native modules (bcrypt, etc.)
+RUN apk add --no-cache --virtual .build-deps \
+    python3 \
+    make \
+    g++ \
+    && apk add --no-cache \
     chromium \
     nss \
     freetype \
     freetype-dev \
     harfbuzz \
     ca-certificates \
-    ttf-freefont \
-    && rm -rf /var/cache/apk/*
+    ttf-freefont
 
 # Set environment variables for Playwright/Puppeteer to use system Chromium
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
@@ -31,6 +34,12 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Rebuild native modules (bcrypt, etc.) for Alpine Linux
+RUN npm rebuild --build-from-source
+
+# Remove build dependencies to reduce image size
+RUN apk del .build-deps
 
 # Use non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
