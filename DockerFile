@@ -35,13 +35,14 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Install bcrypt independently to ensure native bindings are compiled for Alpine
-# Remove bcrypt first, then reinstall it with build tools available
-RUN npm uninstall bcrypt && \
-    npm install bcrypt@^5.1.1 --build-from-source --ignore-scripts --legacy-peer-deps
-
-# Rebuild any other native modules that might need it
-RUN npm rebuild --build-from-source --ignore-scripts || true
+# Rebuild bcrypt independently to ensure native bindings are compiled for Alpine
+# Build bcrypt manually if it wasn't built initially (due to --ignore-scripts)
+RUN cd node_modules/bcrypt && \
+    npm run install || \
+    (npm install --build-from-source --ignore-scripts) || \
+    (node-gyp rebuild) && \
+    cd ../.. && \
+    npm rebuild --build-from-source --ignore-scripts || true
 
 # Remove build dependencies to reduce image size
 RUN apk del .build-deps
