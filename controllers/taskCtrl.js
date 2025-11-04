@@ -164,10 +164,10 @@ async function calculateTotalPrice({
     subtotal -= percentageDiscount;
   }
 
-  // 4. Enforce minimum price (before VAT) - if under £30, make it £30
-  // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
-  if (subtotal < 30) {
-    subtotal = 30;
+  // 4. Enforce minimum price (before VAT) - if under £37.5, make it £37.5
+  // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
+  if (subtotal < 37.5) {
+    subtotal = 37.5;
   }
 
   // 5. Add VAT (20%)
@@ -478,10 +478,10 @@ const taskCtrl = {
             body: { date: taskDate }
           };
           const mockRes = {
-            status: () => ({ json: () => {} }),
-            json: () => {}
+            status: () => ({ json: () => { } }),
+            json: () => { }
           };
-          
+
           await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
           console.log('Daily sheets updated after task assignment for date:', taskDate);
         }
@@ -562,10 +562,10 @@ const taskCtrl = {
             body: { date: taskDate }
           };
           const mockRes = {
-            status: () => ({ json: () => {} }),
-            json: () => {}
+            status: () => ({ json: () => { } }),
+            json: () => { }
           };
-          
+
           await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
           console.log('Daily sheets updated after task de-assignment for date:', taskDate);
         }
@@ -697,16 +697,16 @@ const taskCtrl = {
       try {
         if (updatedTruck.driverId) {
           console.log('Updating daily sheets after task order change for driver:', updatedTruck.driverId);
-          
+
           // Call the updateExistingDailySheets function
           const mockReq = {
             body: { date: date }
           };
           const mockRes = {
-            status: () => ({ json: () => {} }),
-            json: () => {}
+            status: () => ({ json: () => { } }),
+            json: () => { }
           };
-          
+
           await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
           console.log('Daily sheets updated after task order change for date:', date);
         }
@@ -773,16 +773,16 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      
+
       console.log('=== UPDATE TASK START ===');
       console.log('Task ID:', taskId);
       console.log('Request body:', JSON.stringify(req.body, null, 2));
-      
+
       const oldTask = await Task.findById(taskId);
       if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
       }
-  
+
       console.log('=== PHOTO HANDLING ===');
       // Handle clientObjectPhotos updates and deletions
       try {
@@ -813,7 +813,7 @@ const taskCtrl = {
             dmKeys.forEach((k) => delete updates[k]);
           }
         }
-  
+
         // Determine base set of photos
         let basePhotos = [];
         if (
@@ -824,19 +824,19 @@ const taskCtrl = {
         } else if (oldTask && Array.isArray(oldTask.clientObjectPhotos)) {
           basePhotos = oldTask.clientObjectPhotos.slice();
         }
-  
+
         // Remove deleted URLs from base
         if (deletedMedia.length > 0 && basePhotos.length > 0) {
           const toDeleteSet = new Set(deletedMedia);
           basePhotos = basePhotos.filter((url) => !toDeleteSet.has(url));
         }
-  
+
         // Add newly uploaded files
         if (req.files && Array.isArray(req.files) && req.files.length > 0) {
           const uploaded = req.files.map((file) => file.path).filter(Boolean);
           basePhotos = basePhotos.concat(uploaded);
         }
-  
+
         // Merge any photos provided in body
         if (typeof updates.clientObjectPhotos === 'string') {
           try {
@@ -852,10 +852,10 @@ const taskCtrl = {
         } else if (Array.isArray(updates.clientObjectPhotos)) {
           basePhotos = basePhotos.concat(updates.clientObjectPhotos.filter(Boolean));
         }
-  
+
         // De-duplicate and finalize
         let nextPhotos = Array.from(new Set(basePhotos.filter(Boolean)));
-  
+
         if (nextPhotos.length > 0) {
           updates.clientObjectPhotos = nextPhotos;
         } else {
@@ -866,7 +866,7 @@ const taskCtrl = {
             delete updates.clientObjectPhotos;
           }
         }
-  
+
         // Attempt to delete removed Cloudinary assets
         if (deletedMedia.length > 0) {
           const parseCloudinaryInfo = (url) => {
@@ -888,7 +888,7 @@ const taskCtrl = {
               return null;
             }
           };
-  
+
           const deletions = deletedMedia
             .map((url) => parseCloudinaryInfo(url))
             .filter(Boolean)
@@ -899,7 +899,7 @@ const taskCtrl = {
                   console.warn('Cloudinary deletion failed for', publicId, err?.message || err),
                 ),
             );
-  
+
           if (deletions.length > 0) {
             await Promise.allSettled(deletions);
           }
@@ -907,16 +907,16 @@ const taskCtrl = {
       } catch (e) {
         console.error('Error processing clientObjectPhotos/deletedMedia during update:', e);
       }
-  
+
       // Do not persist helper fields
       delete updates.cloneClientObjectPhotos;
       delete updates.deletedMedia;
-  
+
       console.log('=== ITEMS PROCESSING ===');
       // If items are being updated, recalculate totalPrice
       if (updates.items) {
         console.log('Original items from request:', JSON.stringify(updates.items, null, 2));
-        
+
         // Clean and filter items
         updates.items = updates.items
           .map((item) => {
@@ -941,13 +941,13 @@ const taskCtrl = {
             console.log('Item validation result:', isValid, 'for item:', item);
             return isValid;
           });
-  
+
         console.log('Filtered items:', JSON.stringify(updates.items, null, 2));
-  
+
         // Also handle objects array (custom items) if present
         if (updates.objects && Array.isArray(updates.objects)) {
           console.log('Processing objects array:', JSON.stringify(updates.objects, null, 2));
-          
+
           const customItems = updates.objects.map((obj) => {
             console.log('Processing custom object:', JSON.stringify(obj, null, 2));
             const customItem = {
@@ -961,47 +961,47 @@ const taskCtrl = {
             console.log('Converted custom item:', JSON.stringify(customItem, null, 2));
             return customItem;
           });
-  
+
           // Merge items and custom items
           updates.items = [...updates.items, ...customItems];
           console.log('Merged items and custom items:', JSON.stringify(updates.items, null, 2));
         }
-  
+
         console.log('Final items to save:', JSON.stringify(updates.items, null, 2));
-  
+
         // Save the new items first
         await Task.findByIdAndUpdate(taskId, {
           $set: { items: updates.items },
         });
-        
+
         // Re-fetch the task with populated items
         const populatedTask = await Task.findById(taskId).populate('items.standardItemId');
         console.log('Populated task items:', JSON.stringify(populatedTask.items, null, 2));
-  
+
         let subtotal = 0;
-  
+
         console.log('=== PRICE CALCULATION ===');
         console.log('Task hasDiscount:', populatedTask.hasDiscount);
         console.log('Task discountType:', populatedTask.discountType);
         console.log('Task customDiscountPercent:', populatedTask.customDiscountPercent);
-  
+
         // Calculate subtotal with discount handling
         for (const item of populatedTask.items) {
           console.log('\n--- Processing Item ---');
           console.log('Item:', JSON.stringify(item, null, 2));
-          
+
           let itemPrice = 0;
           let positionFee = 0;
           const isCustomItem = !item.standardItemId;
-  
+
           console.log('Is custom item:', isCustomItem);
           console.log('Item customPrice:', item.customPrice, 'Type:', typeof item.customPrice);
-  
+
           if (item.standardItemId) {
             // Base item price (outside position)
             itemPrice = Number(item.standardItemId.price);
             console.log('Standard item base price:', itemPrice);
-            
+
             // Position fee (added once, not per quantity)
             if (item.Objectsposition === 'InsideWithDismantling') {
               positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
@@ -1014,13 +1014,13 @@ const taskCtrl = {
             itemPrice = Number(item.price);
             console.log('Custom item price:', itemPrice);
           }
-          
+
           const quantity = Number(item.quantity) || 1;
           console.log('Quantity:', quantity);
-  
+
           // Calculate total: (itemPrice * quantity) + positionFee
           let finalItemTotal;
-          
+
           if (item.standardItemId) {
             // For standard items: (itemPrice * quantity) + positionFee
             finalItemTotal = (itemPrice * quantity) + positionFee;
@@ -1028,9 +1028,9 @@ const taskCtrl = {
             // For custom items: itemPrice * quantity (no position fee)
             finalItemTotal = itemPrice * quantity;
           }
-  
+
           console.log('Initial finalItemTotal:', finalItemTotal);
-  
+
           // Handle item-specific discount if discountType is "perItem"
           const discountCondition = (
             populatedTask.hasDiscount &&
@@ -1038,18 +1038,18 @@ const taskCtrl = {
             item.customPrice !== undefined &&
             item.customPrice !== null
           );
-          
+
           console.log('Discount condition check:');
           console.log('- hasDiscount:', populatedTask.hasDiscount);
           console.log('- discountType === "perItem":', populatedTask.discountType === 'perItem');
           console.log('- customPrice !== undefined:', item.customPrice !== undefined);
           console.log('- customPrice !== null:', item.customPrice !== null);
           console.log('- Final discount condition:', discountCondition);
-  
+
           if (discountCondition) {
             let customPrice = Number(item.customPrice);
             console.log('Applying custom price discount:', customPrice);
-            
+
             if (item.standardItemId) {
               // For standard items with discount: (customPrice * quantity) + positionFee
               finalItemTotal = (customPrice * quantity) + positionFee;
@@ -1060,12 +1060,12 @@ const taskCtrl = {
               console.log('Custom item with discount formula:', `${customPrice} × ${quantity} = ${finalItemTotal}`);
             }
           }
-  
+
           console.log('Final item total:', finalItemTotal);
           subtotal += finalItemTotal;
           console.log('Running subtotal:', subtotal);
         }
-  
+
         // Handle percentage discount if discountType is "percentage"
         if (
           populatedTask.hasDiscount &&
@@ -1076,32 +1076,32 @@ const taskCtrl = {
           subtotal -= percentageDiscount;
           console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
         }
-  
+
         // Apply minimum price (before VAT) - if under £30, make it £30
         if (subtotal < 30) {
           console.log('Applying minimum price adjustment: £' + subtotal + ' → £30');
           subtotal = 30;
         }
-  
+
         // Add VAT
         const vat = subtotal * 0.2;
         const totalPrice = subtotal + vat;
-  
+
         console.log('Final subtotal:', subtotal);
         console.log('VAT:', vat);
         console.log('Calculated totalPrice with VAT:', totalPrice);
-  
+
         updates.totalPrice = totalPrice;
       }
-  
+
       console.log('=== CUSTOM PRICE SANITIZATION ===');
       // Before saving or updating a task, sanitize customPrice for all items
       if (updates.items) {
         console.log('Items before sanitization:', JSON.stringify(updates.items, null, 2));
-        
+
         updates.items = updates.items.map((item) => {
           console.log('Sanitizing item:', JSON.stringify(item, null, 2));
-          
+
           if (
             item.customPrice === '' ||
             item.customPrice === null ||
@@ -1124,22 +1124,22 @@ const taskCtrl = {
           }
           return item;
         });
-        
+
         console.log('Items after sanitization:', JSON.stringify(updates.items, null, 2));
       }
-  
+
       console.log('=== FINAL UPDATE ===');
       console.log('Updates to apply:', JSON.stringify(updates, null, 2));
-      
+
       // Update the task
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
         { $set: updates },
         { new: true },
       );
-  
+
       console.log('Updated task:', JSON.stringify(updatedTask, null, 2));
-  
+
       // Create a log of the changes
       await loggingService.createLog({
         userId: req.user._id,
@@ -1154,7 +1154,7 @@ const taskCtrl = {
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
-  
+
       console.log('=== UPDATE TASK COMPLETE ===');
       res.status(200).json({
         message: 'Task updated successfully',
@@ -1274,9 +1274,9 @@ const taskCtrl = {
 
           // Calculate position fee (added once, not multiplied by quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
-            positionFee = item.standardItemId.insideWithDismantlingPrice || 18;
+            positionFee = item.standardItemId.insideWithDismantlingPrice;
           } else if (item.Objectsposition === 'Inside') {
-            positionFee = item.standardItemId.insidePrice || 6;
+            positionFee = item.standardItemId.insidePrice;
           }
           // Outside position has no additional fee
 
@@ -1289,8 +1289,8 @@ const taskCtrl = {
             price: baseItemPrice,
             totalPrice: totalItemPrice, // Include the total price with position fee
             Objectsposition: item.Objectsposition,
-            insidePrice: item.standardItemId.insidePrice || 6,
-            insideWithDismantlingPrice: item.standardItemId.insideWithDismantlingPrice || 18,
+            insidePrice: item.standardItemId.insidePrice,
+            insideWithDismantlingPrice: item.standardItemId.insideWithDismantlingPrice,
             positionFee: positionFee,
           };
         });
@@ -1300,17 +1300,17 @@ const taskCtrl = {
         0,
       );
       let finalPrice = basePrice;
-      if (
-        task.available === 'AnyTime' &&
-        task.items.every((i) => i.Objectsposition === 'Outside')
-      ) {
-        finalPrice *= 0.9;
-      }
+      // if (
+      //   task.available === 'AnyTime' &&
+      //   task.items.every((i) => i.Objectsposition === 'Outside')
+      // ) {
+      //   finalPrice *= 0.9;
+      // }
 
       // Apply minimum price (before VAT) - if under £30, make it £30
       // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
-      if (finalPrice < 30) {
-        finalPrice = 30;
+      if (finalPrice < 37.5) {
+        finalPrice = 37.5;
       }
 
       const vat = finalPrice * 0.2;
@@ -1328,10 +1328,10 @@ const taskCtrl = {
       let actualPaymentType = paymentAmountType; // Store the actual payment type for metadata
 
       if (paymentAmountType === 'deposit') {
-        amountToPay = 36; // Dépôt de £36
+        amountToPay = 45; // Dépôt de £36
 
         // Si le total final est £36, c'est un paiement complet, pas un dépôt
-        if (finalPrice === 36) {
+        if (finalPrice === 45) {
           actualPaymentType = 'full'; // Override to full payment
           amountToPay = finalPrice; // Use the full price
 
@@ -1350,12 +1350,12 @@ const taskCtrl = {
         } else {
           // Vrai dépôt partiel
           task.paidAmount = {
-            amount: 36,
+            amount: 45,
             method: 'online',
             status: 'Not_Paid', // Pas encore payé, sera confirmé après paiement
           };
           task.remainingAmount = {
-            amount: finalPrice - 36,
+            amount: finalPrice - 45,
             method: 'online',
             status: 'Not_Paid',
           };
@@ -1499,9 +1499,9 @@ const taskCtrl = {
             // Calculate position fee (added once, not multiplied by quantity)
             let positionFee = 0;
             if (item.Objectsposition === 'InsideWithDismantling') {
-              positionFee = item.standardItemId.insideWithDismantlingPrice || 18;
+              positionFee = item.standardItemId.insideWithDismantlingPrice;
             } else if (item.Objectsposition === 'Inside') {
-              positionFee = item.standardItemId.insidePrice || 6;
+              positionFee = item.standardItemId.insidePrice;
             }
             // Outside position has no additional fee
 
@@ -1509,15 +1509,15 @@ const taskCtrl = {
           });
 
         let finalPrice = basePrice;
-        if (
-          task.available === 'AnyTime' &&
-          task.items.every((i) => i.Objectsposition === 'Outside')
-        ) {
-          finalPrice *= 0.9;
-        }
+        // if (
+        //   task.available === 'AnyTime' &&
+        //   task.items.every((i) => i.Objectsposition === 'Outside')
+        // ) {
+        //   finalPrice *= 0.9;
+        // }
 
-        if (finalPrice < 30) {
-          finalPrice = 30;
+        if (finalPrice < 37.5) {
+          finalPrice = 37.5;
         }
 
         const vat = finalPrice * 0.2;
@@ -1525,16 +1525,16 @@ const taskCtrl = {
 
         // ✅ Mettre à jour le statut de paiement SEULEMENT après confirmation
         // ❌ NE PAS modifier taskStatus - il reste inchangé
-        if (amountInGBP === 36 && finalPrice > 36) {
+        if (amountInGBP === 45 && finalPrice > 45) {
           // Dépôt partiel (seulement si le total final est > £36)
           task.paymentStatus = 'partial_Paid';
           task.paidAmount = {
-            amount: 36,
+            amount: 45,
             method: 'online',
             status: 'Paid',
           };
           task.remainingAmount = {
-            amount: finalPrice - 36, // Utiliser finalPrice calculé
+            amount: finalPrice - 45, // Utiliser finalPrice calculé
             method: 'online',
             status: 'Not_Paid', // ✅ Reste à payer
           };
@@ -1578,9 +1578,9 @@ const taskCtrl = {
             } else {
               // Fallback to position-specific prices from StandardItem
               if (item.Objectsposition === 'InsideWithDismantling') {
-                itemPrice = item.standardItemId.insideWithDismantlingPrice || 18;
+                itemPrice = item.standardItemId.insideWithDismantlingPrice;
               } else if (item.Objectsposition === 'Inside') {
-                itemPrice = item.standardItemId.insidePrice || 6;
+                itemPrice = item.standardItemId.insidePrice;
               } else {
                 itemPrice = item.standardItemId.price;
               }
@@ -1680,9 +1680,9 @@ const taskCtrl = {
             // Calculate position fee (added once, not multiplied by quantity)
             let positionFee = 0;
             if (item.Objectsposition === 'InsideWithDismantling') {
-              positionFee = item.standardItemId.insideWithDismantlingPrice || 18;
+              positionFee = item.standardItemId.insideWithDismantlingPrice;
             } else if (item.Objectsposition === 'Inside') {
-              positionFee = item.standardItemId.insidePrice || 6;
+              positionFee = item.standardItemId.insidePrice;
             }
             // Outside position has no additional fee
 
@@ -1690,15 +1690,15 @@ const taskCtrl = {
           });
 
         let finalPrice = basePrice;
-        if (
-          task.available === 'AnyTime' &&
-          task.items.every((i) => i.Objectsposition === 'Outside')
-        ) {
-          finalPrice *= 0.9;
-        }
+        // if (
+        //   task.available === 'AnyTime' &&
+        //   task.items.every((i) => i.Objectsposition === 'Outside')
+        // ) {
+        //   finalPrice *= 0.9;
+        // }
 
-        if (finalPrice < 30) {
-          finalPrice = 30;
+        if (finalPrice < 37.5) {
+          finalPrice = 37.5;
         }
 
         const vat = finalPrice * 0.2;
@@ -1706,16 +1706,16 @@ const taskCtrl = {
 
         // ✅ Mettre à jour le statut de paiement SEULEMENT après confirmation
         // ❌ NE PAS modifier taskStatus - il reste inchangé
-        if (amountInGBP === 36) {
+        if (amountInGBP === 45) {
           // Dépôt partiel
           task.paymentStatus = 'partial_Paid';
           task.paidAmount = {
-            amount: 36,
+            amount: 45,
             method: 'online',
             status: 'Paid',
           };
           task.remainingAmount = {
-            amount: finalPrice - 36, // Utiliser finalPrice calculé
+            amount: finalPrice - 45, // Utiliser finalPrice calculé
             method: 'online',
             status: 'Not_Paid', // ✅ Reste à payer
           };
@@ -1812,8 +1812,8 @@ const taskCtrl = {
       if (paymentType === 'deposit') {
         let requestedDeposit = task.paidAmount?.amount || 0;
 
-        // Si le user a choisi moins de 36, on impose 36
-        amountToPay = Math.max(requestedDeposit, 36);
+        // Si le user a choisi moins de 45, on impose 45
+        amountToPay = Math.max(requestedDeposit, 45);
 
         task.paidAmount = {
           amount: amountToPay,
@@ -1864,7 +1864,7 @@ const taskCtrl = {
           // Base item price (outside position)
           itemPrice = Number(item.standardItemId.price);
           itemDescription = item.standardItemId.itemName;
-          
+
           // Position fee (added once, not per quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
             positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
@@ -1881,7 +1881,7 @@ const taskCtrl = {
         // Calculate total: (itemPrice * quantity) + positionFee
         let finalItemTotal;
         let displayPrice = itemPrice;
-        
+
         if (item.standardItemId) {
           // For standard items: (itemPrice * quantity) + positionFee
           finalItemTotal = (itemPrice * quantity) + positionFee;
@@ -1937,10 +1937,10 @@ const taskCtrl = {
       }
 
       // Enforce minimum price (before VAT)
-      // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
-      if (subtotal < 30) {
-        const adjustment = 30 - subtotal;
-        subtotal = 30;
+      // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
+      if (subtotal < 37.5) {
+        const adjustment = 37.5 - subtotal;
+        subtotal = 37.5;
         breakdown.push({
           description: 'Minimum price adjustment',
           amount: adjustment,
@@ -2327,7 +2327,7 @@ const taskCtrl = {
         if (item.standardItemId) {
           // Base item price (outside position)
           itemPrice = Number(item.standardItemId.price);
-          
+
           // Position fee (added once, not per quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
             positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
@@ -2343,7 +2343,7 @@ const taskCtrl = {
 
         // Calculate total: (itemPrice * quantity) + positionFee
         let finalItemTotal;
-        
+
         if (item.standardItemId) {
           // For standard items: (itemPrice * quantity) + positionFee
           finalItemTotal = (itemPrice * quantity) + positionFee;
@@ -2359,7 +2359,7 @@ const taskCtrl = {
           item.customPrice
         ) {
           let customPrice = Number(item.customPrice);
-          
+
           if (item.standardItemId) {
             // For standard items with discount: (customPrice * quantity) + positionFee
             finalItemTotal = (customPrice * quantity) + positionFee;
@@ -2395,10 +2395,10 @@ const taskCtrl = {
         percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
       }
 
-      // Apply minimum price (before VAT) - if under £30, make it £30
-      // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
-      if (subtotal < 30) {
-        subtotal = 30;
+      // Apply minimum price (before VAT) - if under £37.5, make it £37.5
+      // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
+      if (subtotal < 37.5) {
+        subtotal = 37.5;
       }
 
       const discountedSubtotal = subtotal - percentageDiscount;

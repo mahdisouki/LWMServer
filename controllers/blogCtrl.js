@@ -7,7 +7,7 @@ const blogCtrl = {
         try {
             const { title, author, description, tags } = req.body;
             const image = req.file.path; // Assuming the image is uploaded via Cloudinary
-    
+
             const newBlog = new Blog({
                 title,
                 author,
@@ -15,66 +15,66 @@ const blogCtrl = {
                 image,
                 tags: tags ? tags.split(',').map(tag => tag.trim()) : [], // Convert comma-separated string to array
             });
-    
+
             await newBlog.save();
             res.status(201).json({ message: "Blog post created successfully", blog: newBlog });
         } catch (error) {
             res.status(500).json({ message: "Failed to create blog post", error: error.message });
         }
     },
-    
+
     getAllBlogs: async (req, res) => {
         try {
-          const { page = 1, limit = 9, search } = req.query;
-      
-          let filters = {};
-          if (req.query.filters) {
-            try {
-              filters = JSON.parse(req.query.filters);
-            } catch (parseError) {
-              return res.status(400).json({
-                message: "Invalid JSON format in filters",
-                error: parseError.message,
-              });
+            const { page = 1, limit = 100, search } = req.query;
+
+            let filters = {};
+            if (req.query.filters) {
+                try {
+                    filters = JSON.parse(req.query.filters);
+                } catch (parseError) {
+                    return res.status(400).json({
+                        message: "Invalid JSON format in filters",
+                        error: parseError.message,
+                    });
+                }
             }
-          }
-      
-          // Add search logic
-          if (search) {
-            filters = {
-              ...filters,
-              $or: [
-                { title: { $regex: search, $options: 'i' } },
-                { description: { $regex: search, $options: 'i' } },
-              ],
-            };
-          }
-      
-          const query = Blog.find(filters).populate('author', 'name');
-          
-          const features = new APIfeatures(query, req.query)
-            .sorting()
-            .paginating();
-      
-          const blogs = await features.query.exec();
-          const total = await Blog.countDocuments(filters);
-      
-          res.status(200).json({
-            message: "All blogs retrieved successfully",
-            blogs,
-            meta: {
-              currentPage: parseInt(page, 10),
-              limit: parseInt(limit, 10),
-              total,
-              count: blogs.length,
-            },
-          });
-      
+
+            // Add search logic
+            if (search) {
+                filters = {
+                    ...filters,
+                    $or: [
+                        { title: { $regex: search, $options: 'i' } },
+                        { description: { $regex: search, $options: 'i' } },
+                    ],
+                };
+            }
+
+            const query = Blog.find(filters).populate('author', 'name');
+
+            const features = new APIfeatures(query, req.query)
+                .sorting()
+                .paginating();
+
+            const blogs = await features.query.exec();
+            const total = await Blog.countDocuments(filters);
+
+            res.status(200).json({
+                message: "All blogs retrieved successfully",
+                blogs,
+                meta: {
+                    currentPage: parseInt(page, 10),
+                    limit: parseInt(limit, 10),
+                    total,
+                    count: blogs.length,
+                },
+            });
+
         } catch (error) {
-          res.status(500).json({ message: "Failed to retrieve blogs", error: error.message });
+            res.status(500).json({ message: "Failed to retrieve blogs", error: error.message });
         }
-      },
-      
+    },
+
 
     getBlogById: async (req, res) => {
         const { id } = req.params;
@@ -93,7 +93,7 @@ const blogCtrl = {
         const { id } = req.params;
         const { title, description, author, tags } = req.body;
         const image = req.file ? req.file.path : undefined; // Use the new image if uploaded
-    
+
         // Create a dynamic update object
         const updates = {};
         if (title) updates.title = title;
@@ -101,7 +101,7 @@ const blogCtrl = {
         if (author) updates.author = author;
         if (image) updates.image = image;
         if (tags) updates.tags = tags.split(',').map(tag => tag.trim()); // Convert comma-separated string to array
-    
+
         try {
             // Update only fields present in `updates`
             const updatedBlog = await Blog.findByIdAndUpdate(id, updates, { new: true });
@@ -113,7 +113,7 @@ const blogCtrl = {
             res.status(500).json({ message: "Failed to update blog post", error: error.message });
         }
     },
-    
+
 
     deleteBlog: async (req, res) => {
         const { id } = req.params;
@@ -143,15 +143,15 @@ const blogCtrl = {
     getAllTags: async (req, res) => {
         try {
             console.log("api enetrred")
-            
-            const blogs = await Blog.find({}); 
-    
-            
+
+            const blogs = await Blog.find({});
+
+
             const allTags = blogs.flatMap((blog) => blog.tags || []);
-    
-            
+
+
             const uniqueSortedTags = [...new Set(allTags)].sort();
-    
+
             res.status(200).json({
                 message: 'All tags fetched successfully',
                 tags: uniqueSortedTags,
@@ -165,7 +165,7 @@ const blogCtrl = {
             });
         }
     }
-    
+
 };
 
 module.exports = blogCtrl;
