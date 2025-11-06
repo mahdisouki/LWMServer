@@ -1,57 +1,63 @@
 # -----------------------------
 # Stage 1: Dependencies install
 # -----------------------------
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY package*.json ./
-# Skip postinstall script since we install Chromium manually via Alpine
-RUN npm install --omit=dev --legacy-peer-deps --ignore-scripts
-
-# -----------------------------
-# Stage 2: Copy and run
-# -----------------------------
-FROM node:20-alpine
-WORKDIR /app
-
-# Install build dependencies for native modules (bcrypt, etc.)
-RUN apk add --no-cache --virtual .build-deps \
-    python3 \
-    make \
-    g++ \
-    && apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    freetype-dev \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont
-
-# Set environment variables for Playwright/Puppeteer to use system Chromium
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-
-# Rebuild bcrypt independently to ensure native bindings are compiled for Alpine
-# Build bcrypt manually if it wasn't built initially (due to --ignore-scripts)
-RUN cd node_modules/bcrypt && \
-    npm run install || \
-    (npm install --build-from-source --ignore-scripts) || \
-    (node-gyp rebuild) && \
-    cd ../.. && \
-    npm rebuild --build-from-source --ignore-scripts || true
-
-# Remove build dependencies to reduce image size
-RUN apk del .build-deps
-
-# Create a writable directory and set permissions
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-RUN mkdir -p /app/generated && chown -R appuser:appgroup /app
-
-USER appuser
-
-EXPOSE 5000
-CMD ["node", "server.js"]
+    FROM node:20-alpine AS deps
+    WORKDIR /app
+    COPY package*.json ./
+    # Skip postinstall script since we install Chromium manually via Alpine
+    RUN npm install --omit=dev --legacy-peer-deps --ignore-scripts
+    
+    # -----------------------------
+    # Stage 2: Build and runtime
+    # -----------------------------
+    FROM node:20-alpine
+    WORKDIR /app
+    
+    # Install build dependencies for native modules (bcrypt, etc.)
+    RUN apk add --no-cache --virtual .build-deps \
+        python3 \
+        make \
+        g++ \
+        && apk add --no-cache \
+        chromium \
+        nss \
+        freetype \
+        freetype-dev \
+        harfbuzz \
+        ca-certificates \
+        ttf-freefont
+    
+    # Install Playwright’s Chromium once (as root)
+    RUN npx playwright install --with-deps chromium
+    
+    # Tell Playwright to use the downloaded browser (installed under /root)
+    ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+    
+    # Puppeteer / Playwright config (both supported)
+    ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+    ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+    
+    # Copy dependencies and source code
+    COPY --from=deps /app/node_modules ./node_modules
+    COPY . .
+    
+    # Rebuild bcrypt to ensure native bindings are compiled for Alpine
+    RUN cd node_modules/bcrypt && \
+        npm run install || \
+        (npm install --build-from-source --ignore-scripts) || \
+        (node-gyp rebuild) && \
+        cd ../.. && \
+        npm rebuild --build-from-source --ignore-scripts || true
+    
+    # Remove build dependencies to shrink image size
+    RUN apk del .build-deps
+    
+    # Create non-root user and give permissions
+    RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+    RUN mkdir -p /app/generated && chown -R appuser:appgroup /app
+    
+    USER appuser
+    
+    EXPOSE 5000
+    CMD ["node", "server.js"]
+    
