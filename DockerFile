@@ -28,7 +28,7 @@
         ttf-freefont
     
     # Install Playwright’s Chromium once (as root)
-    RUN npx playwright install --with-deps chromium
+    RUN npx playwright install chromium
     
     # Tell Playwright to use the downloaded browser (installed under /root)
     ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
