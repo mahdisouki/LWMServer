@@ -1,63 +1,42 @@
-# -----------------------------
-# Stage 1: Dependencies install
-# -----------------------------
-    FROM node:20-alpine AS deps
-    WORKDIR /app
-    COPY package*.json ./
-    # Skip postinstall script since we install Chromium manually via Alpine
-    RUN npm install --omit=dev --legacy-peer-deps --ignore-scripts
-    
-    # -----------------------------
-    # Stage 2: Build and runtime
-    # -----------------------------
-    FROM node:20-alpine
-    WORKDIR /app
-    
-    # Install build dependencies for native modules (bcrypt, etc.)
-    RUN apk add --no-cache --virtual .build-deps \
-        python3 \
-        make \
-        g++ \
-        && apk add --no-cache \
-        chromium \
-        nss \
-        freetype \
-        freetype-dev \
-        harfbuzz \
-        ca-certificates \
-        ttf-freefont
-    
-    # Install Playwright’s Chromium once (as root)
-    RUN npx playwright install chromium
-    
-    # Tell Playwright to use the downloaded browser (installed under /root)
-    ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
-    
-    # Puppeteer / Playwright config (both supported)
-    ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-    ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-    
-    # Copy dependencies and source code
-    COPY --from=deps /app/node_modules ./node_modules
-    COPY . .
-    
-    # Rebuild bcrypt to ensure native bindings are compiled for Alpine
-    RUN cd node_modules/bcrypt && \
-        npm run install || \
-        (npm install --build-from-source --ignore-scripts) || \
-        (node-gyp rebuild) && \
-        cd ../.. && \
-        npm rebuild --build-from-source --ignore-scripts || true
-    
-    # Remove build dependencies to shrink image size
-    RUN apk del .build-deps
-    
-    # Create non-root user and give permissions
-    RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-    RUN mkdir -p /app/generated && chown -R appuser:appgroup /app
-    
-    USER appuser
-    
-    EXPOSE 5000
-    CMD ["node", "server.js"]
-    
+# Use official Node image
+FROM node:20-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies needed by Playwright/Chromium
+RUN apt-get update && apt-get install -y \
+    wget \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libgbm1 \
+    libnss3 \
+    libxshmfence1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy package.json and install Node dependencies
+COPY package*.json ./
+RUN npm install --legacy-peer-deps
+
+# Install Playwright and download required browsers
+RUN npx playwright install --with-deps
+
+# Copy the rest of your app
+COPY . .
+
+# Expose port if needed
+EXPOSE 3000
+
+# Start your app
+CMD ["node", "index.js"]
