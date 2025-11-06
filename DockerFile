@@ -47,8 +47,10 @@ RUN cd node_modules/bcrypt && \
 # Remove build dependencies to reduce image size
 RUN apk del .build-deps
 
-# Use non-root user for security
+# Create a writable directory and set permissions
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN mkdir -p /app/generated && chown -R appuser:appgroup /app
+
 USER appuser
 
 EXPOSE 5000
