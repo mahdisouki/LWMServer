@@ -62,6 +62,8 @@ async function calculateTotalPrice({
   customDiscountPercent,
   discountType,
   hasDiscount,
+  createdByType,
+  available, // Add available parameter for discount calculation
 }) {
   console.log('🚀 CALCULATE TOTAL PRICE FUNCTION CALLED');
   console.log('Items received:', items);
@@ -109,9 +111,9 @@ async function calculateTotalPrice({
 
       // Calculate position fee (added once, not multiplied by quantity)
       if (item.Objectsposition === 'InsideWithDismantling') {
-        positionFee = Number(standardItem.insideWithDismantlingPrice) || 18;
+        positionFee = Number(standardItem.insideWithDismantlingPrice);
       } else if (item.Objectsposition === 'Inside') {
-        positionFee = Number(standardItem.insidePrice) || 6;
+        positionFee = Number(standardItem.insidePrice);
       }
       // Outside position has no additional fee
 
@@ -140,9 +142,9 @@ async function calculateTotalPrice({
 
         // Add position fee if the custom price doesn't already include it
         if (item.Objectsposition === 'InsideWithDismantling') {
-          positionFee = Number(standardItem.insideWithDismantlingPrice) || 18;
+          positionFee = Number(standardItem.insideWithDismantlingPrice);
         } else if (item.Objectsposition === 'Inside') {
-          positionFee = Number(standardItem.insidePrice) || 6;
+          positionFee = Number(standardItem.insidePrice);
         }
 
         finalItemTotal = customPrice * quantity + positionFee;
@@ -164,13 +166,43 @@ async function calculateTotalPrice({
     subtotal -= percentageDiscount;
   }
 
-  // 4. Enforce minimum price (before VAT) - if under £37.5, make it £37.5
+  // 4. Apply 10% discount if available === 'AnyTime' and all items are 'Outside'
+  console.log('=== DISCOUNT CHECK DEBUG ===');
+  console.log('available:', available, 'Type:', typeof available);
+  console.log('createdByType:', createdByType, 'Type:', typeof createdByType);
+  console.log('itemsToProcess.length:', itemsToProcess.length);
+  console.log('All items Outside?', itemsToProcess.every((i) => i.Objectsposition === 'Outside'));
+  console.log('Subtotal before discount:', subtotal);
+
+  const isAvailableAnyTime = available === 'AnyTime';
+  const isCreatedByPublic = createdByType === 'public';
+  const hasItems = itemsToProcess.length > 0;
+  const allItemsOutside = itemsToProcess.every((i) => i.Objectsposition === 'Outside');
+
+  if (
+    isAvailableAnyTime &&
+    isCreatedByPublic &&
+    hasItems &&
+    allItemsOutside
+  ) {
+    console.log('✅ Applying 10% discount for Outside items with AnyTime and public');
+    subtotal *= 0.9;
+    console.log('Subtotal after discount:', subtotal);
+  } else {
+    console.log('❌ Discount NOT applied - conditions not met');
+    console.log('- available === "AnyTime":', isAvailableAnyTime);
+    console.log('- createdByType === "public":', isCreatedByPublic);
+    console.log('- itemsToProcess.length > 0:', hasItems);
+    console.log('- All items Outside:', allItemsOutside);
+  }
+
+  // 5. Enforce minimum price (before VAT) - if under £37.5, make it £37.5
   // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
   if (subtotal < 37.5) {
     subtotal = 37.5;
   }
 
-  // 5. Add VAT (20%)
+  // 6. Add VAT (20%)
   const vat = subtotal * 0.2;
   const totalPrice = subtotal + vat;
 
@@ -240,6 +272,8 @@ const taskCtrl = {
       console.log('=== PRICE CALCULATION DEBUG ===');
       console.log('Items being passed to calculateTotalPrice:', items);
       console.log('Objects being passed to calculateTotalPrice:', objects);
+      console.log('available being passed:', available, 'Type:', typeof available);
+      console.log('createdByType being passed:', createdByType, 'Type:', typeof createdByType);
 
       const { totalPrice, vat } = await calculateTotalPrice({
         items, // Pass items directly for the function
@@ -247,6 +281,8 @@ const taskCtrl = {
         customDiscountPercent,
         discountType,
         hasDiscount,
+        available,
+        createdByType, // Pass createdByType for discount calculation
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
         // customDiscountPercent > 0,
@@ -1300,12 +1336,13 @@ const taskCtrl = {
         0,
       );
       let finalPrice = basePrice;
-      // if (
-      //   task.available === 'AnyTime' &&
-      //   task.items.every((i) => i.Objectsposition === 'Outside')
-      // ) {
-      //   finalPrice *= 0.9;
-      // }
+      if (
+        task.available === 'AnyTime' &&
+        task.createdByType === 'public' &&
+        task.items.every((i) => i.Objectsposition === 'Outside')
+      ) {
+        finalPrice *= 0.9;
+      }
 
       // Apply minimum price (before VAT) - if under £30, make it £30
       // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
@@ -1509,12 +1546,13 @@ const taskCtrl = {
           });
 
         let finalPrice = basePrice;
-        // if (
-        //   task.available === 'AnyTime' &&
-        //   task.items.every((i) => i.Objectsposition === 'Outside')
-        // ) {
-        //   finalPrice *= 0.9;
-        // }
+        if (
+          task.available === 'AnyTime' &&
+          task.createdByType === 'public' &&
+          task.items.every((i) => i.Objectsposition === 'Outside')
+        ) {
+          finalPrice *= 0.9;
+        }
 
         if (finalPrice < 37.5) {
           finalPrice = 37.5;
@@ -1690,12 +1728,13 @@ const taskCtrl = {
           });
 
         let finalPrice = basePrice;
-        // if (
-        //   task.available === 'AnyTime' &&
-        //   task.items.every((i) => i.Objectsposition === 'Outside')
-        // ) {
-        //   finalPrice *= 0.9;
-        // }
+        if (
+          task.available === 'AnyTime' &&
+          task.createdByType === 'public' &&
+          task.items.every((i) => i.Objectsposition === 'Outside')
+        ) {
+          finalPrice *= 0.9;
+        }
 
         if (finalPrice < 37.5) {
           finalPrice = 37.5;
