@@ -23,7 +23,7 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
         html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9; padding: 20px;">
            <div style="text-align: center; margin-bottom: 20px;">
-          <img src="cid:logo" alt="London Waste Management" style="max-width: 150px;">
+          <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
         </div> 
         <h2 style="text-align: center; color: #4CAF50; margin-bottom: 20px;">New Quotation Request</h2>
             <p style="font-size: 16px; margin-bottom: 10px;">
@@ -50,13 +50,6 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
             </footer>
         </div>
     `,
-    attachments: [
-      {
-        filename: 'Green-Log.png',
-        path: path.join(__dirname, '../logo/Green-Log.png'),
-        cid: 'logo', // Content ID for the inline image
-      },
-    ],
     };
 
     // Send to responsible email
@@ -70,25 +63,18 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
         html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e5e5e5; border-radius: 8px; background-color: #f3fdf3;">
         <div style="text-align: center; margin-bottom: 20px;">
-          <img src="cid:logo" alt="London Waste Management" style="max-width: 150px;">
+          <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
         </div>
         <div style="text-align: center; padding: 20px; background-color: #e9ffe9; border-radius: 8px;">
           <h2 style="color: #004d00; font-size: 24px;">Thank You!</h2>
           <p style="font-size: 16px; color: #333;"> <strong>Dear, ${quotationData.email}</strong>,</p>
           <p style="font-size: 16px; color: #333;">Thank you for your quotation request. We have received your submission and will get back to you shortly.</p>
-                  <p style="font-size: 16px; color: #333;"If you have any questions, feel free to contact us.</p>
-                    <p style="font-size: 16px; color: #333;"Best regards,</p>
-                    <p style="font-size: 16px; color: #333;">London Waste Management
-                  </div>
+          <p style="font-size: 16px; color: #333;">If you have any questions, feel free to contact us.</p>
+          <p style="font-size: 16px; color: #333;">Best regards,</p>
+          <p style="font-size: 16px; color: #333;">London Waste Management</p>
+        </div>
       </div>
     `,
-    attachments: [
-      {
-        filename: 'Green-Log.png',
-        path: path.join(__dirname, '../logo/Green-Log.png'),
-        cid: 'logo', // Content ID for the inline image
-      },
-    ],
   };
 
     // Send auto-reply email

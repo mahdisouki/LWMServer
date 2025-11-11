@@ -80,7 +80,7 @@ const sendPaymentConfirmationEmail = async ({
         html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; line-height: 1.6;">
             <div style="text-align: center; background-color: #4CAF50; padding: 10px;">
-                <img src="cid:logo" alt="London Waste Management" style="width: 120px; margin-bottom: 10px;">
+                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="width: 120px; margin-bottom: 10px;">
                 <h2 style="color: white;">Thank you for your order</h2>
             </div>
             <p>Hi ${firstName} ${lastName},</p>
@@ -113,13 +113,6 @@ const sendPaymentConfirmationEmail = async ({
             <p>Thank you for choosing London Waste Management!</p>
         </div>
         `,
-        attachments: [
-            {
-                filename: "Green-Log.png",
-                path: logoPath,
-                cid: "logo", // same cid as in the email HTML
-            },
-        ],
     };
 
     await transporter.sendMail(mailOptions);
