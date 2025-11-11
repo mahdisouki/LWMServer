@@ -1210,13 +1210,35 @@ const initSocket = (server) => {
 };
 
 // Function to emit a notification to a specific user by userId
-const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null) => {
+const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null, title = null) => {
   const socketId = userSocketMap[userId];
   console.log('entredred to not fun')
+
+  // Generate title based on type if not provided
+  if (!title) {
+    const titleMap = {
+      'Storage': 'Storage Update',
+      'Orders': 'Order Update',
+      'Chat': 'New Message',
+      'Staff': 'Staff Update',
+      'Driver_Tracking': 'Driver Tracking',
+      'Payroll': 'Payroll Update',
+      'Standard_Items': 'Standard Items Update',
+      'Tipping': 'Tipping Update',
+      'Truck': 'Truck Update',
+      'Day_Off': 'Day Off Request',
+      'Busy_Days': 'Busy Days Update',
+      'Emails': 'Email Update',
+      'Quotations': 'Quotation Update',
+    };
+    title = titleMap[type] || 'Notification';
+  }
+
   if (socketId && io) {
     io.to(socketId).emit('notification', {
       userId: userId,
       type: type,
+      title: title,
       message: notificationMessage,
       senderName: senderName,
       read: false
@@ -1245,8 +1267,34 @@ const sendOfflineNotifications = async (userId, socket) => {
   console.log(`Sending offline notifications to user: ${userId}`);
   const offlineNotifications = await Notification.find({ userId, read: false });
   console.log(offlineNotifications)
+
+  // Title mapping for offline notifications
+  const titleMap = {
+    'Storage': 'Storage Update',
+    'Orders': 'Order Update',
+    'Chat': 'New Message',
+    'Staff': 'Staff Update',
+    'Driver_Tracking': 'Driver Tracking',
+    'Payroll': 'Payroll Update',
+    'Standard_Items': 'Standard Items Update',
+    'Tipping': 'Tipping Update',
+    'Truck': 'Truck Update',
+    'Day_Off': 'Day Off Request',
+    'Busy_Days': 'Busy Days Update',
+    'Emails': 'Email Update',
+    'Quotations': 'Quotation Update',
+  };
+
   offlineNotifications?.forEach((notification) => {
-    socket.emit('notification', { message: notification.message });
+    const title = titleMap[notification.type] || 'Notification';
+    socket.emit('notification', {
+      userId: notification.userId,
+      type: notification.type,
+      title: title,
+      message: notification.message,
+      senderName: notification.senderName,
+      read: notification.read
+    });
   });
 
   // Mark notifications as read once they are sent to the user
