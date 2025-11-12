@@ -235,6 +235,8 @@ const taskCtrl = {
         date,
         createdBy,
         createdByType,
+        cashReceived,
+        cashReceivedBy,
         billingAddress,
         collectionAddress,
         objects, // Custom items (optional)
@@ -352,6 +354,8 @@ const taskCtrl = {
         date: taskDate,
         createdBy,
         createdByType,
+        cashReceived,
+        cashReceivedBy,
         paymentStatus: paymentStatus || 'Unpaid',
         billingAddress,
         collectionAddress,
@@ -1040,9 +1044,9 @@ const taskCtrl = {
 
             // Position fee (added once, not per quantity)
             if (item.Objectsposition === 'InsideWithDismantling') {
-              positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
+              positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
             } else if (item.Objectsposition === 'Inside') {
-              positionFee = Number(item.standardItemId.insidePrice) || 6;
+              positionFee = Number(item.standardItemId.insidePrice);
             }
             console.log('Position fee:', positionFee);
           } else if (item.price) {
@@ -1906,9 +1910,9 @@ const taskCtrl = {
 
           // Position fee (added once, not per quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
-            positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
+            positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
           } else if (item.Objectsposition === 'Inside') {
-            positionFee = Number(item.standardItemId.insidePrice) || 6;
+            positionFee = Number(item.standardItemId.insidePrice);
           }
         } else if (item.object) {
           itemPrice = Number(item.price);
@@ -1952,8 +1956,8 @@ const taskCtrl = {
           total: finalItemTotal,
           Objectsposition: item.Objectsposition,
           standardItemId: item.standardItemId,
-          insidePrice: item.standardItemId?.insidePrice || 6,
-          insideWithDismantlingPrice: item.standardItemId?.insideWithDismantlingPrice || 18,
+          insidePrice: item.standardItemId?.insidePrice,
+          insideWithDismantlingPrice: item.standardItemId?.insideWithDismantlingPrice,
           positionFee: positionFee,
         });
 
@@ -2369,9 +2373,9 @@ const taskCtrl = {
 
           // Position fee (added once, not per quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
-            positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
+            positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
           } else if (item.Objectsposition === 'Inside') {
-            positionFee = Number(item.standardItemId.insidePrice) || 6;
+            positionFee = Number(item.standardItemId.insidePrice);
           }
         } else {
           // Custom items use their own price

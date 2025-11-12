@@ -8,6 +8,7 @@ const { User } = require('./models/User');
 const Task = require('./models/Task');
 const Truck = require('./models/Truck');
 const TippingRequest = require('./models/TippingRequest');
+const Payroll = require('./models/Payroll');
 const sendReviewRequestEmail = require('./utils/sendReviewEmail');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
@@ -860,30 +861,43 @@ const initSocket = (server) => {
       }
     }
     );
+
     socket.on('trucksStats', async () => {
       try {
-        const today = new Date();
-        const todayKey = today.toISOString().split('T')[0]; // Format date as "YYYY-MM-DD"
-
-        const trucks = await Truck.find().populate({
-          path: `tasks.${todayKey}`, // Populate tasks for today's date
-          model: 'Task', // Specify the model being referenced
-        });
+        const trucks = await Truck.find();
 
         let onWorkCount = 0;
 
-        // Iterate over trucks to check tasks for today
-        for (const truck of trucks) {
+        // Collect all driver IDs for batch queries
+        const driverIds = trucks.filter(t => t.driverId).map(t => t.driverId);
 
-          console.log(todayKey)
-          if (truck.tasks.has(todayKey)) {
-            // Get tasks for today's date
-            const todayTasks = truck.tasks.get(todayKey);
-            console.log("todayTasks:", todayTasks)
-            // Count tasks with "Processing" status
-            const processingTasks = todayTasks.filter((task) => task.taskStatus === 'Processing');
-            if (processingTasks.length > 0) {
-              onWorkCount += 1; // Increment count for trucks with at least one "Processing" task
+        // Batch fetch: Get all drivers with their break status
+        const drivers = await Driver.find({ _id: { $in: driverIds } })
+          .select('_id onBreak');
+        const driverMap = new Map();
+        drivers.forEach(driver => {
+          driverMap.set(driver._id.toString(), driver.onBreak === false);
+        });
+
+        // Batch fetch: Get all active payrolls (startTime exists but endTime is null)
+        const activePayrolls = await Payroll.find({
+          userId: { $in: driverIds },
+          startTime: { $exists: true },
+          endTime: null
+        }).select('userId');
+        const activePayrollDriverIds = new Set();
+        activePayrolls.forEach(payroll => {
+          activePayrollDriverIds.add(payroll.userId.toString());
+        });
+
+        // Iterate over trucks to determine if they're on work
+        for (const truck of trucks) {
+          if (truck.driverId) {
+            const driverIdStr = truck.driverId.toString();
+            const isNotOnBreak = driverMap.get(driverIdStr);
+            // Check if driver is not on break and has an active shift (started but not ended)
+            if (isNotOnBreak && activePayrollDriverIds.has(driverIdStr)) {
+              onWorkCount += 1;
             }
           }
         }
