@@ -8,6 +8,7 @@ const VAT_RATE = 0.2; // VAT rate (20%)
 const MINIMUM_PRICE = 45; // Minimum price including VAT (£37.5 + £7.5 VAT)
 
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
+const CLIENT_URL = 'https://client.londonwastemanagement.uk';
 
 async function calculateTotalPrice(taskId) {
     const task = await Task.findById(taskId).populate("items.standardItemId");
@@ -157,8 +158,8 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
         payment_method_types: ["card"],
         line_items: lineItems,
         mode: "payment",
-        success_url: `${NGROK_URL}/api/webhooks/payment/success`,
-        cancel_url: `${NGROK_URL}/api/webhooks/payment/cancel`,
+        success_url: `${CLIENT_URL}/payment/success?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=stripe`,
+        cancel_url: `${CLIENT_URL}/payment/failed?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=stripe`,
         metadata: metadata,
         custom_text: {
             submit: {
@@ -222,8 +223,8 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
             items: itemDetails
         }],
         application_context: {
-            return_url: `http://localhost:5173/payment/success?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=paypal`,
-            cancel_url: `http://localhost:5173/payment/failed?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=paypal`,
+            return_url: `${CLIENT_URL}/payment/success?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=paypal`,
+            cancel_url: `${CLIENT_URL}/payment/failed?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=paypal`,
         }
     });
 
@@ -269,8 +270,8 @@ async function createPayPalOrder(amountInPence, taskId, fullBreakdown, task, pay
             landing_page: 'LOGIN',
             user_action: 'PAY_NOW',
             // ⬇️ Return to frontend with proper parameters
-            return_url: `http://localhost:5173/payment/success?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=paypal`,
-            cancel_url: `http://localhost:5173/payment/failed?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=paypal`,
+            return_url: `${CLIENT_URL}/payment/success?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=paypal`,
+            cancel_url: `${CLIENT_URL}/payment/failed?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=paypal`,
         },
     });
     return client.execute(request);
