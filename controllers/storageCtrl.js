@@ -2,6 +2,9 @@ const Storage = require('../models/Storage');
 const StoragePlace = require('../models/StroragePlace');
 const Truck = require('../models/Truck');
 const capacities = require('../config/storageCapacities');
+const { emitNotificationToUser } = require('../socket');
+const { User } = require('../models/User');
+const jwt = require('jsonwebtoken');
 const loggingService = require('../services/loggingService');
 
 // Helper function to get current available quantities for each item type
@@ -95,6 +98,7 @@ const getCurrentQuantities = async () => {
 };
 
 const storageCtrl = {
+
   addItems: async (req, res) => {
     try {
       const { driverId, date, storagePlace } = req.body;
@@ -159,6 +163,56 @@ const storageCtrl = {
           ipAddress: req.ip,
           userAgent: req.headers['user-agent'],
         });
+      }
+
+
+      // Send notifications to admin users only if creator is not an admin
+      try {
+        // Check if user is authenticated and is an admin
+        let isCreatorAdmin = false;
+
+        if (req.user) {
+          // User is authenticated via middleware
+          isCreatorAdmin = req.user.roleType === 'Admin' || (req.user.role && req.user.role.includes('Admin'));
+        } else if (req.headers && req.headers.authorization) {
+          // Try to verify token manually if middleware wasn't used
+          try {
+            const token = req.headers.authorization.split(' ')[1];
+            const decode = jwt.verify(token, process.env.JWT_SECRET);
+            const creator = await User.findById(decode.userId);
+            if (creator) {
+              isCreatorAdmin = creator.roleType === 'Admin' || (creator.role && creator.role.includes('Admin'));
+            }
+          } catch (tokenError) {
+            // Token invalid or expired, treat as not admin
+            console.log('Token verification failed:', tokenError.message);
+          }
+        }
+
+        console.log('isCreatorAdmin:', isCreatorAdmin, 'req.user exists:', !!req.user);
+
+        // Only send notifications if the creator is NOT an admin
+        if (!isCreatorAdmin) {
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+
+          const itemsSummary = [];
+          if (savedStorage.items.fridges > 0) itemsSummary.push(`${savedStorage.items.fridges} fridge(s)`);
+          if (savedStorage.items.mattresses > 0) itemsSummary.push(`${savedStorage.items.mattresses} mattress(es)`);
+          if (savedStorage.items.sofas > 0) itemsSummary.push(`${savedStorage.items.sofas} sofa(s)`);
+          if (savedStorage.items.paint > 0) itemsSummary.push(`${savedStorage.items.paint} paint`);
+          if (savedStorage.items.other > 0) itemsSummary.push(`${savedStorage.items.other} other item(s)`);
+
+          const notificationMessage = `Items added to storage: ${itemsSummary.join(', ')}`;
+
+          for (const admin of adminUsers) {
+            if (admin._id) {
+              await emitNotificationToUser(admin._id.toString(), 'Storage', notificationMessage);
+            }
+          }
+        }
+      } catch (notificationError) {
+        console.error('Error sending notifications:', notificationError);
+        // Don't fail the request if notification fails
       }
 
       res
@@ -298,6 +352,55 @@ const storageCtrl = {
         });
       }
 
+      // Send notifications to admin users only if creator is not an admin
+      try {
+        // Check if user is authenticated and is an admin
+        let isCreatorAdmin = false;
+
+        if (req.user) {
+          // User is authenticated via middleware
+          isCreatorAdmin = req.user.roleType === 'Admin' || (req.user.role && req.user.role.includes('Admin'));
+        } else if (req.headers && req.headers.authorization) {
+          // Try to verify token manually if middleware wasn't used
+          try {
+            const token = req.headers.authorization.split(' ')[1];
+            const decode = jwt.verify(token, process.env.JWT_SECRET);
+            const creator = await User.findById(decode.userId);
+            if (creator) {
+              isCreatorAdmin = creator.roleType === 'Admin' || (creator.role && creator.role.includes('Admin'));
+            }
+          } catch (tokenError) {
+            // Token invalid or expired, treat as not admin
+            console.log('Token verification failed:', tokenError.message);
+          }
+        }
+
+        console.log('isCreatorAdmin:', isCreatorAdmin, 'req.user exists:', !!req.user);
+
+        // Only send notifications if the creator is NOT an admin
+        if (!isCreatorAdmin) {
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+
+          const itemsSummary = [];
+          if (savedStorage.items.fridges > 0) itemsSummary.push(`${savedStorage.items.fridges} fridge(s)`);
+          if (savedStorage.items.mattresses > 0) itemsSummary.push(`${savedStorage.items.mattresses} mattress(es)`);
+          if (savedStorage.items.sofas > 0) itemsSummary.push(`${savedStorage.items.sofas} sofa(s)`);
+          if (savedStorage.items.paint > 0) itemsSummary.push(`${savedStorage.items.paint} paint`);
+          if (savedStorage.items.other > 0) itemsSummary.push(`${savedStorage.items.other} other item(s)`);
+
+          const notificationMessage = `Items removed from storage: ${itemsSummary.join(', ')}`;
+
+          for (const admin of adminUsers) {
+            if (admin._id) {
+              await emitNotificationToUser(admin._id.toString(), 'Storage', notificationMessage);
+            }
+          }
+        }
+      } catch (notificationError) {
+        console.error('Error sending notifications:', notificationError);
+        // Don't fail the request if notification fails
+      }
+
       res
         .status(201)
         .json({ message: 'Items removed from storage', storage: savedStorage });
@@ -305,6 +408,8 @@ const storageCtrl = {
       res.status(500).json({ error: error.message });
     }
   },
+
+
   updateStorageById: async (req, res) => {
     try {
       const { id } = req.params;
@@ -342,8 +447,25 @@ const storageCtrl = {
         updates.items = items;
       }
 
-      if (req.files && req.files.length > 0) {
-        updates.proofs = req.files.map(file => file.path);
+      // Handle proofs: merge new files with existing ones, excluding deleted ones
+      if (req.files || req.body.existingProofs || req.body.deletedMedia) {
+        // Start with existing proofs sent from frontend (these are the ones to keep)
+        let updatedProofs = [];
+
+        if (req.body.existingProofs) {
+          const existingProofsArray = Array.isArray(req.body.existingProofs)
+            ? req.body.existingProofs
+            : [req.body.existingProofs];
+          updatedProofs = [...existingProofsArray];
+        }
+
+        // Add new files (from req.files)
+        if (req.files && req.files.length > 0) {
+          const newFilePaths = req.files.map(file => file.path);
+          updatedProofs = [...updatedProofs, ...newFilePaths];
+        }
+
+        updates.proofs = updatedProofs;
       }
 
       const updatedStorage = await Storage.findByIdAndUpdate(id, updates, { new: true });
@@ -373,6 +495,7 @@ const storageCtrl = {
       res.status(500).json({ error: error.message });
     }
   },
+
   getAllStorages: async (req, res) => {
     try {
       const { driverId, storagePlace, page = 1, limit } = req.query;

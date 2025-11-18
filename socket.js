@@ -8,6 +8,7 @@ const { User } = require('./models/User');
 const Task = require('./models/Task');
 const Truck = require('./models/Truck');
 const TippingRequest = require('./models/TippingRequest');
+const Payroll = require('./models/Payroll');
 const sendReviewRequestEmail = require('./utils/sendReviewEmail');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
@@ -860,30 +861,43 @@ const initSocket = (server) => {
       }
     }
     );
+
     socket.on('trucksStats', async () => {
       try {
-        const today = new Date();
-        const todayKey = today.toISOString().split('T')[0]; // Format date as "YYYY-MM-DD"
-
-        const trucks = await Truck.find().populate({
-          path: `tasks.${todayKey}`, // Populate tasks for today's date
-          model: 'Task', // Specify the model being referenced
-        });
+        const trucks = await Truck.find();
 
         let onWorkCount = 0;
 
-        // Iterate over trucks to check tasks for today
-        for (const truck of trucks) {
+        // Collect all driver IDs for batch queries
+        const driverIds = trucks.filter(t => t.driverId).map(t => t.driverId);
 
-          console.log(todayKey)
-          if (truck.tasks.has(todayKey)) {
-            // Get tasks for today's date
-            const todayTasks = truck.tasks.get(todayKey);
-            console.log("todayTasks:", todayTasks)
-            // Count tasks with "Processing" status
-            const processingTasks = todayTasks.filter((task) => task.taskStatus === 'Processing');
-            if (processingTasks.length > 0) {
-              onWorkCount += 1; // Increment count for trucks with at least one "Processing" task
+        // Batch fetch: Get all drivers with their break status
+        const drivers = await Driver.find({ _id: { $in: driverIds } })
+          .select('_id onBreak');
+        const driverMap = new Map();
+        drivers.forEach(driver => {
+          driverMap.set(driver._id.toString(), driver.onBreak === false);
+        });
+
+        // Batch fetch: Get all active payrolls (startTime exists but endTime is null)
+        const activePayrolls = await Payroll.find({
+          userId: { $in: driverIds },
+          startTime: { $exists: true },
+          endTime: null
+        }).select('userId');
+        const activePayrollDriverIds = new Set();
+        activePayrolls.forEach(payroll => {
+          activePayrollDriverIds.add(payroll.userId.toString());
+        });
+
+        // Iterate over trucks to determine if they're on work
+        for (const truck of trucks) {
+          if (truck.driverId) {
+            const driverIdStr = truck.driverId.toString();
+            const isNotOnBreak = driverMap.get(driverIdStr);
+            // Check if driver is not on break and has an active shift (started but not ended)
+            if (isNotOnBreak && activePayrollDriverIds.has(driverIdStr)) {
+              onWorkCount += 1;
             }
           }
         }
@@ -1235,7 +1249,7 @@ const initSocket = (server) => {
 };
 
 // Function to emit a notification to a specific user by userId
-const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null) => {
+const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null, title = null) => {
   const socketId = userSocketMap[userId];
   console.log('entered to not fun');
   
@@ -1336,8 +1350,34 @@ const sendOfflineNotifications = async (userId, socket) => {
   console.log(`Sending offline notifications to user: ${userId}`);
   const offlineNotifications = await Notification.find({ userId, read: false });
   console.log(offlineNotifications)
+
+  // Title mapping for offline notifications
+  const titleMap = {
+    'Storage': 'Storage Update',
+    'Orders': 'Order Update',
+    'Chat': 'New Message',
+    'Staff': 'Staff Update',
+    'Driver_Tracking': 'Driver Tracking',
+    'Payroll': 'Payroll Update',
+    'Standard_Items': 'Standard Items Update',
+    'Tipping': 'Tipping Update',
+    'Truck': 'Truck Update',
+    'Day_Off': 'Day Off Request',
+    'Busy_Days': 'Busy Days Update',
+    'Emails': 'Email Update',
+    'Quotations': 'Quotation Update',
+  };
+
   offlineNotifications?.forEach((notification) => {
-    socket.emit('notification', { message: notification.message });
+    const title = titleMap[notification.type] || 'Notification';
+    socket.emit('notification', {
+      userId: notification.userId,
+      type: notification.type,
+      title: title,
+      message: notification.message,
+      senderName: notification.senderName,
+      read: notification.read
+    });
   });
 
   // Mark notifications as read once they are sent to the user

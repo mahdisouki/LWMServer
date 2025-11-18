@@ -1,5 +1,4 @@
 const nodemailer = require('nodemailer');
-const path = require('path');
 const sendContactEmail = async ({ responsibleEmail, contactData }) => {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -17,7 +16,7 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
     html: `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
-        <img src="cid:logo" alt="London Waste Management" style="max-width: 150px;">
+        <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
       </div>
       <div style="text-align: center; margin-bottom: 20px;">
         <h2 style="color: #4CAF50;">New Moving Service Request</h2>
@@ -56,13 +55,6 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
       </div>
     </div>
   `,
-    attachments: [
-      {
-        filename: 'Green-Log.png',
-        path: path.join(__dirname, '../logo/Green-Log.png'),
-        cid: 'logo', // Content ID for the inline image
-      },
-    ],
   };
 
   // Email to the user

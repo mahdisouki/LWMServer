@@ -20,6 +20,7 @@ const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
+const CLIENT_URL = 'https://client.londonwastemanagement.uk';
 const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
@@ -235,6 +236,8 @@ const taskCtrl = {
         date,
         createdBy,
         createdByType,
+        cashReceived,
+        cashReceivedBy,
         billingAddress,
         collectionAddress,
         objects, // Custom items (optional)
@@ -352,6 +355,8 @@ const taskCtrl = {
         date: taskDate,
         createdBy,
         createdByType,
+        cashReceived,
+        cashReceivedBy,
         paymentStatus: paymentStatus || 'Unpaid',
         billingAddress,
         collectionAddress,
@@ -1146,9 +1151,9 @@ const taskCtrl = {
 
             // Position fee (added once, not per quantity)
             if (item.Objectsposition === 'InsideWithDismantling') {
-              positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
+              positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
             } else if (item.Objectsposition === 'Inside') {
-              positionFee = Number(item.standardItemId.insidePrice) || 6;
+              positionFee = Number(item.standardItemId.insidePrice);
             }
             console.log('Position fee:', positionFee);
           } else if (item.price) {
@@ -1585,8 +1590,8 @@ const taskCtrl = {
                   quantity: 1,
                 },
               ],
-              success_url: `http://localhost:5173/payment/success?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
-              cancel_url: `http://localhost:5173/payment/failed?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
+              success_url: `${CLIENT_URL}/payment/success?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
+              cancel_url: `${CLIENT_URL}/payment/failed?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
               metadata: {
                 taskId: taskId,
                 paymentAmountType: actualPaymentType,
@@ -1994,8 +1999,7 @@ const taskCtrl = {
       if (paymentType === 'deposit') {
         let requestedDeposit = task.paidAmount?.amount || 0;
 
-        // Si le user a choisi moins de 45, on impose 45
-        amountToPay = Math.max(requestedDeposit, 45);
+        amountToPay = requestedDeposit;
 
         task.paidAmount = {
           amount: amountToPay,
@@ -2049,9 +2053,9 @@ const taskCtrl = {
 
           // Position fee (added once, not per quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
-            positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
+            positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
           } else if (item.Objectsposition === 'Inside') {
-            positionFee = Number(item.standardItemId.insidePrice) || 6;
+            positionFee = Number(item.standardItemId.insidePrice);
           }
         } else if (item.object) {
           itemPrice = Number(item.price);
@@ -2095,8 +2099,8 @@ const taskCtrl = {
           total: finalItemTotal,
           Objectsposition: item.Objectsposition,
           standardItemId: item.standardItemId,
-          insidePrice: item.standardItemId?.insidePrice || 6,
-          insideWithDismantlingPrice: item.standardItemId?.insideWithDismantlingPrice || 18,
+          insidePrice: item.standardItemId?.insidePrice,
+          insideWithDismantlingPrice: item.standardItemId?.insideWithDismantlingPrice,
           positionFee: positionFee,
         });
 
@@ -2120,14 +2124,14 @@ const taskCtrl = {
 
       // Enforce minimum price (before VAT)
       // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
-      if (subtotal < 37.5) {
-        const adjustment = 37.5 - subtotal;
-        subtotal = 37.5;
-        breakdown.push({
-          description: 'Minimum price adjustment',
-          amount: adjustment,
-        });
-      }
+      // if (subtotal < 37.5) {
+      //   const adjustment = 37.5 - subtotal;
+      //   subtotal = 37.5;
+      //   breakdown.push({
+      //     description: 'Minimum price adjustment',
+      //     amount: adjustment,
+      //   });
+      // }
 
       // Add VAT
       const vat = subtotal * 0.2;
@@ -2512,9 +2516,9 @@ const taskCtrl = {
 
           // Position fee (added once, not per quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
-            positionFee = Number(item.standardItemId.insideWithDismantlingPrice) || 18;
+            positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
           } else if (item.Objectsposition === 'Inside') {
-            positionFee = Number(item.standardItemId.insidePrice) || 6;
+            positionFee = Number(item.standardItemId.insidePrice);
           }
         } else {
           // Custom items use their own price

@@ -20,6 +20,17 @@ const paymentHistorySchema = new Schema({
             Objectsposition: { type: String, enum: ["Inside", "Outside", "InsideWithDismantling"] }, // Position de l'objet
         },
     ],
+    // Refund tracking fields
+    refunds: [{
+        refundId: { type: String, required: true },
+        gateway: { type: String, enum: ["stripe", "paypal"], required: true },
+        amountGBP: { type: Number, required: true },
+        currency: { type: String, default: "GBP" },
+        status: { type: String },
+        createdAt: { type: Date, default: Date.now },
+        metadata: { type: Schema.Types.Mixed }
+    }],
+    refundedTotalGBP: { type: Number, default: 0 }
 });
 
 const PaymentHistory = mongoose.model("PaymentHistory", paymentHistorySchema);
