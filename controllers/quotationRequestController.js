@@ -69,7 +69,7 @@ const quotationRequestController = {
             });
             sendQuoteRequestConfirmationEmail(email)
             await newQuotation.save();
-            emitNotificationToUser("67cb6810c9e768ec25d39523", "New Quotation Request", "A new quotation request has been submitted");
+            emitNotificationToUser("67cb6810c9e768ec25d39523", "Quotations", "A new quotation request has been submitted");
 
             res.status(201).json({
                 message: 'Quotation request submitted successfully',
