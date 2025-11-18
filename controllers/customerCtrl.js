@@ -1,4 +1,5 @@
 const Customer = require('../models/Customer');
+const loggingService = require('../services/loggingService');
 
 const customerCtrl = {
   // Create a new customer
@@ -18,6 +19,22 @@ const customerCtrl = {
         email,
         customNote
       });
+
+      // Create a log of the customer creation
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'CREATE',
+          entityType: 'CUSTOMER',
+          entityId: customer._id,
+          changes: {
+            created: customer.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
 
       res.status(201).json({
         message: 'Customer created successfully',
@@ -110,15 +127,15 @@ const customerCtrl = {
     try {
       const { email, customNote } = req.body;
 
-      const customer = await Customer.findById(req.params.id);
-      if (!customer) {
+      const oldCustomer = await Customer.findById(req.params.id);
+      if (!oldCustomer) {
         return res.status(404).json({
           message: 'Customer not found'
         });
       }
 
       // Check if email is being changed and if it already exists
-      if (email && email !== customer.email) {
+      if (email && email !== oldCustomer.email) {
         const existingCustomer = await Customer.findOne({ email });
         if (existingCustomer) {
           return res.status(400).json({
@@ -135,6 +152,23 @@ const customerCtrl = {
         },
         { new: true, runValidators: true }
       );
+
+      // Create a log of the changes
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'CUSTOMER',
+          entityId: req.params.id,
+          changes: {
+            before: oldCustomer.toObject(),
+            after: updatedCustomer.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
 
       res.status(200).json({
         message: 'Customer updated successfully',
@@ -155,6 +189,22 @@ const customerCtrl = {
       if (!customer) {
         return res.status(404).json({
           message: 'Customer not found'
+        });
+      }
+
+      // Create a log of the deletion before actually deleting
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'DELETE',
+          entityType: 'CUSTOMER',
+          entityId: req.params.id,
+          changes: {
+            deleted: customer.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
         });
       }
 

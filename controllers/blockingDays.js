@@ -1,5 +1,6 @@
 const BlockingDays = require('../models/BlockingDays');
 const APIfeatures = require('../utils/APIFeatures'); // If you're using a utility for API features
+const loggingService = require('../services/loggingService');
 
 const blockingDaysCtrl = {
     createBlockingDay: async (req, res) => {
@@ -29,6 +30,23 @@ const blockingDaysCtrl = {
 
             const newBlockingDay = new BlockingDays({ date, type, timeSlots });
             await newBlockingDay.save();
+
+            // Create a log of the blocking day creation
+            if (req.user) {
+                await loggingService.createLog({
+                    userId: req.user._id,
+                    username: req.user.username,
+                    action: 'CREATE',
+                    entityType: 'BLOCKING_DAY',
+                    entityId: newBlockingDay._id,
+                    changes: {
+                        created: newBlockingDay.toObject(),
+                    },
+                    ipAddress: req.ip,
+                    userAgent: req.headers['user-agent'],
+                });
+            }
+
             res.status(201).json({ message: "Blocking day created successfully", blockingDay: newBlockingDay });
         } catch (error) {
             res.status(500).json({ message: "Failed to create blocking day", error: error.message });
@@ -101,10 +119,30 @@ const blockingDaysCtrl = {
                 }
             }
 
-            const updatedBlockingDay = await BlockingDays.findByIdAndUpdate(id, { date, type, timeSlots }, { new: true });
-            if (!updatedBlockingDay) {
+            const oldBlockingDay = await BlockingDays.findById(id);
+            if (!oldBlockingDay) {
                 return res.status(404).json({ message: "Blocking day not found" });
             }
+
+            const updatedBlockingDay = await BlockingDays.findByIdAndUpdate(id, { date, type, timeSlots }, { new: true });
+
+            // Create a log of the changes
+            if (req.user) {
+                await loggingService.createLog({
+                    userId: req.user._id,
+                    username: req.user.username,
+                    action: 'UPDATE',
+                    entityType: 'BLOCKING_DAY',
+                    entityId: id,
+                    changes: {
+                        before: oldBlockingDay.toObject(),
+                        after: updatedBlockingDay.toObject(),
+                    },
+                    ipAddress: req.ip,
+                    userAgent: req.headers['user-agent'],
+                });
+            }
+
             res.status(200).json({ message: "Blocking day updated successfully", blockingDay: updatedBlockingDay });
         } catch (error) {
             res.status(500).json({ message: "Failed to update blocking day", error: error.message });
@@ -114,10 +152,28 @@ const blockingDaysCtrl = {
     deleteBlockingDay: async (req, res) => {
         const { id } = req.params;
         try {
-            const blockingDay = await BlockingDays.findByIdAndDelete(id);
+            const blockingDay = await BlockingDays.findById(id);
             if (!blockingDay) {
                 return res.status(404).json({ message: "Blocking day not found" });
             }
+
+            // Create a log of the deletion before actually deleting
+            if (req.user) {
+                await loggingService.createLog({
+                    userId: req.user._id,
+                    username: req.user.username,
+                    action: 'DELETE',
+                    entityType: 'BLOCKING_DAY',
+                    entityId: id,
+                    changes: {
+                        deleted: blockingDay.toObject(),
+                    },
+                    ipAddress: req.ip,
+                    userAgent: req.headers['user-agent'],
+                });
+            }
+
+            await BlockingDays.findByIdAndDelete(id);
             res.status(200).json({ message: "Blocking day deleted successfully" });
         } catch (error) {
             res.status(500).json({ message: "Failed to delete blocking day", error: error.message });

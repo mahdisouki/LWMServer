@@ -12,7 +12,7 @@ const sendReviewRequestEmail = require('./utils/sendReviewEmail');
 let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 const Helper = require('./models/Helper');
-
+const { sendOneSignalNotification } = require('./services/oneSignalService');
 
 
 // const sendNotification = async (title, textMessage, token) => {
@@ -1197,6 +1197,31 @@ const initSocket = (server) => {
       }
     });
 
+    socket.on('oneSignalPlayerId', async (data) => {
+      const { userId, playerId } = data;
+      
+      try {
+        // Validate player ID format
+        if (!playerId || typeof playerId !== 'string' || playerId.trim().length === 0) {
+          console.error(`❌ Invalid OneSignal player ID format for user ${userId}: ${playerId}`);
+          return;
+        }
+
+        // Check if OneSignal is configured
+        if (!process.env.ONESIGNAL_APP_ID || !process.env.ONESIGNAL_REST_API_KEY) {
+          console.warn(`⚠️ OneSignal not configured. Player ID saved but notifications won't work.`);
+        }
+
+        await User.findByIdAndUpdate(userId, {
+          oneSignalPlayerId: playerId.trim()
+        });
+        console.log(`✅ OneSignal player ID registered for user ${userId}: ${playerId.substring(0, 20)}...`);
+        console.log(`   OneSignal App ID: ${process.env.ONESIGNAL_APP_ID?.substring(0, 8) || 'NOT SET'}...`);
+      } catch (error) {
+        console.error(`❌ Error updating OneSignal player ID for user ${userId}:`, error);
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
       delete userSocketMap[userId]; // Remove user from map on disconnect
@@ -1212,18 +1237,71 @@ const initSocket = (server) => {
 // Function to emit a notification to a specific user by userId
 const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null) => {
   const socketId = userSocketMap[userId];
-  console.log('entredred to not fun')
+  console.log('entered to not fun');
+  
+  // Generate title based on type
+  const titleMap = {
+    'Storage': 'Storage Update',
+    'Orders': 'Order Update',
+    'Chat': 'New Message',
+    'Staff': 'Staff Update',
+    'Driver_Tracking': 'Driver Tracking',
+    'Payroll': 'Payroll Update',
+    'Standard_Items': 'Standard Items Update',
+    'Tipping': 'Tipping Update',
+    'Truck': 'Truck Update',
+    'Day_Off': 'Day Off Request',
+    'Busy_Days': 'Busy Days Update',
+    'Emails': 'Email Update',
+    'Quotations': 'Quotation Update',
+  };
+  const title = titleMap[type] || 'Notification';
+
   if (socketId && io) {
+    // User is online - send via socket
     io.to(socketId).emit('notification', {
       userId: userId,
       type: type,
+      title: title,
       message: notificationMessage,
       senderName: senderName,
       read: false
     });
+    console.log(`✅ Socket notification sent to online user: ${userId}`);
   } else {
+    // User is offline - send via OneSignal
     try {
-      // User is offline, save notification to the database
+      const user = await User.findById(userId).select('oneSignalPlayerId');
+      
+      if (user && user.oneSignalPlayerId) {
+        // Send OneSignal push notification
+        const result = await sendOneSignalNotification(
+          user.oneSignalPlayerId,
+          title,
+          notificationMessage,
+          {
+            type: type,
+            userId: userId.toString(),
+            senderName: senderName,
+          }
+        );
+        console.log(result)
+        // If player ID is invalid, remove it from database
+        if (result && result.invalidPlayerId) {
+          console.log(`🗑️ Removing invalid OneSignal player ID for user ${userId}`);
+          await User.findByIdAndUpdate(userId, {
+            $unset: { oneSignalPlayerId: '' }
+          });
+        } else if (result && result.success) {
+          
+          console.log(`✅ OneSignal notification sent to offline user: ${userId}`);
+        }
+      } else {
+        
+        console.log(`⚠️ User ${userId} has no OneSignal player ID, saving to database`);
+      }
+
+      // Always save to database as backup
       const newNotification = await Notification.create({
         userId,
         type,
@@ -1231,9 +1309,22 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
         senderName: senderName,
         read: false,
       });
-      console.log(`Notification saved for offline user: ${userId}`, newNotification);
+      console.log(`💾 Notification saved to database for user: ${userId}`);
     } catch (error) {
-      console.error(`Error saving notification for user ${userId}:`, error);
+      console.error(`❌ Error sending notification to user ${userId}:`, error);
+      
+      // Fallback: save to database
+      try {
+        await Notification.create({
+          userId,
+          type,
+          message: notificationMessage,
+          senderName: senderName,
+          read: false,
+        });
+      } catch (dbError) {
+        console.error(`❌ Error saving notification to database:`, dbError);
+      }
     }
   }
 };

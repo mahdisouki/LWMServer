@@ -9,6 +9,7 @@ const {
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const paypal = require('@paypal/checkout-server-sdk');
 const { PayPalClient } = require('../services/paymentService.js');
+const loggingService = require('../services/loggingService');
 
 const standardItemCtrl = {
   createStandardItem: async (req, res) => {
@@ -40,6 +41,23 @@ const standardItemCtrl = {
       });
 
       await newStandardItem.save();
+
+      // Create a log of the standard item creation
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'CREATE',
+          entityType: 'STANDARD_ITEM',
+          entityId: newStandardItem._id,
+          changes: {
+            created: newStandardItem.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
       res.status(201).json(newStandardItem);
     } catch (error) {
       res.status(500).json({
@@ -304,8 +322,8 @@ const standardItemCtrl = {
       };
 
       // Get existing item
-      const standardItem = await StandardItem.findById(req.params.id);
-      if (!standardItem) {
+      const oldStandardItem = await StandardItem.findById(req.params.id);
+      if (!oldStandardItem) {
         return res.status(404).json({ message: 'Standard item not found' });
       }
 
@@ -317,7 +335,7 @@ const standardItemCtrl = {
       // Add new additional images if provided
       if (req.files && req.files.length > 0) {
         const newImages = req.files.map(file => file.path);
-        updateData.images = [...standardItem.images, ...newImages];
+        updateData.images = [...oldStandardItem.images, ...newImages];
       }
 
       const updatedItem = await StandardItem.findByIdAndUpdate(
@@ -325,6 +343,23 @@ const standardItemCtrl = {
         updateData,
         { new: true, runValidators: true }
       );
+
+      // Create a log of the changes
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'STANDARD_ITEM',
+          entityId: req.params.id,
+          changes: {
+            before: oldStandardItem.toObject(),
+            after: updatedItem.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
 
       res.status(200).json(updatedItem);
     } catch (error) {
@@ -338,10 +373,28 @@ const standardItemCtrl = {
   deleteStandardItem: async (req, res) => {
     const { id } = req.params;
     try {
-      const item = await StandardItem.findByIdAndDelete(id);
+      const item = await StandardItem.findById(id);
       if (!item) {
         return res.status(404).json({ message: 'Standard item not found' });
       }
+
+      // Create a log of the deletion before actually deleting
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'DELETE',
+          entityType: 'STANDARD_ITEM',
+          entityId: id,
+          changes: {
+            deleted: item.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
+      await StandardItem.findByIdAndDelete(id);
       res.status(200).json({ message: 'Standard item deleted successfully' });
     } catch (error) {
       res.status(500).json({

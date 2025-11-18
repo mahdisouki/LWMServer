@@ -6,7 +6,15 @@ const breakSchema = new mongoose.Schema({
   endTime: { type: Date, required: false },
   duration: { type: Number, required: false } // Duration in minutes
 });
-
+// User model - Add device array
+const deviceSchema = new mongoose.Schema({
+  deviceId: { type: String, required: true }, // Device identifier (unique per user, not globally)
+  pushToken: { type: String, required: true },
+  platform: { type: String, enum: ['ios', 'android'], required: true },
+  deviceName: { type: String }, // e.g., "iPhone 12 Pro", "Samsung Galaxy"
+  lastActive: { type: Date, default: Date.now },
+  socketId: { type: String }, // Current socket connection (if online)
+}, { timestamps: true });
 const userSchema = new mongoose.Schema({
 
   email: { type: String, required: true, unique: true },
@@ -15,7 +23,7 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true },
   firstName: { type: String },
   lastName: { type: String },
-
+  devices: [deviceSchema],
   gender: {
     type: String,
     enum: ["Female", "Male", "Other"],
@@ -38,7 +46,9 @@ const userSchema = new mongoose.Schema({
   addressProof: { type: String },
   NatInsurance: { type: String },
   refreshToken: { type: String },
+  
   fcmToken: { type: String },
+  apnsToken: { type: String }, // For backward compatibility
   totalHoursWorked: {
     type: Number,
     default: 0
@@ -75,8 +85,11 @@ const userSchema = new mongoose.Schema({
 
   },
   breaks: [breakSchema],
+  oneSignalPlayerId: { type: String }, // OneSignal player ID for push notifications
 }, { discriminatorKey: 'roleType' });
 
+// Add compound index to ensure deviceId is unique per user (not globally)
+userSchema.index({ _id: 1, 'devices.deviceId': 1 }, { unique: true });
 
 const User = mongoose.model('User', userSchema);
 

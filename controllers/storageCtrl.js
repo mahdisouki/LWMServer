@@ -2,6 +2,7 @@ const Storage = require('../models/Storage');
 const StoragePlace = require('../models/StroragePlace');
 const Truck = require('../models/Truck');
 const capacities = require('../config/storageCapacities');
+const loggingService = require('../services/loggingService');
 
 // Helper function to get current available quantities for each item type
 const getCurrentQuantities = async () => {
@@ -141,7 +142,25 @@ const storageCtrl = {
       });
 
       const savedStorage = await newStorageRecord.save();
-      console.log(savedStorage)
+      console.log(savedStorage);
+
+      // Create a log of the items addition
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'CREATE',
+          entityType: 'STORAGE',
+          entityId: savedStorage._id,
+          changes: {
+            created: savedStorage.toObject(),
+            type: 'add',
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
       res
         .status(201)
         .json({ message: 'Items added to storage', storage: savedStorage });
@@ -260,7 +279,24 @@ const storageCtrl = {
       });
 
       const savedStorage = await newStorageRecord.save();
-      console.log("removed", savedStorage)
+      console.log("removed", savedStorage);
+
+      // Create a log of the items removal
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'CREATE',
+          entityType: 'STORAGE',
+          entityId: savedStorage._id,
+          changes: {
+            created: savedStorage.toObject(),
+            type: 'remove',
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
 
       res
         .status(201)
@@ -272,6 +308,11 @@ const storageCtrl = {
   updateStorageById: async (req, res) => {
     try {
       const { id } = req.params;
+
+      const oldStorage = await Storage.findById(id);
+      if (!oldStorage) {
+        return res.status(404).json({ message: "Storage record not found" });
+      }
 
       const updates = {};
       console.log("REQ BODY:", req.body);
@@ -307,8 +348,21 @@ const storageCtrl = {
 
       const updatedStorage = await Storage.findByIdAndUpdate(id, updates, { new: true });
 
-      if (!updatedStorage) {
-        return res.status(404).json({ message: "Storage record not found" });
+      // Create a log of the changes
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'STORAGE',
+          entityId: id,
+          changes: {
+            before: oldStorage.toObject(),
+            after: updatedStorage.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
       }
 
       res.status(200).json({
@@ -738,6 +792,23 @@ const storageCtrl = {
       });
 
       await newPlace.save();
+
+      // Create a log of the storage place creation
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'CREATE',
+          entityType: 'STORAGE_PLACE',
+          entityId: newPlace._id,
+          changes: {
+            created: newPlace.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
       res.status(201).json({ message: 'Storage place created', data: newPlace });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -765,11 +836,30 @@ const storageCtrl = {
 
   update: async (req, res) => {
     try {
+      const oldPlace = await StoragePlace.findById(req.params.id);
+      if (!oldPlace) return res.status(404).json({ message: 'Not found' });
+
       const updates = req.body;
       if (req.file) updates.image = req.file.path;
 
       const updated = await StoragePlace.findByIdAndUpdate(req.params.id, updates, { new: true });
-      if (!updated) return res.status(404).json({ message: 'Not found' });
+
+      // Create a log of the changes
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'STORAGE_PLACE',
+          entityId: req.params.id,
+          changes: {
+            before: oldPlace.toObject(),
+            after: updated.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
 
       res.status(200).json({ message: 'Updated', data: updated });
     } catch (err) {
@@ -779,8 +869,26 @@ const storageCtrl = {
 
   delete: async (req, res) => {
     try {
-      const deleted = await StoragePlace.findByIdAndDelete(req.params.id);
-      if (!deleted) return res.status(404).json({ message: 'Not found' });
+      const place = await StoragePlace.findById(req.params.id);
+      if (!place) return res.status(404).json({ message: 'Not found' });
+
+      // Create a log of the deletion before actually deleting
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'DELETE',
+          entityType: 'STORAGE_PLACE',
+          entityId: req.params.id,
+          changes: {
+            deleted: place.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
+      await StoragePlace.findByIdAndDelete(req.params.id);
       res.status(200).json({ message: 'Deleted successfully' });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -790,8 +898,26 @@ const storageCtrl = {
   deleteStorageRecord: async (req, res) => {
     try {
       const { id } = req.params;
-      const deleted = await Storage.findByIdAndDelete(id);
-      if (!deleted) return res.status(404).json({ message: 'Storage record not found' });
+      const storage = await Storage.findById(id);
+      if (!storage) return res.status(404).json({ message: 'Storage record not found' });
+
+      // Create a log of the deletion before actually deleting
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'DELETE',
+          entityType: 'STORAGE',
+          entityId: id,
+          changes: {
+            deleted: storage.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
+      await Storage.findByIdAndDelete(id);
       res.status(200).json({ message: 'Storage record deleted successfully' });
     } catch (error) {
       res.status(500).json({ error: error.message });

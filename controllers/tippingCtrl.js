@@ -6,6 +6,7 @@ const { emitEvent } = require('../socket');
 const Driver = require('../models/Driver');
 const TippingPlace = require('../models/TippingPlaces');
 const paginateQuery = require('../utils/paginationHelper');
+const loggingService = require('../services/loggingService');
 
 const tippingController = {
   createTippingRequest: async (req, res) => {
@@ -37,6 +38,23 @@ const tippingController = {
       });
 
       await newTippingRequest.save();
+
+      // Create a log of the tipping request creation
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'CREATE',
+          entityType: 'TIPPING_REQUEST',
+          entityId: newTippingRequest._id,
+          changes: {
+            created: newTippingRequest.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
       const response = {
         message: 'Tipping request created successfully',
         request: {
@@ -98,6 +116,23 @@ const tippingController = {
       });
 
       await newTippingRequest.save();
+
+      // Create a log of the tipping request creation by admin
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'CREATE',
+          entityType: 'TIPPING_REQUEST',
+          entityId: newTippingRequest._id,
+          changes: {
+            created: newTippingRequest.toObject(),
+            createdByAdmin: true,
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
 
       const response = {
         message: 'Tipping request created successfully by admin',
@@ -174,10 +209,28 @@ const tippingController = {
   deleteTippingRequest: async (req, res) => {
     const { id } = req.params;
     try {
-      const deletedRequest = await TippingRequest.findByIdAndDelete(id);
-      if (!deletedRequest) {
+      const request = await TippingRequest.findById(id);
+      if (!request) {
         return res.status(404).json({ message: 'Tipping request not found' });
       }
+
+      // Create a log of the deletion before actually deleting
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'DELETE',
+          entityType: 'TIPPING_REQUEST',
+          entityId: id,
+          changes: {
+            deleted: request.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
+      await TippingRequest.findByIdAndDelete(id);
       res.status(200).json({ message: 'Tipping request deleted successfully' });
     } catch (error) {
       res.status(500).json({
@@ -278,21 +331,22 @@ const tippingController = {
 
     try {
       // Fetch the tipping request
-      const request = await TippingRequest.findById(id);
+      const oldRequest = await TippingRequest.findById(id);
 
-      if (!request) {
+      if (!oldRequest) {
         return res.status(404).json({ message: 'Tipping request not found' });
       }
 
       // Find the truck assigned to this driver to get helperId
-      let truck = await Truck.findOne({ driverId: request.userId });
+      let truck = await Truck.findOne({ driverId: oldRequest.userId });
       if (!truck) {
-        truck = await Truck.findOne({ helperId: request.userId });
+        truck = await Truck.findOne({ helperId: oldRequest.userId });
       }
 
       const helperId = truck ? truck.helperId : null;
 
       // Update status
+      const request = oldRequest;
       request.status = status;
       request.tippingPlace = tippingPlace;
 
@@ -324,6 +378,23 @@ const tippingController = {
       }
 
       await request.save();
+
+      // Create a log of the status change
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'TIPPING_REQUEST',
+          entityId: id,
+          changes: {
+            before: { status: oldRequest.status, tippingPlace: oldRequest.tippingPlace },
+            after: { status: request.status, tippingPlace: request.tippingPlace },
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
 
       if (status === 'GoToTipping' || status === 'TippingAndStorage') {
         // Fetch the driver's location
@@ -468,6 +539,12 @@ const tippingController = {
     const updateFields = req.body;  // Fields to update
 
     try {
+      // Get the old request before updating
+      const oldRequest = await TippingRequest.findById(id);
+      if (!oldRequest) {
+        return res.status(404).json({ message: 'Tipping request not found' });
+      }
+
       // Find and update the tipping request
       const updatedRequest = await TippingRequest.findByIdAndUpdate(
         id,
@@ -479,8 +556,21 @@ const tippingController = {
         { path: 'storagePlace', select: 'name address' }
       ]);
 
-      if (!updatedRequest) {
-        return res.status(404).json({ message: 'Tipping request not found' });
+      // Create a log of the changes
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'TIPPING_REQUEST',
+          entityId: id,
+          changes: {
+            before: oldRequest.toObject(),
+            after: updatedRequest.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
       }
 
       res.status(200).json({

@@ -18,11 +18,27 @@ const systemLogSchema = new mongoose.Schema({
   entityType: {
     type: String,
     required: true,
-    enum: ['TASK', 'USER', 'PAYROLL', 'TRUCK', 'DAILY_SHEET', 'STAFF', 'OTHER']
+    enum: [
+      'TASK',
+      'USER',
+      'PAYROLL',
+      'TRUCK',
+      'DAILY_SHEET',
+      'STAFF',
+      'STANDARD_ITEM',
+      'CUSTOMER',
+      'TIPPING_REQUEST',
+      'STORAGE',
+      'STORAGE_PLACE',
+      'SERVICE_CATEGORY',
+      'TIPPING_PLACE',
+      'BLOCKING_DAY',
+      'OTHER'
+    ]
   },
   entityId: {
     type: mongoose.Schema.Types.ObjectId,
-    required: true
+    required: false
   },
   changes: {
     type: mongoose.Schema.Types.Mixed,

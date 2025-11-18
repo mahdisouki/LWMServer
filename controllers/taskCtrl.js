@@ -374,18 +374,20 @@ const taskCtrl = {
       const savedTask = await newTask.save();
 
       // Create a log of the task creation
-      // await loggingService.createLog({
-      //   userId: req.user._id,
-      //   username: req.user.username,
-      //   action: 'CREATE',
-      //   entityType: 'TASK',
-      //   entityId: savedTask._id,
-      //   changes: {
-      //     created: savedTask.toObject(),
-      //   },
-      //   ipAddress: req.ip,
-      //   userAgent: req.headers['user-agent'],
-      // });
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'CREATE',
+          entityType: 'TASK',
+          entityId: savedTask._id,
+          changes: {
+            created: savedTask.toObject(),
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
 
       res.status(201).json({
         message: 'Task created successfully',
@@ -526,6 +528,27 @@ const taskCtrl = {
         // Don't fail the main operation if daily sheet update fails
       }
 
+      // Create a log of the truck assignment
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'TASK',
+          entityId: taskId,
+          changes: {
+            assignment: {
+              type: 'assign_truck',
+              truckName,
+              truckId: truck._id,
+              taskDate,
+            },
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
       res.status(200).json({
         message: 'Truck assigned to task successfully',
         task,
@@ -610,6 +633,27 @@ const taskCtrl = {
         // Don't fail the main operation if daily sheet update fails
       }
 
+      // Create a log of the truck de-assignment
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'TASK',
+          entityId: taskId,
+          changes: {
+            deassignment: {
+              type: 'deassign_truck',
+              truckId: truck._id,
+              truckName: truck.name,
+              taskDate,
+            },
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
       res.status(200).json({
         message: 'Task de-assigned from truck successfully',
         task,
@@ -687,6 +731,29 @@ const taskCtrl = {
       task.truckId = newTruck._id;
       await task.save();
 
+      // Create a log of the truck move
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'TASK',
+          entityId: taskId,
+          changes: {
+            move: {
+              type: 'move_truck',
+              fromTruckId: currentTruck._id,
+              fromTruckName: currentTruck.name,
+              toTruckId: newTruck._id,
+              toTruckName: newTruckName,
+              taskDate,
+            },
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
       res.status(200).json({
         message: 'Task moved to the new truck successfully',
         task,
@@ -751,6 +818,27 @@ const taskCtrl = {
         // Don't fail the main operation if daily sheet update fails
       }
 
+      // Create a log of the task order update
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'TASK',
+          entityId: null, // This affects multiple tasks
+          changes: {
+            orderUpdate: {
+              type: 'update_task_order',
+              truckId,
+              date,
+              reorderedTasks: validatedTasks,
+            },
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
       res.status(200).json({
         message: 'Task order updated successfully',
         tasks: updatedTruck.tasks.get(date), // Get the updated tasks for the specific date
@@ -783,14 +871,32 @@ const taskCtrl = {
         return res.status(400).json({ message: 'Invalid task status' });
       }
 
+      const oldTask = await Task.findById(taskId);
+      if (!oldTask) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
         { $set: { taskStatus } },
         { new: true },
       );
 
-      if (!updatedTask) {
-        return res.status(404).json({ message: 'Task not found' });
+      // Create a log of the status change
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'TASK',
+          entityId: taskId,
+          changes: {
+            before: { taskStatus: oldTask.taskStatus },
+            after: { taskStatus: updatedTask.taskStatus },
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
       }
 
       res.status(200).json({
@@ -1220,9 +1326,28 @@ const taskCtrl = {
       const now = new Date();
 
       if (action === 'mark_start') {
+        const oldStatus = task.taskStatus;
         task.startDate = now;
         task.taskStatus = 'Processing';
         await task.save();
+
+        // Create a log of the status change
+        if (req.user) {
+          await loggingService.createLog({
+            userId: req.user._id,
+            username: req.user.username,
+            action: 'UPDATE',
+            entityType: 'TASK',
+            entityId: taskId,
+            changes: {
+              before: { taskStatus: oldStatus, startDate: task.startDate },
+              after: { taskStatus: task.taskStatus, startDate: now },
+            },
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+          });
+        }
+
         return res.status(200).json({
           message: 'Task marked as started successfully',
           task,
@@ -1230,6 +1355,7 @@ const taskCtrl = {
       }
 
       if (action === 'mark_finish') {
+        const oldStatus = task.taskStatus;
         task.taskStatus = 'Completed';
         if (!task.startDate) {
           return res.status(400).json({
@@ -1260,6 +1386,23 @@ const taskCtrl = {
 
         task.timeSpent = timeElapsed;
         await task.save();
+
+        // Create a log of the status change
+        if (req.user) {
+          await loggingService.createLog({
+            userId: req.user._id,
+            username: req.user.username,
+            action: 'UPDATE',
+            entityType: 'TASK',
+            entityId: taskId,
+            changes: {
+              before: { taskStatus: oldStatus },
+              after: { taskStatus: task.taskStatus, finishDate: now, timeSpent: timeElapsed },
+            },
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+          });
+        }
 
         return res.status(200).json({
           message: 'Task marked as finished successfully',
