@@ -1249,7 +1249,7 @@ const initSocket = (server) => {
 };
 
 // Function to emit a notification to a specific user by userId
-const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null, title = null) => {
+const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null) => {
   const socketId = userSocketMap[userId];
   console.log('entered to not fun');
   
