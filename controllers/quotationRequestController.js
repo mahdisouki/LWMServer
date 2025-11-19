@@ -67,7 +67,7 @@ const quotationRequestController = {
                 items,
                 estimatedPrices,
             });
-            sendQuoteRequestConfirmationEmail(email)
+            sendQuoteRequestConfirmationEmail(email, newQuotation)
             await newQuotation.save();
             emitNotificationToUser("67cb6810c9e768ec25d39523", "Quotations", "A new quotation request has been submitted");
 

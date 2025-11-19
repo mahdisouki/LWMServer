@@ -31,6 +31,9 @@ const tippingRequestSchema = new Schema({
     price: {
         type: Number
     },
+    tipdate: {
+        type: Date
+    },
     tippingPlace: {
         type: Schema.Types.ObjectId,
         ref: "TippingPlace"

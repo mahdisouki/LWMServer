@@ -1,19 +1,19 @@
 const nodemailer = require('nodemailer');
 const sendContact2Email = async ({ responsibleEmail, contactData }) => {
-    const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            user: process.env.EMAIL_USER, // Use the email you want to send from
-            pass: process.env.EMAIL_PASSWORD, // App password or email password
-        },
-    });
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER, // Use the email you want to send from
+      pass: process.env.EMAIL_PASSWORD, // App password or email password
+    },
+  });
 
-    // Email to the responsible person
-    const mailOptionsToResponsible = {
-        from: `"London Waste Management"<${contactData.email}>`,
-        to: responsibleEmail,
-        subject: `New Contact Request from ${contactData.firstName} ${contactData.lastName}`,
-        html: `
+  // Email to the responsible person
+  const mailOptionsToResponsible = {
+    from: `"London Waste Management"<${contactData.email}>`,
+    to: responsibleEmail,
+    subject: `New Contact Request from ${contactData.firstName} ${contactData.lastName}`,
+    html: `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
         <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
@@ -24,97 +24,150 @@ const sendContact2Email = async ({ responsibleEmail, contactData }) => {
       </div>
       <div style="padding: 15px; background-color: #fff; border-radius: 8px; border: 1px solid #ddd;">
         <p style="margin: 10px 0; font-size: 16px;"><strong>First Name:</strong> ${contactData.firstName
-            }</p>
+      }</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Last Name:</strong> ${contactData.lastName
-            }</p>
+      }</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Email:</strong> ${contactData.email
-            }</p>
+      }</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Phone:</strong> ${contactData.phone
-            }</p>
+      }</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Subject:</strong> ${contactData.subject
-            }</p>
+      }</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Message:</strong></p>
         <div style="margin: 10px 0; padding: 10px; background-color: #f5f5f5; border-radius: 4px; border-left: 4px solid #4CAF50;">
           ${contactData.message}
         </div>
         <p style="margin: 10px 0; font-size: 14px; color: #666;"><strong>Submitted:</strong> ${contactData.createdAt ? new Date(contactData.createdAt).toLocaleString() : 'Just now'
-            }</p>
+      }</p>
       </div>
       <div style="text-align: center; margin-top: 20px;">
         <p style="font-size: 14px; color: #888;">London Waste Management</p>
       </div>
     </div>
   `,
-    };
+  };
 
-    // Email to the user
-    const mailOptionsToUser = {
-        from: `"London Waste Management" <${process.env.EMAIL_USER}>`, // Your email
-        to: contactData.email,
-        subject: 'Thank you for your contact request!',
-        html: `
-      <div style="padding: 40px 0 0; font-family: Arial, sans-serif; text-align: center;">
-  <div style="max-width: 90%; margin: auto; background: #ffffff; border-radius: 12px 12px 8px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; position: relative; z-index: 2;">
-    
-   
-    <div style="padding: 20px 0;">
-      <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750544719/uploads/xpi9oph7svpwzmv1dewe.png" width="200" alt="London Waste Management" />
-    </div>
-
-  
-  <div style="background: linear-gradient(to bottom, #ffffff, #dcedd6); font-weight: bold; color: #444; padding: 20px; text-align: center; font-size: 26px; border-radius: 0 0 30px 30px;">
-  <span style="color: #6dc24b;">T</span><span style="color: #1a1a1a;">han</span><span style="color: #6dc24b;">k y</span><span style="color: #1a1a1a;">ou </span><span style="color: #6dc24b;">!</span>
-</div>
-
-
-  
-    <div style="padding: 20px; display: flex; flex-direction: row; justify-content: space-between; align-items: flex-start; text-align: left; position: relative; z-index: 2;">
-
-    
-      <div style="flex: 1; padding-right: 10px;">
-        <p style="font-size: 24px; margin-bottom: 20px;">
-          <span style="color: #8DC044; font-weight: bold;">Dear</span>
-          <span style="font-weight: bold;"> ${contactData.firstName} ${contactData.lastName},</span>
-        </p>
-
-        <p>Thank you for your contact request. We have received your message and will get back to you as soon as possible.</p>
-
-        <p>If you have any questions feel free to contact us at 
-          <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a>
-          or call us on <a href="tel:02030971517" style="color: #6dc24b;">02030971517</a>.
-        </p>
-
-        <p style="margin: 20px 0 5px;">Best regards,</p>
-        <p style="color: #6dc24b; font-weight: bold; margin: 0;">London Waste Management Department</p>
-      </div>
-
-      
-      <div style="flex-shrink: 0;">
-        <img 
-          src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1750621891/uploads/nz1iizlrc6icasizfhtk.png" 
-          alt="Thank You Character" 
-          style="width: 260px; max-width: 100%; height: auto; margin-left: 30px; margin-top :75px" 
-        />
-      </div>
-    </div>
-
-  
-    <div style="padding: 15px 20px; font-size: 12px; text-align: center; color: #666; border-top: 1px solid #eee;">
-      London Waste Management |
-      <a href="mailto:hello@londonwastemanagement.com" style="color: #007bff;">hello@londonwastemanagement.com</a>
-    </div>
-
-  
-
-  </div>
-</div>
-
+  // Email to the user
+  const mailOptionsToUser = {
+    from: `"London Waste Management" <${process.env.EMAIL_USER}>`, // Your email
+    to: contactData.email,
+    subject: 'Thank You for your Contact Request!',
+    html: `
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <style>
+            .section {
+              padding: 0;
+            }
+            .main-table {
+              width: 600px;
+              max-width: 600px;
+            }
+            .content-card {
+              padding: 40px 48px 42px;
+            }
+            .content-wrapper {
+              padding: 0;
+            }
+            .inner-content-box {
+              padding: 32px;
+            }
+            @media only screen and (max-width: 620px) {
+              .main-table {
+                width: 100% !important;
+                max-width: 100% !important;
+              }
+              .content-card {
+                padding: 24px !important;
+              }
+              .hero {
+                padding: 0 !important;
+              }
+              .hero img {
+                width: 100% !important;
+                max-width: 100% !important;
+                display: block !important;
+              }
+              .content-wrapper {
+                padding: 0 16px !important;
+              }
+              .section:not(.hero) {
+                padding: 0 16px 24px !important;
+              }
+              .thankyou {
+                padding: 24px 16px 16px !important;
+              }
+              .inner-content-box {
+                padding: 24px !important;
+              }
+            }
+          </style>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%" class="main-table" style="border-collapse: collapse; margin: 0 auto; padding: 0; width: 100%; max-width: 600px; background: #ffffff;">
+            <tr>
+              <td class="section hero" style="padding: 0; line-height: 0;" align="center">
+                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png" alt="London Waste Management" width="600" style="display: block; width: 600px; max-width: 100%; height: auto; margin: 0; border: 0; line-height: 0;" />
+              </td>
+            </tr>
+            <tr>
+              <td class="section thankyou" style="padding: 24px 0 16px; text-align: center;">
+                <p style="margin: 0; font-size: 26px; font-weight: 700; color: #111;">
+                  <span style="color: #c5f3c3; font-size: 34px;">"</span>
+                  Thank You !
+                  <span style="color: #c5f3c3; font-size: 34px;">"</span>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td class="section content-wrapper" style="padding: 0 0 34px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border: none;">
+                  <tr>
+                    <td class="content-card" style="color: #232b25; background: #ffffff; padding: 40px 48px 42px; box-shadow: 0 4px 20px rgba(0,0,0,0.12); border-radius: 8px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-radius: 8px; background: #ffffff;">
+                        <tr>
+                          <td class="inner-content-box" style="padding: 32px;">
+                            <p style="font-size: 22px; font-weight: 700; margin: 0 0 8px;">
+                              <span style="color: #000000;">Dear</span>
+                              <span style="color: #111111;"> ${contactData.firstName} ${contactData.lastName},</span>
+                            </p>
+                            <div style="width: 92px; height: 5px; background: #28c152; margin: 0 0 24px;"></div>
+                            <p style="font-size: 17px; line-height: 1.8; margin: 0 0 18px; color: #374237;">
+                              Thank you for your moving service request. We have received your message and will get back to you as soon as possible.
+                            </p>
+                            <p style="font-size: 17px; line-height: 1.8; margin: 0 0 22px; color: #374237;">
+                              If you have any questions or need assistance, please contact us at
+                              <a href="mailto:hello@londonwastemanagement.com" style="color: #169b4f; text-decoration: none;">hello@londonwastemanagement.com</a>
+                              or call us on <a href="tel:02030971517" style="color: #169b4f; text-decoration: none; font-weight: 600;">0203 097 1517</a>.
+                            </p>
+                            <p style="font-size: 15px; margin: 24px 0 4px; color: #4f5b52;">Best regards,</p>
+                            <p style="font-size: 16px; font-weight: bold; color: #169b4f; margin: 0;">London Waste Management Department</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 16px 24px; text-align: center; font-size: 12px; color: #5f6b66; border-top: 1px solid #e5f3e1;">
+                London Waste Management &nbsp;|&nbsp;
+                <a href="mailto:hello@londonwastemanagement.com" style="color: #169b4f; text-decoration: none;">hello@londonwastemanagement.com</a>
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
     `,
-    };
+  };
 
-    // Send both emails
-    await transporter.sendMail(mailOptionsToResponsible);
-    await transporter.sendMail(mailOptionsToUser);
+  // Send both emails
+  await transporter.sendMail(mailOptionsToResponsible);
+  await transporter.sendMail(mailOptionsToUser);
 };
 
 module.exports = sendContact2Email;

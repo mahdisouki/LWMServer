@@ -538,25 +538,124 @@ module.exports = {
     });
   },
 
-  async sendQuoteRequestConfirmationEmail(email) {
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 40px; background-image:url('https://res.cloudinary.com/ddcsuzef0/image/upload/v1752624279/Group_91_gbbl5x.png');background-size:cover;background-position:center; border: 1px solid #e0e0e0;">
-        <div style="text-align: center; margin-bottom: 30px;">
-          <img src="https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png" width="150" alt="London Waste Management"/>
-        </div>
-  
-        <div style="background-color: rgba(255, 255, 255, 0.5); padding: 30px; border-radius: 10px; text-align: center;border:1px solid green">
-          <h2 style="color: #222;">Thank You</h2>
-          <p>Hello <a href="mailto:${email}" style="color: #007bff; text-decoration: none;">${email}</a>,</p>
-          <p>We have received your quote.</p>
-        </div>
-      </div>
+  async sendQuoteRequestConfirmationEmail(email, newQuotation) {
+    const htmlContent =
+      `
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <style>
+            .section {
+              padding: 0;
+            }
+            .main-table {
+              width: 600px;
+              max-width: 600px;
+            }
+            .content-card {
+              padding: 40px 48px 42px;
+            }
+            .content-wrapper {
+              padding: 0;
+            }
+            .inner-content-box {
+              padding: 32px;
+            }
+            @media only screen and (max-width: 620px) {
+              .main-table {
+                width: 100% !important;
+                max-width: 100% !important;
+              }
+              .content-card {
+                padding: 24px !important;
+              }
+              .hero {
+                padding: 0 !important;
+              }
+              .hero img {
+                width: 100% !important;
+                max-width: 100% !important;
+                display: block !important;
+              }
+              .content-wrapper {
+                padding: 0 16px !important;
+              }
+              .section:not(.hero) {
+                padding: 0 16px 24px !important;
+              }
+              .thankyou {
+                padding: 24px 16px 16px !important;
+              }
+              .inner-content-box {
+                padding: 24px !important;
+              }
+            }
+          </style>
+        </head>
+        <body style="margin: 0; padding: 0; font-family: Arial, sans-serif;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%" class="main-table" style="border-collapse: collapse; margin: 0 auto; padding: 0; width: 100%; max-width: 600px; background: #ffffff;">
+            <tr>
+              <td class="section hero" style="padding: 0; line-height: 0;" align="center">
+                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png" alt="London Waste Management" width="600" style="display: block; width: 600px; max-width: 100%; height: auto; margin: 0; border: 0; line-height: 0;" />
+              </td>
+            </tr>
+            <tr>
+              <td class="section thankyou" style="padding: 24px 0 16px; text-align: center;">
+                <p style="margin: 0; font-size: 26px; font-weight: 700; color: #111;">
+                  <span style="color: #c5f3c3; font-size: 34px;">"</span>
+                  Thank You !
+                  <span style="color: #c5f3c3; font-size: 34px;">"</span>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td class="section content-wrapper" style="padding: 0 0 34px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border: none;">
+                  <tr>
+                    <td class="content-card" style="color: #232b25; background: #ffffff; padding: 40px 48px 42px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="box-shadow: 0 4px 20px rgba(0,0,0,0.12); border-radius: 8px; background: #ffffff;">
+                        <tr>
+                          <td class="inner-content-box" style="padding: 32px;">
+                            <p style="font-size: 22px; font-weight: 700; margin: 0 0 8px;">
+                              <span style="color: #000000;">Dear</span>
+                              <span style="color: #111111;"> ${newQuotation.Name},</span>
+                            </p>
+                            <div style="width: 92px; height: 5px; background: #28c152; margin: 0 0 24px;"></div>
+                            <p style="font-size: 17px; line-height: 1.8; margin: 0 0 18px; color: #374237;">
+                              Thank you for your quotation request. We have received your submission and will get back to you as soon as possible.
+                            </p>
+                            <p style="font-size: 17px; line-height: 1.8; margin: 0 0 22px; color: #374237;">
+                              If you have any questions or need assistance, please contact us at
+                              <a href="mailto:hello@londonwastemanagement.com" style="color: #169b4f; text-decoration: none;">hello@londonwastemanagement.com</a>
+                              or call us on <a href="tel:02030971517" style="color: #169b4f; text-decoration: none; font-weight: 600;">0203 097 1517</a>.
+                            </p>
+                            <p style="font-size: 15px; margin: 24px 0 4px; color: #4f5b52;">Best regards,</p>
+                            <p style="font-size: 16px; font-weight: bold; color: #169b4f; margin: 0;">London Waste Management Department</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 16px 24px; text-align: center; font-size: 12px; color: #5f6b66; border-top: 1px solid #e5f3e1;">
+                London Waste Management &nbsp;|&nbsp;
+                <a href="mailto:hello@londonwastemanagement.com" style="color: #169b4f; text-decoration: none;">hello@londonwastemanagement.com</a>
+              </td>
+            </tr>
+          </table>
+        </body>
+      </html>
     `;
 
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: 'Thank You',
+      subject: 'Thank You for Your Quotation Request',
       html: htmlContent,
     });
   },

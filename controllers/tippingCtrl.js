@@ -81,7 +81,7 @@ const tippingController = {
   createTippingRequestByAdmin: async (req, res) => {
     const adminId = req.user._id;
     // const { driverId, truckId, tippingPlace, notes, status } = req.body;
-    const { driverId, notes, status } = req.body;
+    const { driverId, notes, status, tipdate } = req.body;
 
 
     try {
@@ -112,6 +112,7 @@ const tippingController = {
         // tippingPlace: tippingPlace, // New field for tipping place
         notes: notes,
         status: status,
+        tipdate: tipdate, // Tip date set by admin
         createdBy: admin._id, // Storing the admin who created the request
       });
 
@@ -143,6 +144,7 @@ const tippingController = {
           // tippingPlace: newTippingRequest.tippingPlace,
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
+          tipdate: newTippingRequest.tipdate,
           createdAt: newTippingRequest.createdAt,
           createdBy: admin.username, // Admin's name
           driverName: driver.username, // Driver's name
@@ -327,7 +329,7 @@ const tippingController = {
   // Update the status of a tipping request (Admin only)
   updateTippingRequestStatus: async (req, res) => {
     const { id } = req.params; // ID of the tipping request
-    const { status, tippingPlace } = req.body; // New status to be set
+    const { status, tippingPlace, tipdate } = req.body; // New status to be set
 
     try {
       // Fetch the tipping request
@@ -349,6 +351,7 @@ const tippingController = {
       const request = oldRequest;
       request.status = status;
       request.tippingPlace = tippingPlace;
+      request.tipdate = tipdate;
 
       // Handle storage place logic based on status
       if (status === 'Accepted') {
@@ -384,6 +387,7 @@ const tippingController = {
         await loggingService.createLog({
           userId: req.user._id,
           username: req.user.username,
+          tipdate: request.tipdate,
           action: 'UPDATE',
           entityType: 'TIPPING_REQUEST',
           entityId: id,
