@@ -124,6 +124,7 @@ const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
 const customerRoutes = require('./routes/customerRoutes');
 const feedbackRoutes = require('./routes/feedback');
+const announcementRoutes = require('./routes/announcement');
 
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
@@ -156,6 +157,7 @@ app.use('/api', notificationRoutes);
 app.use('/api', emailTemplateRoutes)
 app.use('/api/customers', customerRoutes);
 app.use('/api/feedback', feedbackRoutes);
+app.use('/api/announcements', announcementRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;
