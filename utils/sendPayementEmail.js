@@ -161,15 +161,15 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     paymentSummaryTable = `
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; border:1px solid #e5e7eb;">
         <tr>
-          <td class="stack" style="padding:12px; border-right:1px solid #e5e7eb;">
+          <td class="payment-summary-cell" style="padding:12px; border-right:1px solid #e5e7eb;">
             <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Amount Due Now</p>
             <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${Number(amountToPay).toFixed(2)}</p>
           </td>
-          <td class="stack" style="padding:12px; border-right:1px solid #e5e7eb;">
+          <td class="payment-summary-cell" style="padding:12px; border-right:1px solid #e5e7eb;">
             <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Remaining Balance</p>
             <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${remainingBalance.toFixed(2)}</p>
           </td>
-          <td class="stack" style="padding:12px;">
+          <td class="payment-summary-cell" style="padding:12px;">
             <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Includes VAT</p>
             <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${vatAmount.toFixed(2)}</p>
           </td>
@@ -180,15 +180,15 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     paymentSummaryTable = `
       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; border:1px solid #e5e7eb;">
         <tr>
-          <td class="stack" style="padding:12px; border-right:1px solid #e5e7eb;">
+          <td class="payment-summary-cell" style="padding:12px; border-right:1px solid #e5e7eb;">
             <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Amount Due</p>
             <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${Number(amountToPay).toFixed(2)}</p>
           </td>
-          <td class="stack" style="padding:12px; border-right:1px solid #e5e7eb;">
+          <td class="payment-summary-cell" style="padding:12px; border-right:1px solid #e5e7eb;">
             <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Includes VAT</p>
             <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${vatAmount.toFixed(2)}</p>
           </td>
-          <td class="stack" style="padding:12px;">
+          <td class="payment-summary-cell" style="padding:12px;">
             <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Total</p>
             <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${Number(totall).toFixed(2)}</p>
           </td>
@@ -212,6 +212,8 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
       .stack { display:block !important; width:100% !important; }
       .inner { padding: 0 12px !important; }
       .center-mobile { text-align:center !important; }
+      .payment-summary-cell { display:table-cell !important; width:auto !important; }
+      .task-details-container { margin-bottom: 12px !important; }
     }
   </style>
 </head>
@@ -271,7 +273,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
                   <td style="padding:0 16px 18px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
                       <tr>
-                        <td class="stack" width="50%" style="padding-right:8px;">
+                        <td class="stack task-details-container" width="50%" style="padding-right:8px;">
                           ${taskDetailsHtml}
                         </td>
                         <td class="stack" width="50%" style="padding-left:8px;">
