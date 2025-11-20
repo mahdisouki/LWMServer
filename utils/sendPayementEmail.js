@@ -14,28 +14,28 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   // Extract VAT and build item rows
   const vatRow = breakdown.find(item => item.description === "VAT (20%)");
   const vatAmount = vatRow ? parseFloat(vatRow.amount) : 0;
-  
+
   // Calculate subtotal from the full task total (totall), not the partial payment (totalPrice)
   const subtotal = Number(totall) - vatAmount;
-  
+
   console.log("taskDetails", taskDetails, "totalPrice (partial payment)", totalPrice, "totall (full task total)", totall, "vatAmount", vatAmount, "subtotal", subtotal, "amountToPay", amountToPay, "paymentType", paymentType)
-  
+
   // Compute remaining based on paid so far plus this payment
   // For deposit payments, we need to check if the paidAmount is already set to the deposit amount
   // If so, we should use 0 as the base since this payment hasn't been made yet
   let paidSoFar = taskDetails.paidAmount?.amount || 0;
-  
+
   // If this is a deposit payment and the paidAmount equals the amountToPay, 
   // it means the deposit amount was just set but not actually paid yet
   if (paymentType === 'deposit' && paidSoFar === Number(amountToPay)) {
     paidSoFar = 0; // Reset to 0 since this payment hasn't been made yet
   }
-  
+
   const projectedPaid = paidSoFar + (Number(amountToPay) || 0);
   let remainingBalance = Math.max(Number(totall) - projectedPaid, 0);
   if (remainingBalance < 0) remainingBalance = 0;
 
-  // Build the table rows for items (match invoice template)
+  // Build the table rows for items (with all original logic for discounts and position fees)
   const itemRows = breakdown
     .filter(item => item.itemDescription)
     .map(item => {
@@ -43,18 +43,18 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
       const taskItem = (taskDetails.items || []).find(
         t => (t.standardItemId?.itemName || t.object) === item.itemDescription
       );
-      
+
       // Determine if we should show discounted price column
       const showDiscounted = taskDetails.hasDiscount && taskDetails.discountType === "perItem";
-      
+
       // Get original price (before discount) and discounted price
       let originalPrice = parseFloat(item.price);
       let discountedPrice = '';
-      
+
       if (showDiscounted && taskItem && taskItem.customPrice) {
         // Show the custom price as discounted price
         discountedPrice = `£${parseFloat(taskItem.customPrice).toFixed(2)}`;
-        
+
         // For standard items, get original price from standardItemId.price
         // For custom items, get original price from taskItem.price
         if (taskItem.standardItemId) {
@@ -68,91 +68,81 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         // No discount, so the price shown is the original price
         discountedPrice = `£${originalPrice.toFixed(2)}`;
       }
-      
+
+      // Calculate position fee
+      const positionFee = !item.standardItemId ? "0.00" :
+        item.Objectsposition === "Outside" ? "0.00" :
+          item.Objectsposition === "InsideWithDismantling" ? parseFloat(item.insideWithDismantlingPrice || 0).toFixed(2) :
+            item.Objectsposition === "Inside" ? parseFloat(item.insidePrice || 0).toFixed(2) :
+              "0.00";
+
       return `
           <tr>
-            <td style="padding:10px 6px;border-bottom:1px solid #eee;">${item.itemDescription}${item.Objectsposition ? ` (${item.Objectsposition})` : ''}</td>
-            <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #eee;">${item.quantity || 1}</td>
-            <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${originalPrice.toFixed(2)}</td>
-            ${showDiscounted ? `<td style=\"padding:10px 6px;text-align:right;border-bottom:1px solid #eee;\">${discountedPrice || '£' + originalPrice.toFixed(2)}</td>` : ''}
-            <td style="padding:10px 6px;text-align:center;border-bottom:1px solid #eee;">${item.Objectsposition || ''}</td>
-            <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${
-              !item.standardItemId ? "0" :
-              item.Objectsposition === "Outside" ? "0" : 
-              item.Objectsposition === "InsideWithDismantling" ? parseFloat(item.insideWithDismantlingPrice || 0).toFixed(2) :
-              item.Objectsposition === "Inside" ? parseFloat(item.insidePrice || 0).toFixed(2) : 
-              "0"
-            }</td>
-            <td style="padding:10px 6px;text-align:right;border-bottom:1px solid #eee;">£${parseFloat(item.total).toFixed(2)}</td>
+            <td style="padding:10px; border-top:1px solid #e5e7eb;">${item.itemDescription}</td>
+            <td style="padding:10px; border-top:1px solid #e5e7eb; text-align:center;">${item.quantity || 1}</td>
+            <td style="padding:10px; border-top:1px solid #e5e7eb; text-align:right;">£${originalPrice.toFixed(2)}</td>
+            ${showDiscounted ? `<td style="padding:10px; border-top:1px solid #e5e7eb; text-align:right;">${discountedPrice || '£' + originalPrice.toFixed(2)}</td>` : ''}
+            <td style="padding:10px; border-top:1px solid #e5e7eb; text-align:center;">${item.Objectsposition || ''}</td>
+            <td style="padding:10px; border-top:1px solid #e5e7eb; text-align:right;">£${positionFee}</td>
+            <td style="padding:10px; border-top:1px solid #e5e7eb; text-align:right;">£${parseFloat(item.total).toFixed(2)}</td>
           </tr>
         `;
     }).join("");
 
-  // Build the table header (match invoice template)
-  let tableHeader = `
-      <tr style="background:#8dc044;color:#fff;">
-        <th style="padding:12px 6px;border-top-left-radius:12px;">Product</th>
-        <th style="padding:12px 6px;">Qty</th>
-        <th style="padding:12px 6px;">Price</th>
-        ${taskDetails.hasDiscount && taskDetails.discountType === "perItem" ? '<th style=\"padding:12px 6px;\">Discounted Price</th>' : ''}
-        <th style="padding:12px 6px;">Object position</th>
-        <th style="padding:12px 6px;">Position fee</th>
-        <th style="padding:12px 6px;border-top-right-radius:12px;">Total</th>
+  // Build the table header with conditional discount column
+  const showDiscountedColumn = taskDetails.hasDiscount && taskDetails.discountType === "perItem";
+  const tableHeader = `
+      <tr>
+        <th align="left" style="background:#f3f4f6; padding:8px; font-size:11px; color:#6b7280; text-transform:uppercase;">Product</th>
+        <th align="left" style="background:#f3f4f6; padding:8px; font-size:11px; color:#6b7280; text-transform:uppercase;">Qty</th>
+        <th align="left" style="background:#f3f4f6; padding:8px; font-size:11px; color:#6b7280; text-transform:uppercase;">Price</th>
+        ${showDiscountedColumn ? '<th align="left" style="background:#f3f4f6; padding:8px; font-size:11px; color:#6b7280; text-transform:uppercase;">Discounted Price</th>' : ''}
+        <th align="left" style="background:#f3f4f6; padding:8px; font-size:11px; color:#6b7280; text-transform:uppercase;">Object position</th>
+        <th align="left" style="background:#f3f4f6; padding:8px; font-size:11px; color:#6b7280; text-transform:uppercase;">Position fee</th>
+        <th align="left" style="background:#f3f4f6; padding:8px; font-size:11px; color:#6b7280; text-transform:uppercase;">Total</th>
       </tr>
     `;
 
-  // Table HTML (match invoice template)
-  const tableHtml = `
-      <table style="width:100%;border-collapse:separate;border-spacing:0 0;border-radius:12px;overflow:hidden;margin:20px 0 10px 0;box-shadow:0 2px 8px #f0f0f0;">
-        <thead>
-          ${tableHeader}
-        </thead>
-        <tbody style="background:#fff;">
-          ${itemRows}
-        </tbody>
-      </table>
+  // Task details HTML for price breakdown section
+  const taskDetailsHtml = `
+      <div style="background:#f9fafb; padding:10px; margin-bottom:6px;">
+        <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Date</p>
+        <p style="margin:0; font-size:13px; color:#111827;">${new Date(taskDetails.date).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+      </div>
+      <div style="background:#f9fafb; padding:10px; margin-bottom:6px;">
+        <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Time Slot</p>
+        <p style="margin:0; font-size:13px; color:#111827;">${taskDetails.available === 'AnyTime' ? 'Any time (6:30am to 8:30pm)' :
+      taskDetails.available === '7am-12pm' ? '07:00 - 12:00' :
+        taskDetails.available === '12pm-5pm' ? '12:00 - 17:00' : taskDetails.available}</p>
+      </div>
+      <div style="background:#f9fafb; padding:10px;">
+        <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Notes</p>
+        <p style="margin:0; font-size:13px; color:#111827;">${taskDetails.additionalNotes || "N/A"}</p>
+      </div>
     `;
 
-  // Payment summary for partial payments (restore)
-  let paymentSummaryHtml = '';
-  if (paymentType === 'deposit' || paymentType === 'remaining') {
-    paymentSummaryHtml = `
-          <div style="margin: 0 0 18px 0; padding: 14px 18px; background:rgb(255, 255, 255); border: 1.5px solid #8bc34a; border-radius: 8px;">
-            <span style="display:block;font-size:18px;color:#222;"><strong>Amount due Now :</strong> £${Number(amountToPay).toFixed(2)}</span>
-            <span style="display:block;font-size:15px;color:#666;margin-top:2px;">Remaining Balance After Payment: £${remainingBalance.toFixed(2)}</span>
-          </div>
-        `;
-  } else {
-    paymentSummaryHtml = `<div style="margin: 0 0 18px 0; padding: 14px 18px; background:rgb(255, 255, 255); border: 1.5px solid #8bc34a; border-radius: 8px;"><span style="font-size:18px;"><strong>Amount Due :</strong> £${Number(amountToPay).toFixed(2)}</span></div>`;
-  }
-
-  // Discount row for summary (match invoice template)
-  let discountRow = '';
+  // Discount row for summary
+  let discountRowHtml = '';
   if (taskDetails.hasDiscount && taskDetails.discountType === "percentage" && taskDetails.customDiscountPercent > 0) {
     const discountAmount = ((subtotal * taskDetails.customDiscountPercent) / 100).toFixed(2);
-    discountRow = `<div><span>Discount (${taskDetails.customDiscountPercent}%) :</span><span>-£${discountAmount}</span></div>`;
+    discountRowHtml = `<p style="margin:0 0 8px; font-size:13px;">Discount (${taskDetails.customDiscountPercent}%)<span style="float:right; font-weight:bold;">-£${discountAmount}</span></p>`;
   }
 
-  // Subtotal, VAT, Total summary (match invoice template)
+  // Invoice summary box (right side of price breakdown)
   const summaryBoxHtml = `
-      <div style="margin: 18px 0 0 0; float:right; min-width:220px; background:#fafafa; border-radius:12px; border:1px solid #e6e6e6; box-shadow:0 1px 4px #f4f4f4;">
-        <table style="width:100%;border-collapse:separate;border-spacing:0 0;">
-          <tr>
-            <td style="padding:8px 12px;text-align:right;color:#888;">Subtotal :</td>
-            <td style="padding:8px 12px;text-align:right;color:#222;">£${subtotal.toFixed(2)}</td>
-          </tr>
-          ${discountRow ? `<tr><td style=\"padding:8px 12px;text-align:right;color:#888;\">${discountRow}</td><td></td></tr>` : ''}
-          <tr>
-            <td style="padding:8px 12px;text-align:right;color:#888;">VAT(20%) :</td>
-            <td style="padding:8px 12px;text-align:right;color:#222;">£${vatAmount.toFixed(2)}</td>
-          </tr>
-          <tr>
-            <td style="padding:8px 12px;text-align:right;color:#8DC044;font-weight:bold;">Total :</td>
-            <td style="padding:8px 12px;text-align:right;color:#8DC044;font-weight:bold;">£${Number(totall).toFixed(2)}</td>
-        </tr>
-        </table>
+      <div style="background:#34C759; padding:14px; color:#ffffff;">
+        <p style="margin:0 0 6px; font-size:13px;">
+          Subtotal
+          <span style="float:right; font-weight:bold;">£${subtotal.toFixed(2)}</span>
+        </p>
+        ${discountRowHtml}
+        <p style="margin:0 0 8px; font-size:13px;">
+          VAT
+          <span style="float:right; font-weight:bold;">£${vatAmount.toFixed(2)}</span>
+        </p>
+        <p style="margin:8px 0 0; font-size:12px; text-transform:uppercase;">Invoice Total</p>
+        <p style="margin:0; font-size:22px; font-weight:bold; color:#ffffff;">£${Number(totall).toFixed(2)}</p>
       </div>
-      <div style="clear:both;"></div>
     `;
 
   // Get payment type description
@@ -165,68 +155,168 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     }
   };
 
-  // Task details with green icons
-  const taskDetailsHtml = `
-      <ul style="padding-left: 0; list-style: none; margin: 0 0 18px 0;">
-        <li style="margin-bottom: 6px;"><span style="color:#8DC044;font-size:18px;vertical-align:middle;">●</span> <strong>Date :</strong> ${new Date(taskDetails.date).toLocaleDateString('en-GB')}</li>
-        <li style="margin-bottom: 6px;"><span style="color:#8DC044;font-size:18px;vertical-align:middle;">●</span> <strong>Available Time Slot:</strong> ${taskDetails.available}</li>
-        <li><span style="color:#8DC044;font-size:18px;vertical-align:middle;">●</span> <strong>Additional Notes:</strong> ${taskDetails.additionalNotes || "N/A"}</li>
-      </ul>
+  // Payment summary table (Amount Due Now, Remaining Balance, Includes VAT)
+  let paymentSummaryTable = '';
+  if (paymentType === 'deposit' || paymentType === 'remaining') {
+    paymentSummaryTable = `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; border:1px solid #e5e7eb;">
+        <tr>
+          <td class="stack" style="padding:12px; border-right:1px solid #e5e7eb;">
+            <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Amount Due Now</p>
+            <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${Number(amountToPay).toFixed(2)}</p>
+          </td>
+          <td class="stack" style="padding:12px; border-right:1px solid #e5e7eb;">
+            <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Remaining Balance</p>
+            <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${remainingBalance.toFixed(2)}</p>
+          </td>
+          <td class="stack" style="padding:12px;">
+            <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Includes VAT</p>
+            <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${vatAmount.toFixed(2)}</p>
+          </td>
+        </tr>
+      </table>
     `;
-
-  // Buttons (green, rounded, modern)
-  const buttonsHtml = `
-      <div style="text-align: center; margin: 32px 0 18px 0;">
-        <a href="${stripeLink}" style="background: #8DC044; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 600; margin-right: 12px; box-shadow:0 2px 8px #e0f2f1; transition: background 0.2s; display:inline-block; margin:10px; width: 200px; text-align: center;">Pay with Credit Card</a>
-        <a href="${paypalLink}" style="border:1px solid #8DC044;background:rgb(255, 255, 255); color: #8DC044; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 600; box-shadow:0 2px 8px #e0f2f1; transition: background 0.2s; display:inline-block; width: 200px; text-align: center;">Pay with Paypal</a>
-          </div>
-        `;
+  } else {
+    paymentSummaryTable = `
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; border:1px solid #e5e7eb;">
+        <tr>
+          <td class="stack" style="padding:12px; border-right:1px solid #e5e7eb;">
+            <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Amount Due</p>
+            <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${Number(amountToPay).toFixed(2)}</p>
+          </td>
+          <td class="stack" style="padding:12px; border-right:1px solid #e5e7eb;">
+            <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Includes VAT</p>
+            <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${vatAmount.toFixed(2)}</p>
+          </td>
+          <td class="stack" style="padding:12px;">
+            <p style="margin:0; font-size:11px; color:#6b7280; text-transform:uppercase;">Total</p>
+            <p style="margin:0; font-size:18px; font-weight:bold; color:#111827;">£${Number(totall).toFixed(2)}</p>
+          </td>
+        </tr>
+      </table>
+    `;
+  }
 
   const mailOptions = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: customerEmail,
     subject: `${getPaymentTypeDescription(paymentType)} Request for Task #${taskDetails.orderNumber}`,
-    html: `
-        <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 32px auto; padding: 0; background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/f_auto,q_auto/i9xnzsb0phuzg96ydjff'); background-size: cover; background-position: center; background-repeat: no-repeat; border-radius: 18px; box-shadow: 0 4px 24px #e8f5e9; border: 1.5px solid #e0e0e0;background-color:rgb(255, 255, 255);">
-            <div style="background: #ffffff43; border-top-left-radius: 18px; border-top-right-radius: 18px; padding: 32px 32px 18px 32px; border-bottom: 1.5px solid #e0e0e0;">
-                <div style="text-align: center; margin-bottom: 18px;">
-                    <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" width="140" alt="London Waste Management" style="display:block;margin:auto;"/>
-                </div>
-                <div style="background:rgb(255, 255, 255); padding: 10px 0 0 0; box-shadow: 0 6px 24px 0 rgba(140,192,68,0.18), 0 1.5px 0 #8dc044;">
-                  <h2 style="
-                    background:rgb(255, 255, 255);
-                    color: #8DC044;
-                    text-align: center;
-                    padding: 18px 0 16px 0;
-                    border-bottom-left-radius: 45px;
-                    border-bottom-right-radius: 45px;
-                    font-size: 28px;
-                    font-weight: 800;
-                    margin: 0 0 18px 0;
-                    letter-spacing: 1px;
-                    box-shadow: 0 2px 8px rgb(77, 85, 69);
-                    text-transform: uppercase;
-                    border-bottom: 2px solid rgb(47, 53, 39);
-                  ">
-                    ${getPaymentTypeDescription(paymentType)} Request
-                  </h2>
-                
-                ${paymentSummaryHtml}
-                <div style="color: #888; font-size: 15px; margin-bottom: 18px;">Includes VAT(20%): £${vatAmount.toFixed(2)}</div>
-                <div style="margin-bottom: 18px;">${taskDetailsHtml}</div>
-                <div style="margin-bottom: 18px;"> <span style="font-size:18px;font-weight:600;color:#8DC044;">Price Breakdown:</span></div>
-                ${tableHtml}
-                ${summaryBoxHtml}
-                ${buttonsHtml}
-                <div style="font-size: 14px; color: #888; text-align: center; margin: 18px 0 0 0;">If you have any questions, feel free to contact us.</div>
-                </div>
-            </div>
-            <div style="margin-top: 0; padding: 18px 0 12px 0; border-top: 1.5px solid #e0e0e0; text-align: center; font-size: 13px; color: #666; background: #f4f4f4; border-bottom-left-radius: 18px; border-bottom-right-radius: 18px;">
-                London Waste Management | <a href="mailto:hello@londonwastemanagement.com" style="color:#8DC044;text-decoration:none;">hello@londonwastemanagement.com</a> | 02030971517
-            </div>
-            </div>
-        </div>
-    `,
+    html: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    @media only screen and (max-width: 620px) {
+      .main-table { width: 100% !important; }
+      .stack { display:block !important; width:100% !important; }
+      .inner { padding: 0 12px !important; }
+      .center-mobile { text-align:center !important; }
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; font-family: Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+    <tr>
+      <td align="center" style="padding:24px 12px 32px;">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" class="main-table"
+          style="border-collapse:collapse; max-width:600px; background:#ffffff; box-shadow:0 15px 38px rgba(0,0,0,0.20);">
+          <tr>
+            <td style="padding:0; line-height:0;">
+              <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png"
+                width="600"
+                style="display:block; width:100%; height:auto; border:0; margin:0;" />
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px;" class="inner">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="background:#ffffff; border:1px solid #e5e7eb; box-shadow:0 6px 20px rgba(0,0,0,0.08);">
+                <tr>
+                  <td align="center" style="padding:20px 16px 6px;">
+                    <p style="margin:0; font-size:22px; font-weight:bold; color:#111827; text-transform:uppercase;">
+                      ${getPaymentTypeDescription(paymentType)} Request
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding-bottom:14px;">
+                    <div style="width:85px; height:3px; background:#34C759;"></div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 16px 20px;">
+                    ${paymentSummaryTable}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 16px;">
+                    <p style="margin:0; font-size:14px; font-weight:bold; color:#111827; text-transform:uppercase;">Task Details</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 16px 18px;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                      ${tableHeader}
+                      ${itemRows}
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 16px;">
+                    <p style="margin:0; font-size:14px; font-weight:bold; color:#111827; text-transform:uppercase;">Price Breakdown</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:0 16px 18px;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td class="stack" width="50%" style="padding-right:8px;">
+                          ${taskDetailsHtml}
+                        </td>
+                        <td class="stack" width="50%" style="padding-left:8px;">
+                          ${summaryBoxHtml}
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding:4px 16px;">
+                    <p style="margin:0; font-size:13px; color:#4b5563;">Choose a payment method below:</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding:12px 16px 18px;">
+                    <a href="${stripeLink}"
+                      style="background:#635BFF; color:#ffffff; padding:10px 18px; font-size:13px; text-decoration:none; text-transform:uppercase; margin-right:6px; display:inline-block;">
+                      Pay with Stripe
+                    </a>
+                    <a href="${paypalLink}"
+                      style="background:#003087; color:#ffffff; padding:10px 18px; font-size:13px; text-decoration:none; text-transform:uppercase; display:inline-block;">
+                      Pay with PayPal
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="border-top:1px solid #e5e7eb; padding:10px 16px 14px;">
+                    <p style="margin:0; font-size:11px; color:#6b7280;">
+                      London Waste Management |
+                      <a href="mailto:hello@londonwastemanagement.com" style="color:#34C759; text-decoration:none;">
+                        hello@londonwastemanagement.com
+                      </a>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`,
   };
 
   await transporter.sendMail(mailOptions);
