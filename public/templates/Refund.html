@@ -1,74 +1,309 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>London Waste Management - Full Refund</title>
-</head>
-<body style="font-family: Arial, sans-serif; min-height: 100vh; padding: 20px; position: relative; background: #f8f8f8;">
-    <!-- Background decorative images - absolute positioned on whole page -->
-    <div class="left-bot-image"></div>
-    <div class="right-top-image"></div>
-    
-    <div>
-        <div style="display: flex; justify-content: center; margin-bottom: 20px;"><img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/logo_cr9bor.png" alt="London Waste Management Logo" style="width: 100px; height: auto;"></div>
-
-        <!-- content -->
-        <div style="display: flex; justify-content: center; width: 80%; flex-direction: column; align-items: center; margin: auto; background-color: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); overflow: hidden; height: min-content; position: relative; z-index: 1;">
-            <div style="background-color: white; width: 100%;">
-                <div style="display: flex; justify-content: center; align-items: center; width: 100%; height: 70px; background-color: #8DC044; border-radius: 8px 8px 45px 45px; color: white; font-size: 28px; font-weight: 700; margin-bottom: 30px;">
-                    Full Refund
-                </div>
-
-                <div style="padding: 19px; display: flex; flex-direction: row; gap: 40px;">
-                    <div style="flex: 1;">
-                        <div style="font-size: 24px; padding-bottom: 10px;">
-                            Dear <span style="color: #8bc34a; font-weight: bold;">{{customerName}}</span>,
-                        </div>
-                    
-                        <div style="line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
-                            We are writing to confirm that a  {{refundType}} has been issued for your recent payment to London Waste Management.
-                        </div>
-                        
-                        <div style="margin-bottom: 20px;">
-                            <div>Refund Amount: <span style="color: #8bc34a; font-weight: bold;">{{refundAmount}}</span></div>
-                            <div>Order Number: <span style="color: #8bc34a; font-weight: bold;">{{orderNumber}}</span></div>
-                        </div>
-                        <br>
-                        <div style="line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
-                            The amount has been refunded to your original method of payment and should appear in your account within 3-5 business days.
-                        </div>
-                        
-                        <div style="line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
-                            We apologise for any inconvenience caused and thank you for your understanding.
-                        </div>
-                        
-                        <div style="line-height: 1.6; font-size: 16px; margin-bottom: 20px;">
-                            If you have any questions or require further assistance, please do not hesitate to contact us at <a href="mailto:hello@londonwastemanagement.com" style="color: #5cb3cc; text-decoration: none; font-weight: 500;">hello@londonwastemanagement.com</a> or call us on 02030971517
-                        </div>
-                        
-                        <div style="margin-top: 30px; color: #666; text-align: left;">
-                            Best regards,<br>
-                            <div style="color: #8bc34a; font-weight: bold; margin-top: 5px;">London Waste Management Department</div>
-                        </div>
-                    </div>
-                    
-                    <!-- Image placeholder - add image path here when needed -->
-                    <div style="width: 30%; min-width: 200px; display: flex; align-items: center; justify-content: center;">
-                        <!-- <img src="/templateshttps://res.cloudinary.com/ddcsuzef0/image/upload/v1751659276/truck_kgvaob.png" alt=""> -->
-                    </div>
-                </div>
-                
-                <div style="font-size: 14px; color: #666; margin-bottom: 15px; display: flex; justify-content: center; padding: 20px;">
-                    London Waste Management | <a href="mailto:hello@londonwastemanagement.com" style="color: #5cb3cc; text-decoration: none; font-weight: 500;">hello@londonwastemanagement.com</a>
-                </div>
-            </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>London Waste Management - Refund</title>
+    <style>
+      @media only screen and (max-width: 640px) {
+        .email-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          border-radius: 0 !important;
+        }
+        .email-wrapper {
+          padding: 0 !important;
+        }
+        .content-padding {
+          padding: 20px 15px !important;
+        }
+        .header-image {
+          width: 100% !important;
+          max-width: 100% !important;
+          display: block !important;
+        }
+        .top-banner {
+          border-radius: 0 !important;
+          padding: 15px 20px !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          display: block !important;
+          box-sizing: border-box !important;
+        }
+        .top-banner h2 {
+          font-size: 20px !important;
+          white-space: normal !important;
+          margin: 0 !important;
+          word-wrap: break-word !important;
+        }
+        .checkmark-badge img {
+          width: 40px !important;
+          height: 40px !important;
+        }
+        .checkmark-badge {
+          margin-bottom: -8px !important;
+        }
+        .banner-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+          padding: 0 !important;
+        }
+      }
+    </style>
+  </head>
+  <body style="margin: 0; padding: 0; background: #ffffff">
+    <div
+      class="email-wrapper"
+      style="
+        font-family: Arial, sans-serif;
+        text-align: center;
+        padding: 0;
+        background: #ffffff;
+        min-height: 100vh;
+      "
+    >
+      <!-- Main Content Container -->
+      <div
+        class="email-container"
+        style="width: 600px; max-width: 100%; margin: 0 auto"
+      >
+        <!-- Header Image -->
+        <div
+          style="
+            padding: 0;
+            text-align: center;
+            background: #ffffff;
+            margin-bottom: 0;
+            width: 100%;
+            overflow: hidden;
+          "
+        >
+          <img
+            class="header-image"
+            src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png"
+            style="width: 100%; max-width: 600px; height: auto; display: block"
+            alt="London Waste Management"
+          />
         </div>
+
+        <!-- Refund Banner (Top Banner - Light Green) -->
+        <div
+          class="banner-container"
+          style="
+            text-align: center;
+            width: 100%;
+            max-width: 100%;
+            margin: 5px 0 15px 0;
+            position: relative;
+            box-sizing: border-box;
+          "
+        >
+          <!-- Circular Green Badge with White Checkmark (Positioned above banner) -->
+          <div
+            class="checkmark-badge"
+            style="
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              margin-bottom: -8px;
+              position: relative;
+              z-index: 1;
+              width: 100%;
+            "
+          >
+            <img
+              src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763563161/Group_1261156220_s9jc7r.png"
+              alt="Checkmark"
+              style="width: 48px; height: 48px; display: block; margin: 0 auto"
+            />
+          </div>
+          <!-- Banner with Title -->
+          <div
+            class="top-banner"
+            style="
+              background: rgba(219, 249, 217, 0.41);
+              padding: 15px 30px;
+              text-align: center;
+              display: inline-block;
+              border-radius: 0;
+              width: auto;
+              margin-top: 0;
+            "
+          >
+            <!-- Title Text -->
+            <h2
+              style="
+                font-size: 24px;
+                font-weight: bold;
+                color: #1c1c1c;
+                margin: 0;
+                white-space: nowrap;
+                line-height: 1.2;
+              "
+            >
+              {{refundType}}
+            </h2>
+          </div>
+        </div>
+
+        <!-- Content Section -->
+        <div
+          class="content-padding"
+          style="padding: 30px 20px; background: #ffffff"
+        >
+          <!-- Text Content -->
+          <div style="text-align: left">
+            <!-- Greeting -->
+            <p
+              style="
+                font-size: 20px;
+                margin-bottom: 8px;
+                color: #000;
+                margin-top: 0;
+                line-height: 1.1;
+              "
+            >
+              Dear <strong>{{customerName}},</strong>
+            </p>
+            <div
+              style="
+                width: 110px;
+                height: 3px;
+                background: #15b654;
+                margin: 2px 0 22px 0;
+              "
+            ></div>
+
+            <!-- Confirmation Message -->
+            <p
+              style="
+                font-size: 16px;
+                line-height: 1.6;
+                margin-bottom: 15px;
+                color: #333;
+              "
+            >
+              We are writing to confirm that a
+              <strong style="color: #4caf50">{{refundType}}</strong> has been
+              issued for your recent payment to London Waste Management.
+            </p>
+
+            <!-- Refund Details Section -->
+            <div
+              style="
+                background: #f0fdef;
+                padding: 16px 18px;
+                margin: 25px 0;
+                border-radius: 0px;
+              "
+            >
+              <div style="margin-bottom: 12px">
+                <span style="font-weight: bold; color: #1c1c1c; font-size: 16px"
+                  >Refund Amount:</span
+                >
+                <span style="color: #1c1c1c; font-size: 16px; margin-left: 10px"
+                  ><strong style="color: #4caf50"
+                    >{{refundAmount}}</strong
+                  ></span
+                >
+              </div>
+              <div>
+                <span style="font-weight: bold; color: #1c1c1c; font-size: 16px"
+                  >Order Number:</span
+                >
+                <span style="color: #1c1c1c; font-size: 16px; margin-left: 10px"
+                  ><strong style="color: #4caf50"
+                    >#{{orderNumber}}</strong
+                  ></span
+                >
+              </div>
+            </div>
+
+            <!-- Timeline Information -->
+            <p
+              style="
+                font-size: 16px;
+                line-height: 1.6;
+                margin-bottom: 15px;
+                color: #333;
+              "
+            >
+              The amount has been refunded to your original method of payment
+              and should appear in your account within
+              <strong style="color: #4caf50">3-5 business days</strong>.
+            </p>
+
+            <!-- Apology Message -->
+            <p
+              style="
+                font-size: 16px;
+                line-height: 1.6;
+                margin-bottom: 20px;
+                color: #333;
+              "
+            >
+              We apologise for any inconvenience caused and thank you for your
+              understanding.
+            </p>
+
+            <!-- Assistance Information -->
+            <p
+              style="
+                font-size: 16px;
+                line-height: 1.6;
+                margin-bottom: 20px;
+                color: #333;
+              "
+            >
+              If you have any questions or need assistance, please contact us at
+              <a
+                href="mailto:hello@londonwastemanagement.com"
+                style="
+                  color: #333 !important;
+                  text-decoration: none;
+                  font-weight: bold;
+                "
+                >hello@londonwastemanagement.com</a
+              >
+              or call <strong style="color: #333">0203 097 1517</strong>.
+            </p>
+
+            <!-- Closing -->
+            <p
+              style="
+                font-size: 16px;
+                line-height: 1.6;
+                margin-top: 30px;
+                color: #333;
+              "
+            >
+              Best Regards,<br />
+              <strong style="color: #4caf50">London Waste Management</strong>
+            </p>
+          </div>
+        </div>
+
+        <!-- Footer Section -->
+        <div
+          style="
+            padding: 15px 20px;
+            font-size: 12px;
+            text-align: center;
+            color: #666;
+            border-top: 1px solid #eee;
+            background: #ffffff;
+          "
+        >
+          London Waste Management |
+          <a
+            href="mailto:hello@londonwastemanagement.com"
+            style="color: #169b4f"
+            >hello@londonwastemanagement.com</a
+          >
+        </div>
+      </div>
     </div>
-    
-    <!-- Page footer waves -->
-    <div class="footer-waves">
-        <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/image_cefof1.png" alt="Footer waves">
-    </div>
-</body>
+  </body>
 </html>
