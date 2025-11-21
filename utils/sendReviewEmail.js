@@ -16,14 +16,25 @@ const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
   let template = fs.readFileSync(templatePath, 'utf8');
 
   // Prepare dynamic links
-  const internalReviewBase = `https://lwmadmin.netlify.app/review/${orderId}`;
   const trustpilotLink = `https://www.trustpilot.com/evaluate/www.londonwastemanagement.com`;
 
+  // Encode the name for URL parameter
+  const encodedName = encodeURIComponent(firstName);
+
+  // For ratings 1-3, link to feedback page with name parameter
+  const feedbackLink1 = `http://client.londonwastemanagement.com/feedback?name=${encodedName}&rating=1`;
+  const feedbackLink2 = `http://client.londonwastemanagement.com/feedback?name=${encodedName}&rating=2`;
+  const feedbackLink3 = `http://client.londonwastemanagement.com/feedback?name=${encodedName}&rating=3`;
+
+  // For ratings 4-5, link to Trustpilot
+  // (rating 4 and 5 both go to Trustpilot)
+
   // Replace placeholders in the template
-  template = template.replace(/Texty Text/g, firstName);
-  template = template.replace(/__ORDER_ID__/g, orderId);
-  template = template.replace(/__INTERNAL_REVIEW_LINK__/g, internalReviewBase);
-  template = template.replace(/__TRUSTPILOT_LINK__/g, trustpilotLink);
+  template = template.replace(/{{FULL_NAME}}/g, firstName);
+  template = template.replace(/{{FEEDBACK_LINK_1}}/g, feedbackLink1);
+  template = template.replace(/{{FEEDBACK_LINK_2}}/g, feedbackLink2);
+  template = template.replace(/{{FEEDBACK_LINK_3}}/g, feedbackLink3);
+  template = template.replace(/{{TRUSTPILOT_LINK}}/g, trustpilotLink);
 
   const mailOptions = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,

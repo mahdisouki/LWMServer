@@ -293,6 +293,10 @@ module.exports = {
       })
       .join('');
 
+    // Determine if payment is fully paid
+    const isFullyPaid = task.paymentStatus === 'Paid' ||
+      (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid');
+
     const vars = {
       billingName: `${task.firstName} ${task.lastName}`,
       billingAddress: task.billingAddress,
@@ -319,11 +323,9 @@ module.exports = {
       privateNotes: task.privateNotes,
       businessName: task.bussinessName,
       collectionAddress: task.collectionAddress,
-      // Payment status for stamps
-      paymentStatusUnpaid: (task.paymentStatus === 'Paid' ||
-        (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid')) ? 'block' : 'none',
-      paymentStatusPaid: (task.paymentStatus !== 'Paid' &&
-        (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid')) ? 'block' : 'none',
+      // Payment status for stamps - show PAID only when fully paid, otherwise show UNPAID
+      paymentStatusPaid: isFullyPaid ? 'block' : 'none',
+      paymentStatusUnpaid: !isFullyPaid ? 'block' : 'none',
       // Discount display logic based on discount type
       showDiscountRow:
         task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
