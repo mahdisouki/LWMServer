@@ -22,9 +22,9 @@ const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
   const encodedName = encodeURIComponent(firstName);
 
   // For ratings 1-3, link to feedback page with name parameter
-  const feedbackLink1 = `https://client.londonwastemanagement.com/feedback?name=${encodedName}&rating=1`;
-  const feedbackLink2 = `https://client.londonwastemanagement.com/feedback?name=${encodedName}&rating=2`;
-  const feedbackLink3 = `https://client.londonwastemanagement.com/feedback?name=${encodedName}&rating=3`;
+  const feedbackLink1 = `https://client.londonwastemanagement.uk/feedback?name=${encodedName}&rating=1`;
+  const feedbackLink2 = `https://client.londonwastemanagement.uk/feedback?name=${encodedName}&rating=2`;
+  const feedbackLink3 = `https://client.londonwastemanagement.uk/feedback?name=${encodedName}&rating=3`;
 
   // For ratings 4-5, link to Trustpilot
   // (rating 4 and 5 both go to Trustpilot)
