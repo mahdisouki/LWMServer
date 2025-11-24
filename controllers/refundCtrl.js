@@ -76,7 +76,7 @@ exports.processRefund = async (req, res) => {
 
     console.log("Refund request:", taskId, refundAmount);
     try {
-        const task = await Task.findById(taskId);
+        const task = await Task.findById(taskId).populate('items.standardItemId');
         if (!task) return res.status(404).json({ message: "Task not found" });
 
         // Find ALL payment histories for this task (deposit + remaining)

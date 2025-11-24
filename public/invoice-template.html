@@ -259,6 +259,30 @@
         display: none;
       }
 
+      /* Refund Badge */
+      .refund-badge {
+        position: absolute;
+        top: 15%;
+        right: -8%;
+        transform: translate(-50%, -50%) rotate(-15deg);
+        z-index: 1001;
+        opacity: 0.8;
+        pointer-events: none;
+      }
+
+      .refund-badge img {
+        width: 150px;
+        height: auto;
+      }
+
+      .refund-badge-full {
+        display: none;
+      }
+
+      .refund-badge-partial {
+        display: none;
+      }
+
       /* Footer text */
       .footer-text {
         margin-top: 40px;
@@ -289,6 +313,20 @@
         src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763677751/king_q_2_2_fifr8j.png"
         alt="NOT PAID"
       />
+    </div>
+
+    <!-- Refund Badges -->
+    <div
+      class="refund-badge refund-badge-full"
+      style="display: {{showFullRefundBadge}};"
+    >
+      <img src="{{fullRefundBadgeUrl}}" alt="FULL REFUND" />
+    </div>
+    <div
+      class="refund-badge refund-badge-partial"
+      style="display: {{showPartialRefundBadge}};"
+    >
+      <img src="{{partialRefundBadgeUrl}}" alt="PARTIAL REFUND" />
     </div>
 
     <div class="container">
@@ -374,6 +412,7 @@
                 <span class="summary-label">VAT</span>
                 <span class="summary-value">£ {{vat}}</span>
               </div>
+              {{refundRow}}
               <div class="summary-row total">
                 <span class="summary-label">Invoice Total</span>
                 <span class="summary-value">£ {{totalPrice}}</span>
