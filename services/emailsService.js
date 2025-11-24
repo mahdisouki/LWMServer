@@ -117,11 +117,17 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
   const path = require('path');
   const templatePath = path.join(__dirname, '../public/templates/Refund.html');
   let html = fs.readFileSync(templatePath, 'utf8');
+  // Format refund type for display
+  let refundTypeDisplay = 'Total Refund';
+  if (task.paymentStatus === 'partial_Refunded') {
+    refundTypeDisplay = 'Partial Refund';
+  }
+
   const vars = {
     customerName: `${task.firstName} ${task.lastName}`,
     refundAmount: `£${refundAmount.toFixed(2)}`,
     orderNumber: task.orderNumber,
-    refundType: `${task.paymentStatus}`, // or 'Partial Refund' based on your logic
+    refundType: refundTypeDisplay,
     logoPath: 'https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/logo_cr9bor.png',
     footerWavesImage: 'https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/image_cefof1.png',
     contactEmail: 'hello@londonwastemanagement.com',
