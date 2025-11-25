@@ -853,16 +853,100 @@ module.exports = {
       const subtotal = total / 1.2; // Remove VAT (20%)
       const vat = total - subtotal;
 
-      // Build breakdown HTML if provided
-      let breakdownHtml = '';
-      if (breakdown && Array.isArray(breakdown)) {
-        breakdownHtml = breakdown
-          .map((item) => {
-            const description = item.description || item.itemDescription || 'Item';
-            const itemAmount = item.amount || item.price || 0;
-            return `<li style="margin-bottom: 8px">${description}: £${parseFloat(itemAmount).toFixed(2)}</li>`;
-          })
-          .join('');
+      // Build breakdown table HTML if provided
+      let breakdownTableHtml = '';
+      if (breakdown && Array.isArray(breakdown) && breakdown.length > 0) {
+        // Determine if we need quantity column (only if any item has quantity)
+        const hasQuantity = breakdown.some(item => item.quantity && item.quantity > 0 && !item.description?.toLowerCase().includes('total') && !item.description?.toLowerCase().includes('payment method'));
+
+        // Separate items from summary rows (Total, Payment Method, etc.)
+        const itemRows = [];
+        const summaryRows = [];
+
+        breakdown.forEach((item) => {
+          const description = item.description || item.itemDescription || 'Item';
+          const itemAmount = item.amount || item.price;
+          const quantity = item.quantity || 1;
+
+          // Check if this is a summary row (Total, Payment Method, etc.)
+          const isSummaryRow = description.toLowerCase().includes('total') ||
+            description.toLowerCase().includes('payment method') ||
+            description.toLowerCase().includes('vat');
+
+          // Check if this is a Payment Method entry (non-numeric amount)
+          const isPaymentMethod = description.toLowerCase().includes('payment method');
+          const isNumeric = !isNaN(parseFloat(itemAmount)) && isFinite(itemAmount);
+
+          let amountCell = '';
+          if (isPaymentMethod || !isNumeric) {
+            // For Payment Method or non-numeric values, just show the value as text
+            amountCell = `<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">${itemAmount || 'N/A'}</td>`;
+          } else {
+            // For numeric amounts, format as currency
+            amountCell = `<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">£${parseFloat(itemAmount).toFixed(2)}</td>`;
+          }
+
+          // Show quantity only for item rows (not summary rows)
+          const showQuantity = !isSummaryRow && item.itemDescription && quantity > 0;
+          const quantityCell = showQuantity
+            ? `<td style="text-align: center; padding: 10px; border-bottom: 1px solid #e0e0e0;">${quantity}</td>`
+            : '';
+
+          // For summary rows, add empty quantity cell if quantity column exists
+          const finalQuantityCell = isSummaryRow && hasQuantity
+            ? '<td style="text-align: center; padding: 10px; border-bottom: 1px solid #e0e0e0;"></td>'
+            : quantityCell;
+
+          const rowHtml = `
+            <tr>
+              <td style="padding: 10px; border-bottom: 1px solid #e0e0e0; ${isSummaryRow ? 'font-weight: bold;' : ''}">${description}</td>
+              ${finalQuantityCell}
+              ${amountCell}
+            </tr>`;
+
+          if (isSummaryRow) {
+            summaryRows.push(rowHtml);
+          } else {
+            itemRows.push(rowHtml);
+          }
+        });
+
+        // Add VAT and Total rows if not already in breakdown
+        const hasVAT = summaryRows.some(row => row.toLowerCase().includes('vat'));
+        const hasTotal = summaryRows.some(row => row.toLowerCase().includes('total amount'));
+
+        if (!hasVAT) {
+          const vatRowQuantityCell = hasQuantity
+            ? '<td style="text-align: center; padding: 10px; border-bottom: 1px solid #e0e0e0;"></td>'
+            : '';
+          summaryRows.unshift(`<tr><td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">VAT (20%)</td>${vatRowQuantityCell}<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">£${vat.toFixed(2)}</td></tr>`);
+        }
+        if (!hasTotal) {
+          const totalRowQuantityCell = hasQuantity
+            ? '<td style="text-align: center; padding: 10px; border-bottom: 1px solid #e0e0e0;"></td>'
+            : '';
+          summaryRows.push(`<tr><td style="padding: 10px; border-bottom: 1px solid #e0e0e0; font-weight: bold;">Total Amount (Including VAT)</td>${totalRowQuantityCell}<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0; font-weight: bold;">£${total.toFixed(2)}</td></tr>`);
+        }
+
+        const quantityHeader = hasQuantity
+          ? '<th style="text-align: center; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Quantity</th>'
+          : '';
+
+        const allRows = [...itemRows, ...summaryRows].join('');
+
+        breakdownTableHtml = `
+          <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+            <thead>
+              <tr>
+                <th style="text-align: left; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Description</th>
+                ${quantityHeader}
+                <th style="text-align: right; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${allRows}
+            </tbody>
+          </table>`;
       }
 
       // Handle Handlebars conditionals first
@@ -900,10 +984,19 @@ module.exports = {
       html = html.replace(/{{paymentDate}}/g, paymentDate || new Date().toLocaleString());
       html = html.replace(/{{paymentType}}/g, paymentType || 'Payment');
 
-      // Add breakdown if provided (insert before VAT line in payment details)
-      if (breakdownHtml) {
-        // Insert breakdown items before the VAT line
-        html = html.replace(/(<li style="margin-bottom: 8px">VAT \(20%\):)/, breakdownHtml + '$1');
+      // Change title from "Invoice Confirmation" to "Payment Confirmation"
+      html = html.replace(/Invoice Confirmation/g, 'Payment Confirmation');
+
+      // Replace the payment details list with table if breakdown is provided
+      if (breakdownTableHtml) {
+        // Replace the entire <ul> section with the table
+        html = html.replace(
+          /<ul[\s\S]*?style="[^"]*margin:[^"]*padding-left:[^"]*"[^"]*>[\s\S]*?<\/ul>/,
+          breakdownTableHtml
+        );
+      } else {
+        // If no breakdown, keep the original list but ensure VAT and Total are shown
+        // This handles the case when breakdown is not provided
       }
 
       // Send email
