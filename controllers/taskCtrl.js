@@ -115,19 +115,21 @@ async function calculateTotalPrice({
         positionFee = Number(standardItem.insideWithDismantlingPrice);
       } else if (item.Objectsposition === 'Inside') {
         positionFee = Number(standardItem.insidePrice);
+      } else {
+        positionFee = 0; // Outside position has no additional fee
       }
-      // Outside position has no additional fee
 
       console.log('=== CALCULATE TOTAL PRICE DEBUG ===');
       console.log('Item:', item);
       console.log('StandardItem:', standardItem);
-      console.log('Position:', item.Objectsposition);
+      console.log('Position:', item.Objectsposition, 'Type:', typeof item.Objectsposition);
       console.log('Base item price (without position fees):', baseItemPrice);
       console.log('Position fee (added once):', positionFee);
       console.log('Quantity:', quantity);
 
       const itemSubtotal = (baseItemPrice * quantity) + positionFee;
       console.log('Item subtotal (basePrice*quantity + positionFee):', itemSubtotal);
+      console.log('Formula:', `(${baseItemPrice} × ${quantity}) + ${positionFee} = ${itemSubtotal}`);
 
       // Handle item-specific discount if discountType is "perItem"
       let finalItemTotal = itemSubtotal;
@@ -167,7 +169,7 @@ async function calculateTotalPrice({
     subtotal -= percentageDiscount;
   }
 
-  // 4. Apply 10% discount if available === 'AnyTime' and all items are 'Outside'
+  // 4. Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
   console.log('=== DISCOUNT CHECK DEBUG ===');
   console.log('available:', available, 'Type:', typeof available);
   console.log('createdByType:', createdByType, 'Type:', typeof createdByType);
@@ -186,7 +188,7 @@ async function calculateTotalPrice({
     hasItems &&
     allItemsOutside
   ) {
-    console.log('✅ Applying 10% discount for Outside items with AnyTime and public');
+    console.log('✅ Applying 10% discount for Outside items with AnyTime and public type');
     subtotal *= 0.9;
     console.log('Subtotal after discount:', subtotal);
   } else {
@@ -199,7 +201,8 @@ async function calculateTotalPrice({
 
   // 5. Enforce minimum price (before VAT) - if under £37.5, make it £37.5
   // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
-  if (subtotal < 37.5) {
+  // Skip minimum price enforcement if created by Admin
+  if (createdByType !== 'Admin' && subtotal < 37.5) {
     subtotal = 37.5;
   }
 
@@ -1222,12 +1225,6 @@ const taskCtrl = {
           const percentageDiscount = (subtotal * populatedTask.customDiscountPercent) / 100;
           subtotal -= percentageDiscount;
           console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
-        }
-
-        // Apply minimum price (before VAT) - if under £30, make it £30
-        if (subtotal < 30) {
-          console.log('Applying minimum price adjustment: £' + subtotal + ' → £30');
-          subtotal = 30;
         }
 
         // Add VAT
@@ -2581,9 +2578,21 @@ const taskCtrl = {
         percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
       }
 
+      // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      const isAvailableAnyTime = task.available === 'AnyTime';
+      const isCreatedByPublic = task.createdByType === 'public';
+      const hasItems = task.items && task.items.length > 0;
+      const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+        console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice email');
+        subtotal *= 0.9;
+      }
+
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
       // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
-      if (subtotal < 37.5) {
+      // Skip minimum price enforcement if created by Admin
+      if (task.createdByType !== 'Admin' && subtotal < 37.5) {
         subtotal = 37.5;
       }
 

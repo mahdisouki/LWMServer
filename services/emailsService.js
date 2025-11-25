@@ -230,9 +230,31 @@ module.exports = {
       subtotal -= percentageDiscount;
     }
 
-    // Apply minimum price (before VAT) - if under £30, make it £30
-    if (subtotal < 30) {
-      subtotal = 30;
+    // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+    const isAvailableAnyTime = task.available === 'AnyTime';
+    const isCreatedByPublic = task.createdByType === 'public';
+    const hasItems = task.items && task.items.length > 0;
+    const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+
+    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+      console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice PDF');
+      subtotal *= 0.9;
+    }
+
+    // Check createdByType condition for minimum price enforcement
+    // Only skip minimum price if explicitly 'Admin', otherwise enforce it (for 'public' or undefined/null)
+    const enforceMinimumPrice = task.createdByType !== 'Admin';
+    console.log('=== INVOICE PDF PRICE CALCULATION ===');
+    console.log('task.createdByType:', task.createdByType, 'Type:', typeof task.createdByType);
+    console.log('enforceMinimumPrice:', enforceMinimumPrice);
+    console.log('subtotal before minimum check:', subtotal);
+
+    // Apply minimum price (before VAT) - if under £37.5, make it £37.5 (=> £45 with VAT)
+    if (enforceMinimumPrice && subtotal < 37.5) {
+      console.log('Applying minimum price adjustment: £' + subtotal + ' → £37.5');
+      subtotal = 37.5;
+    } else {
+      console.log('Minimum price NOT applied (Admin task or subtotal >= 37.5)');
     }
 
     console.log("subtotal", subtotal)
