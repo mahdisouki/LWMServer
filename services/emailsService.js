@@ -878,8 +878,11 @@ module.exports = {
           const isNumeric = !isNaN(parseFloat(itemAmount)) && isFinite(itemAmount);
 
           let amountCell = '';
-          if (isPaymentMethod || !isNumeric) {
-            // For Payment Method or non-numeric values, just show the value as text
+          if (isPaymentMethod) {
+            // For Payment Method, use the paymentType parameter instead of the email address
+            amountCell = `<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">${paymentType || 'N/A'}</td>`;
+          } else if (!isNumeric) {
+            // For other non-numeric values, just show the value as text
             amountCell = `<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">${itemAmount || 'N/A'}</td>`;
           } else {
             // For numeric amounts, format as currency
@@ -983,6 +986,12 @@ module.exports = {
       html = html.replace(/{{subtotal}}/g, subtotal.toFixed(2));
       html = html.replace(/{{paymentDate}}/g, paymentDate || new Date().toLocaleString());
       html = html.replace(/{{paymentType}}/g, paymentType || 'Payment');
+
+      // Update the confirmation message for payment confirmation (after orderNumber is replaced)
+      html = html.replace(
+        /Thank you for booking with[\s\S]*?<strong style="color: #4caf50">London Waste Management\.<\/strong>/,
+        `We've successfully received your payment for Order <strong style="color: #4caf50">#${task.orderNumber || orderId}</strong>. Thank you for choosing <strong style="color: #4caf50">London Waste Management</strong>!`
+      );
 
       // Change title from "Invoice Confirmation" to "Payment Confirmation"
       html = html.replace(/Invoice Confirmation/g, 'Payment Confirmation');
