@@ -4,8 +4,10 @@ const Truck = require('../models/Truck');
 const capacities = require('../config/storageCapacities');
 const { emitNotificationToUser } = require('../socket');
 const { User } = require('../models/User');
+const Driver = require('../models/Driver');
 const jwt = require('jsonwebtoken');
 const loggingService = require('../services/loggingService');
+const adminId = "67cb6810c9e768ec25d39523";
 
 // Helper function to get current available quantities for each item type
 const getCurrentQuantities = async () => {
@@ -195,6 +197,21 @@ const storageCtrl = {
         if (!isCreatorAdmin) {
           const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
 
+          // Get driver information
+          let driverName = '';
+          if (driverId) {
+            const driver = await Driver.findById(driverId).select('username firstName lastName');
+            if (driver) {
+              driverName = driver.username || `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || 'Driver';
+            } else {
+              // Try User model as fallback
+              const user = await User.findById(driverId).select('username firstName lastName');
+              if (user) {
+                driverName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
+              }
+            }
+          }
+
           const itemsSummary = [];
           if (savedStorage.items.fridges > 0) itemsSummary.push(`${savedStorage.items.fridges} fridge(s)`);
           if (savedStorage.items.mattresses > 0) itemsSummary.push(`${savedStorage.items.mattresses} mattress(es)`);
@@ -202,12 +219,30 @@ const storageCtrl = {
           if (savedStorage.items.paint > 0) itemsSummary.push(`${savedStorage.items.paint} paint`);
           if (savedStorage.items.other > 0) itemsSummary.push(`${savedStorage.items.other} other item(s)`);
 
-          const notificationMessage = `Items added to storage: ${itemsSummary.join(', ')}`;
+          const notificationMessage = driverName 
+            ? `${driverName} added items to storage: ${itemsSummary.join(', ')}`
+            : `Items added to storage: ${itemsSummary.join(', ')}`;
 
+          // Send notification to all admins
           for (const admin of adminUsers) {
             if (admin._id) {
-              await emitNotificationToUser(admin._id.toString(), 'Storage', notificationMessage);
+              await emitNotificationToUser(
+                admin._id.toString(),
+                'Storage',
+                notificationMessage,
+                driverName || 'System'
+              );
             }
+          }
+
+          // Also send to the hardcoded adminId as a fallback
+          if (adminId) {
+            await emitNotificationToUser(
+              adminId,
+              'Storage',
+              notificationMessage,
+              driverName || 'System'
+            );
           }
         }
       } catch (notificationError) {
@@ -381,6 +416,21 @@ const storageCtrl = {
         if (!isCreatorAdmin) {
           const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
 
+          // Get driver information
+          let driverName = '';
+          if (driverId) {
+            const driver = await Driver.findById(driverId).select('username firstName lastName');
+            if (driver) {
+              driverName = driver.username || `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || 'Driver';
+            } else {
+              // Try User model as fallback
+              const user = await User.findById(driverId).select('username firstName lastName');
+              if (user) {
+                driverName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
+              }
+            }
+          }
+
           const itemsSummary = [];
           if (savedStorage.items.fridges > 0) itemsSummary.push(`${savedStorage.items.fridges} fridge(s)`);
           if (savedStorage.items.mattresses > 0) itemsSummary.push(`${savedStorage.items.mattresses} mattress(es)`);
@@ -388,12 +438,30 @@ const storageCtrl = {
           if (savedStorage.items.paint > 0) itemsSummary.push(`${savedStorage.items.paint} paint`);
           if (savedStorage.items.other > 0) itemsSummary.push(`${savedStorage.items.other} other item(s)`);
 
-          const notificationMessage = `Items removed from storage: ${itemsSummary.join(', ')}`;
+          const notificationMessage = driverName 
+            ? `${driverName} removed items from storage: ${itemsSummary.join(', ')}`
+            : `Items removed from storage: ${itemsSummary.join(', ')}`;
 
+          // Send notification to all admins
           for (const admin of adminUsers) {
             if (admin._id) {
-              await emitNotificationToUser(admin._id.toString(), 'Storage', notificationMessage);
+              await emitNotificationToUser(
+                admin._id.toString(),
+                'Storage',
+                notificationMessage,
+                driverName || 'System'
+              );
             }
+          }
+
+          // Also send to the hardcoded adminId as a fallback
+          if (adminId) {
+            await emitNotificationToUser(
+              adminId,
+              'Storage',
+              notificationMessage,
+              driverName || 'System'
+            );
           }
         }
       } catch (notificationError) {

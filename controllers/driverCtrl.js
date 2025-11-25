@@ -603,7 +603,52 @@ const driverManagement = {
         },
         { $set: statusUpdate },
         { new: true, upsert: true, setDefaultsOnInsert: true }
-      );
+      ).populate('truckId', 'name matricule driverId helperId');
+
+      // Send notification to all admins
+      try {
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        const truck = truckStatus?.truckId;
+        const truckName = truck?.name || truck?.matricule || 'Truck';
+        
+        // Get driver name if available
+        let driverName = '';
+        if (truck?.driverId) {
+          const driver = await Driver.findById(truck.driverId).select('username firstName lastName');
+          if (driver) {
+            driverName = driver.username || `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || 'Driver';
+          }
+        }
+        
+        const notificationMessage = driverName 
+          ? `${driverName} has ended the day for ${truckName}`
+          : `Truck end status updated for ${truckName}`;
+        
+        // Send notification to all admins
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(
+              admin._id.toString(),
+              'Driver_Tracking',
+              notificationMessage,
+              driverName || truckName
+            );
+          }
+        }
+        
+        // Also send to the hardcoded adminId as a fallback
+        if (adminId) {
+          await emitNotificationToUser(
+            adminId,
+            'Driver_Tracking',
+            notificationMessage,
+            driverName || truckName
+          );
+        }
+      } catch (notificationError) {
+        console.error('Error sending notification to admin:', notificationError);
+        // Don't fail the request if notification fails
+      }
 
       res.status(200).json({
         message: 'Truck end status updated successfully',
@@ -1039,6 +1084,38 @@ const driverManagement = {
         return res.status(404).json({ message: 'User not found' });
       }
 
+      // Send notification to all admins
+      try {
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver/Helper';
+        const notificationMessage = `${userName} has started their day`;
+        
+        // Send notification to all admins
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(
+              admin._id.toString(),
+              'Driver_Tracking',
+              notificationMessage,
+              userName
+            );
+          }
+        }
+        
+        // Also send to the hardcoded adminId as a fallback
+        if (adminId) {
+          await emitNotificationToUser(
+            adminId,
+            'Driver_Tracking',
+            notificationMessage,
+            userName
+          );
+        }
+      } catch (notificationError) {
+        console.error('Error sending notification to admin:', notificationError);
+        // Don't fail the request if notification fails
+      }
+
       console.log('azeazeaz', user);
       return res.status(200).json({ message: 'Start time updated', user });
     } catch (error) {
@@ -1075,7 +1152,37 @@ const driverManagement = {
       user.breakStartTime = Date.now();
       await user.save();
 
-      emitNotificationToUser(adminId, 'Driver_Tracking', `${user.username} is taking a break`, user.username);
+      // Send notification to all admins
+      try {
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || type;
+        const notificationMessage = `${userName} is taking a break`;
+        
+        // Send notification to all admins
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(
+              admin._id.toString(),
+              'Driver_Tracking',
+              notificationMessage,
+              userName
+            );
+          }
+        }
+        
+        // Also send to the hardcoded adminId as a fallback
+        if (adminId) {
+          await emitNotificationToUser(
+            adminId,
+            'Driver_Tracking',
+            notificationMessage,
+            userName
+          );
+        }
+      } catch (notificationError) {
+        console.error('Error sending notification to admin:', notificationError);
+        // Don't fail the request if notification fails
+      }
 
       return res.status(200).json({
         message: 'Break started',
@@ -1119,6 +1226,38 @@ const driverManagement = {
       );
       user.onBreak = false;
       await user.save();
+
+      // Send notification to all admins
+      try {
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || type;
+        const notificationMessage = `${userName} has ended their break (${lastBreak.duration} minutes)`;
+        
+        // Send notification to all admins
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(
+              admin._id.toString(),
+              'Driver_Tracking',
+              notificationMessage,
+              userName
+            );
+          }
+        }
+        
+        // Also send to the hardcoded adminId as a fallback
+        if (adminId) {
+          await emitNotificationToUser(
+            adminId,
+            'Driver_Tracking',
+            notificationMessage,
+            userName
+          );
+        }
+      } catch (notificationError) {
+        console.error('Error sending notification to admin:', notificationError);
+        // Don't fail the request if notification fails
+      }
 
       return res.status(200).json({
         message: 'Break ended',
