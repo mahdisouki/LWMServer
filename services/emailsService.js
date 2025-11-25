@@ -117,11 +117,17 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
   const path = require('path');
   const templatePath = path.join(__dirname, '../public/templates/Refund.html');
   let html = fs.readFileSync(templatePath, 'utf8');
+  // Format refund type for display
+  let refundTypeDisplay = 'Total Refund';
+  if (task.paymentStatus === 'partial_Refunded') {
+    refundTypeDisplay = 'Partial Refund';
+  }
+
   const vars = {
     customerName: `${task.firstName} ${task.lastName}`,
     refundAmount: `£${refundAmount.toFixed(2)}`,
     orderNumber: task.orderNumber,
-    refundType: `${task.paymentStatus}`, // or 'Partial Refund' based on your logic
+    refundType: refundTypeDisplay,
     logoPath: 'https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/logo_cr9bor.png',
     footerWavesImage: 'https://res.cloudinary.com/ddcsuzef0/image/upload/v1751659277/image_cefof1.png',
     contactEmail: 'hello@londonwastemanagement.com',
@@ -146,7 +152,12 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
   const fileName = `invoice-refund-${task.orderNumber}.pdf`;
   const filePath = path.join(dirPath, fileName);
-  await module.exports.generateOfficialInvoicePDF(task, filePath);
+  const isFullRefund = task.paymentStatus === 'refunded';
+  await module.exports.generateOfficialInvoicePDF(task, filePath, {
+    isRefund: true,
+    refundAmount: refundAmount,
+    isFullRefund: isFullRefund
+  });
 
   await transporter.sendMail({
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
@@ -159,7 +170,7 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
 }
 
 module.exports = {
-  async generateOfficialInvoicePDF(task, outputPath) {
+  async generateOfficialInvoicePDF(task, outputPath, refundInfo = null) {
     const templatePath = path.join(
       __dirname,
       '../public/invoice-template.html',
@@ -219,9 +230,31 @@ module.exports = {
       subtotal -= percentageDiscount;
     }
 
-    // Apply minimum price (before VAT) - if under £30, make it £30
-    if (subtotal < 30) {
-      subtotal = 30;
+    // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+    const isAvailableAnyTime = task.available === 'AnyTime';
+    const isCreatedByPublic = task.createdByType === 'public';
+    const hasItems = task.items && task.items.length > 0;
+    const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+
+    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+      console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice PDF');
+      subtotal *= 0.9;
+    }
+
+    // Check createdByType condition for minimum price enforcement
+    // Only skip minimum price if explicitly 'Admin', otherwise enforce it (for 'public' or undefined/null)
+    const enforceMinimumPrice = task.createdByType !== 'Admin';
+    console.log('=== INVOICE PDF PRICE CALCULATION ===');
+    console.log('task.createdByType:', task.createdByType, 'Type:', typeof task.createdByType);
+    console.log('enforceMinimumPrice:', enforceMinimumPrice);
+    console.log('subtotal before minimum check:', subtotal);
+
+    // Apply minimum price (before VAT) - if under £37.5, make it £37.5 (=> £45 with VAT)
+    if (enforceMinimumPrice && subtotal < 37.5) {
+      console.log('Applying minimum price adjustment: £' + subtotal + ' → £37.5');
+      subtotal = 37.5;
+    } else {
+      console.log('Minimum price NOT applied (Admin task or subtotal >= 37.5)');
     }
 
     console.log("subtotal", subtotal)
@@ -293,6 +326,23 @@ module.exports = {
       })
       .join('');
 
+    // Determine if payment is fully paid
+    const isFullyPaid = task.paymentStatus === 'Paid' ||
+      (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid');
+
+    // Handle refund information
+    const isRefund = refundInfo && refundInfo.isRefund;
+    const refundAmount = refundInfo ? refundInfo.refundAmount : 0;
+    const isFullRefund = refundInfo ? refundInfo.isFullRefund : false;
+    const showRefundBadge = isRefund ? 'block' : 'none';
+    const showFullRefundBadge = isRefund && isFullRefund ? 'block' : 'none';
+    const showPartialRefundBadge = isRefund && !isFullRefund ? 'block' : 'none';
+    const showRefundRow = isRefund ? 'block' : 'none';
+
+    // Hide payment status badges when it's a refund invoice
+    const paymentStatusPaidDisplay = isRefund ? 'none' : (isFullyPaid ? 'block' : 'none');
+    const paymentStatusUnpaidDisplay = isRefund ? 'none' : (!isFullyPaid ? 'block' : 'none');
+
     const vars = {
       billingName: `${task.firstName} ${task.lastName}`,
       billingAddress: task.billingAddress,
@@ -319,11 +369,9 @@ module.exports = {
       privateNotes: task.privateNotes,
       businessName: task.bussinessName,
       collectionAddress: task.collectionAddress,
-      // Payment status for stamps
-      paymentStatusUnpaid: (task.paymentStatus === 'Paid' ||
-        (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid')) ? 'block' : 'none',
-      paymentStatusPaid: (task.paymentStatus !== 'Paid' &&
-        (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid')) ? 'block' : 'none',
+      // Payment status for stamps - hide when it's a refund invoice
+      paymentStatusPaid: paymentStatusPaidDisplay,
+      paymentStatusUnpaid: paymentStatusUnpaidDisplay,
       // Discount display logic based on discount type
       showDiscountRow:
         task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
@@ -351,6 +399,14 @@ module.exports = {
       clockIcon: asset('Group 4.png'),
       fontRegular: asset('Lato-Regular.ttf'),
       fontBold: asset('lato-bold.ttf'),
+      // Refund information
+      showRefundBadge,
+      showFullRefundBadge,
+      showPartialRefundBadge,
+      showRefundRow,
+      refundAmount: refundAmount ? refundAmount.toFixed(2) : '0.00',
+      fullRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994713/king_q_2_3_r6ij4f.png',
+      partialRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994706/king_q_2_4_vu3kji.png',
     };
 
     // Build discount columns for the table header based on discount type
@@ -367,6 +423,13 @@ module.exports = {
       discountRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div><span>${vars.discountLabel} :</span><span>-£${vars.discountAmount}</span></div>`;
     }
     template = template.replace('{{discountRow}}', discountRow);
+
+    // Build refund row for the summary
+    let refundRow = '';
+    if (isRefund && refundAmount > 0) {
+      refundRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div class="summary-row"><span class="summary-label">Refunded Amount</span><span class="summary-value">-£${vars.refundAmount}</span></div>`;
+    }
+    template = template.replace('{{refundRow}}', refundRow);
 
     // Now do the rest of your variable replacements as before
     for (let key in vars) {

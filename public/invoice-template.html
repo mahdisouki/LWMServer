@@ -16,163 +16,230 @@
 
       html,
       body {
-        /* background: #f4f5f4; */
         margin: 0;
         padding: 0;
-        left: 0;
-        right: 0;
-        top: 0;
-        bottom: 0;
-        height: 100vh;
         font-family: 'Lato', sans-serif;
         font-size: 15px;
-        background-image: url('https://res.cloudinary.com/ddcsuzef0/image/upload/v1751813804/Group_87_fqt4nv.png');
-        background-size: cover;
-        /* background-position: center; */
-        background-repeat: no-repeat;
-        /* color: #222; */
-      }
-
-      .container {
-        padding: 10px;
-        max-width: 800px;
-        margin: 0 auto;
-      }
-
-      .header {
-        display: flex;
-        align-items: flex-start;
-        padding: 20px;
-        /* border-radius: 12px; */
-        gap: 20px;
-        /* box-shadow: 0 4px 8px rgba(0.2, 0.2, 0.2, 0.2); */
-      }
-
-      .address-box {
-        display: flex;
-        flex-direction: column;
-        border-radius: 12px;
-        gap: 16px;
-        /* box-shadow: 0 6px 6px rgba(0, 0, 0, 0.1); */
-      }
-
-      .card {
-        background-color: #fff;
-        border-radius: 12px;
-        padding: 14px 18px;
-        box-shadow: 0 2px 8px rgba(0.2, 0.2, 0.2, 0.2);
-        font-size: 14px;
+        background-color: #ffffff;
         color: #333;
       }
 
-      .card span.green {
-        color: #8dc044;
-        font-weight: bold;
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background-color: #ffffff;
       }
 
-      .section {
-        background: #ffffff55;
-        border-radius: 12px;
-        padding: 10px 24px;
-        margin-top: 10px;
-        box-shadow: 0 3px 8px rgba(0.2, 0.2, 0.2, 0.2);
+      /* Header with green background */
+      .header {
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        display: block;
       }
 
-      .section-title {
-        font-family: 'Lato-Bold';
-        font-size: 25px;
-        margin-bottom: 18px;
+      .header img {
+        width: 100%;
+        height: auto;
+        display: block;
       }
 
-      .info-box {
-        font-size: 15px;
+      /* Main content area */
+      .main-content {
+        padding: 30px 40px;
+        background-color: #ffffff;
+      }
+
+      /* Top Section - Bill To and Date side by side */
+      .top-section {
         display: flex;
-        flex-direction: column;
-        gap: 16px;
+        gap: 30px;
+        margin-bottom: 30px;
+        align-items: flex-start;
       }
 
-      .green {
-        color: #8dc044;
-        font-weight: bold;
+      .bill-to-section {
+        flex: 1;
+      }
+
+      .bill-to-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+        font-family: 'Lato-Bold';
+        font-size: 16px;
+        color: #333;
+      }
+
+      .bill-to-header img {
+        width: 18px;
+        height: 18px;
+      }
+
+      .bill-to-content {
+        background-color: #f9f9f9;
+        border-radius: 0;
+        padding: 18px;
+        font-size: 14px;
+        line-height: 1.8;
+      }
+
+      .bill-to-content strong {
+        color: #555;
+      }
+
+      /* Date Section */
+      .date-section {
+        flex: 1;
+      }
+
+      .date-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+        font-family: 'Lato-Bold';
+        font-size: 16px;
+        color: #333;
+      }
+
+      .date-header img {
+        width: 18px;
+        height: 18px;
+      }
+
+      .date-content {
+        background-color: #f9f9f9;
+        border-radius: 0;
+        padding: 18px;
+        font-size: 14px;
+        line-height: 1.8;
+      }
+
+      .date-content strong {
+        color: #555;
+      }
+
+      /* Items Table */
+      .items-section {
+        margin-bottom: 30px;
       }
 
       table {
         width: 100%;
         border-collapse: collapse;
-        margin-top: 15px;
+        background-color: #ffffff;
+        border-radius: 0;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
       }
 
       thead {
-        background: #8dc044;
-        color: white;
+        background: #e8e8e8;
+        color: #333;
       }
 
-      thead th:first-child {
-        border-top-left-radius: 12px;
-      }
-
-      thead th:last-child {
-        border-top-right-radius: 12px;
-      }
-
-      table th,
-      table td {
-        padding: 10px 6px;
+      thead th {
+        padding: 15px 12px;
         font-size: 14px;
-
+        font-family: 'Lato-Bold';
         text-align: left;
-        border-bottom: 1px solid #eee;
-      }
-
-      .datetime-box,
-      .summary-box {
-        flex: 0 0 auto;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 2px 6px rgba(0.2, 0.2, 0.2, 0.2);
-        padding: 14px 20px;
-
-        font-size: 13px;
-        min-width: 160px;
-        width: fit-content;
-      }
-
-      .summary-box div {
-        display: flex;
-        font-size: 14px;
-        justify-content: space-between;
-        margin-bottom: 8px;
-      }
-
-      .datetime-box div {
-        margin: 6px 0;
-        display: flex;
-        align-items: center;
-      }
-      .summary-box .green {
-        font-size: 15px;
         font-weight: bold;
       }
-      .datetime-box img {
-        width: 16px;
-        margin-right: 8px;
+
+      tbody td {
+        padding: 12px;
+        font-size: 14px;
+        border-bottom: 1px solid #e8e8e8;
       }
 
-      .footer {
-        margin-top: 80px;
-
-        width: 100%;
-        text-align: center;
-        font-size: 11px;
-        padding: 10px 0;
-        color: #000;
-        border-radius: 0 0 12px 12px;
+      tbody tr:last-child td {
+        border-bottom: none;
       }
 
+      tbody tr:hover {
+        background-color: #f9f9f9;
+      }
+
+      /* Footer Section */
+      .footer-section {
+        display: flex;
+        gap: 30px;
+        margin-top: 40px;
+        flex-wrap: wrap;
+      }
+
+      .footer-left {
+        flex: 1;
+        min-width: 200px;
+      }
+
+      .date-time-box {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 18px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        margin-bottom: 15px;
+      }
+
+      .date-time-box strong {
+        color: #555;
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .date-time-box .value {
+        font-size: 14px;
+        color: #333;
+      }
+
+      .footer-right {
+        flex: 1;
+        min-width: 250px;
+      }
+
+      .summary-box {
+        background-color: #34c759;
+        border-radius: 0;
+        padding: 25px;
+        color: #ffffff;
+      }
+
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        font-size: 14px;
+      }
+
+      .summary-row:last-child {
+        margin-bottom: 0;
+      }
+
+      .summary-row.total {
+        font-family: 'Lato-Bold';
+        font-size: 20px;
+        padding-top: 15px;
+        border-top: 2px solid rgba(255, 255, 255, 0.3);
+        margin-top: 10px;
+      }
+
+      .summary-label {
+        font-weight: normal;
+      }
+
+      .summary-value {
+        font-weight: bold;
+      }
+
+      /* Payment Stamps */
       .payment-stamp {
         position: absolute;
-        top: 17%;
-        left: 30%;
+        top: 14%;
+        right: -8%;
         transform: translate(-50%, -50%) rotate(-15deg);
         z-index: 1000;
         opacity: 0.8;
@@ -191,179 +258,176 @@
       .stamp-unpaid {
         display: none;
       }
+
+      /* Refund Badge */
+      .refund-badge {
+        position: absolute;
+        top: 15%;
+        right: -8%;
+        transform: translate(-50%, -50%) rotate(-15deg);
+        z-index: 1001;
+        opacity: 0.8;
+        pointer-events: none;
+      }
+
+      .refund-badge img {
+        width: 150px;
+        height: auto;
+      }
+
+      .refund-badge-full {
+        display: none;
+      }
+
+      .refund-badge-partial {
+        display: none;
+      }
+
+      /* Footer text */
+      .footer-text {
+        margin-top: 40px;
+        text-align: center;
+        font-size: 11px;
+        padding: 15px 0;
+        color: #666;
+        border-top: 1px solid #e8e8e8;
+      }
     </style>
   </head>
   <body>
     <!-- Payment Status Stamps -->
-    <div class="payment-stamp stamp-paid" style="display: {{paymentStatusPaid}};">
-      <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1752858987/pngwing.com_dnvshv.png" alt="PAID" />
-    </div>
-    <div class="payment-stamp stamp-unpaid" style="display: {{paymentStatusUnpaid}};">
-      <img src="https://res.cloudinary.com/ddcsuzef0/image/upload/v1752858987/aaz_ehe1nc.png" alt="NOT PAID" />
-    </div>
-
-    <div class="header">
-      <img src="{{logoPath}}" width="150" alt="Logo" />
+    <div
+      class="payment-stamp stamp-paid"
+      style="display: {{paymentStatusPaid}};"
+    >
       <img
-        src="{{ArrowIcon}}"
-        width="120"
-        alt="Arrow"
-        style="margin-top: 10px"
+        src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763677748/king_q_2_1_alnhku.png"
+        alt="PAID"
       />
-
-      <div class="card" style="background-color: #ffffff55;">
-        <div class="card">
-          <div style="display: flex; align-items: center; gap: 8px">
-            <img src="{{locationIcon}}" width="16" />
-            <span
-              ><span class="green">6-9</span> The Square, Stockley Park,
-              Heathrow <strong>UB11 1FW</strong>,</span
-            >
-          </div>
-          <div style="padding-left: 24px; margin-top: 4px">
-            <span class="green">United Kingdom</span>
-          </div>
-        </div>
-        <div class="card" style="margin-top: 15px">
-          <div style="display: flex; align-items: center; gap: 8px">
-            <img src="{{phoneIcon}}" width="16" />
-            <strong>VAT registration number:</strong>
-          </div>
-          <div style="padding-left: 24px; margin-top: 4px">403 1603 54</div>
-        </div>
-      </div>
+    </div>
+    <div
+      class="payment-stamp stamp-unpaid"
+      style="display: {{paymentStatusUnpaid}};"
+    >
+      <img
+        src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763677751/king_q_2_2_fifr8j.png"
+        alt="NOT PAID"
+      />
     </div>
 
-    <div class="section">
-      <div class="section-title">INVOICE</div>
-      <div class="address-box">
-        <div class="card">
-          <div style="display: flex; align-items: center; gap: 8px">
-            <img src="{{emailIcon}}" width="14" />
-            <strong>Name:</strong> {{billingName}} | <strong>Email:</strong> {{email}}<br />
-           
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px">
-            <img src="{{emailIcon}}" width="14" />
-            <strong>Business Name:</strong> {{businessName}} 
-           
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px">
-            <img src="{{emailIcon}}" width="14" />
-            <strong>Billing Address:</strong> {{billingAddress}} |  <strong>Phone1:</strong> {{phone}} | <strong>Phone2:</strong> {{phone2}}
-          </div>
-        </div>
-        <div style="display: flex; gap: 20px">
-          <div class="card" style="flex: 1">
-            <strong>Payment Method :</strong> {{paymentMethod}}<br />
-            <strong>Notes:</strong> {{additionalNotes}}
-          </div>
-          <div class="card" style="flex: 1">
-            <strong>Order Number:</strong> {{orderNumber}}<br />
-            <strong>Order Date:</strong> {{orderDate}}
-          </div>
-        </div>
-      </div>
+    <!-- Refund Badges -->
+    <div
+      class="refund-badge refund-badge-full"
+      style="display: {{showFullRefundBadge}};"
+    >
+      <img src="{{fullRefundBadgeUrl}}" alt="FULL REFUND" />
+    </div>
+    <div
+      class="refund-badge refund-badge-partial"
+      style="display: {{showPartialRefundBadge}};"
+    >
+      <img src="{{partialRefundBadgeUrl}}" alt="PARTIAL REFUND" />
     </div>
 
-    <div class="section">
-      <div
-        class="address-box"
-        style="
-          display: flex;
-          flex-direction: row;
-          align-items: center;
-          gap: 10px;
-          margin: 12px 12px 12px 12px;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-          background-color: #fff;
-        "
-      >
+    <div class="container">
+      <!-- Header with green background -->
+      <div class="header">
         <img
-          src="{{vatIcon}}"
-          width="24"
-          height="24"
-          style="margin-right: 10px"
+          src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763672510/Group_1261156236_u9otpc.png"
+          alt="Invoice Header"
+          style="width: 100%; height: auto; display: block"
         />
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Qty</th>
-              <th>Price</th>
-              {{discountColumns}}
-              <th>Object position</th>
-              <th>Position fee</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{itemRows}}
-          </tbody>
-        </table>
       </div>
-      <div
-        style="
-          display: flex;
-          justify-content: row;
-          gap: 100px;
-          padding: 10px;
-          align-items: flex-start;
-          flex-wrap: wrap;
-        "
-      >
-        <div class="datetime-box">
-          <div><img src="{{calendarIcon}}" /> <strong>Collection date:</strong> {{serviceDate}}</div>
-          <hr
-            style="
-              border: none;
-              height: 1px;
-              background: #8dc044;
-              margin: 10px 0;
-            "
-          />
-          <div><img src="{{clockIcon}}" /> <strong>Time slot:</strong> {{available}}</div>
-          <hr
-          style="
-            border: none;
-            height: 1px;
-            background: #8dc044;
-            margin: 10px 0;
-          "
-        />
-          <div><img src="{{clockIcon}}" /> <strong>Collection address:</strong> {{collectionAddress}}</div>
-        </div>
 
-        <div class="summary-box">
-          <!-- <div><span>Subtotal :</span><span>£{{subtotal}}</span></div> -->
-          {{discountRow}}
-          <hr
-            style="
-              border: none;
-              height: 1px;
-              background: #8dc044;
-              margin: 10px 0;
-            "
-          />
-          <div><span>VAT :</span><span>£{{vat}}</span></div>
-          <hr
-            style="
-              border: none;
-              height: 1px;
-              background: #8dc044;
-              margin: 10px 0;
-            "
-          />
-          <div class="green">
-            <span>Total :</span><span>£{{totalPrice}}</span>
+      <!-- Main Content -->
+      <div class="main-content">
+        <!-- Top Section: Bill To and Date side by side -->
+        <div class="top-section">
+          <!-- Bill To Section (Left) -->
+          <div class="bill-to-section">
+            <div class="bill-to-header">
+              <span>👤 Bill To:</span>
+            </div>
+            <div class="bill-to-content">
+              <div><strong>Name:</strong> {{billingName}}</div>
+              <div><strong>Email:</strong> {{email}}</div>
+              <div><strong>Address:</strong> {{billingAddress}}</div>
+              <div><strong>Phone:</strong> {{phone}}</div>
+            </div>
+          </div>
+
+          <!-- Date Section (Right) -->
+          <div class="date-section">
+            <div class="date-header">
+              <span> 📆 Date:</span>
+            </div>
+            <div class="date-content">
+              <div><strong>Order Number:</strong> {{orderNumber}}</div>
+              <div><strong>Order Date:</strong> {{orderDate}}</div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <div class="footer">
-      Environment Agency Registered Waste Carrier: CBDU308350<br />
-      London Waste Management | hello@londonwastemanagement.com | 02030971517
+        <!-- Items Table -->
+        <div class="items-section">
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                {{discountColumns}}
+                <th>Object position</th>
+                <th>Position fee</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{itemRows}}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Footer Section -->
+        <div class="footer-section">
+          <div class="footer-left">
+            <div class="date-time-box">
+              <strong>Date:</strong>
+              <span class="value">{{serviceDate}}</span>
+            </div>
+            <div class="date-time-box">
+              <strong>Time:</strong>
+              <span class="value">{{available}}</span>
+            </div>
+          </div>
+
+          <div class="footer-right">
+            <div class="summary-box">
+              <div class="summary-row">
+                <span class="summary-label">Subtotal</span>
+                <span class="summary-value">£ {{subtotal}}</span>
+              </div>
+              {{discountRow}}
+              <div class="summary-row">
+                <span class="summary-label">VAT</span>
+                <span class="summary-value">£ {{vat}}</span>
+              </div>
+              {{refundRow}}
+              <div class="summary-row total">
+                <span class="summary-label">Invoice Total</span>
+                <span class="summary-value">£ {{totalPrice}}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer Text -->
+        <div class="footer-text">
+          Environment Agency Registered Waste Carrier: CBDU308350<br />
+          London Waste Management | hello@londonwastemanagement.com |
+          02030971517
+        </div>
+      </div>
     </div>
   </body>
 </html>

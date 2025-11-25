@@ -12,7 +12,7 @@ const adminId = "67cb6810c9e768ec25d39523";
 const tippingController = {
   createTippingRequest: async (req, res) => {
     const userId = req.user._id;
-    const { notes } = req.body;
+    const { notes, tipdate } = req.body;
 
     try {
       const user = await User.findById(userId);
@@ -36,6 +36,7 @@ const tippingController = {
         userId: userId,
         notes: notes,
         status: 'Pending',
+        tipdate: Date.now(), // Set tipdate to current date when created by non-admin
       });
 
       await newTippingRequest.save();

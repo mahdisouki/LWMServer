@@ -76,7 +76,7 @@ exports.processRefund = async (req, res) => {
 
     console.log("Refund request:", taskId, refundAmount);
     try {
-        const task = await Task.findById(taskId);
+        const task = await Task.findById(taskId).populate('items.standardItemId');
         if (!task) return res.status(404).json({ message: "Task not found" });
 
         // Find ALL payment histories for this task (deposit + remaining)
@@ -164,7 +164,9 @@ exports.processRefund = async (req, res) => {
             }, 0);
             const remainingAmount = totalPaidAcrossAll - newTotalRefunded;
 
-            if (remainingAmount <= 0) {
+            // Use epsilon (0.01) to account for floating-point precision issues with currency
+            // If remaining is less than a penny, consider it fully refunded
+            if (remainingAmount <= 0.01) {
                 task.paymentStatus = 'refunded';
             } else {
                 task.paymentStatus = 'partial_Refunded';
@@ -280,7 +282,9 @@ exports.processRefund = async (req, res) => {
 
         console.log("Total paid:", totalPaidAcrossAll, "Total refunded:", newTotalRefunded, "Remaining:", remainingAmount, "Refund amount:", refundAmount);
 
-        if (remainingAmount <= 0) {
+        // Use epsilon (0.01) to account for floating-point precision issues with currency
+        // If remaining is less than a penny, consider it fully refunded
+        if (remainingAmount <= 0.01) {
             task.paymentStatus = 'refunded';
         } else {
             task.paymentStatus = 'partial_Refunded';
