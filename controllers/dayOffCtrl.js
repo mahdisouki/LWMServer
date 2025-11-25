@@ -78,7 +78,47 @@ const dayOffController = {
             // Push the day-off request ID to the user's dayOffRequests array
             user.dayOffRequests.push(newDayOffRequest._id);
             await user.save();
-            emitNotificationToUser(adminId, 'Day_Off', `${user.username} is requesting a day off`, user.username)
+
+            // Send notification to all admins
+            try {
+                const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+                const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver/Helper';
+                
+                // Format dates for the notification message
+                const startDateFormatted = new Date(startDate).toLocaleDateString();
+                const endDateFormatted = new Date(endDate).toLocaleDateString();
+                const dateRange = startDateFormatted === endDateFormatted 
+                    ? startDateFormatted 
+                    : `${startDateFormatted} to ${endDateFormatted}`;
+                
+                const notificationMessage = `${userName} is requesting a day off from ${dateRange}`;
+                
+                // Send notification to all admins
+                for (const admin of adminUsers) {
+                    if (admin._id) {
+                        await emitNotificationToUser(
+                            admin._id.toString(),
+                            'Day_Off',
+                            notificationMessage,
+                            userName
+                        );
+                    }
+                }
+                
+                // Also send to the hardcoded adminId as a fallback
+                if (adminId) {
+                    await emitNotificationToUser(
+                        adminId,
+                        'Day_Off',
+                        notificationMessage,
+                        userName
+                    );
+                }
+            } catch (notificationError) {
+                console.error('Error sending notification to admin:', notificationError);
+                // Don't fail the request if notification fails
+            }
+
             res.status(201).json({ message: "Day off request submitted successfully", request: newDayOffRequest });
         } catch (error) {
             console.log("Error in requestDayOff:", error);

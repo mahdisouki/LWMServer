@@ -2,11 +2,12 @@ const TippingRequest = require('../models/TippingRequest');
 const { User } = require('../models/User');
 const Truck = require('../models/Truck');
 const APIfeatures = require('../utils/APIFeatures');
-const { emitEvent } = require('../socket');
+const { emitEvent, emitNotificationToUser } = require('../socket');
 const Driver = require('../models/Driver');
 const TippingPlace = require('../models/TippingPlaces');
 const paginateQuery = require('../utils/paginationHelper');
 const loggingService = require('../services/loggingService');
+const adminId = "67cb6810c9e768ec25d39523";
 
 const tippingController = {
   createTippingRequest: async (req, res) => {
@@ -53,6 +54,38 @@ const tippingController = {
           ipAddress: req.ip,
           userAgent: req.headers['user-agent'],
         });
+      }
+
+      // Send notification to all admins
+      try {
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver/Helper';
+        const notificationMessage = `${userName} has created a new tipping request for ${truck.name}`;
+        
+        // Send notification to all admins
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(
+              admin._id.toString(),
+              'Tipping',
+              notificationMessage,
+              userName
+            );
+          }
+        }
+        
+        // Also send to the hardcoded adminId as a fallback
+        if (adminId) {
+          await emitNotificationToUser(
+            adminId,
+            'Tipping',
+            notificationMessage,
+            userName
+          );
+        }
+      } catch (notificationError) {
+        console.error('Error sending notification to admin:', notificationError);
+        // Don't fail the request if notification fails
       }
 
       const response = {
