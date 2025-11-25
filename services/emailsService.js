@@ -829,6 +829,99 @@ module.exports = {
 
     fs.unlinkSync(filePath);
   },
+  async sendPaymentConfirmationEmail({ email, firstName, lastName, orderId, paymentDate, amount, currency, paymentType, breakdown }) {
+    try {
+      // Load the task to get order number and other details
+      const task = await Task.findById(orderId).populate('items.standardItemId');
+      if (!task) {
+        throw new Error(`Task not found with ID: ${orderId}`);
+      }
+
+      // Generate invoice PDF
+      const dirPath = path.join(__dirname, '../generated');
+      if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
+      const fileName = `invoice-${task.orderNumber}.pdf`;
+      const filePath = path.join(dirPath, fileName);
+      await module.exports.generateOfficialInvoicePDF(task, filePath);
+
+      // Read the payment confirmation template
+      const templatePath = path.join(__dirname, '../public/templates/invoiceConfirmation.html');
+      let html = fs.readFileSync(templatePath, 'utf8');
+
+      // Calculate VAT and subtotal from amount
+      const total = parseFloat(amount) || 0;
+      const subtotal = total / 1.2; // Remove VAT (20%)
+      const vat = total - subtotal;
+
+      // Build breakdown HTML if provided
+      let breakdownHtml = '';
+      if (breakdown && Array.isArray(breakdown)) {
+        breakdownHtml = breakdown
+          .map((item) => {
+            const description = item.description || item.itemDescription || 'Item';
+            const itemAmount = item.amount || item.price || 0;
+            return `<li style="margin-bottom: 8px">${description}: £${parseFloat(itemAmount).toFixed(2)}</li>`;
+          })
+          .join('');
+      }
+
+      // Handle Handlebars conditionals first
+      // Remove discount section if no discount
+      if (!task.hasDiscount) {
+        html = html.replace(/{{#if hasDiscount}}[\s\S]*?{{\/if}}/g, '');
+      } else {
+        // Replace discount variables inside the conditional block
+        html = html.replace(/{{customDiscountPercent}}/g, (task.customDiscountPercent || 0).toFixed(2));
+        const discountAmount = ((subtotal * (task.customDiscountPercent || 0)) / 100).toFixed(2);
+        html = html.replace(/{{discountAmount}}/g, discountAmount);
+        // Remove the Handlebars conditional tags but keep the content
+        html = html.replace(/{{#if hasDiscount}}/g, '');
+        html = html.replace(/{{\/if}}/g, '');
+      }
+
+      // Handle partial payment section
+      const isPartialPaid = task.paymentStatus !== 'Paid' &&
+        (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid');
+      if (!isPartialPaid) {
+        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{\/if}}/g, '');
+      } else {
+        // Remove the Handlebars conditional tags but keep the content
+        html = html.replace(/{{#if isPartialPaid}}/g, '');
+        html = html.replace(/{{\/if}}/g, '');
+      }
+
+      // Replace template variables
+      html = html.replace(/{{firstName}}/g, firstName || '');
+      html = html.replace(/{{lastName}}/g, lastName || '');
+      html = html.replace(/{{orderNumber}}/g, task.orderNumber || orderId);
+      html = html.replace(/{{total}}/g, total.toFixed(2));
+      html = html.replace(/{{vat}}/g, vat.toFixed(2));
+      html = html.replace(/{{subtotal}}/g, subtotal.toFixed(2));
+      html = html.replace(/{{paymentDate}}/g, paymentDate || new Date().toLocaleString());
+      html = html.replace(/{{paymentType}}/g, paymentType || 'Payment');
+
+      // Add breakdown if provided (insert before VAT line in payment details)
+      if (breakdownHtml) {
+        // Insert breakdown items before the VAT line
+        html = html.replace(/(<li style="margin-bottom: 8px">VAT \(20%\):)/, breakdownHtml + '$1');
+      }
+
+      // Send email
+      await transporter.sendMail({
+        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: `Payment Confirmation - Order #${task.orderNumber}`,
+        html: html,
+        attachments: [{ filename: fileName, path: filePath }],
+      });
+
+      // Clean up PDF file
+      fs.unlinkSync(filePath);
+    } catch (error) {
+      console.error('Error sending payment confirmation email:', error);
+      throw error;
+    }
+  },
   sendRefundEmail,
 };
 
