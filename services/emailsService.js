@@ -1009,15 +1009,31 @@ module.exports = {
       const remainingAmount = task.remainingAmount?.amount || 0;
       const fullTotalPrice = task.totalPrice || (depositAmount + remainingAmount);
 
-      // Handle partial payment section
-      const isPartialPaid = task.paymentStatus !== 'Paid' &&
-        (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid');
+      // Determine if this is a true partial payment (deposit paid but remaining not paid)
+      // OR if both are paid (remaining payment was just completed or full payment)
+      const isDepositOnly = task.paymentStatus === 'partial_Paid' &&
+        task.paidAmount?.status === 'Paid' &&
+        task.remainingAmount?.status === 'Not_Paid';
+
+      const isFullyPaid = task.paymentStatus === 'Paid' ||
+        (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid');
+
+      // isPartialPaid is true ONLY if it's a deposit-only payment (not fully paid)
+      const isPartialPaid = isDepositOnly && !isFullyPaid;
 
       if (!isPartialPaid) {
-        // Remove ALL {{#if isPartialPaid}}...{{else}}...{{/if}} blocks (with or without {{else}})
-        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{\/if}}/g, '');
+        // For fully paid (including remaining payment): remove {{#if isPartialPaid}}...{{else}}, keep {{else}}...{{/if}} content
+        // This regex removes the opening {{#if isPartialPaid}} and everything until {{else}}, keeping the {{else}} content
+        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}/g, '');
+        // Remove only the closing {{/if}} that matches the {{#if isPartialPaid}} (not other {{/if}} tags)
+        // We need to be careful not to remove {{/if}} from {{#if hasDiscount}}
+        // Since we already removed {{#if isPartialPaid}}...{{else}}, we can safely remove the next {{/if}}
+        // But we need to do it carefully to avoid removing nested {{/if}}
+        html = html.replace(/({{else}}[\s\S]*?){{\/if}}/g, '$1');
+        // Actually, a simpler approach: remove {{#if isPartialPaid}} and the matching {{/if}}, keep {{else}} content
+        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}([\s\S]*?){{\/if}}/g, '$1');
       } else {
-        // For partial payment: process all {{#if isPartialPaid}} blocks
+        // For deposit-only payment: process all {{#if isPartialPaid}} blocks
         // First, handle blocks with {{else}} (in table) - keep content before {{else}}, remove {{else}}...{{/if}}
         html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{else}}[\s\S]*?{{\/if}}/g, '$1');
         // Then, handle remaining blocks without {{else}} (message at bottom) - remove tags but keep content
