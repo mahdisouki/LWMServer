@@ -1012,14 +1012,23 @@ module.exports = {
       // Handle partial payment section
       const isPartialPaid = task.paymentStatus !== 'Paid' &&
         (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid');
+
       if (!isPartialPaid) {
-        // Remove the entire {{#if isPartialPaid}}...{{else}}...{{/if}} block
+        // Remove ALL {{#if isPartialPaid}}...{{else}}...{{/if}} blocks (with or without {{else}})
         html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{\/if}}/g, '');
       } else {
-        // For partial payment: remove {{#if isPartialPaid}} and {{else}}...{{/if}}, keep only the {{#if isPartialPaid}} content
-        // Match: {{#if isPartialPaid}}...{{else}}...{{/if}}
-        // Replace with: ... (content before {{else}})
+        // For partial payment: process all {{#if isPartialPaid}} blocks
+        // First, handle blocks with {{else}} (in table) - keep content before {{else}}, remove {{else}}...{{/if}}
         html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{else}}[\s\S]*?{{\/if}}/g, '$1');
+        // Then, handle remaining blocks without {{else}} (message at bottom) - remove tags but keep content
+        // Use a simple regex to match and remove remaining {{#if isPartialPaid}}...{{/if}} blocks
+        let iterations = 0;
+        let previousHtml = '';
+        while (html.includes('{{#if isPartialPaid}}') && html !== previousHtml && iterations < 10) {
+          previousHtml = html;
+          html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{\/if}}/g, '$1');
+          iterations++;
+        }
       }
 
       // Replace template variables
