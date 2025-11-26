@@ -1013,11 +1013,13 @@ module.exports = {
       const isPartialPaid = task.paymentStatus !== 'Paid' &&
         (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid');
       if (!isPartialPaid) {
+        // Remove the entire {{#if isPartialPaid}}...{{else}}...{{/if}} block
         html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{\/if}}/g, '');
       } else {
-        // Remove the Handlebars conditional tags but keep the content
-        html = html.replace(/{{#if isPartialPaid}}/g, '');
-        html = html.replace(/{{\/if}}/g, '');
+        // For partial payment: remove {{#if isPartialPaid}} and {{else}}...{{/if}}, keep only the {{#if isPartialPaid}} content
+        // Match: {{#if isPartialPaid}}...{{else}}...{{/if}}
+        // Replace with: ... (content before {{else}})
+        html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{else}}[\s\S]*?{{\/if}}/g, '$1');
       }
 
       // Replace template variables
