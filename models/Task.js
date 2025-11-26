@@ -149,7 +149,12 @@ const taskSchema = new Schema(
 taskSchema.pre('save', function (next) {
   // Filter out items where both standardItemId is null and object is empty
   this.items = this.items.filter(item => {
-    return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
+    // Keep items that have either:
+    // 1. A valid standardItemId, OR
+    // 2. A non-empty object string
+    const hasStandardItem = item.standardItemId && item.standardItemId !== null;
+    const hasValidObject = item.object && typeof item.object === 'string' && item.object.trim() !== '';
+    return hasStandardItem || hasValidObject;
   });
 
   // Validate items have proper pricing
@@ -180,7 +185,12 @@ taskSchema.pre('findOneAndUpdate', function (next) {
   if (update.$set && update.$set.items) {
     // Filter out items where both standardItemId is null and object is empty
     update.$set.items = update.$set.items.filter(item => {
-      return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
+      // Keep items that have either:
+      // 1. A valid standardItemId, OR
+      // 2. A non-empty object string
+      const hasStandardItem = item.standardItemId && item.standardItemId !== null;
+      const hasValidObject = item.object && typeof item.object === 'string' && item.object.trim() !== '';
+      return hasStandardItem || hasValidObject;
     });
   }
   next();

@@ -308,7 +308,7 @@ const taskCtrl = {
               item.customPrice !== undefined
                 ? Number(item.customPrice)
                 : undefined,
-            object: item.object || undefined,
+            object: item.object && item.object.trim() !== '' ? item.object : undefined,
             price: item.price !== undefined ? Number(item.price) : undefined,
           })),
         );
@@ -1063,7 +1063,12 @@ const taskCtrl = {
       delete updates.deletedMedia;
 
       console.log('=== ITEMS PROCESSING ===');
-      // If items are being updated, recalculate totalPrice
+      // If items or objects are being updated, recalculate totalPrice
+      // Initialize items to empty array if undefined/null but objects exist (for tasks with only custom items)
+      if ((updates.items === undefined || updates.items === null) && updates.objects && Array.isArray(updates.objects) && updates.objects.length > 0) {
+        updates.items = [];
+      }
+
       if (updates.items) {
         console.log('Original items from request:', JSON.stringify(updates.items, null, 2));
 
@@ -1074,6 +1079,14 @@ const taskCtrl = {
             // Convert empty string standardItemId to null
             if (item.standardItemId === '') {
               item.standardItemId = null;
+            }
+            // Ensure Objectsposition is set (defaults to 'Outside' if not provided)
+            if (!item.Objectsposition) {
+              item.Objectsposition = 'Outside';
+            }
+            // Ensure quantity is valid
+            if (!item.quantity || item.quantity <= 0) {
+              item.quantity = 1;
             }
             return item;
           })
@@ -1086,7 +1099,7 @@ const taskCtrl = {
                 typeof item.standardItemId === 'string' &&
                 item.standardItemId.trim() !== '' &&
                 mongoose.Types.ObjectId.isValid(item.standardItemId)) ||
-              (item.object && item.object.trim() !== '')
+              (item.object && typeof item.object === 'string' && item.object.trim() !== '')
             );
             console.log('Item validation result:', isValid, 'for item:', item);
             return isValid;
@@ -2500,7 +2513,7 @@ const taskCtrl = {
       const depositAmount = task.paidAmount?.amount || 0;
       const remainingAmount = task.remainingAmount?.amount || (task.totalPrice - depositAmount);
       const isPartialPaid = task.paymentStatus === 'partial_Paid';
-      
+
       // Get payment method from PaymentHistory or task
       const PaymentHistory = require('../models/PaymentHistory');
       const latestPayment = await PaymentHistory.findOne({ taskId: task._id })

@@ -1070,6 +1070,9 @@ module.exports = {
       html = html.replace(/{{totalPrice}}/g, fullTotalPrice.toFixed(2));
       html = html.replace(/{{paymentMethod}}/g, paymentMethod);
 
+      // Remove VAT (20%) line from Payment Confirmation email body
+      html = html.replace(/<tr>[\s\S]*?VAT \(20%\):[\s\S]*?<\/tr>/g, '');
+
       // Update the confirmation message for payment confirmation (after orderNumber is replaced)
       html = html.replace(
         /Thank you for booking with[\s\S]*?<strong style="color: #4caf50">London Waste Management\.<\/strong>/,
