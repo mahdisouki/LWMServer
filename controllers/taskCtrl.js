@@ -2497,9 +2497,15 @@ const taskCtrl = {
       await generateOfficialInvoicePDF(task, filePath);
 
       // Email content in branded design
-      const paidAmount = task.paidAmount?.amount || 0;
-      const remainingAmount = task.totalPrice - paidAmount;
+      const depositAmount = task.paidAmount?.amount || 0;
+      const remainingAmount = task.remainingAmount?.amount || (task.totalPrice - depositAmount);
       const isPartialPaid = task.paymentStatus === 'partial_Paid';
+      
+      // Get payment method from PaymentHistory or task
+      const PaymentHistory = require('../models/PaymentHistory');
+      const latestPayment = await PaymentHistory.findOne({ taskId: task._id })
+        .sort({ paymentDate: -1 });
+      const paymentMethod = latestPayment?.paymentType || task.paidAmount?.method || task.paymentMethod || 'Online Payment';
       const subtotalBeforeDiscount = task.totalPrice;
 
       // Calculate subtotal and handle discounts based on discountType
@@ -2685,7 +2691,9 @@ const taskCtrl = {
         vat: vat.toFixed(2),
         total: total.toFixed(2),
         isPartialPaid: isPartialPaid,
+        depositAmount: depositAmount.toFixed(2),
         remainingAmount: remainingAmount.toFixed(2),
+        paymentMethod: paymentMethod,
       });
       // Send the email with the generated PDF as attachment
       await transporter.sendMail({

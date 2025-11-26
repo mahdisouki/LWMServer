@@ -869,8 +869,23 @@ module.exports = {
         task.paidAmount?.status === 'Paid' &&
         task.remainingAmount?.status === 'Not_Paid';
 
-      // Get payment method from task
-      const paymentMethod = task.paidAmount?.method || task.paymentMethod || paymentType || 'N/A';
+      // Get payment method - use paymentType (Stripe/PayPal) directly
+      // paymentType is passed as 'Stripe' or 'PayPal' from the webhook/controller
+      // If not provided, try to get from PaymentHistory
+      let paymentMethod = paymentType;
+
+      if (!paymentMethod || paymentMethod === 'Payment' || paymentMethod === 'N/A') {
+        // Try to get from PaymentHistory
+        const PaymentHistory = require('../models/PaymentHistory');
+        const latestPayment = await PaymentHistory.findOne({ taskId: task._id })
+          .sort({ paymentDate: -1 });
+
+        if (latestPayment && latestPayment.paymentType) {
+          paymentMethod = latestPayment.paymentType; // Should be 'Stripe' or 'PayPal'
+        } else {
+          paymentMethod = 'Online Payment';
+        }
+      }
 
       // Build breakdown table HTML if provided
       let breakdownTableHtml = '';
@@ -989,6 +1004,11 @@ module.exports = {
         html = html.replace(/{{\/if}}/g, '');
       }
 
+      // Calculate values for partial payment display FIRST (before conditionals)
+      const depositAmount = task.paidAmount?.amount || 0;
+      const remainingAmount = task.remainingAmount?.amount || 0;
+      const fullTotalPrice = task.totalPrice || (depositAmount + remainingAmount);
+
       // Handle partial payment section
       const isPartialPaid = task.paymentStatus !== 'Paid' &&
         (task.paidAmount?.status !== 'Paid' || task.remainingAmount?.status !== 'Paid');
@@ -1009,6 +1029,11 @@ module.exports = {
       html = html.replace(/{{subtotal}}/g, subtotal.toFixed(2));
       html = html.replace(/{{paymentDate}}/g, paymentDate || new Date().toLocaleString());
       html = html.replace(/{{paymentType}}/g, paymentType || 'Payment');
+      // Partial payment variables - replace these after conditionals are processed
+      html = html.replace(/{{depositAmount}}/g, depositAmount.toFixed(2));
+      html = html.replace(/{{remainingAmount}}/g, remainingAmount.toFixed(2));
+      html = html.replace(/{{totalPrice}}/g, fullTotalPrice.toFixed(2));
+      html = html.replace(/{{paymentMethod}}/g, paymentMethod);
 
       // Update the confirmation message for payment confirmation (after orderNumber is replaced)
       html = html.replace(
@@ -1018,59 +1043,6 @@ module.exports = {
 
       // Change title from "Invoice Confirmation" to "Payment Confirmation"
       html = html.replace(/Invoice Confirmation/g, 'Payment Confirmation');
-
-      // Create custom payment details HTML based on payment type
-      let paymentDetailsHtml = '';
-
-      if (isDeposit) {
-        // For deposit: show deposit paid, remaining not paid, and payment method
-        const depositAmount = task.paidAmount?.amount || total;
-        const remainingAmount = task.remainingAmount?.amount || (task.totalPrice - depositAmount);
-        const fullTotal = task.totalPrice || (depositAmount + remainingAmount);
-
-        paymentDetailsHtml = `
-          <ul
-            style="
-              margin: 0;
-              padding-left: 20px;
-              color: #1c1c1c;
-              font-size: 16px;
-              line-height: 1.8;
-            "
-          >
-            <li style="margin-bottom: 8px">Deposit Paid: £${depositAmount.toFixed(2)}</li>
-            <li style="margin-bottom: 8px">Remaining Balance: £${remainingAmount.toFixed(2)}</li>
-            <li style="margin-bottom: 0">
-              <strong>Total Amount (Including VAT): £${fullTotal.toFixed(2)}</strong>
-            </li>
-            <li style="margin-bottom: 0; margin-top: 8px">Payment Method: ${paymentMethod}</li>
-          </ul>
-        `;
-      } else {
-        // For full payment: show total (including VAT) and payment method
-        paymentDetailsHtml = `
-          <ul
-            style="
-              margin: 0;
-              padding-left: 20px;
-              color: #1c1c1c;
-              font-size: 16px;
-              line-height: 1.8;
-            "
-          >
-            <li style="margin-bottom: 0">
-              <strong>Total Amount (Including VAT): £${total.toFixed(2)}</strong>
-            </li>
-            <li style="margin-bottom: 0; margin-top: 8px">Payment Method: ${paymentMethod}</li>
-          </ul>
-        `;
-      }
-
-      // Replace the payment details list with custom HTML
-      html = html.replace(
-        /<ul[\s\S]*?style="[^"]*margin:[^"]*padding-left:[^"]*"[^"]*>[\s\S]*?<\/ul>/,
-        paymentDetailsHtml
-      );
 
       // Send email
       await transporter.sendMail({

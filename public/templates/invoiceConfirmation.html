@@ -234,25 +234,133 @@
               >
                 Payment Details:
               </p>
-              <ul
+              <table
                 style="
+                  width: 100%;
+                  border-collapse: collapse;
                   margin: 0;
-                  padding-left: 20px;
                   color: #1c1c1c;
                   font-size: 16px;
-                  line-height: 1.8;
                 "
               >
+                {{#if isPartialPaid}}
+                <!-- Partial Payment: Show Deposit and Remaining Balance -->
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0">
+                    Deposit:
+                  </td>
+                  <td
+                    style="
+                      padding: 8px 0;
+                      text-align: right;
+                      border-bottom: 1px solid #e0e0e0;
+                    "
+                  >
+                    £{{depositAmount}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0">
+                    Remaining Balance:
+                  </td>
+                  <td
+                    style="
+                      padding: 8px 0;
+                      text-align: right;
+                      border-bottom: 1px solid #e0e0e0;
+                    "
+                  >
+                    £{{remainingAmount}}
+                  </td>
+                </tr>
+                <tr>
+                  <td
+                    style="
+                      padding: 8px 0;
+                      border-bottom: 1px solid #e0e0e0;
+                      font-weight: bold;
+                    "
+                  >
+                    Total Amount (Including VAT):
+                  </td>
+                  <td
+                    style="
+                      padding: 8px 0;
+                      text-align: right;
+                      border-bottom: 1px solid #e0e0e0;
+                      font-weight: bold;
+                    "
+                  >
+                    £{{totalPrice}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0 0 0">Payment Method:</td>
+                  <td style="padding: 8px 0 0 0; text-align: right">
+                    {{paymentMethod}}
+                  </td>
+                </tr>
+                {{else}}
+                <!-- Full Payment: Show VAT and Total -->
                 {{#if hasDiscount}}
-                <li style="margin-bottom: 8px">
-                  Discount ({{customDiscountPercent}}%): -£{{discountAmount}}
-                </li>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0">
+                    Discount ({{customDiscountPercent}}%):
+                  </td>
+                  <td
+                    style="
+                      padding: 8px 0;
+                      text-align: right;
+                      border-bottom: 1px solid #e0e0e0;
+                    "
+                  >
+                    -£{{discountAmount}}
+                  </td>
+                </tr>
                 {{/if}}
-                <li style="margin-bottom: 8px">VAT (20%): £{{vat}}</li>
-                <li style="margin-bottom: 0">
-                  <strong>Total Amount (Including VAT): £{{total}}</strong>
-                </li>
-              </ul>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0">
+                    VAT (20%):
+                  </td>
+                  <td
+                    style="
+                      padding: 8px 0;
+                      text-align: right;
+                      border-bottom: 1px solid #e0e0e0;
+                    "
+                  >
+                    £{{vat}}
+                  </td>
+                </tr>
+                <tr>
+                  <td
+                    style="
+                      padding: 8px 0;
+                      border-bottom: 1px solid #e0e0e0;
+                      font-weight: bold;
+                    "
+                  >
+                    Total Amount (Including VAT):
+                  </td>
+                  <td
+                    style="
+                      padding: 8px 0;
+                      text-align: right;
+                      border-bottom: 1px solid #e0e0e0;
+                      font-weight: bold;
+                    "
+                  >
+                    £{{total}}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0 0 0">Payment Method:</td>
+                  <td style="padding: 8px 0 0 0; text-align: right">
+                    {{paymentMethod}}
+                  </td>
+                </tr>
+                {{/if}}
+              </table>
             </div>
 
             {{#if isPartialPaid}}
