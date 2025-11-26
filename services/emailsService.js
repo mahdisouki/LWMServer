@@ -339,9 +339,17 @@ module.exports = {
     const showPartialRefundBadge = isRefund && !isFullRefund ? 'block' : 'none';
     const showRefundRow = isRefund ? 'block' : 'none';
 
-    // Hide payment status badges when it's a refund invoice
-    const paymentStatusPaidDisplay = isRefund ? 'none' : (isFullyPaid ? 'block' : 'none');
-    const paymentStatusUnpaidDisplay = isRefund ? 'none' : (!isFullyPaid ? 'block' : 'none');
+    // Detect if this is a DEPOSIT payment (partial payment where deposit is paid but remaining is not)
+    // A deposit is when: paymentStatus is 'partial_Paid', paidAmount is 'Paid', and remainingAmount is 'Not_Paid'
+    const isDeposit = task.paymentStatus === 'partial_Paid' &&
+      task.paidAmount?.status === 'Paid' &&
+      task.remainingAmount?.status === 'Not_Paid';
+    const showDepositBadge = isDeposit ? 'block' : 'none';
+
+    // Hide payment status badges when it's a refund invoice or a deposit payment
+    // When it's a deposit, only show the deposit badge, not the PAID/NOT PAID badges
+    const paymentStatusPaidDisplay = (isRefund || isDeposit) ? 'none' : (isFullyPaid ? 'block' : 'none');
+    const paymentStatusUnpaidDisplay = (isRefund || isDeposit) ? 'none' : (!isFullyPaid ? 'block' : 'none');
 
     const vars = {
       billingName: `${task.firstName} ${task.lastName}`,
@@ -407,6 +415,9 @@ module.exports = {
       refundAmount: refundAmount ? refundAmount.toFixed(2) : '0.00',
       fullRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994713/king_q_2_3_r6ij4f.png',
       partialRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994706/king_q_2_4_vu3kji.png',
+      // Deposit badge information
+      showDepositBadge,
+      depositBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1764145006/king_q_2_5_hzeg1b.png',
     };
 
     // Build discount columns for the table header based on discount type
@@ -853,6 +864,14 @@ module.exports = {
       const subtotal = total / 1.2; // Remove VAT (20%)
       const vat = total - subtotal;
 
+      // Detect if this is a DEPOSIT payment
+      const isDeposit = task.paymentStatus === 'partial_Paid' &&
+        task.paidAmount?.status === 'Paid' &&
+        task.remainingAmount?.status === 'Not_Paid';
+
+      // Get payment method from task
+      const paymentMethod = task.paidAmount?.method || task.paymentMethod || paymentType || 'N/A';
+
       // Build breakdown table HTML if provided
       let breakdownTableHtml = '';
       if (breakdown && Array.isArray(breakdown) && breakdown.length > 0) {
@@ -935,21 +954,25 @@ module.exports = {
           ? '<th style="text-align: center; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Quantity</th>'
           : '';
 
-        const allRows = [...itemRows, ...summaryRows].join('');
+        // Create table with only items (no summary rows like VAT, Total, Payment Method)
+        // Summary information will be shown in the Payment Details section below
+        const itemsOnlyRows = itemRows.join('');
 
-        breakdownTableHtml = `
-          <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
-            <thead>
-              <tr>
-                <th style="text-align: left; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Description</th>
-                ${quantityHeader}
-                <th style="text-align: right; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${allRows}
-            </tbody>
-          </table>`;
+        if (itemsOnlyRows) {
+          breakdownTableHtml = `
+            <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+              <thead>
+                <tr>
+                  <th style="text-align: left; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Description</th>
+                  ${quantityHeader}
+                  <th style="text-align: right; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsOnlyRows}
+              </tbody>
+            </table>`;
+        }
       }
 
       // Handle Handlebars conditionals first
@@ -996,17 +1019,58 @@ module.exports = {
       // Change title from "Invoice Confirmation" to "Payment Confirmation"
       html = html.replace(/Invoice Confirmation/g, 'Payment Confirmation');
 
-      // Replace the payment details list with table if breakdown is provided
-      if (breakdownTableHtml) {
-        // Replace the entire <ul> section with the table
-        html = html.replace(
-          /<ul[\s\S]*?style="[^"]*margin:[^"]*padding-left:[^"]*"[^"]*>[\s\S]*?<\/ul>/,
-          breakdownTableHtml
-        );
+      // Create custom payment details HTML based on payment type
+      let paymentDetailsHtml = '';
+
+      if (isDeposit) {
+        // For deposit: show deposit paid, remaining not paid, and payment method
+        const depositAmount = task.paidAmount?.amount || total;
+        const remainingAmount = task.remainingAmount?.amount || (task.totalPrice - depositAmount);
+        const fullTotal = task.totalPrice || (depositAmount + remainingAmount);
+
+        paymentDetailsHtml = `
+          <ul
+            style="
+              margin: 0;
+              padding-left: 20px;
+              color: #1c1c1c;
+              font-size: 16px;
+              line-height: 1.8;
+            "
+          >
+            <li style="margin-bottom: 8px">Deposit Paid: £${depositAmount.toFixed(2)}</li>
+            <li style="margin-bottom: 8px">Remaining Balance: £${remainingAmount.toFixed(2)}</li>
+            <li style="margin-bottom: 0">
+              <strong>Total Amount (Including VAT): £${fullTotal.toFixed(2)}</strong>
+            </li>
+            <li style="margin-bottom: 0; margin-top: 8px">Payment Method: ${paymentMethod}</li>
+          </ul>
+        `;
       } else {
-        // If no breakdown, keep the original list but ensure VAT and Total are shown
-        // This handles the case when breakdown is not provided
+        // For full payment: show total (including VAT) and payment method
+        paymentDetailsHtml = `
+          <ul
+            style="
+              margin: 0;
+              padding-left: 20px;
+              color: #1c1c1c;
+              font-size: 16px;
+              line-height: 1.8;
+            "
+          >
+            <li style="margin-bottom: 0">
+              <strong>Total Amount (Including VAT): £${total.toFixed(2)}</strong>
+            </li>
+            <li style="margin-bottom: 0; margin-top: 8px">Payment Method: ${paymentMethod}</li>
+          </ul>
+        `;
       }
+
+      // Replace the payment details list with custom HTML
+      html = html.replace(
+        /<ul[\s\S]*?style="[^"]*margin:[^"]*padding-left:[^"]*"[^"]*>[\s\S]*?<\/ul>/,
+        paymentDetailsHtml
+      );
 
       // Send email
       await transporter.sendMail({
