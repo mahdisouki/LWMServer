@@ -999,9 +999,12 @@ module.exports = {
         html = html.replace(/{{customDiscountPercent}}/g, (task.customDiscountPercent || 0).toFixed(2));
         const discountAmount = ((subtotal * (task.customDiscountPercent || 0)) / 100).toFixed(2);
         html = html.replace(/{{discountAmount}}/g, discountAmount);
-        // Remove the Handlebars conditional tags but keep the content
+        // Remove only the hasDiscount Handlebars conditional tags but keep the content
+        // Remove {{#if hasDiscount}} tag
         html = html.replace(/{{#if hasDiscount}}/g, '');
-        html = html.replace(/{{\/if}}/g, '');
+        // Remove the {{/if}} that belongs to hasDiscount (it's right after the discount row)
+        // Match: </tr> followed by {{/if}} (this is the closing tag for hasDiscount)
+        html = html.replace(/<\/tr>\s*{{\/if}}/g, '</tr>');
       }
 
       // Calculate values for partial payment display FIRST (before conditionals)
@@ -1023,15 +1026,10 @@ module.exports = {
 
       if (!isPartialPaid) {
         // For fully paid (including remaining payment): remove {{#if isPartialPaid}}...{{else}}, keep {{else}}...{{/if}} content
-        // This regex removes the opening {{#if isPartialPaid}} and everything until {{else}}, keeping the {{else}} content
-        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}/g, '');
-        // Remove only the closing {{/if}} that matches the {{#if isPartialPaid}} (not other {{/if}} tags)
-        // We need to be careful not to remove {{/if}} from {{#if hasDiscount}}
-        // Since we already removed {{#if isPartialPaid}}...{{else}}, we can safely remove the next {{/if}}
-        // But we need to do it carefully to avoid removing nested {{/if}}
-        html = html.replace(/({{else}}[\s\S]*?){{\/if}}/g, '$1');
-        // Actually, a simpler approach: remove {{#if isPartialPaid}} and the matching {{/if}}, keep {{else}} content
+        // Match: {{#if isPartialPaid}}...{{else}}...{{/if}} and replace with just the {{else}} content
         html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}([\s\S]*?){{\/if}}/g, '$1');
+        // Also handle any remaining {{#if isPartialPaid}} blocks without {{else}} (message at bottom) - remove them completely
+        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{\/if}}/g, '');
       } else {
         // For deposit-only payment: process all {{#if isPartialPaid}} blocks
         // First, handle blocks with {{else}} (in table) - keep content before {{else}}, remove {{else}}...{{/if}}
@@ -1046,6 +1044,16 @@ module.exports = {
           iterations++;
         }
       }
+
+      // Final cleanup: remove any remaining Handlebars tags for isPartialPaid that might have been missed
+      // Remove any remaining {{#if isPartialPaid}} tags
+      html = html.replace(/{{#if isPartialPaid}}/g, '');
+      // Remove {{else}} tags (these are only for isPartialPaid, hasDiscount doesn't use else)
+      html = html.replace(/{{else}}/g, '');
+      // Remove remaining {{/if}} tags that are for isPartialPaid
+      // Since hasDiscount is processed earlier and its {{/if}} is already removed, 
+      // we can safely remove any remaining {{/if}} tags
+      html = html.replace(/{{\/if}}/g, '');
 
       // Replace template variables
       html = html.replace(/{{firstName}}/g, firstName || '');
