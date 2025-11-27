@@ -417,7 +417,7 @@ module.exports = {
       partialRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994706/king_q_2_4_vu3kji.png',
       // Deposit badge information
       showDepositBadge,
-      depositBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1764145006/king_q_2_5_hzeg1b.png',
+      depositBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1764167162/king_q_2_5_1_skicfb.png',
     };
 
     // Build discount columns for the table header based on discount type

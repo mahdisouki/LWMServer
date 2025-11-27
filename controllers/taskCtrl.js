@@ -1063,9 +1063,31 @@ const taskCtrl = {
       delete updates.deletedMedia;
 
       console.log('=== ITEMS PROCESSING ===');
-      // If items are being updated, recalculate totalPrice
-      if (updates.items) {
-        console.log('Original items from request:', JSON.stringify(updates.items, null, 2));
+      // Check if we need to process items (either from updates.items or updates.objects)
+      const hasItemsUpdate = updates.items !== undefined;
+      const hasObjectsUpdate = updates.objects && Array.isArray(updates.objects) && updates.objects.length > 0;
+
+      if (hasItemsUpdate || hasObjectsUpdate) {
+        // Initialize items array
+        if (updates.items === undefined) {
+          // If items are not being updated but objects are, we need to handle this carefully
+          // If objects are provided, we want to REPLACE existing custom items, not append
+          if (hasObjectsUpdate) {
+            // Start with existing standard items (items with standardItemId), exclude custom items
+            updates.items = oldTask.items
+              ? oldTask.items
+                .map(item => item.toObject ? item.toObject() : item)
+                .filter(item => item.standardItemId && mongoose.Types.ObjectId.isValid(item.standardItemId))
+              : [];
+            console.log('Preserved existing standard items, will replace custom items:', JSON.stringify(updates.items, null, 2));
+          } else {
+            // If no objects update, preserve all existing items
+            updates.items = oldTask.items ? oldTask.items.map(item => item.toObject ? item.toObject() : item) : [];
+            console.log('No items in update, preserving existing items:', JSON.stringify(updates.items, null, 2));
+          }
+        } else {
+          console.log('Original items from request:', JSON.stringify(updates.items, null, 2));
+        }
 
         // Clean and filter items
         updates.items = updates.items
@@ -1094,28 +1116,50 @@ const taskCtrl = {
 
         console.log('Filtered items:', JSON.stringify(updates.items, null, 2));
 
-        // Also handle objects array (custom items) if present
+        // Handle objects array (custom items) if present
         if (updates.objects && Array.isArray(updates.objects)) {
           console.log('Processing objects array:', JSON.stringify(updates.objects, null, 2));
 
-          const customItems = updates.objects.map((obj) => {
-            console.log('Processing custom object:', JSON.stringify(obj, null, 2));
-            const customItem = {
-              standardItemId: null, // Custom items don't have standardItemId
-              object: obj.object,
-              Objectsposition: obj.Objectsposition || 'Outside',
-              quantity: Number(obj.quantity) || 1,
-              customPrice: obj.customPrice !== undefined ? Number(obj.customPrice) : undefined,
-              price: Number(obj.price) || 0,
-            };
-            console.log('Converted custom item:', JSON.stringify(customItem, null, 2));
-            return customItem;
+          // Filter out empty/invalid objects
+          const validObjects = updates.objects.filter((obj) => {
+            return obj && obj.object && typeof obj.object === 'string' && obj.object.trim() !== '';
           });
 
-          // Merge items and custom items
-          updates.items = [...updates.items, ...customItems];
-          console.log('Merged items and custom items:', JSON.stringify(updates.items, null, 2));
+          if (validObjects.length > 0) {
+            const customItems = validObjects.map((obj) => {
+              console.log('Processing custom object:', JSON.stringify(obj, null, 2));
+              const customItem = {
+                standardItemId: null, // Custom items don't have standardItemId
+                object: obj.object,
+                Objectsposition: obj.Objectsposition || 'Outside',
+                quantity: Number(obj.quantity) || 1,
+                customPrice: obj.customPrice !== undefined ? Number(obj.customPrice) : undefined,
+                price: Number(obj.price) || 0,
+              };
+              console.log('Converted custom item:', JSON.stringify(customItem, null, 2));
+              return customItem;
+            });
+
+            // IMPORTANT: Remove existing custom items (items without standardItemId) before merging
+            // This ensures we REPLACE custom items, not append to them
+            const standardItems = updates.items.filter(item =>
+              item.standardItemId && mongoose.Types.ObjectId.isValid(item.standardItemId)
+            );
+
+            // Merge standard items with new custom items
+            updates.items = [...standardItems, ...customItems];
+            console.log('Replaced custom items, merged with standard items:', JSON.stringify(updates.items, null, 2));
+          } else {
+            // If objects array is empty, remove all custom items (keep only standard items)
+            updates.items = updates.items.filter(item =>
+              item.standardItemId && mongoose.Types.ObjectId.isValid(item.standardItemId)
+            );
+            console.log('Objects array is empty, removed all custom items:', JSON.stringify(updates.items, null, 2));
+          }
         }
+
+        // Clean up helper field - objects array is merged into items, so remove it
+        delete updates.objects;
 
         console.log('Final items to save:', JSON.stringify(updates.items, null, 2));
 
@@ -2500,7 +2544,7 @@ const taskCtrl = {
       const depositAmount = task.paidAmount?.amount || 0;
       const remainingAmount = task.remainingAmount?.amount || (task.totalPrice - depositAmount);
       const isPartialPaid = task.paymentStatus === 'partial_Paid';
-      
+
       // Get payment method from PaymentHistory or task
       const PaymentHistory = require('../models/PaymentHistory');
       const latestPayment = await PaymentHistory.findOne({ taskId: task._id })
