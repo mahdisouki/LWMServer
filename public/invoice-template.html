@@ -283,6 +283,22 @@
         display: none;
       }
 
+      /* Deposit Badge */
+      .deposit-badge {
+        position: absolute;
+        top: 13%;
+        right: -8%;
+        transform: translate(-50%, -50%) rotate(-15deg);
+        z-index: 1001;
+        opacity: 0.8;
+        pointer-events: none;
+      }
+
+      .deposit-badge img {
+        width: 150px;
+        height: auto;
+      }
+
       /* Footer text */
       .footer-text {
         margin-top: 40px;
@@ -327,6 +343,11 @@
       style="display: {{showPartialRefundBadge}};"
     >
       <img src="{{partialRefundBadgeUrl}}" alt="PARTIAL REFUND" />
+    </div>
+
+    <!-- Deposit Badge -->
+    <div class="deposit-badge" style="display: {{showDepositBadge}};">
+      <img src="{{depositBadgeUrl}}" alt="DEPOSIT" />
     </div>
 
     <div class="container">

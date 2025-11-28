@@ -339,9 +339,17 @@ module.exports = {
     const showPartialRefundBadge = isRefund && !isFullRefund ? 'block' : 'none';
     const showRefundRow = isRefund ? 'block' : 'none';
 
-    // Hide payment status badges when it's a refund invoice
-    const paymentStatusPaidDisplay = isRefund ? 'none' : (isFullyPaid ? 'block' : 'none');
-    const paymentStatusUnpaidDisplay = isRefund ? 'none' : (!isFullyPaid ? 'block' : 'none');
+    // Detect if this is a DEPOSIT payment (partial payment where deposit is paid but remaining is not)
+    // A deposit is when: paymentStatus is 'partial_Paid', paidAmount is 'Paid', and remainingAmount is 'Not_Paid'
+    const isDeposit = task.paymentStatus === 'partial_Paid' &&
+      task.paidAmount?.status === 'Paid' &&
+      task.remainingAmount?.status === 'Not_Paid';
+    const showDepositBadge = isDeposit ? 'block' : 'none';
+
+    // Hide payment status badges when it's a refund invoice or a deposit payment
+    // When it's a deposit, only show the deposit badge, not the PAID/NOT PAID badges
+    const paymentStatusPaidDisplay = (isRefund || isDeposit) ? 'none' : (isFullyPaid ? 'block' : 'none');
+    const paymentStatusUnpaidDisplay = (isRefund || isDeposit) ? 'none' : (!isFullyPaid ? 'block' : 'none');
 
     const vars = {
       billingName: `${task.firstName} ${task.lastName}`,
@@ -407,6 +415,9 @@ module.exports = {
       refundAmount: refundAmount ? refundAmount.toFixed(2) : '0.00',
       fullRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994713/king_q_2_3_r6ij4f.png',
       partialRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994706/king_q_2_4_vu3kji.png',
+      // Deposit badge information
+      showDepositBadge,
+      depositBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1764167162/king_q_2_5_1_skicfb.png',
     };
 
     // Build discount columns for the table header based on discount type
@@ -828,6 +839,264 @@ module.exports = {
     });
 
     fs.unlinkSync(filePath);
+  },
+  async sendPaymentConfirmationEmail({ email, firstName, lastName, orderId, paymentDate, amount, currency, paymentType, breakdown }) {
+    try {
+      // Load the task to get order number and other details
+      const task = await Task.findById(orderId).populate('items.standardItemId');
+      if (!task) {
+        throw new Error(`Task not found with ID: ${orderId}`);
+      }
+
+      // Generate invoice PDF
+      const dirPath = path.join(__dirname, '../generated');
+      if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
+      const fileName = `invoice-${task.orderNumber}.pdf`;
+      const filePath = path.join(dirPath, fileName);
+      await module.exports.generateOfficialInvoicePDF(task, filePath);
+
+      // Read the payment confirmation template
+      const templatePath = path.join(__dirname, '../public/templates/invoiceConfirmation.html');
+      let html = fs.readFileSync(templatePath, 'utf8');
+
+      // Calculate VAT and subtotal from amount
+      const total = parseFloat(amount) || 0;
+      const subtotal = total / 1.2; // Remove VAT (20%)
+      const vat = total - subtotal;
+
+      // Detect if this is a DEPOSIT payment
+      const isDeposit = task.paymentStatus === 'partial_Paid' &&
+        task.paidAmount?.status === 'Paid' &&
+        task.remainingAmount?.status === 'Not_Paid';
+
+      // Get payment method - use paymentType (Stripe/PayPal) directly
+      // paymentType is passed as 'Stripe' or 'PayPal' from the webhook/controller
+      // If not provided, try to get from PaymentHistory
+      let paymentMethod = paymentType;
+
+      if (!paymentMethod || paymentMethod === 'Payment' || paymentMethod === 'N/A') {
+        // Try to get from PaymentHistory
+        const PaymentHistory = require('../models/PaymentHistory');
+        const latestPayment = await PaymentHistory.findOne({ taskId: task._id })
+          .sort({ paymentDate: -1 });
+
+        if (latestPayment && latestPayment.paymentType) {
+          paymentMethod = latestPayment.paymentType; // Should be 'Stripe' or 'PayPal'
+        } else {
+          paymentMethod = 'Online Payment';
+        }
+      }
+
+      // Build breakdown table HTML if provided
+      let breakdownTableHtml = '';
+      if (breakdown && Array.isArray(breakdown) && breakdown.length > 0) {
+        // Determine if we need quantity column (only if any item has quantity)
+        const hasQuantity = breakdown.some(item => item.quantity && item.quantity > 0 && !item.description?.toLowerCase().includes('total') && !item.description?.toLowerCase().includes('payment method'));
+
+        // Separate items from summary rows (Total, Payment Method, etc.)
+        const itemRows = [];
+        const summaryRows = [];
+
+        breakdown.forEach((item) => {
+          const description = item.description || item.itemDescription || 'Item';
+          const itemAmount = item.amount || item.price;
+          const quantity = item.quantity || 1;
+
+          // Check if this is a summary row (Total, Payment Method, etc.)
+          const isSummaryRow = description.toLowerCase().includes('total') ||
+            description.toLowerCase().includes('payment method') ||
+            description.toLowerCase().includes('vat');
+
+          // Check if this is a Payment Method entry (non-numeric amount)
+          const isPaymentMethod = description.toLowerCase().includes('payment method');
+          const isNumeric = !isNaN(parseFloat(itemAmount)) && isFinite(itemAmount);
+
+          let amountCell = '';
+          if (isPaymentMethod) {
+            // For Payment Method, use the paymentType parameter instead of the email address
+            amountCell = `<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">${paymentType || 'N/A'}</td>`;
+          } else if (!isNumeric) {
+            // For other non-numeric values, just show the value as text
+            amountCell = `<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">${itemAmount || 'N/A'}</td>`;
+          } else {
+            // For numeric amounts, format as currency
+            amountCell = `<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">£${parseFloat(itemAmount).toFixed(2)}</td>`;
+          }
+
+          // Show quantity only for item rows (not summary rows)
+          const showQuantity = !isSummaryRow && item.itemDescription && quantity > 0;
+          const quantityCell = showQuantity
+            ? `<td style="text-align: center; padding: 10px; border-bottom: 1px solid #e0e0e0;">${quantity}</td>`
+            : '';
+
+          // For summary rows, add empty quantity cell if quantity column exists
+          const finalQuantityCell = isSummaryRow && hasQuantity
+            ? '<td style="text-align: center; padding: 10px; border-bottom: 1px solid #e0e0e0;"></td>'
+            : quantityCell;
+
+          const rowHtml = `
+            <tr>
+              <td style="padding: 10px; border-bottom: 1px solid #e0e0e0; ${isSummaryRow ? 'font-weight: bold;' : ''}">${description}</td>
+              ${finalQuantityCell}
+              ${amountCell}
+            </tr>`;
+
+          if (isSummaryRow) {
+            summaryRows.push(rowHtml);
+          } else {
+            itemRows.push(rowHtml);
+          }
+        });
+
+        // Add VAT and Total rows if not already in breakdown
+        const hasVAT = summaryRows.some(row => row.toLowerCase().includes('vat'));
+        const hasTotal = summaryRows.some(row => row.toLowerCase().includes('total amount'));
+
+        if (!hasVAT) {
+          const vatRowQuantityCell = hasQuantity
+            ? '<td style="text-align: center; padding: 10px; border-bottom: 1px solid #e0e0e0;"></td>'
+            : '';
+          summaryRows.unshift(`<tr><td style="padding: 10px; border-bottom: 1px solid #e0e0e0;">VAT (20%)</td>${vatRowQuantityCell}<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0;">£${vat.toFixed(2)}</td></tr>`);
+        }
+        if (!hasTotal) {
+          const totalRowQuantityCell = hasQuantity
+            ? '<td style="text-align: center; padding: 10px; border-bottom: 1px solid #e0e0e0;"></td>'
+            : '';
+          summaryRows.push(`<tr><td style="padding: 10px; border-bottom: 1px solid #e0e0e0; font-weight: bold;">Total Amount (Including VAT)</td>${totalRowQuantityCell}<td style="text-align: right; padding: 10px; border-bottom: 1px solid #e0e0e0; font-weight: bold;">£${total.toFixed(2)}</td></tr>`);
+        }
+
+        const quantityHeader = hasQuantity
+          ? '<th style="text-align: center; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Quantity</th>'
+          : '';
+
+        // Create table with only items (no summary rows like VAT, Total, Payment Method)
+        // Summary information will be shown in the Payment Details section below
+        const itemsOnlyRows = itemRows.join('');
+
+        if (itemsOnlyRows) {
+          breakdownTableHtml = `
+            <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+              <thead>
+                <tr>
+                  <th style="text-align: left; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Description</th>
+                  ${quantityHeader}
+                  <th style="text-align: right; padding: 12px; background-color: #f5f5f5; border-bottom: 2px solid #8dc044;">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsOnlyRows}
+              </tbody>
+            </table>`;
+        }
+      }
+
+      // Handle Handlebars conditionals first
+      // Remove discount section if no discount
+      if (!task.hasDiscount) {
+        html = html.replace(/{{#if hasDiscount}}[\s\S]*?{{\/if}}/g, '');
+      } else {
+        // Replace discount variables inside the conditional block
+        html = html.replace(/{{customDiscountPercent}}/g, (task.customDiscountPercent || 0).toFixed(2));
+        const discountAmount = ((subtotal * (task.customDiscountPercent || 0)) / 100).toFixed(2);
+        html = html.replace(/{{discountAmount}}/g, discountAmount);
+        // Remove only the hasDiscount Handlebars conditional tags but keep the content
+        // Remove {{#if hasDiscount}} tag
+        html = html.replace(/{{#if hasDiscount}}/g, '');
+        // Remove the {{/if}} that belongs to hasDiscount (it's right after the discount row)
+        // Match: </tr> followed by {{/if}} (this is the closing tag for hasDiscount)
+        html = html.replace(/<\/tr>\s*{{\/if}}/g, '</tr>');
+      }
+
+      // Calculate values for partial payment display FIRST (before conditionals)
+      const depositAmount = task.paidAmount?.amount || 0;
+      const remainingAmount = task.remainingAmount?.amount || 0;
+      const fullTotalPrice = task.totalPrice || (depositAmount + remainingAmount);
+
+      // Determine if this is a true partial payment (deposit paid but remaining not paid)
+      // OR if both are paid (remaining payment was just completed or full payment)
+      const isDepositOnly = task.paymentStatus === 'partial_Paid' &&
+        task.paidAmount?.status === 'Paid' &&
+        task.remainingAmount?.status === 'Not_Paid';
+
+      const isFullyPaid = task.paymentStatus === 'Paid' ||
+        (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid');
+
+      // isPartialPaid is true ONLY if it's a deposit-only payment (not fully paid)
+      const isPartialPaid = isDepositOnly && !isFullyPaid;
+
+      if (!isPartialPaid) {
+        // For fully paid (including remaining payment): remove {{#if isPartialPaid}}...{{else}}, keep {{else}}...{{/if}} content
+        // Match: {{#if isPartialPaid}}...{{else}}...{{/if}} and replace with just the {{else}} content
+        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}([\s\S]*?){{\/if}}/g, '$1');
+        // Also handle any remaining {{#if isPartialPaid}} blocks without {{else}} (message at bottom) - remove them completely
+        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{\/if}}/g, '');
+      } else {
+        // For deposit-only payment: process all {{#if isPartialPaid}} blocks
+        // First, handle blocks with {{else}} (in table) - keep content before {{else}}, remove {{else}}...{{/if}}
+        html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{else}}[\s\S]*?{{\/if}}/g, '$1');
+        // Then, handle remaining blocks without {{else}} (message at bottom) - remove tags but keep content
+        // Use a simple regex to match and remove remaining {{#if isPartialPaid}}...{{/if}} blocks
+        let iterations = 0;
+        let previousHtml = '';
+        while (html.includes('{{#if isPartialPaid}}') && html !== previousHtml && iterations < 10) {
+          previousHtml = html;
+          html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{\/if}}/g, '$1');
+          iterations++;
+        }
+      }
+
+      // Final cleanup: remove any remaining Handlebars tags for isPartialPaid that might have been missed
+      // Remove any remaining {{#if isPartialPaid}} tags
+      html = html.replace(/{{#if isPartialPaid}}/g, '');
+      // Remove {{else}} tags (these are only for isPartialPaid, hasDiscount doesn't use else)
+      html = html.replace(/{{else}}/g, '');
+      // Remove remaining {{/if}} tags that are for isPartialPaid
+      // Since hasDiscount is processed earlier and its {{/if}} is already removed, 
+      // we can safely remove any remaining {{/if}} tags
+      html = html.replace(/{{\/if}}/g, '');
+
+      // Replace template variables
+      html = html.replace(/{{firstName}}/g, firstName || '');
+      html = html.replace(/{{lastName}}/g, lastName || '');
+      html = html.replace(/{{orderNumber}}/g, task.orderNumber || orderId);
+      html = html.replace(/{{total}}/g, total.toFixed(2));
+      html = html.replace(/{{vat}}/g, vat.toFixed(2));
+      html = html.replace(/{{subtotal}}/g, subtotal.toFixed(2));
+      html = html.replace(/{{paymentDate}}/g, paymentDate || new Date().toLocaleString());
+      html = html.replace(/{{paymentType}}/g, paymentType || 'Payment');
+      // Partial payment variables - replace these after conditionals are processed
+      html = html.replace(/{{depositAmount}}/g, depositAmount.toFixed(2));
+      html = html.replace(/{{remainingAmount}}/g, remainingAmount.toFixed(2));
+      html = html.replace(/{{totalPrice}}/g, fullTotalPrice.toFixed(2));
+      html = html.replace(/{{paymentMethod}}/g, paymentMethod);
+
+      // Remove VAT (20%) line from Payment Confirmation email body
+      html = html.replace(/<tr>[\s\S]*?VAT \(20%\)[\s\S]*?<\/tr>/g, '');
+
+      // Update the confirmation message for payment confirmation (after orderNumber is replaced)
+      html = html.replace(
+        /Thank you for booking with[\s\S]*?<strong style="color: #4caf50">London Waste Management\.<\/strong>/,
+        `We've successfully received your payment for Order <strong style="color: #4caf50">#${task.orderNumber || orderId}</strong>. Thank you for choosing <strong style="color: #4caf50">London Waste Management</strong>!`
+      );
+
+      // Change title from "Invoice Confirmation" to "Payment Confirmation"
+      html = html.replace(/Invoice Confirmation/g, 'Payment Confirmation');
+
+      // Send email
+      await transporter.sendMail({
+        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: `Payment Confirmation - Order #${task.orderNumber}`,
+        html: html,
+        attachments: [{ filename: fileName, path: filePath }],
+      });
+
+      // Clean up PDF file
+      fs.unlinkSync(filePath);
+    } catch (error) {
+      console.error('Error sending payment confirmation email:', error);
+      throw error;
+    }
   },
   sendRefundEmail,
 };
