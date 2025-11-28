@@ -1,6 +1,7 @@
 const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
+const User = require('../models/User');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
 const { emitNotificationToUser } = require('../socket.js');
@@ -395,6 +396,31 @@ const taskCtrl = {
           ipAddress: req.ip,
           userAgent: req.headers['user-agent'],
         });
+      }
+
+      // Notify all admins when a public order is created
+      if (createdByType === 'public') {
+        try {
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          const customerName = savedTask.firstName && savedTask.lastName
+            ? `${savedTask.firstName} ${savedTask.lastName}`
+            : savedTask.bussinessName || 'Customer';
+          const notificationMessage = `New public order created by ${customerName} - Order #${savedTask.orderNumber || savedTask._id}`;
+
+          for (const admin of adminUsers) {
+            if (admin._id) {
+              await emitNotificationToUser(
+                admin._id.toString(),
+                'Orders',
+                notificationMessage,
+                customerName
+              );
+            }
+          }
+        } catch (notificationError) {
+          console.error('Error sending notification to admins:', notificationError);
+          // Don't fail the request if notification fails
+        }
       }
 
       res.status(201).json({
@@ -1852,6 +1878,16 @@ const taskCtrl = {
           breakdown,
         });
 
+        // Send notification to admins only
+        const notificationMessage = `Payment confirmed for task #${task.orderNumber || taskId}`;
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(admin._id.toString(), 'Orders', notificationMessage);
+          }
+        }
+
+        await task.save();
         return res.status(200).json({
           message: 'Payment confirmed successfully and email sent',
           task,
@@ -2007,6 +2043,15 @@ const taskCtrl = {
           paymentType: 'PayPal',
           breakdown,
         });
+
+        // Send notification to admins only
+        const notificationMessage = `Payment confirmed for task #${task.orderNumber || taskId}`;
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(admin._id.toString(), 'Orders', notificationMessage);
+          }
+        }
 
         return res.status(200).json({
           message: 'PayPal payment captured successfully and email sent',
@@ -2342,6 +2387,15 @@ const taskCtrl = {
           breakdown,
         });
 
+        // Send notification to admins only
+        const notificationMessage = `Payment confirmed for task #${task.orderNumber || taskId}`;
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(admin._id.toString(), 'Orders', notificationMessage);
+          }
+        }
+
         res.status(200).send('Webhook received');
       }
     } catch (err) {
@@ -2481,6 +2535,15 @@ const taskCtrl = {
             transactionId: capture.id,
             payerAccount: payerEmail || `PayPal ${capture.id}`,
           });
+
+          // Send notification to admins only
+          const notificationMessage = `Payment confirmed for task #${task.orderNumber || task._id}`;
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          for (const admin of adminUsers) {
+            if (admin._id) {
+              await emitNotificationToUser(admin._id.toString(), 'Orders', notificationMessage);
+            }
+          }
 
           // (optional) send email async as above…
           return res.status(200).send('Processed');
