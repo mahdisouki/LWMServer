@@ -1,7 +1,7 @@
 const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
-const User = require('../models/User');
+const  {User}  = require('../models/User');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
 const { emitNotificationToUser } = require('../socket.js');
@@ -399,7 +399,7 @@ const taskCtrl = {
       }
 
       // Notify all admins when a public order is created
-      if (createdByType === 'public') {
+      if (createdByType !== 'public') {
         try {
           const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
           const customerName = savedTask.firstName && savedTask.lastName
