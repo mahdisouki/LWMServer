@@ -9,6 +9,7 @@ const PayrollCtrl = {
   // Log start time at the beginning of the day
   logStartTime: async (req, res) => {
     const { startTime } = req.body;
+    console.log('Starting time:', req.user);
     const userId = req.user._id;
 
     if (!startTime) {
@@ -24,7 +25,7 @@ const PayrollCtrl = {
           .status(400)
           .json({ message: 'You have already started work for the day.' });
       }
-      const truck = await Truck.findOne({ driverId: req.user._id })
+      const truck = await Truck.findOne({ driverId: req.user._id }) || await Truck.findOne({ helperId: req.user._id })
       // Create a new payroll record with the start time
       const newPayroll = new Payroll({
         userId,
@@ -39,9 +40,10 @@ const PayrollCtrl = {
         payroll: newPayroll,
       });
     } catch (error) {
+      console.error('Error logging start time:', error);
       res
         .status(500)
-        .json({ message: 'Failed to log start time.', error: error.message });
+        .json({ message: error.message, error: error.message });
     }
   },
 
@@ -149,6 +151,7 @@ const PayrollCtrl = {
         payroll,
       });
     } catch (error) {
+      console.error('Error logging end time:', error);
       res
         .status(500)
         .json({ message: 'Failed to log end time.', error: error.message });
