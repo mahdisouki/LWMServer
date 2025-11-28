@@ -761,30 +761,35 @@ const initSocket = (server) => {
       try {
         console.log(`Updating location for driver ${driverId}:`, coordinates);
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
-        role === "Driver" ? await Driver.findByIdAndUpdate(driverId, {
-          location: { type: 'Point', coordinates: coordinatesArray },
-        }) : await Helper.findByIdAndUpdate(driverId, {
-          location: { type: 'Point', coordinates: coordinatesArray },
-        })
+        
+        // Find the user first (Driver or Helper)
+        const user = await Driver.findById(driverId) || await Helper.findById(driverId);
+        
+        if (!user) {
+          console.error(`User with ID ${driverId} not found.`);
+          return;
+        }
+        
+        // Update location directly on the document
+        user.location = { type: 'Point', coordinates: coordinatesArray };
+        
+        // Save the document
+        await user.save();
 
-        const driver = role == "Driver" ? await Driver.findById(driverId) : await Helper.findById(driverId);
+        console.log('location', user.location);
+        console.log(user.startTime, 'start time');
 
-        console.log('location', driver.location);
-        console.log(driver.startTime, 'start time');
-
-        if (driver) {
+        if (user) {
           io.emit('driverLocationUpdate', {
             driverId,
-            driverName: driver.username,
+            driverName: user.username,
             coordinates,
-            picture: driver.picture,
-            currentJobAddress: driver.currentJobAddress,
-            nextJobAddress: driver.nextJobAddress,
-            onBreak: driver.onBreak,
-            startTime: driver.breakStartTime,
+            picture: user.picture,
+            currentJobAddress: user.currentJobAddress,
+            nextJobAddress: user.nextJobAddress,
+            onBreak: user.onBreak,
+            startTime: user.breakStartTime,
           });
-        } else {
-          console.error(`Driver with ID ${driverId} not found.`);
         }
       } catch (error) {
         console.error(`Error updating location for driver ${driverId}:`, error);

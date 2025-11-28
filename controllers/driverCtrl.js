@@ -6,7 +6,7 @@ const TruckStatus = require('../models/TruckStatus');
 const TippingRequest = require('../models/TippingRequest');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
-const { emitNotificationToUser } = require('../socket');
+const { emitNotificationToUser, emitEvent } = require('../socket');
 const sendReviewRequestEmail = require('../utils/sendReviewEmail');
 const adminId = "67cb6810c9e768ec25d39523"
 
@@ -1313,6 +1313,74 @@ const driverManagement = {
       return res
         .status(500)
         .json({ message: 'Error getting break timer', error });
+    }
+  },
+
+  updateMyLocation: async (req, res) => {
+    const userId = req.user._id;
+    const { latitude, longitude } = req.body;
+    console.log('Updating location for user:', userId);
+    try {
+      // Validate input
+      if (!latitude || !longitude) {
+        return res.status(400).json({ 
+          message: 'Latitude and longitude are required' 
+        });
+      }
+
+      // Get user info to determine if they're a driver or helper
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+
+      // Get the actual Driver or Helper model to update location
+      let user;
+      if (type === 'Driver') {
+        user = await Driver.findById(userId);
+      } else if (type === 'Helper') {
+        user = await Helper.findById(userId);
+      } else {
+        return res.status(403).json({ 
+          message: 'Only drivers and helpers can update location' 
+        });
+      }
+
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Update location directly on the document
+      const coordinatesArray = [longitude, latitude];
+      user.location = { type: 'Point', coordinates: coordinatesArray };
+      
+      // Save the document
+      await user.save();
+
+      // Emit the location update to all connected clients (same as socket handler)
+      emitEvent('driverLocationUpdate', {
+        driverId: userId,
+        driverName: user.username,
+        coordinates: { latitude, longitude },
+        picture: user.picture,
+        currentJobAddress: user.currentJobAddress,
+        nextJobAddress: user.nextJobAddress,
+        onBreak: user.onBreak,
+        startTime: user.breakStartTime,
+      });
+
+      res.status(200).json({ 
+        message: 'Location updated successfully',
+        location: user.location 
+      });
+    } catch (error) {
+      console.error(`Error updating location for user ${userId}:`, error);
+      res.status(500).json({ 
+        message: 'Failed to update location', 
+        error: error.message 
+      });
     }
   },
 };

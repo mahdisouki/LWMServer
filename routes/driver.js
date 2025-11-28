@@ -29,6 +29,8 @@ router.post('/break/start', isAuth, driverCtrl.startBreak);
 router.post('/break/end', isAuth, driverCtrl.endBreak);
 router.get('/break', isAuth, driverCtrl.getBreakTimer);
 
+router.post('/location/update', isAuth, driverCtrl.updateMyLocation);
+
 // Cleanup corrupted truck tasks data
 router.post('/cleanup-truck-tasks', isAuth, async (req, res) => {
   try {
