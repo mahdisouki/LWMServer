@@ -4,6 +4,7 @@ const Task = require('../models/Task');
 const Truck = require('../models/Truck');
 const TruckStatus = require('../models/TruckStatus');
 const TippingRequest = require('../models/TippingRequest');
+const Payroll = require('../models/Payroll');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser, emitEvent } = require('../socket');
@@ -1380,6 +1381,98 @@ const driverManagement = {
       res.status(500).json({ 
         message: 'Failed to update location', 
         error: error.message 
+      });
+    }
+  },
+
+  /**
+   * Check if a driver/helper's shift has started for a given day
+   * GET /api/driver/day-start-status
+   * Query params: userId (optional, uses auth user if not provided), date (YYYY-MM-DD format, defaults to today)
+   * Returns: { hasStarted: boolean, dayStarted: boolean, payrollId: string|null, startTime: Date|null }
+   */
+  getDayStartStatus: async (req, res) => {
+    try {
+      // Get userId from query params or from authenticated user
+      const userId = req.query.userId || req.user._id;
+      
+      // Get date from query params or default to today
+      let targetDate;
+      if (req.query.date) {
+        // Parse the date string (expected format: YYYY-MM-DD)
+        targetDate = new Date(req.query.date);
+        if (isNaN(targetDate.getTime())) {
+          return res.status(400).json({ 
+            message: 'Invalid date format. Expected YYYY-MM-DD',
+            hasStarted: false,
+            dayStarted: false
+          });
+        }
+      } else {
+        targetDate = new Date();
+      }
+
+      // Set date range for the target day (start of day to end of day)
+      const startOfDay = new Date(targetDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(targetDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // Check for an active payroll record (shift started today with no end time)
+      const activePayroll = await Payroll.findOne({
+        userId: userId,
+        startTime: { $gte: startOfDay, $lte: endOfDay },
+        endTime: null
+      });
+
+      if (activePayroll) {
+        return res.status(200).json({
+          hasStarted: true,
+          dayStarted: true,
+          isShiftActive: true,
+          payrollId: activePayroll._id,
+          startTime: activePayroll.startTime,
+          message: 'Shift is currently active'
+        });
+      }
+
+      // Check if there was a completed shift today (has both start and end time)
+      const completedPayroll = await Payroll.findOne({
+        userId: userId,
+        startTime: { $gte: startOfDay, $lte: endOfDay },
+        endTime: { $ne: null }
+      });
+
+      if (completedPayroll) {
+        return res.status(200).json({
+          hasStarted: true,
+          dayStarted: true,
+          isShiftActive: false,
+          payrollId: completedPayroll._id,
+          startTime: completedPayroll.startTime,
+          endTime: completedPayroll.endTime,
+          message: 'Shift was completed for this day'
+        });
+      }
+
+      // No payroll record found for this day
+      return res.status(200).json({
+        hasStarted: false,
+        dayStarted: false,
+        isShiftActive: false,
+        payrollId: null,
+        startTime: null,
+        message: 'No shift started for this day'
+      });
+
+    } catch (error) {
+      console.error('Error checking day start status:', error);
+      return res.status(500).json({
+        message: 'Failed to check day start status',
+        error: error.message,
+        hasStarted: false,
+        dayStarted: false
       });
     }
   },

@@ -31,6 +31,9 @@ router.get('/break', isAuth, driverCtrl.getBreakTimer);
 
 router.post('/location/update', isAuth, driverCtrl.updateMyLocation);
 
+// Check if shift has started for the day
+router.get('/driver/day-start-status', isAuth, driverCtrl.getDayStartStatus);
+
 // Cleanup corrupted truck tasks data
 router.post('/cleanup-truck-tasks', isAuth, async (req, res) => {
   try {
