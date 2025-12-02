@@ -22,6 +22,8 @@ connectToDatabase()
     // ✅ Load your routes, middleware, jobs, etc.
     require('./jobs/dailySheetCron');
     require('./jobs/AssignedStaffCron');
+    require('./cron/clearNotifications');
+    require('./cron/clearChats');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })
@@ -36,8 +38,6 @@ const cors = require("cors");
 const path = require("path");
 
 
-require('./jobs/dailySheetCron');
-require('./jobs/AssignedStaffCron');
 const setupSwagger = require('./config/swaggerConfig');
 // Apply raw body for Stripe webhook first
 

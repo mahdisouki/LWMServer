@@ -47,6 +47,110 @@ const PayrollCtrl = {
     }
   },
 
+  // Log start break time
+  logStartBreak: async (req, res) => {
+    const { startBreak } = req.body;
+    const userId = req.user._id;
+
+    if (!startBreak) {
+      return res.status(400).json({ message: 'Start break time is required.' });
+    }
+
+    try {
+      // Find the payroll entry for the day that has no end time
+      const payroll = await Payroll.findOne({ userId, endTime: null });
+      if (!payroll) {
+        return res
+          .status(404)
+          .json({ message: 'Start time not logged for today.' });
+      }
+
+      // Check if break is already started
+      if (payroll.startBreak && !payroll.endBreak) {
+        return res
+          .status(400)
+          .json({ message: 'Break already started. Please end the current break first.' });
+      }
+
+      const startBreakTime = new Date(startBreak);
+      const start = payroll.startTime;
+
+      if (startBreakTime < start) {
+        return res
+          .status(400)
+          .json({ message: 'Break start time must be after work start time.' });
+      }
+
+      payroll.startBreak = startBreakTime;
+      await payroll.save();
+
+      res.status(200).json({
+        message: 'Break start time logged successfully.',
+        payroll,
+      });
+    } catch (error) {
+      console.error('Error logging break start time:', error);
+      res
+        .status(500)
+        .json({ message: 'Failed to log break start time.', error: error.message });
+    }
+  },
+
+  // Log end break time
+  logEndBreak: async (req, res) => {
+    const { endBreak } = req.body;
+    const userId = req.user._id;
+
+    if (!endBreak) {
+      return res.status(400).json({ message: 'End break time is required.' });
+    }
+
+    try {
+      // Find the payroll entry for the day that has no end time
+      const payroll = await Payroll.findOne({ userId, endTime: null });
+      if (!payroll) {
+        return res
+          .status(404)
+          .json({ message: 'Start time not logged for today.' });
+      }
+
+      if (!payroll.startBreak) {
+        return res
+          .status(400)
+          .json({ message: 'Break start time not logged. Please start a break first.' });
+      }
+
+      const endBreakTime = new Date(endBreak);
+      const startBreakTime = payroll.startBreak;
+
+      if (endBreakTime <= startBreakTime) {
+        return res
+          .status(400)
+          .json({ message: 'Break end time must be after break start time.' });
+      }
+
+      // Calculate break duration in hours
+      const breakDuration = (endBreakTime - startBreakTime) / (1000 * 3600);
+
+      // Add to existing total break time if any
+      payroll.endBreak = endBreakTime;
+      payroll.totalBreak = (payroll.totalBreak || 0) + breakDuration;
+
+      await payroll.save();
+
+      res.status(200).json({
+        message: 'Break end time logged successfully.',
+        payroll,
+        breakDuration: breakDuration.toFixed(2),
+      });
+    } catch (error) {
+      console.error('Error logging break end time:', error);
+      res
+        .status(500)
+        .json({ message: 'Failed to log break end time.', error: error.message });
+    }
+  },
+
   logEndTime: async (req, res) => {
     const { endTime } = req.body;
     const userId = req.user._id;
@@ -178,8 +282,9 @@ const PayrollCtrl = {
       });
     }
   },
+
   updatePayrollRecord: async (req, res) => {
-    const { startTime, endTime } = req.body;
+    const { startTime, endTime, startBreak, endBreak, totalBreak } = req.body;
     const userId = req.user._id; // Get user ID from authenticated user
     const { payrollId } = req.params; // Get payroll ID from request parameters
 
@@ -195,6 +300,11 @@ const PayrollCtrl = {
       // Update startTime and endTime if provided
       if (startTime) payroll.startTime = new Date(startTime);
       if (endTime) payroll.endTime = new Date(endTime);
+
+      // Update break fields if provided
+      if (startBreak) payroll.startBreak = new Date(startBreak);
+      if (endBreak) payroll.endBreak = new Date(endBreak);
+      if (totalBreak !== undefined) payroll.totalBreak = totalBreak;
 
       // Recalculate hours worked and salary
       const hoursWorked =
@@ -396,9 +506,9 @@ const PayrollCtrl = {
 
     try {
       const query = { userId: userId };
-    if (startDate && endDate) {
-      query.startTime = { $gte: new Date(startDate), $lte: new Date(endDate) };
-    }
+      if (startDate && endDate) {
+        query.startTime = { $gte: new Date(startDate), $lte: new Date(endDate) };
+      }
       const payrolls = await Payroll.find(query).populate('userId', 'username email roleType truckId');
       if (!payrolls || payrolls.length === 0) {
         return res
@@ -417,7 +527,7 @@ const PayrollCtrl = {
 
   // Admin - Update a payroll record for a user
   updatePayrollAdmin: async (req, res) => {
-    const { startTime, endTime, regularHours, extraHours, totalExpenses, totalCash, status } = req.body;
+    const { startTime, endTime, startBreak, endBreak, totalBreak, regularHours, extraHours, totalExpenses, totalCash, status } = req.body;
     const { payrollId } = req.params;
 
     try {
@@ -429,6 +539,11 @@ const PayrollCtrl = {
       // Update basic time fields if provided
       if (startTime) payroll.startTime = new Date(startTime);
       if (endTime) payroll.endTime = new Date(endTime);
+
+      // Update break fields if provided
+      if (startBreak) payroll.startBreak = new Date(startBreak);
+      if (endBreak) payroll.endBreak = new Date(endBreak);
+      if (totalBreak !== undefined) payroll.totalBreak = totalBreak;
 
       // Validate time order if both times are provided
       if (startTime && endTime && new Date(endTime) <= new Date(startTime)) {
@@ -554,15 +669,15 @@ const PayrollCtrl = {
       const now = new Date();
       const day = now.getDay(); // 0 (Sun) to 6 (Sat)
       const diffToMonday = day === 0 ? -6 : 1 - day;
-  
+
       const startOfWeek = new Date(now);
       startOfWeek.setDate(now.getDate() + diffToMonday);
       startOfWeek.setHours(0, 0, 0, 0);
-  
+
       const endOfWeek = new Date(startOfWeek);
       endOfWeek.setDate(startOfWeek.getDate() + 6);
       endOfWeek.setHours(23, 59, 59, 999);
-  
+
       const topStaff = await Payroll.aggregate([
         {
           $match: {
@@ -600,7 +715,7 @@ const PayrollCtrl = {
           },
         },
       ]);
-  
+
       res.status(200).json({
         message: "Top staff with extra hours this week",
         staff: topStaff,
@@ -615,15 +730,15 @@ const PayrollCtrl = {
   getTopExtraHoursThisMonth: async (req, res) => {
     try {
       const now = new Date();
-  
+
       // First day of the month
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       startOfMonth.setHours(0, 0, 0, 0);
-  
+
       // Last day of the month
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       endOfMonth.setHours(23, 59, 59, 999);
-  
+
       const topStaff = await Payroll.aggregate([
         {
           $match: {
@@ -655,7 +770,7 @@ const PayrollCtrl = {
           },
         },
       ]);
-  
+
       res.status(200).json({
         message: "Top staff with extra hours this month",
         staff: topStaff,
@@ -667,8 +782,8 @@ const PayrollCtrl = {
       });
     }
   },
-  
-  
+
+
 };
 
 module.exports = PayrollCtrl;
