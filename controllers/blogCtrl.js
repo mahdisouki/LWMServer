@@ -149,9 +149,13 @@ const blogCtrl = {
 
             const allTags = blogs.flatMap((blog) => blog.tags || []);
 
+            // Normalize tags: trim whitespace and remove zero-width/invisible characters
+            const normalizedTags = allTags.map(tag => 
+                tag.trim().replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '')
+            );
 
-            const uniqueSortedTags = [...new Set(allTags)].sort();
-
+            const uniqueSortedTags = [...new Set(normalizedTags)].sort();
+                
             res.status(200).json({
                 message: 'All tags fetched successfully',
                 tags: uniqueSortedTags,
