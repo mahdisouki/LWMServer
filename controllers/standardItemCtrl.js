@@ -493,7 +493,30 @@ const standardItemCtrl = {
     } catch (error) {
       console.error('Error updating categories:', error);
     }
+  },
+  // Add this after getStandardItemById
+  getStandardItemBySlug: async (req, res) => {
+  const { slug } = req.params;
+  try {
+    // Convert slug back to a searchable pattern
+    // "sofa-removal" -> regex that matches "Sofa Removal", "sofa removal", etc.
+    const searchPattern = slug.replace(/-/g, '\\s+');
+    
+    const item = await StandardItem.findOne({
+      itemName: { $regex: new RegExp(`^${searchPattern}$`, 'i') }
+    }).populate('category');
+    
+    if (!item) {
+      return res.status(404).json({ message: 'Standard item not found' });
+    }
+    res.status(200).json(item);
+  } catch (error) {
+    res.status(500).json({ 
+      message: 'Failed to get standard item', 
+      error: error.message 
+    });
   }
+},
 
 };
 
