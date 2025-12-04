@@ -500,13 +500,19 @@ const standardItemCtrl = {
   try {
     // Convert slug back to a searchable pattern
     // "sofa-removal" -> regex that matches "Sofa Removal", "sofa removal", etc.
-    const searchPattern = slug.replace(/-/g, '\\s+');
+    // Allow optional special characters: parentheses, slashes, dashes between words
+    let searchPattern = slug.replace(/-/g, '[\\s\\-–—/()]*');
+    
+    // Allow optional / between consecutive digits (e.g., "14" matches "1/4")
+    searchPattern = searchPattern.replace(/(\d)(\d)/g, '$1[/]?$2');
     
     const item = await StandardItem.findOne({
-      itemName: { $regex: new RegExp(`^${searchPattern}$`, 'i') }
+      // Match with optional trailing parenthetical content and punctuation
+      itemName: { $regex: new RegExp(`^${searchPattern}(\\s*\\([^)]*\\))?[\\s\\-–—/()]*$`, 'i') }
     }).populate('category');
     
     if (!item) {
+      console.log("standard item not found", searchPattern)
       return res.status(404).json({ message: 'Standard item not found' });
     }
     res.status(200).json(item);
