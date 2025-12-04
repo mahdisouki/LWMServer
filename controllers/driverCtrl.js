@@ -1009,7 +1009,7 @@ const driverManagement = {
 
   rateTask: async (req, res) => {
     const { taskId } = req.params;
-    const { clientFeedback, clientFeedbackScale } = req.body;
+    const { clientFeedback, clientFeedbackScale, cashAmount } = req.body;
     // const userId = req.user._id;
 
     try {
@@ -1031,7 +1031,8 @@ const driverManagement = {
       task.clientFeedback = clientFeedback;
       task.clientFeedbackScale = clientFeedbackScale;
       task.taskStatus = "Completed"
-
+      task.cashReceived = cashAmount;
+      
       // Check if this is the first task completed by this client (using email)
       const previousCompletedTasks = await Task.find({
         email: task.email,
