@@ -8,6 +8,7 @@ const multer = require('../middlewares/multer'); // Your multer config for Cloud
 // Routes
 router.post('/',  multer.single('image'), blogCtrl.createBlog);
 router.get('/', blogCtrl.getAllBlogs);
+router.get('/slug/:slug', blogCtrl.getBlogBySlug);
 router.get('/:id', blogCtrl.getBlogById);
 router.put('/:id',  multer.single('image'), blogCtrl.updateBlog);
 router.delete('/:id', isAuth, blogCtrl.deleteBlog);

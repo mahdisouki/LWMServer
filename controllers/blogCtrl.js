@@ -168,6 +168,32 @@ const blogCtrl = {
                 error: error.message,
             });
         }
+    },
+
+    getBlogBySlug: async (req, res) => {
+        const { slug } = req.params;
+        try {
+            // Convert slug back to a searchable pattern
+            // "recycling-your-old-fridge" -> regex that matches "Recycling your old fridge", etc.
+            const searchPattern = slug.replace(/-/g, '\\s+');
+
+            const blog = await Blog.findOne({
+                // Allow optional punctuation at the end (?, !, ., etc.) and trailing spaces
+                title: { $regex: new RegExp(`^${searchPattern}[?!.,;:\\s]*$`, 'i') }
+            }).populate('author', 'name');
+
+            if (!blog) {
+                console.log("blog not found", searchPattern)
+                return res.status(404).json({ message: 'Blog post not found' });
+                
+            }
+            res.status(200).json(blog);
+        } catch (error) {
+            res.status(500).json({
+                message: 'Failed to get blog post',
+                error: error.message
+            });
+        }
     }
 
 };
