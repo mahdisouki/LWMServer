@@ -62,7 +62,7 @@ const tippingController = {
         const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
         const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver/Helper';
         const notificationMessage = `${userName} has created a new tipping request for ${truck.name}`;
-        
+
         // Send notification to all admins
         for (const admin of adminUsers) {
           if (admin._id) {
@@ -74,7 +74,7 @@ const tippingController = {
             );
           }
         }
-        
+
         // Also send to the hardcoded adminId as a fallback
         if (adminId) {
           await emitNotificationToUser(
@@ -115,10 +115,20 @@ const tippingController = {
   createTippingRequestByAdmin: async (req, res) => {
     const adminId = req.user._id;
     // const { driverId, truckId, tippingPlace, notes, status } = req.body;
-    const { driverId, notes, status, tipdate } = req.body;
+    const { driverId, notes, status, tipdate, price, tippingPlace, isShipped } = req.body;
 
+    // Handle file uploads for tipping proof
+    let tippingProof = [];
+    if (req.files && req.files.length > 0) {
+      tippingProof = req.files.map(file => file.path);
+    }
 
     try {
+      // Validate required fields
+      if (!driverId) {
+        return res.status(400).json({ message: 'Driver ID is required' });
+      }
+
       // Ensure the user making the request is an admin
       const admin = await User.findById(adminId);
       if (!admin || admin.roleType !== 'Admin') {
@@ -129,8 +139,11 @@ const tippingController = {
 
       // Find the driver
       const driver = await User.findById(driverId);
-      if (!driver || driver.roleType !== 'Driver') {
+      if (!driver) {
         return res.status(404).json({ message: 'Driver not found' });
+      }
+      if (driver.roleType !== 'Driver') {
+        return res.status(400).json({ message: 'User is not a driver' });
       }
 
       // // Find the truck
@@ -143,10 +156,13 @@ const tippingController = {
       const newTippingRequest = new TippingRequest({
         userId: driver._id, // Assigning the tipping request to the driver
         // truckId: truck._id,
-        // tippingPlace: tippingPlace, // New field for tipping place
+        tippingPlace: tippingPlace, // Tipping place
         notes: notes,
         status: status,
+        isShipped: isShipped,
         tipdate: tipdate, // Tip date set by admin
+        tippingProof: tippingProof.length > 0 ? tippingProof : undefined, // Tipping proof images from files
+        price: price, // Price
         createdBy: admin._id, // Storing the admin who created the request
       });
 
@@ -175,10 +191,13 @@ const tippingController = {
           id: newTippingRequest._id,
           driverId: newTippingRequest.userId.toString(),
           // truckId: newTippingRequest.truckId.toString(),
-          // tippingPlace: newTippingRequest.tippingPlace,
+          tippingPlace: newTippingRequest.tippingPlace,
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
           tipdate: newTippingRequest.tipdate,
+          tippingProof: newTippingRequest.tippingProof,
+          isShipped: newTippingRequest.isShipped,
+          price: newTippingRequest.price,
           createdAt: newTippingRequest.createdAt,
           createdBy: admin.username, // Admin's name
           driverName: driver.username, // Driver's name
@@ -574,7 +593,7 @@ const tippingController = {
   },
   updateTippingRequest: async (req, res) => {
     const { id } = req.params;  // Tipping request ID
-    const updateFields = req.body;  // Fields to update
+    const { price, tipdate, tippingPlace, ...otherFields } = req.body;  // Fields to update
 
     try {
       // Get the old request before updating
@@ -582,6 +601,24 @@ const tippingController = {
       if (!oldRequest) {
         return res.status(404).json({ message: 'Tipping request not found' });
       }
+
+      // Build update object with explicit handling of the specified fields
+      const updateFields = {
+        ...otherFields
+      };
+
+      // Handle file uploads for tipping proof
+      if (req.files && req.files.length > 0) {
+        // Extract Cloudinary URLs from uploaded files
+        const proofUrls = req.files.map(file => file.path);
+        // Append new proof files to existing ones (like in markShippedWithProof)
+        updateFields.tippingProof = [...(oldRequest.tippingProof || []), ...proofUrls];
+      }
+
+      // Explicitly add the fields if they are provided
+      if (price !== undefined) updateFields.price = price;
+      if (tipdate !== undefined) updateFields.tipdate = tipdate;
+      if (tippingPlace !== undefined) updateFields.tippingPlace = tippingPlace;
 
       // Find and update the tipping request
       const updatedRequest = await TippingRequest.findByIdAndUpdate(
