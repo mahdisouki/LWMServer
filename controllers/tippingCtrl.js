@@ -318,8 +318,8 @@ const tippingController = {
       // Populate related fields, including _id
       const populatedData = await TippingRequest.populate(data, [
         { path: 'userId', select: 'username roleType' },
-        { path: 'tippingPlace', select: 'name address _id' },
-        { path: 'storagePlace', select: 'name address _id' }
+        { path: 'tippingPlace', select: 'name address _id location' },
+        { path: 'storagePlace', select: 'name address _id location' }
       ]);
 
       let filteredData = populatedData;
@@ -347,12 +347,16 @@ const tippingController = {
           const obj = req.toObject();
           obj.username = req.userId?.username ?? 'Unknown User';
           obj.tippingPlace = req.tippingPlace ? {
+            _id: req.tippingPlace._id,
             name: req.tippingPlace.name,
-            address: req.tippingPlace.address
+            address: req.tippingPlace.address,
+            location: req.tippingPlace.location  
           } : null;
           obj.storagePlace = req.storagePlace ? {
+            _id: req.storagePlace._id,
             name: req.storagePlace.name,
-            address: req.storagePlace.address
+            address: req.storagePlace.address,
+            location: req.storagePlace.location
           } : null;
           return obj;
         });
