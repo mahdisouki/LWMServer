@@ -108,7 +108,7 @@ async function getUnifiedTasksForDate(truck, date) {
 
   for (const taskRef of tasksForDate) {
     if (taskRef.type === 'Task' || taskRef.type === 'task') {
-      const task = await Task.findById(taskRef.taskId).populate('items.standardItem');;
+      const task = await Task.findById(taskRef.taskId).populate('items.standardItemId');
       if (task) {
         const taskObj = task.toObject ? task.toObject() : task;
         taskObj.type = 'regular_task';
