@@ -7,9 +7,10 @@ cron.schedule('0 0 * * *', async () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0); // Start of today
 
-        // Delete notifications created before today (keep today's)
+        // Delete only notifications older than today that have been read
         const result = await Notification.deleteMany({
             createdAt: { $lt: today },
+            read: true,
         });
 
         console.log(
