@@ -38,7 +38,7 @@ const tippingController = {
         status: 'Pending',
         tipdate: Date.now(), // Set tipdate to current date when created by non-admin
       });
-
+      console.log(newTippingRequest);
       await newTippingRequest.save();
 
       // Create a log of the tipping request creation
@@ -350,7 +350,7 @@ const tippingController = {
             _id: req.tippingPlace._id,
             name: req.tippingPlace.name,
             address: req.tippingPlace.address,
-            location: req.tippingPlace.location  
+            location: req.tippingPlace.location
           } : null;
           obj.storagePlace = req.storagePlace ? {
             _id: req.storagePlace._id,
@@ -386,7 +386,7 @@ const tippingController = {
   // Update the status of a tipping request (Admin only)
   updateTippingRequestStatus: async (req, res) => {
     const { id } = req.params; // ID of the tipping request
-    const { status, tippingPlace, tipdate } = req.body; // New status to be set
+    const { status, tippingPlace } = req.body; // New status to be set
 
     try {
       // Fetch the tipping request
@@ -408,7 +408,7 @@ const tippingController = {
       const request = oldRequest;
       request.status = status;
       request.tippingPlace = tippingPlace;
-      request.tipdate = tipdate;
+
 
       // Handle storage place logic based on status
       if (status === 'Accepted') {
