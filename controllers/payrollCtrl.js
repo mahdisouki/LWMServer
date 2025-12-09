@@ -196,15 +196,21 @@ const PayrollCtrl = {
       // Calculate regular and overtime hours
       let regularHours = totalHoursWorked;
       let overtimeHours = 0;
+      let totalSalary = 0;
 
-      if (totalHoursWorked > REGULAR_HOURS_LIMIT) {
+      if (totalHoursWorked <= REGULAR_HOURS_LIMIT) {
+        // If driver works <= regular hours, get the day price (flat rate)
+        regularHours = totalHoursWorked;
+        overtimeHours = 0;
+        totalSalary = user.hourPrice; // dayPrice (flat rate)
+      } else {
+        // If driver works > regular hours, get day price + extra hours * extra hour price
         regularHours = REGULAR_HOURS_LIMIT;
         overtimeHours = totalHoursWorked - REGULAR_HOURS_LIMIT;
+        const dayPrice = user.hourPrice; // dayPrice (regular hours rate becomes day rate)
+        const overtimeSalary = overtimeHours * user.extraHourPrice;
+        totalSalary = dayPrice + overtimeSalary;
       }
-
-      // Calculate salary: regular hours + overtime hours
-      const regularSalary = regularHours * user.hourPrice;
-      const overtimeSalary = overtimeHours * user.extraHourPrice; // 1.5x for overtime
 
       // Get today's tasks and expenses for the user
       const today = new Date();
@@ -239,7 +245,7 @@ const PayrollCtrl = {
       payroll.totalHoursWorked = totalHoursWorked;
       payroll.regularHours = regularHours;
       payroll.extraHours = overtimeHours;
-      payroll.totalSalary = regularSalary + overtimeSalary;
+      payroll.totalSalary = totalSalary;
       payroll.totalExpenses = totalExpenses;
       payroll.totalCash = totalCash;
 
