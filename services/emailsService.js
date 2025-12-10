@@ -442,6 +442,24 @@ module.exports = {
     }
     template = template.replace('{{refundRow}}', refundRow);
 
+    // Build bank transfer details section if payment method is bank_transfer
+    let bankTransferDetails = '';
+    if (task.paymentMethod === 'bank_transfer') {
+      bankTransferDetails = `
+          <div class="bank-details-section">
+            <div class="bank-details-header">
+              <span>🏦 Bank Details:</span>
+            </div>
+            <div class="bank-details-content">
+              <div class="value"><strong>BANK NAME:</strong> LONDON WASTE MANAGEMENT (LLOYDS BUSINESS BANK)</div>
+              <div class="value"><strong>SORT CODE:</strong> 309626</div>
+              <div class="value"><strong>ACCOUNT NUMBER:</strong> 55867268</div>
+              <div class="value"><strong>COMPANY REGISTRATION NUMBER:</strong> 12206676</div>
+            </div>
+          </div>`;
+    }
+    template = template.replace('{{bankTransferDetails}}', bankTransferDetails);
+
     // Now do the rest of your variable replacements as before
     for (let key in vars) {
       template = template.replaceAll(`{{${key}}}`, vars[key]);
