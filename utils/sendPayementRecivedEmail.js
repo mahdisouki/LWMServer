@@ -381,13 +381,6 @@ module.exports = {
       clockIcon: asset('Group 4.png'),
       fontRegular: asset('Lato-Regular.ttf'),
       fontBold: asset('lato-bold.ttf'),
-      // Bank transfer details - show only when payment method is BankTransfer
-      showBankDetails: task.paymentMethod === 'BankTransfer' ? 'block' : 'none',
-      bankName: 'LONDON WASTE MANAGEMENT (LLOYDS BUSINESS BANK)',
-      sortCode: '309626',
-      accountNumber: '55867268',
-      vatNumber: '403 1603 54',
-      companyRegistrationNumber: '12206676',
     };
 
     // Build discount columns for the table header based on discount type

@@ -418,13 +418,6 @@ module.exports = {
       // Deposit badge information
       showDepositBadge,
       depositBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1764167162/king_q_2_5_1_skicfb.png',
-      // Bank transfer details - show only when payment method is BankTransfer
-      showBankDetails: task.paymentMethod === 'BankTransfer' ? 'block' : 'none',
-      bankName: 'LONDON WASTE MANAGEMENT (LLOYDS BUSINESS BANK)',
-      sortCode: '309626',
-      accountNumber: '55867268',
-      vatNumber: '403 1603 54',
-      companyRegistrationNumber: '12206676',
     };
 
     // Build discount columns for the table header based on discount type

@@ -299,59 +299,6 @@
         height: auto;
       }
 
-      /* Bank Details Section */
-      .bank-details-section {
-        margin-top: 30px;
-        margin-bottom: 30px;
-      }
-
-      .bank-details-box {
-        background-color: #f9f9f9;
-        border-radius: 0;
-        padding: 20px;
-        border: 1px solid #e8e8e8;
-      }
-
-      .bank-details-header {
-        font-family: 'Lato-Bold';
-        font-size: 16px;
-        color: #333;
-        margin-bottom: 15px;
-        padding-bottom: 10px;
-        border-bottom: 2px solid #8dc044;
-      }
-
-      .bank-details-content {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-
-      .bank-detail-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 14px;
-        padding: 8px 0;
-        border-bottom: 1px solid #e8e8e8;
-      }
-
-      .bank-detail-row:last-child {
-        border-bottom: none;
-      }
-
-      .bank-detail-label {
-        font-family: 'Lato-Bold';
-        color: #555;
-        min-width: 200px;
-      }
-
-      .bank-detail-value {
-        color: #333;
-        text-align: right;
-        flex: 1;
-      }
-
       /* Footer text */
       .footer-text {
         margin-top: 40px;
@@ -490,37 +437,6 @@
               <div class="summary-row total">
                 <span class="summary-label">Invoice Total</span>
                 <span class="summary-value">£ {{totalPrice}}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Bank Transfer Details Section -->
-        <div class="bank-details-section" style="display: {{showBankDetails}};">
-          <div class="bank-details-box">
-            <div class="bank-details-header">
-              <strong>BANK DETAILS</strong>
-            </div>
-            <div class="bank-details-content">
-              <div class="bank-detail-row">
-                <span class="bank-detail-label">BANK NAME:</span>
-                <span class="bank-detail-value">{{bankName}}</span>
-              </div>
-              <div class="bank-detail-row">
-                <span class="bank-detail-label">SORT CODE:</span>
-                <span class="bank-detail-value">{{sortCode}}</span>
-              </div>
-              <div class="bank-detail-row">
-                <span class="bank-detail-label">ACCOUNT NUMBER:</span>
-                <span class="bank-detail-value">{{accountNumber}}</span>
-              </div>
-              <div class="bank-detail-row">
-                <span class="bank-detail-label">VAT NUMBER:</span>
-                <span class="bank-detail-value">{{vatNumber}}</span>
-              </div>
-              <div class="bank-detail-row">
-                <span class="bank-detail-label">COMPANY REGISTRATION NUMBER:</span>
-                <span class="bank-detail-value">{{companyRegistrationNumber}}</span>
               </div>
             </div>
           </div>
