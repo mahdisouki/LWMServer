@@ -290,7 +290,7 @@ const PayrollCtrl = {
   },
 
   updatePayrollRecord: async (req, res) => {
-    const { startTime, endTime, startBreak, endBreak, totalBreak } = req.body;
+    const { startTime, endTime, startBreak, endBreak, totalBreak, notes } = req.body;
     const userId = req.user._id; // Get user ID from authenticated user
     const { payrollId } = req.params; // Get payroll ID from request parameters
 
@@ -311,7 +311,7 @@ const PayrollCtrl = {
       if (startBreak) payroll.startBreak = new Date(startBreak);
       if (endBreak) payroll.endBreak = new Date(endBreak);
       if (totalBreak !== undefined) payroll.totalBreak = totalBreak;
-
+      if (notes) payroll.notes = notes;
       // Recalculate hours worked and salary
       const hoursWorked =
         (new Date(payroll.endTime) - new Date(payroll.startTime)) /
@@ -533,7 +533,7 @@ const PayrollCtrl = {
 
   // Admin - Update a payroll record for a user
   updatePayrollAdmin: async (req, res) => {
-    const { startTime, endTime, startBreak, endBreak, totalBreak, regularHours, extraHours, totalExpenses, totalCash, status } = req.body;
+    const { startTime, endTime, startBreak, endBreak, totalBreak, regularHours, extraHours, totalExpenses, totalCash, status, notes } = req.body;
     const { payrollId } = req.params;
 
     try {
@@ -550,7 +550,7 @@ const PayrollCtrl = {
       if (startBreak) payroll.startBreak = new Date(startBreak);
       if (endBreak) payroll.endBreak = new Date(endBreak);
       if (totalBreak !== undefined) payroll.totalBreak = totalBreak;
-
+      if (notes) payroll.notes = notes;
       // Validate time order if both times are provided
       if (startTime && endTime && new Date(endTime) <= new Date(startTime)) {
         return res.status(400).json({ message: 'End time must be after start time.' });
