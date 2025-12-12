@@ -7,7 +7,42 @@ const Driver = require('../models/Driver');
 const TippingPlace = require('../models/TippingPlaces');
 const paginateQuery = require('../utils/paginationHelper');
 const loggingService = require('../services/loggingService');
+const dailySheetController = require('./dailySheetController');
 const adminId = "67cb6810c9e768ec25d39523";
+
+// Helper function to update daily sheets when tipping request changes
+const updateDailySheetForTippingRequest = async (tippingRequest) => {
+  try {
+    if (!tippingRequest || !tippingRequest.userId) {
+      return;
+    }
+
+    // Determine the date to use - prefer tipdate, fallback to createdAt
+    const requestDate = tippingRequest.tipdate || tippingRequest.createdAt;
+    if (!requestDate) {
+      console.log('No date found for tipping request, skipping daily sheet update');
+      return;
+    }
+
+    // Format date as YYYY-MM-DD
+    const dateStr = new Date(requestDate).toISOString().split('T')[0];
+
+    // Create mock request/response objects for updateExistingDailySheets
+    const mockReq = {
+      body: { date: dateStr }
+    };
+    const mockRes = {
+      status: () => ({ json: () => { } }),
+      json: () => { }
+    };
+
+    await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+    console.log('Daily sheet updated for tipping request on date:', dateStr);
+  } catch (error) {
+    console.error('Error updating daily sheet for tipping request:', error);
+    // Don't throw - we don't want to fail the main operation
+  }
+};
 
 const tippingController = {
   createTippingRequest: async (req, res) => {
@@ -439,6 +474,9 @@ const tippingController = {
 
       await request.save();
 
+      // Update daily sheet after status change
+      await updateDailySheetForTippingRequest(request);
+
       // Create a log of the status change
       if (req.user) {
         await loggingService.createLog({
@@ -501,6 +539,9 @@ const tippingController = {
       request.isShipped = true;
       await request.save();
 
+      // Update daily sheet after marking as shipped
+      await updateDailySheetForTippingRequest(request);
+
       res.status(200).json({
         message: 'Tipping request marked as shipped successfully',
         request,
@@ -532,6 +573,9 @@ const tippingController = {
       request.tippingProof = [...(request.tippingProof || []), ...proofUrls];
       request.isShipped = true;
       await request.save();
+
+      // Update daily sheet after proof upload
+      await updateDailySheetForTippingRequest(request);
 
       res.status(200).json({
         message: 'Tipping proof uploaded successfully',
@@ -635,6 +679,9 @@ const tippingController = {
         { path: 'storagePlace', select: 'name address' }
       ]);
 
+      // Update daily sheet after update
+      await updateDailySheetForTippingRequest(updatedRequest);
+
       // Create a log of the changes
       if (req.user) {
         await loggingService.createLog({
@@ -695,6 +742,9 @@ const tippingController = {
       // Mark as shipped
       request.isShipped = true;
       await request.save();
+
+      // Update daily sheet after marking as shipped
+      await updateDailySheetForTippingRequest(request);
 
       // Populate the response with user and place information
       const populatedRequest = await TippingRequest.findById(request._id)
