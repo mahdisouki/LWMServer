@@ -9,6 +9,7 @@ const payrollSchema = new Schema({
     },
     startTime: { type: Date },
     endTime: { type: Date },
+    notes: { type: String },
     startBreak: { type: Date },
     endBreak: { type: Date },
     totalBreak: { type: Number, default: 0 }, // Total break time in hours

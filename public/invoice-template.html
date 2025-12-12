@@ -121,6 +121,40 @@
         color: #555;
       }
 
+      /* Bank Details Section */
+      .bank-details-section {
+        flex: 1;
+      }
+
+      .bank-details-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+        font-family: 'Lato-Bold';
+        font-size: 16px;
+        color: #333;
+      }
+
+      .bank-details-content {
+        background-color: #f9f9f9;
+        border-radius: 0;
+        padding: 18px;
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      .bank-details-content strong {
+        color: #555;
+        font-size: 11px;
+      }
+
+      .bank-details-content .value {
+        font-size: 11px;
+        color: #333;
+        margin-bottom: 4px;
+      }
+
       /* Items Table */
       .items-section {
         margin-bottom: 30px;
@@ -194,6 +228,7 @@
         font-size: 14px;
         color: #333;
       }
+
 
       .footer-right {
         flex: 1;
@@ -377,7 +412,7 @@
             </div>
           </div>
 
-          <!-- Date Section (Right) -->
+          <!-- Date Section (Middle) -->
           <div class="date-section">
             <div class="date-header">
               <span> 📆 Date:</span>
@@ -387,6 +422,9 @@
               <div><strong>Order Date:</strong> {{orderDate}}</div>
             </div>
           </div>
+
+          <!-- Bank Details Section (Right) -->
+          {{bankTransferDetails}}
         </div>
 
         <!-- Items Table -->
