@@ -1,7 +1,7 @@
 const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
-const  {User}  = require('../models/User');
+const { User } = require('../models/User');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
 const { emitNotificationToUser } = require('../socket.js');
@@ -42,6 +42,32 @@ const transporter = nodemailer.createTransport({
   },
 });
 const cloudinary = require('../helper/cloudinaryConfig');
+
+// Helper to update daily sheets when a task changes (e.g. status moved to Completed)
+const updateDailySheetForTask = async (task) => {
+  try {
+    if (!task || !task.date) {
+      return;
+    }
+
+    // Use task.date to determine which daily sheets to refresh
+    const dateStr = new Date(task.date).toISOString().split('T')[0];
+
+    const mockReq = {
+      body: { date: dateStr },
+    };
+    const mockRes = {
+      status: () => ({ json: () => { } }),
+      json: () => { },
+    };
+
+    await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+    console.log('Daily sheets updated for tasks on date:', dateStr);
+  } catch (error) {
+    console.error('Error updating daily sheet for task:', error);
+    // Do not throw – main operation (status change, etc.) must not fail because of this
+  }
+};
 
 function validateBreakdown(breakdown) {
   if (
@@ -895,6 +921,7 @@ const taskCtrl = {
         ![
           'Declined',
           'Processing',
+          'New',
           'Completed',
           'Cancelled',
           'On_Hold',
@@ -915,6 +942,11 @@ const taskCtrl = {
         { $set: { taskStatus } },
         { new: true },
       );
+
+      // If the task status has just been switched to Completed, refresh daily sheets
+      if (updatedTask && updatedTask.taskStatus === 'Completed') {
+        await updateDailySheetForTask(updatedTask);
+      }
 
       // Create a log of the status change
       if (req.user) {
