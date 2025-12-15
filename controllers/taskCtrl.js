@@ -1452,6 +1452,28 @@ const taskCtrl = {
           });
         }
 
+        // Notify all admins that the task has been started (New -> Processing)
+        try {
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          const orderNumber = task.orderNumber || task._id;
+          const notificationMessage = `Task order number #${orderNumber} has been started`;
+
+          for (const admin of adminUsers) {
+            if (admin._id) {
+              await emitNotificationToUser(
+                admin._id.toString(),
+                'Orders',
+                notificationMessage,
+                req.user?.username || null,
+              );
+            }
+          }
+
+        } catch (notificationError) {
+          console.error('Error sending start notification to admins:', notificationError);
+          // Do not fail the request if notification sending fails
+        }
+
         return res.status(200).json({
           message: 'Task marked as started successfully',
           task,
@@ -1506,6 +1528,27 @@ const taskCtrl = {
             ipAddress: req.ip,
             userAgent: req.headers['user-agent'],
           });
+        }
+
+        // Notify all admins that the task has been completed (Processing -> Completed)
+        try {
+          const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+          const orderNumber = task.orderNumber || task._id;
+          const notificationMessage = `Task order number #${orderNumber} has been completed`;
+
+          for (const admin of adminUsers) {
+            if (admin._id) {
+              await emitNotificationToUser(
+                admin._id.toString(),
+                'Orders',
+                notificationMessage,
+                req.user?.username || null,
+              );
+            }
+          }
+        } catch (notificationError) {
+          console.error('Error sending completion notification to admins:', notificationError);
+          // Do not fail the request if notification sending fails
         }
 
         return res.status(200).json({
