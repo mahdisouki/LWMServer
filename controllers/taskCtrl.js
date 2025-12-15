@@ -1456,7 +1456,7 @@ const taskCtrl = {
         try {
           const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
           const orderNumber = task.orderNumber || task._id;
-          const notificationMessage = `Task order number #${orderNumber} has been started`;
+          const notificationMessage = `Driver ${req.user?.username} has started the task order number #${orderNumber} `;
 
           for (const admin of adminUsers) {
             if (admin._id) {
