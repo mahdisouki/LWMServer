@@ -9,6 +9,9 @@ const announcementCtrl = {
                 return res.status(400).json({ message: "Message is required" });
             }
 
+            // Delete all previous announcements to ensure only one exists
+            await Announcement.deleteMany({});
+
             const newAnnouncement = new Announcement({
                 message,
             });
@@ -54,6 +57,9 @@ const announcementCtrl = {
             if (!message) {
                 return res.status(400).json({ message: "Message is required" });
             }
+
+            // Delete all other announcements except the one being updated
+            await Announcement.deleteMany({ _id: { $ne: id } });
 
             const updatedAnnouncement = await Announcement.findByIdAndUpdate(
                 id,
