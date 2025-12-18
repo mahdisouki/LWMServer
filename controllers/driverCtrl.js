@@ -1,5 +1,5 @@
 const { User } = require('../models/User');
-const  Helper = require('../models/Helper');
+const Helper = require('../models/Helper');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
 const TruckStatus = require('../models/TruckStatus');
@@ -28,12 +28,12 @@ async function getUserModel(userId) {
       return { user, model: 'User', type: 'Driver' };
     } else if (user.role.includes('Helper')) {
       return { user, model: 'User', type: 'Helper' };
-    }else if (user.role.includes('Admin')) {
+    } else if (user.role.includes('Admin')) {
       return { user, model: 'User', type: 'Admin' };
     }
   }
 
-  
+
 
   return null;
 }
@@ -66,8 +66,8 @@ function formatTippingRequestAsTask(tippingRequest) {
     phoneNumber: '',
     email: '',
     totalPrice: tippingRequest.price || 0,
-    taskStatus: tippingRequest.status === 'Accepted' ? 'Completed' : 
-                tippingRequest.status === 'Denied' ? 'Declined' : 'Processing',
+    taskStatus: tippingRequest.status === 'Accepted' ? 'Completed' :
+      tippingRequest.status === 'Denied' ? 'Declined' : 'Processing',
     paymentStatus: tippingRequest.status === 'Accepted' ? 'Paid' : 'Not_Paid',
     paymentMethod: 'cash',
     date: new Date(tippingRequest.createdAt).toISOString().split('T')[0],
@@ -388,7 +388,7 @@ const driverManagement = {
       const month = String(startOfDay.getMonth() + 1).padStart(2, '0');
       const day = String(startOfDay.getDate()).padStart(2, '0');
       const formattedDate = `${year}-${month}-${day}`; // Format: 'YYYY-MM-DD'
-      
+
       // Find the truck for this user
       const truck = await getTruckForUser(userId);
 
@@ -398,7 +398,7 @@ const driverManagement = {
           .json({ message: 'No truck found for the given user.' });
       }
       console.log("formattedDate:", formattedDate)
-      
+
       // Get unified tasks and tipping requests for today
       const allTasks = await getUnifiedTasksForDate(truck, formattedDate);
 
@@ -611,7 +611,7 @@ const driverManagement = {
         const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
         const truck = truckStatus?.truckId;
         const truckName = truck?.name || truck?.matricule || 'Truck';
-        
+
         // Get driver name if available
         let driverName = '';
         if (truck?.driverId) {
@@ -620,11 +620,11 @@ const driverManagement = {
             driverName = driver.username || `${driver.firstName || ''} ${driver.lastName || ''}`.trim() || 'Driver';
           }
         }
-        
-        const notificationMessage = driverName 
+
+        const notificationMessage = driverName
           ? `${driverName} has ended the day for ${truckName}`
           : `Truck end status updated for ${truckName}`;
-        
+
         // Send notification to all admins
         for (const admin of adminUsers) {
           if (admin._id) {
@@ -636,7 +636,7 @@ const driverManagement = {
             );
           }
         }
-        
+
         // Also send to the hardcoded adminId as a fallback
         if (adminId) {
           await emitNotificationToUser(
@@ -1032,7 +1032,7 @@ const driverManagement = {
       task.clientFeedbackScale = clientFeedbackScale;
       task.taskStatus = "Completed"
       task.cashReceived = cashAmount;
-      
+
       // Check if this is the first task completed by this client (using email)
       const previousCompletedTasks = await Task.find({
         email: task.email,
@@ -1091,7 +1091,7 @@ const driverManagement = {
         const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
         const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver/Helper';
         const notificationMessage = `${userName} has started their day`;
-        
+
         // Send notification to all admins
         for (const admin of adminUsers) {
           if (admin._id) {
@@ -1103,7 +1103,7 @@ const driverManagement = {
             );
           }
         }
-        
+
         // Also send to the hardcoded adminId as a fallback
         if (adminId) {
           await emitNotificationToUser(
@@ -1159,7 +1159,7 @@ const driverManagement = {
         const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
         const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || type;
         const notificationMessage = `${userName} is taking a break`;
-        
+
         // Send notification to all admins
         for (const admin of adminUsers) {
           if (admin._id) {
@@ -1171,7 +1171,7 @@ const driverManagement = {
             );
           }
         }
-        
+
         // Also send to the hardcoded adminId as a fallback
         if (adminId) {
           await emitNotificationToUser(
@@ -1234,7 +1234,7 @@ const driverManagement = {
         const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
         const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || type;
         const notificationMessage = `${userName} has ended their break (${lastBreak.duration} minutes)`;
-        
+
         // Send notification to all admins
         for (const admin of adminUsers) {
           if (admin._id) {
@@ -1246,7 +1246,7 @@ const driverManagement = {
             );
           }
         }
-        
+
         // Also send to the hardcoded adminId as a fallback
         if (adminId) {
           await emitNotificationToUser(
@@ -1325,8 +1325,8 @@ const driverManagement = {
     try {
       // Validate input
       if (!latitude || !longitude) {
-        return res.status(400).json({ 
-          message: 'Latitude and longitude are required' 
+        return res.status(400).json({
+          message: 'Latitude and longitude are required'
         });
       }
 
@@ -1345,8 +1345,8 @@ const driverManagement = {
       } else if (type === 'Helper') {
         user = await Helper.findById(userId);
       } else {
-        return res.status(403).json({ 
-          message: 'Only drivers and helpers can update location' 
+        return res.status(403).json({
+          message: 'Only drivers and helpers can update location'
         });
       }
 
@@ -1357,7 +1357,7 @@ const driverManagement = {
       // Update location directly on the document
       const coordinatesArray = [longitude, latitude];
       user.location = { type: 'Point', coordinates: coordinatesArray };
-      
+
       // Save the document
       await user.save();
 
@@ -1373,15 +1373,15 @@ const driverManagement = {
         startTime: user.breakStartTime,
       });
 
-      res.status(200).json({ 
+      res.status(200).json({
         message: 'Location updated successfully',
-        location: user.location 
+        location: user.location
       });
     } catch (error) {
       console.error(`Error updating location for user ${userId}:`, error);
-      res.status(500).json({ 
-        message: 'Failed to update location', 
-        error: error.message 
+      res.status(500).json({
+        message: 'Failed to update location',
+        error: error.message
       });
     }
   },
@@ -1396,14 +1396,14 @@ const driverManagement = {
     try {
       // Get userId from query params or from authenticated user
       const userId = req.query.userId || req.user._id;
-      
+
       // Get date from query params or default to today
       let targetDate;
       if (req.query.date) {
         // Parse the date string (expected format: YYYY-MM-DD)
         targetDate = new Date(req.query.date);
         if (isNaN(targetDate.getTime())) {
-          return res.status(400).json({ 
+          return res.status(400).json({
             message: 'Invalid date format. Expected YYYY-MM-DD',
             hasStarted: false,
             dayStarted: false
@@ -1416,7 +1416,7 @@ const driverManagement = {
       // Set date range for the target day (start of day to end of day)
       const startOfDay = new Date(targetDate);
       startOfDay.setHours(0, 0, 0, 0);
-      
+
       const endOfDay = new Date(targetDate);
       endOfDay.setHours(23, 59, 59, 999);
 
@@ -1474,6 +1474,86 @@ const driverManagement = {
         error: error.message,
         hasStarted: false,
         dayStarted: false
+      });
+    }
+  },
+
+  /**
+   * Get all drivers and helpers who are currently on work (active shift)
+   * together with their last known location and basic info.
+   *
+   * GET /api/driver/on-work-locations
+   * Returns all staff with active shifts (endTime: null), regardless of date
+   */
+  getOnWorkStaffLocations: async (req, res) => {
+    try {
+      // Find all active payrolls (shift not yet ended, any start date)
+      const activePayrolls = await Payroll.find({
+        endTime: null,
+      })
+        .populate({
+          path: 'userId',
+          select:
+            'username firstName lastName role roleType location picture currentJobAddress nextJobAddress onBreak truckId',
+        })
+        .populate({
+          path: 'truckId',
+          select: 'name matricule driverId helperId',
+        });
+
+      const staff = activePayrolls
+        .map((payroll) => {
+          const user = payroll.userId;
+          if (!user) return null;
+
+          const roles = Array.isArray(user.role) ? user.role : [];
+          const isDriver =
+            roles.includes('Driver') || user.roleType === 'Driver';
+          const isHelper =
+            roles.includes('Helper') || user.roleType === 'Helper';
+
+          // Only include drivers and helpers
+          if (!isDriver && !isHelper) return null;
+
+          const truck = payroll.truckId;
+
+          return {
+            userId: user._id,
+            username: user.username,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            role: isDriver ? 'Driver' : 'Helper',
+            roleType: user.roleType,
+            location: user.location || null,
+            picture: user.picture || null,
+            currentJobAddress: user.currentJobAddress || null,
+            nextJobAddress: user.nextJobAddress || null,
+            onBreak: !!user.onBreak,
+            shiftStartTime: payroll.startTime,
+            truck: truck
+              ? {
+                id: truck._id,
+                name: truck.name,
+                matricule: truck.matricule,
+                driverId: truck.driverId,
+                helperId: truck.helperId,
+              }
+              : null,
+          };
+        })
+        .filter(Boolean);
+
+      return res.status(200).json({
+        message:
+          'On-work drivers and helpers with last location retrieved successfully',
+        count: staff.length,
+        staff,
+      });
+    } catch (error) {
+      console.error('Error getting on-work staff locations:', error);
+      return res.status(500).json({
+        message: 'Failed to get on-work staff locations',
+        error: error.message,
       });
     }
   },
