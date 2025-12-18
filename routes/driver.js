@@ -37,6 +37,9 @@ router.get('/driver/day-start-status', isAuth, driverCtrl.getDayStartStatus);
 // Get all on-work drivers and helpers with their last location
 router.get('/driver/on-work-locations', isAuth, driverCtrl.getOnWorkStaffLocations);
 
+// Get current and next job addresses for a truck
+router.get('/truck/:truckId/job-addresses', isAuth, driverCtrl.getCurrentAndNextJobAddress);
+
 // Cleanup corrupted truck tasks data
 router.post('/cleanup-truck-tasks', isAuth, async (req, res) => {
   try {

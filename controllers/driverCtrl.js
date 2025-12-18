@@ -1557,6 +1557,146 @@ const driverManagement = {
       });
     }
   },
+
+  /**
+   * Get current and next job addresses for a truck
+   * GET /api/driver/truck/:truckId/job-addresses
+   * Returns the address of the current job and the next one
+   */
+  getCurrentAndNextJobAddress: async (req, res) => {
+    const { truckId } = req.params;
+
+    try {
+      // Find the truck by ID
+      const truck = await Truck.findById(truckId);
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
+
+      // Get today's date in YYYY-MM-DD format
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
+
+      // Get tasks for today using the truck's method
+      const tasksForDate = truck.getTasksForDate(formattedDate);
+
+      if (!tasksForDate || tasksForDate.length === 0) {
+        return res.status(200).json({
+          message: 'No jobs found for today',
+          currentJob: null,
+          nextJob: null
+        });
+      }
+
+      // Fetch all tasks and tipping requests with their details
+      const jobsWithDetails = [];
+
+      for (const taskRef of tasksForDate) {
+        if (taskRef.type === 'Task' || taskRef.type === 'task') {
+          const task = await Task.findById(taskRef.taskId);
+          if (task) {
+            jobsWithDetails.push({
+              id: task._id,
+              type: 'task',
+              address: task.collectionAddress,
+              status: task.taskStatus,
+              order: taskRef.order
+            });
+          }
+        } else if (taskRef.type === 'TippingRequest') {
+          const tippingRequest = await TippingRequest.findById(taskRef.taskId)
+            .populate('tippingPlace', 'name address')
+            .populate('storagePlace', 'name address');
+
+          if (tippingRequest) {
+            // Prefer tippingPlace address, fallback to storagePlace
+            const address = tippingRequest.tippingPlace?.address ||
+              tippingRequest.storagePlace?.address ||
+              'Address not available';
+
+            jobsWithDetails.push({
+              id: tippingRequest._id,
+              type: 'tipping',
+              address: address,
+              status: tippingRequest.status,
+              order: taskRef.order
+            });
+          }
+        }
+      }
+
+      // Sort by order
+      jobsWithDetails.sort((a, b) => a.order - b.order);
+
+      // Find current job and next job
+      let currentJob = null;
+      let nextJob = null;
+
+      // Filter out completed/declined jobs to find incomplete jobs
+      const incompleteJobs = jobsWithDetails.filter(
+        job => job.status !== 'Completed' && job.status !== 'Declined' &&
+          job.status !== 'Accepted' && job.status !== 'Denied'
+      );
+
+      if (incompleteJobs.length > 0) {
+        // If there are incomplete jobs, first incomplete is current
+        currentJob = incompleteJobs[0];
+        // Second incomplete is next
+        if (incompleteJobs.length > 1) {
+          nextJob = incompleteJobs[1];
+        }
+      } else {
+        // All jobs are completed/declined - show last completed as current
+        const completedJobs = jobsWithDetails.filter(
+          job => job.status === 'Completed' || job.status === 'Accepted'
+        );
+        if (completedJobs.length > 0) {
+          currentJob = completedJobs[completedJobs.length - 1];
+        }
+      }
+
+      const response = {
+        message: 'Job addresses retrieved successfully',
+        currentJob: currentJob ? {
+          id: currentJob.id,
+          type: currentJob.type,
+          address: currentJob.address,
+          status: currentJob.status
+        } : null,
+        nextJob: nextJob ? {
+          id: nextJob.id,
+          type: nextJob.type,
+          address: nextJob.address,
+          status: nextJob.status
+        } : null,
+        totalJobsToday: jobsWithDetails.length,
+        completedJobsCount: jobsWithDetails.filter(j =>
+          j.status === 'Completed' || j.status === 'Accepted'
+        ).length
+      };
+
+      console.log('=== Job Addresses Response ===');
+      console.log('Truck ID:', truckId);
+      console.log('Date:', formattedDate);
+      console.log('Current Job:', JSON.stringify(response.currentJob, null, 2));
+      console.log('Next Job:', JSON.stringify(response.nextJob, null, 2));
+      console.log('Total Jobs Today:', response.totalJobsToday);
+      console.log('Completed Jobs:', response.completedJobsCount);
+      console.log('==============================');
+
+      res.status(200).json(response);
+
+    } catch (error) {
+      console.error('Error retrieving job addresses:', error);
+      res.status(500).json({
+        message: 'Failed to retrieve job addresses',
+        error: error.message
+      });
+    }
+  },
 };
 
 module.exports = driverManagement;
