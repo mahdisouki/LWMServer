@@ -1603,6 +1603,7 @@ const driverManagement = {
               type: 'task',
               address: task.collectionAddress,
               status: task.taskStatus,
+              isCompleted: task.taskStatus === 'Completed',
               order: taskRef.order
             });
           }
@@ -1622,6 +1623,8 @@ const driverManagement = {
               type: 'tipping',
               address: address,
               status: tippingRequest.status,
+              isShipped: tippingRequest.isShipped,
+              isCompleted: tippingRequest.isShipped === true,
               order: taskRef.order
             });
           }
@@ -1636,23 +1639,29 @@ const driverManagement = {
       let nextJob = null;
 
       // Filter out completed/declined jobs to find incomplete jobs
-      const incompleteJobs = jobsWithDetails.filter(
-        job => job.status !== 'Completed' && job.status !== 'Declined' &&
-          job.status !== 'Accepted' && job.status !== 'Denied'
-      );
+      // For tasks: not Completed or Declined
+      // For tipping requests: isShipped is false
+      const incompleteJobs = jobsWithDetails.filter(job => {
+        if (job.type === 'task') {
+          return job.status !== 'Completed' && job.status !== 'Declined';
+        } else if (job.type === 'tipping') {
+          return job.isShipped !== true;
+        }
+        return true;
+      });
 
       if (incompleteJobs.length > 0) {
         // If there are incomplete jobs, first incomplete is current
         currentJob = incompleteJobs[0];
-        // Second incomplete is next
-        if (incompleteJobs.length > 1) {
-          nextJob = incompleteJobs[1];
+
+        // For next job, find the next job in the original list (can be completed or incomplete)
+        const currentJobIndex = jobsWithDetails.findIndex(job => job.id.toString() === currentJob.id.toString());
+        if (currentJobIndex !== -1 && currentJobIndex + 1 < jobsWithDetails.length) {
+          nextJob = jobsWithDetails[currentJobIndex + 1];
         }
       } else {
-        // All jobs are completed/declined - show last completed as current
-        const completedJobs = jobsWithDetails.filter(
-          job => job.status === 'Completed' || job.status === 'Accepted'
-        );
+        // All jobs are completed - show last completed as current
+        const completedJobs = jobsWithDetails.filter(job => job.isCompleted === true);
         if (completedJobs.length > 0) {
           currentJob = completedJobs[completedJobs.length - 1];
         }
@@ -1664,18 +1673,18 @@ const driverManagement = {
           id: currentJob.id,
           type: currentJob.type,
           address: currentJob.address,
-          status: currentJob.status
+          status: currentJob.status,
+          isShipped: currentJob.isShipped
         } : null,
         nextJob: nextJob ? {
           id: nextJob.id,
           type: nextJob.type,
           address: nextJob.address,
-          status: nextJob.status
+          status: nextJob.status,
+          isShipped: nextJob.isShipped
         } : null,
         totalJobsToday: jobsWithDetails.length,
-        completedJobsCount: jobsWithDetails.filter(j =>
-          j.status === 'Completed' || j.status === 'Accepted'
-        ).length
+        completedJobsCount: jobsWithDetails.filter(j => j.isCompleted === true).length
       };
 
       console.log('=== Job Addresses Response ===');
@@ -1684,7 +1693,7 @@ const driverManagement = {
       console.log('Current Job:', JSON.stringify(response.currentJob, null, 2));
       console.log('Next Job:', JSON.stringify(response.nextJob, null, 2));
       console.log('Total Jobs Today:', response.totalJobsToday);
-      console.log('Completed Jobs:', response.completedJobsCount);
+      console.log('Completed Jobs (Tasks Completed + Tips Shipped):', response.completedJobsCount);
       console.log('==============================');
 
       res.status(200).json(response);
