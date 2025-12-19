@@ -178,8 +178,70 @@ const sendOneSignalNotificationToMultiple = async (playerIds, title, message, da
   }
 };
 
+/**
+ * Send notification to web users via OneSignal Web Push
+ * Returns { success: boolean, invalidPlayerId: boolean, response: object }
+ */
+const sendOneSignalWebNotification = async (playerId, title, message, data = {}) => {
+  try {
+    const notification = {
+      contents: { en: message },
+      headings: { en: title },
+      include_player_ids: [playerId],
+      data: data,
+      // Web push specific options
+      web_push: {
+        // Optional: Add your website icon URL
+        chrome_web_icon: data.iconUrl || 'https://client.londonwastemanagement.uk/icon-192x192.png',
+        chrome_web_badge: data.badgeUrl || 'https://client.londonwastemanagement.uk/badge-96x96.png',
+        // Optional: Large image for notification
+        chrome_web_image: data.imageUrl || undefined,
+      },
+      // URL to open when notification is clicked
+      url: data.url || 'https://client.londonwastemanagement.uk',
+      // Web push buttons (optional)
+      web_buttons: data.buttons || undefined,
+    };
+
+    const response = await client.createNotification(notification);
+    
+    // Same error handling as mobile
+    if (response.body && response.body.errors) {
+      const errors = response.body.errors;
+      
+      if (errors.invalid_player_ids && errors.invalid_player_ids.length > 0) {
+        console.log(`⚠️ Invalid OneSignal web player ID: ${playerId}`);
+        return {
+          success: false,
+          invalidPlayerId: true,
+          response: response
+        };
+      }
+    }
+    
+    if (response.body && response.body.id) {
+      console.log(`✅ OneSignal web push sent successfully to player ${playerId}`);
+      return {
+        success: true,
+        invalidPlayerId: false,
+        response: response
+      };
+    } else {
+      return {
+        success: false,
+        invalidPlayerId: false,
+        response: response
+      };
+    }
+  } catch (error) {
+    console.error('❌ Error sending OneSignal web notification:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   sendOneSignalNotification,
   sendOneSignalNotificationToMultiple,
+  sendOneSignalWebNotification, // Add this
   validatePlayerId,
 };
