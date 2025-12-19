@@ -4,9 +4,11 @@ const quotationRequestController = require('../controllers/quotationRequestContr
 const multer = require('../middlewares/multer');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
+const { formLimiter } = require('../middlewares/rateLimiter');
 // Route to create a new quotation request with file uploads
 router.post(
     '/quotation',
+    formLimiter, // Add rate limiting
     multer.array('items'), 
     quotationRequestController.createQuotationRequest
 );
@@ -23,6 +25,6 @@ router.patch('/quotation/:id/read', isAuth, checkRole('Admin'), quotationRequest
 // Route to mark a quotation as unread
 router.patch('/quotation/:id/unread', isAuth, checkRole('Admin'), quotationRequestController.markQuotationAsUnread);
 
-router.post("/sendMovingQuote", isAuth, checkRole('Admin'), multer.array('files'), quotationRequestController.sendMovingServiceEmail);
+router.post("/sendMovingQuote", isAuth, checkRole('Admin'), formLimiter, multer.array('files'), quotationRequestController.sendMovingServiceEmail);
 
 module.exports = router;
