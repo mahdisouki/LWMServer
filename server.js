@@ -1,6 +1,9 @@
 const express = require("express");
 const app = express();
 require("dotenv").config();
+
+// Trust proxy (nginx) to get real client IP
+app.set('trust proxy', 1);
 const http = require("http");
 const bodyParser = require('body-parser');
 const fs = require("fs");
@@ -10,6 +13,7 @@ const { initSocket } = require("./socket");
 const connectToDatabase = require("./config/db");
 const { sendWasteTransferNoteEmail, sendGeneralInvoiceEmail, sendPartialPaymentNotification, sendBookingConfirmationEmail } = require("./services/emailsService");
 const { handleStripeWebhook } = require('./controllers/taskCtrl');
+const helmet = require('helmet');
 
 const server = http.createServer(app);
 connectToDatabase()
@@ -36,6 +40,61 @@ connectToDatabase()
 
 const cors = require("cors");
 const path = require("path");
+
+// Remove X-Powered-By header (hide Express identity)
+app.disable('x-powered-by');
+
+// Configure Helmet for security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "https://*.stripe.com",
+        "https://*.paypal.com",
+        "https://*.paypalobjects.com",
+        "'unsafe-inline'", // Only if absolutely necessary
+        "'unsafe-eval'", // Only if absolutely necessary
+        "blob:"
+      ],
+      styleSrc: [
+        "'self'",
+        "https://*.paypal.com",
+        "https://*.paypalobjects.com",
+        "'unsafe-inline'"
+      ],
+      imgSrc: [
+        "'self'",
+        "data:",
+        "https://*.paypal.com",
+        "https://*.paypalobjects.com",
+        "https://res.cloudinary.com"
+      ],
+      frameSrc: [
+        "https://*.stripe.com",
+        "https://*.paypal.com"
+      ],
+      connectSrc: [
+        "'self'",
+        "https://*.stripe.com",
+        "https://*.paypal.com"
+      ],
+      formAction: ["'self'"], // Fix: form-action missing
+      baseUri: ["'self'"], // Fix: base-uri missing
+      frameAncestors: ["'none'"], // Fix: frame-ancestors missing
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true
+  },
+  hidePoweredBy: true, // Hide X-Powered-By
+  noSniff: true,
+  xssFilter: true,
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" }
+}));
 
 
 const setupSwagger = require('./config/swaggerConfig');
@@ -90,17 +149,7 @@ app.use(cors(corsOptions));
 // Apply JSON parsing for all other routes
 app.use(express.json());
 app.use(bodyParser.json());
-app.use((req, res, next) => {
-  res.setHeader("Content-Security-Policy",
-    "default-src 'self'; " +
-    "script-src 'self' https://*.stripe.com https://*.paypal.com https://*.paypalobjects.com 'unsafe-inline' 'unsafe-eval' blob:; " +
-    "style-src 'self' https://*.paypal.com https://*.paypalobjects.com 'unsafe-inline'; " +
-    "img-src 'self' data: https://*.paypal.com https://*.paypalobjects.com https://res.cloudinary.com; " +
-    "frame-src https://*.stripe.com https://*.paypal.com; " +
-    "connect-src 'self' https://*.stripe.com https://*.paypal.com;"
-  );
-  next();
-});
+// Note: CSP is now handled by Helmet above, removed duplicate CSP header
 // Import routes
 const taskRouter = require("./routes/task");
 const authRouter = require("./routes/auth");
@@ -177,6 +226,31 @@ app.post('/optimise/:truckId', async (req, res) => {
 })
 
 // startMailListener();
+
+// Generic error handler - don't expose server details
+app.use((err, req, res, next) => {
+  console.error('Error:', err); // Log full error for debugging
+  
+  // Don't expose error details to client
+  if (err.status === 405) {
+    return res.status(405).json({ 
+      message: 'Method not allowed' 
+    });
+  }
+  
+  res.status(err.status || 500).json({
+    message: err.message || 'An error occurred',
+    // Don't include stack trace or error details in production
+    ...(process.env.NODE_ENV === 'development' && { error: err.stack })
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ 
+    message: 'Resource not found' 
+  });
+});
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);

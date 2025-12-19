@@ -21,8 +21,8 @@ exports.userSignIn = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    console.log(await User.find());
-    const user = await User.findOne({ email });
+    
+    const user = await User.findOne({ email , role: 'Admin' });
     
     if (!user) {
       console.log("User not found with the given email!");

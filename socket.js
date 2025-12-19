@@ -1241,6 +1241,30 @@ const initSocket = (server) => {
       }
     });
 
+    socket.on('oneSignalWebPlayerId', async (data) => {
+      const { userId, playerId } = data;
+      
+      try {
+        // Validate player ID format
+        if (!playerId || typeof playerId !== 'string' || playerId.trim().length === 0) {
+          console.error(`❌ Invalid OneSignal web player ID format for user ${userId}: ${playerId}`);
+          return;
+        }
+
+        // Check if OneSignal is configured
+        if (!process.env.ONESIGNAL_APP_ID || !process.env.ONESIGNAL_REST_API_KEY) {
+          console.warn(`⚠️ OneSignal not configured. Web player ID saved but notifications won't work.`);
+        }
+
+        await User.findByIdAndUpdate(userId, {
+          oneSignalWebPlayerId: playerId.trim()
+        });
+        console.log(`✅ OneSignal web player ID registered for user ${userId}: ${playerId.substring(0, 20)}...`);
+      } catch (error) {
+        console.error(`❌ Error updating OneSignal web player ID for user ${userId}:`, error);
+      }
+    });
+
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
       delete userSocketMap[userId]; // Remove user from map on disconnect
@@ -1288,12 +1312,37 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
     });
     console.log(`✅ Socket notification sent to online user: ${userId}`);
   } else {
-    // User is offline - send via OneSignal
+    // User is offline - check for web or mobile OneSignal
     try {
-      const user = await User.findById(userId).select('oneSignalPlayerId');
+      const user = await User.findById(userId).select('oneSignalPlayerId oneSignalWebPlayerId');
       
-      if (user && user.oneSignalPlayerId) {
-        // Send OneSignal push notification
+      // Priority 1: Try web push (for desktop/browser users)
+      if (user && user.oneSignalWebPlayerId) {
+        const { sendOneSignalWebNotification } = require('./services/oneSignalService');
+        const result = await sendOneSignalWebNotification(
+          user.oneSignalWebPlayerId,
+          title,
+          notificationMessage,
+          {
+            type: type,
+            userId: userId.toString(),
+            senderName: senderName,
+            url: `${process.env.FRONTEND_URL || 'https://client.londonwastemanagement.uk'}/notifications?type=${type}`, // URL to navigate
+          }
+        );
+        
+        if (result && result.invalidPlayerId) {
+          console.log(`🗑️ Removing invalid OneSignal web player ID for user ${userId}`);
+          await User.findByIdAndUpdate(userId, {
+            $unset: { oneSignalWebPlayerId: '' }
+          });
+        } else if (result && result.success) {
+          console.log(`✅ OneSignal web push sent to offline user: ${userId}`);
+        }
+      }
+      // Priority 2: Try mobile push (for mobile app users)
+      else if (user && user.oneSignalPlayerId) {
+        // Send OneSignal push notification (existing mobile code)
         const result = await sendOneSignalNotification(
           user.oneSignalPlayerId,
           title,
@@ -1312,12 +1361,10 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
             $unset: { oneSignalPlayerId: '' }
           });
         } else if (result && result.success) {
-          
           console.log(`✅ OneSignal notification sent to offline user: ${userId}`);
         }
       } else {
-        
-        console.log(`⚠️ User ${userId} has no OneSignal player ID, saving to database`);
+        console.log(`⚠️ User ${userId} has no OneSignal player ID (web or mobile), saving to database`);
       }
 
       // Always save to database as backup
@@ -1328,7 +1375,7 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
         senderName: senderName,
         read: false,
       });
-      console.log(`💾 Notification saved to database for user: ${userId}`);
+      console.log(`�� Notification saved to database for user: ${userId}`);
     } catch (error) {
       console.error(`❌ Error sending notification to user ${userId}:`, error);
       
