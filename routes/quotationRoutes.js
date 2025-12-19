@@ -9,12 +9,12 @@ const { formLimiter } = require('../middlewares/rateLimiter');
 router.post(
     '/quotation',
     formLimiter, // Add rate limiting
-    multer.array('items'), 
+    multer.array('items'),
     quotationRequestController.createQuotationRequest
 );
 
 // Route to get all quotation requests
-router.get('/quotations', isAuth, checkRole('Admin'), quotationRequestController.getAllQuotations);
+router.get('/quotations', quotationRequestController.getAllQuotations);
 
 // Route to get a single quotation request by ID
 router.get('/quotation/:id', isAuth, checkRole('Admin'), quotationRequestController.getQuotationById);
@@ -25,6 +25,6 @@ router.patch('/quotation/:id/read', isAuth, checkRole('Admin'), quotationRequest
 // Route to mark a quotation as unread
 router.patch('/quotation/:id/unread', isAuth, checkRole('Admin'), quotationRequestController.markQuotationAsUnread);
 
-router.post("/sendMovingQuote", isAuth, checkRole('Admin'), formLimiter, multer.array('files'), quotationRequestController.sendMovingServiceEmail);
+router.post("/sendMovingQuote", formLimiter, multer.array('files'), quotationRequestController.sendMovingServiceEmail);
 
 module.exports = router;
