@@ -2,7 +2,7 @@ const express = require('express');
 const blockingDaysCtrl = require('../controllers/blockingDays');
 const authMiddleware = require('../middlewares/auth');
 const router = express.Router();
-
+const { checkRole } = require('../middlewares/role');
 router.post('/blocking-days', authMiddleware.isAuth, checkRole('Admin'), blockingDaysCtrl.createBlockingDay);
 router.get('/blocking-days',  blockingDaysCtrl.getAllBlockingDays);
 router.get('/blocking-days/with-time-slots',  blockingDaysCtrl.getAllBlockingDaysWithTimeSlots);
