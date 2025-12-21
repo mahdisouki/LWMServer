@@ -281,8 +281,15 @@ const staffManagement = {
     let updateData = req.body; // Take all incoming fields for potential update
     console.log(updateData)
     try {
+      // Get the old user data before updating to check role
+      const oldUser = await User.findById(id);
+      if (!oldUser) {
+        return res.status(404).json({ message: 'Staff not found' });
+      }
+
       // Normalize incoming types
-      if (typeof updateData.permissions === 'string') {
+      // Only parse permissions if the staff member is an Admin
+      if (oldUser.roleType === 'Admin' && typeof updateData.permissions === 'string') {
         try {
           updateData.permissions = JSON.parse(updateData.permissions);
         } catch (e) {
@@ -314,12 +321,6 @@ const staffManagement = {
       // If password is included, hash it before updating
       if (updateData.password && updateData.password.trim() !== '') {
         updateData.password = await bcrypt.hash(updateData.password, 10);
-      }
-
-      // Get the old user data before updating
-      const oldUser = await User.findById(id);
-      if (!oldUser) {
-        return res.status(404).json({ message: 'Staff not found' });
       }
 
       // Choose correct discriminator model for update (ensures proper casting/validation)
