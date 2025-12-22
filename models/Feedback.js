@@ -6,6 +6,11 @@ const feedbackSchema = new mongoose.Schema({
         required: true,
         trim: true
     },
+    createdByType: {
+        type: String,
+        enum: ['user', 'admin', 'User', 'Admin'],
+        default: 'user'
+    },
     description: {
         type: String,
         required: true,
@@ -24,6 +29,10 @@ const feedbackSchema = new mongoose.Schema({
         min: 0,
         max: 5,
         required: true
+    },
+    isVisible: {
+        type: Boolean,
+        default: false
     }
 }, {
     timestamps: true

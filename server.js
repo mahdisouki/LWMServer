@@ -121,6 +121,8 @@ const corsOptions = {
     'http://192.168.100.5:5173',
     'http://192.168.1.73:5173',
     'http://192.168.1.20:5173',
+    'http://192.168.1.73:5173',
+
     'http://lwmtest-botest-lzlcjq-c53a95-191-101-81-116.traefik.me',
     'lwmtest-clienttest-ptkvge-7b883a-191-101-81-116.traefik.me',
     'http://lwmtest-clienttest-ptkvge-7b883a-191-101-81-116.traefik.me'
@@ -230,14 +232,14 @@ app.post('/optimise/:truckId', async (req, res) => {
 // Generic error handler - don't expose server details
 app.use((err, req, res, next) => {
   console.error('Error:', err); // Log full error for debugging
-  
+
   // Don't expose error details to client
   if (err.status === 405) {
-    return res.status(405).json({ 
-      message: 'Method not allowed' 
+    return res.status(405).json({
+      message: 'Method not allowed'
     });
   }
-  
+
   res.status(err.status || 500).json({
     message: err.message || 'An error occurred',
     // Don't include stack trace or error details in production
@@ -247,8 +249,8 @@ app.use((err, req, res, next) => {
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ 
-    message: 'Resource not found' 
+  res.status(404).json({
+    message: 'Resource not found'
   });
 });
 
