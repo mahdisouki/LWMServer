@@ -1,4 +1,3 @@
-
 const { User } = require('../models/User');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -68,7 +67,7 @@ exports.userSignIn = async (req, res) => {
         ...user._doc,
         id: user._id,
         startTime,
-        phoneNumber: user.phoneNumber[0], 
+        phoneNumber: Array.isArray(user.phoneNumber) ? user.phoneNumber[0] : user.phoneNumber, 
         truckId : truck ? truck._id : null,
         picture: user.picture || null,
         permissions: user.permissions || null,
@@ -81,33 +80,69 @@ exports.userSignIn = async (req, res) => {
     res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
+
 exports.driverSignIn = async (req, res) => {
+  console.log("Signing in driver...");
   const { email, password } = req.body;
-  const driver = await User.findOne({ email , role: 'Driver' }) || await User.findOne({ email , role: 'Helper' });
-  if (!driver) {
-    return res.status(404).json({ success: false, message: "Driver not found with the given email!" });
+
+  try {
+    const driver = await User.findOne({ email , role: 'Driver' }) || await User.findOne({ email , role: 'Helper' });
+    if (!driver) {
+      console.log("Driver not found with the given email!");
+      return res.status(404).json({ success: false, message: "Driver not found with the given email!" });
+    }
+    
+    const isMatch = await bcrypt.compare(password, driver.password);
+    if (!isMatch) {
+      console.log("Password is incorrect!");
+      return res.status(401).json({ success: false, message: "Password is incorrect!" });
+    }
+
+    console.log("Password matched, generating tokens.");
+    
+    const token = generateAccessToken(driver);
+    const refreshToken = generateRefreshToken(driver);
+    driver.refreshToken = refreshToken;
+    await driver.save();
+
+    let startTime = null;
+    let truck = null;
+
+    if (driver.role[0] === 'Driver') {
+      console.log("User is a driver");
+      const driverDoc = await Driver.findById(driver._id);
+      //check if driver start time have passed 9
+      startTime = driverDoc ? driverDoc.startTime : null;
+      
+      truck = await Truck.findOne({ driverId: driver._id }).populate('tasks');
+    } else if (driver.role[0] === 'Helper') {
+      console.log("User is a helper");
+      const helper = await Helper.findById(driver._id);
+      startTime = helper ? helper.startTime : null;
+    
+      truck = await Truck.findOne({ helperId: driver._id }).populate('tasks');
+    }
+
+    console.log("Driver signed in successfully", driver);
+
+    res.json({
+      success: true,
+      user: { 
+        ...driver._doc,
+        id: driver._id,
+        startTime,
+        phoneNumber: Array.isArray(driver.phoneNumber) ? driver.phoneNumber[0] : driver.phoneNumber, 
+        truckId : truck ? truck._id : null,
+        picture: driver.picture || null,
+        permissions: driver.permissions || null,
+      },
+      token,
+      refreshToken,
+    });
+  } catch (error) {
+    console.error("Error while signing in driver:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
-  const isMatch = await bcrypt.compare(password, driver.password);
-  if (!isMatch) {
-    return res.status(401).json({ success: false, message: "Password is incorrect!" });
-  }
-  const token = generateAccessToken(driver);
-  const refreshToken = generateRefreshToken(driver);
-  driver.refreshToken = refreshToken;
-  await driver.save();
-  res.json({
-    success: true,
-    driver: {
-      ...driver._doc,
-      id: driver._id,
-      startTime: driver.startTime,
-      truckId: driver.truckId,
-      picture: driver.picture || null,
-      permissions: driver.permissions || null,
-    },
-    token,
-    refreshToken,
-  });
 };
 
 
@@ -142,8 +177,3 @@ exports.refresh = async (req, res) => {
     }
   }
 };
-
-
-
-
-

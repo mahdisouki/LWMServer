@@ -182,12 +182,16 @@ const sendOneSignalNotificationToMultiple = async (playerIds, title, message, da
  * Send notification to web users via OneSignal Web Push
  * Returns { success: boolean, invalidPlayerId: boolean, response: object }
  */
+/**
+ * Send notification to web users via OneSignal Web Push (single player ID)
+ * Returns { success: boolean, invalidPlayerId: boolean, response: object }
+ */
 const sendOneSignalWebNotification = async (playerId, title, message, data = {}) => {
   try {
     const notification = {
       contents: { en: message },
       headings: { en: title },
-      include_player_ids: [playerId],
+      include_player_ids: Array.isArray(playerId) ? playerId : [playerId],
       data: data,
       // Web push specific options
       web_push: {
@@ -210,17 +214,20 @@ const sendOneSignalWebNotification = async (playerId, title, message, data = {})
       const errors = response.body.errors;
       
       if (errors.invalid_player_ids && errors.invalid_player_ids.length > 0) {
-        console.log(`⚠️ Invalid OneSignal web player ID: ${playerId}`);
+        const invalidIds = errors.invalid_player_ids;
+        console.log(`⚠️ Invalid OneSignal web player IDs:`, invalidIds);
         return {
           success: false,
           invalidPlayerId: true,
+          invalidPlayerIds: invalidIds,
           response: response
         };
       }
     }
     
     if (response.body && response.body.id) {
-      console.log(`✅ OneSignal web push sent successfully to player ${playerId}`);
+      const playerIds = Array.isArray(playerId) ? playerId : [playerId];
+      console.log(`✅ OneSignal web push sent successfully to ${playerIds.length} player(s)`);
       return {
         success: true,
         invalidPlayerId: false,
@@ -239,9 +246,68 @@ const sendOneSignalWebNotification = async (playerId, title, message, data = {})
   }
 };
 
+/**
+ * Send notification to multiple web player IDs
+ * Returns { success: boolean, invalidPlayerIds: array, response: object }
+ */
+const sendOneSignalWebNotificationToMultiple = async (playerIds, title, message, data = {}) => {
+  try {
+    if (!playerIds || playerIds.length === 0) {
+      console.log('No web player IDs provided');
+      return { success: false, invalidPlayerIds: [] };
+    }
+
+    const notification = {
+      contents: { en: message },
+      headings: { en: title },
+      include_player_ids: playerIds,
+      data: data,
+      // Web push specific options
+      web_push: {
+        chrome_web_icon: data.iconUrl || 'https://client.londonwastemanagement.uk/icon-192x192.png',
+        chrome_web_badge: data.badgeUrl || 'https://client.londonwastemanagement.uk/badge-96x96.png',
+        chrome_web_image: data.imageUrl || undefined,
+      },
+      url: data.url || 'https://client.londonwastemanagement.uk',
+      web_buttons: data.buttons || undefined,
+    };
+
+    const response = await client.createNotification(notification);
+    
+    let invalidPlayerIds = [];
+    if (response.body && response.body.errors) {
+      const errors = response.body.errors;
+      
+      if (errors.invalid_player_ids && errors.invalid_player_ids.length > 0) {
+        invalidPlayerIds = errors.invalid_player_ids;
+        console.log(`⚠️ Invalid OneSignal web player IDs:`, invalidPlayerIds);
+      }
+    }
+    
+    if (response.body && response.body.id) {
+      console.log(`✅ OneSignal web push sent to ${playerIds.length - invalidPlayerIds.length} players`);
+      return {
+        success: true,
+        invalidPlayerIds: invalidPlayerIds,
+        response: response
+      };
+    } else {
+      return {
+        success: false,
+        invalidPlayerIds: invalidPlayerIds,
+        response: response
+      };
+    }
+  } catch (error) {
+    console.error('❌ Error sending OneSignal web notification to multiple:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   sendOneSignalNotification,
   sendOneSignalNotificationToMultiple,
-  sendOneSignalWebNotification, // Add this
+  sendOneSignalWebNotification,
+  sendOneSignalWebNotificationToMultiple,
   validatePlayerId,
 };
