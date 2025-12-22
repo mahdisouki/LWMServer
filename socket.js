@@ -1231,10 +1231,26 @@ const initSocket = (server) => {
           console.warn(`⚠️ OneSignal not configured. Player ID saved but notifications won't work.`);
         }
 
-        await User.findByIdAndUpdate(userId, {
-          oneSignalPlayerId: playerId.trim()
-        });
-        console.log(`✅ OneSignal player ID registered for user ${userId}: ${playerId.substring(0, 20)}...`);
+        const trimmedPlayerId = playerId.trim();
+        const user = await User.findById(userId);
+        
+        if (user) {
+          // Add to array if it doesn't exist
+          if (!user.oneSignalPlayerIds || !Array.isArray(user.oneSignalPlayerIds)) {
+            user.oneSignalPlayerIds = [];
+          }
+          
+          if (!user.oneSignalPlayerIds.includes(trimmedPlayerId)) {
+            user.oneSignalPlayerIds.push(trimmedPlayerId);
+            // Also update legacy field for backward compatibility
+            user.oneSignalPlayerId = trimmedPlayerId;
+            await user.save();
+            console.log(`✅ OneSignal player ID added for user ${userId}: ${trimmedPlayerId.substring(0, 20)}... (Total: ${user.oneSignalPlayerIds.length})`);
+          } else {
+            console.log(`ℹ️ OneSignal player ID already registered for user ${userId}`);
+          }
+        }
+        
         console.log(`   OneSignal App ID: ${process.env.ONESIGNAL_APP_ID?.substring(0, 8) || 'NOT SET'}...`);
       } catch (error) {
         console.error(`❌ Error updating OneSignal player ID for user ${userId}:`, error);
@@ -1256,10 +1272,25 @@ const initSocket = (server) => {
           console.warn(`⚠️ OneSignal not configured. Web player ID saved but notifications won't work.`);
         }
 
-        await User.findByIdAndUpdate(userId, {
-          oneSignalWebPlayerId: playerId.trim()
-        });
-        console.log(`✅ OneSignal web player ID registered for user ${userId}: ${playerId.substring(0, 20)}...`);
+        const trimmedPlayerId = playerId.trim();
+        const user = await User.findById(userId);
+        
+        if (user) {
+          // Add to array if it doesn't exist
+          if (!user.oneSignalWebPlayerIds || !Array.isArray(user.oneSignalWebPlayerIds)) {
+            user.oneSignalWebPlayerIds = [];
+          }
+          
+          if (!user.oneSignalWebPlayerIds.includes(trimmedPlayerId)) {
+            user.oneSignalWebPlayerIds.push(trimmedPlayerId);
+            // Also update legacy field for backward compatibility
+            user.oneSignalWebPlayerId = trimmedPlayerId;
+            await user.save();
+            console.log(`✅ OneSignal web player ID added for user ${userId}: ${trimmedPlayerId.substring(0, 20)}... (Total: ${user.oneSignalWebPlayerIds.length})`);
+          } else {
+            console.log(`ℹ️ OneSignal web player ID already registered for user ${userId}`);
+          }
+        }
       } catch (error) {
         console.error(`❌ Error updating OneSignal web player ID for user ${userId}:`, error);
       }
@@ -1314,37 +1345,53 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
   } else {
     // User is offline - check for web or mobile OneSignal
     try {
-      const user = await User.findById(userId).select('oneSignalPlayerId oneSignalWebPlayerId');
+      const user = await User.findById(userId).select('oneSignalPlayerId oneSignalPlayerIds oneSignalWebPlayerId oneSignalWebPlayerIds');
       
       // Priority 1: Try web push (for desktop/browser users)
-      if (user && user.oneSignalWebPlayerId) {
-        const { sendOneSignalWebNotification } = require('./services/oneSignalService');
-        const result = await sendOneSignalWebNotification(
-          user.oneSignalWebPlayerId,
+      // Check for array of web player IDs first, then fallback to single ID for backward compatibility
+      const webPlayerIds = (user.oneSignalWebPlayerIds && user.oneSignalWebPlayerIds.length > 0) 
+        ? user.oneSignalWebPlayerIds 
+        : (user.oneSignalWebPlayerId ? [user.oneSignalWebPlayerId] : []);
+      
+      if (user && webPlayerIds.length > 0) {
+        const { sendOneSignalWebNotificationToMultiple, sendOneSignalWebNotification } = require('./services/oneSignalService');
+        
+        // Send to all web player IDs
+        const result = await sendOneSignalWebNotificationToMultiple(
+          webPlayerIds,
           title,
           notificationMessage,
           {
             type: type,
             userId: userId.toString(),
             senderName: senderName,
-            url: `${process.env.FRONTEND_URL || 'https://client.londonwastemanagement.uk'}/notifications?type=${type}`, // URL to navigate
+            url: `${process.env.FRONTEND_URL || 'https://client.londonwastemanagement.uk'}/notifications?type=${type}`,
           }
         );
         
-        if (result && result.invalidPlayerId) {
-          console.log(`🗑️ Removing invalid OneSignal web player ID for user ${userId}`);
+        if (result && result.invalidPlayerIds && result.invalidPlayerIds.length > 0) {
+          console.log(`🗑️ Removing ${result.invalidPlayerIds.length} invalid OneSignal web player ID(s) for user ${userId}`);
+          // Remove invalid player IDs from array
+          const validPlayerIds = webPlayerIds.filter(id => !result.invalidPlayerIds.includes(id));
           await User.findByIdAndUpdate(userId, {
-            $unset: { oneSignalWebPlayerId: '' }
+            oneSignalWebPlayerIds: validPlayerIds,
+            oneSignalWebPlayerId: validPlayerIds.length > 0 ? validPlayerIds[0] : null
           });
         } else if (result && result.success) {
-          console.log(`✅ OneSignal web push sent to offline user: ${userId}`);
+          console.log(`✅ OneSignal web push sent to ${webPlayerIds.length} device(s) for offline user: ${userId}`);
         }
       }
       // Priority 2: Try mobile push (for mobile app users)
-      else if (user && user.oneSignalPlayerId) {
-        // Send OneSignal push notification (existing mobile code)
-        const result = await sendOneSignalNotification(
-          user.oneSignalPlayerId,
+      // Check for array of mobile player IDs first, then fallback to single ID for backward compatibility
+      const mobilePlayerIds = (user.oneSignalPlayerIds && user.oneSignalPlayerIds.length > 0)
+        ? user.oneSignalPlayerIds
+        : (user.oneSignalPlayerId ? [user.oneSignalPlayerId] : []);
+      
+      if (user && mobilePlayerIds.length > 0) {
+        // Send to all mobile player IDs
+        const { sendOneSignalNotificationToMultiple } = require('./services/oneSignalService');
+        const result = await sendOneSignalNotificationToMultiple(
+          mobilePlayerIds,
           title,
           notificationMessage,
           {
@@ -1353,15 +1400,17 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
             senderName: senderName,
           }
         );
-        console.log(result)
-        // If player ID is invalid, remove it from database
-        if (result && result.invalidPlayerId) {
-          console.log(`🗑️ Removing invalid OneSignal player ID for user ${userId}`);
+        
+        if (result && result.invalidPlayerIds && result.invalidPlayerIds.length > 0) {
+          console.log(`🗑️ Removing ${result.invalidPlayerIds.length} invalid OneSignal player ID(s) for user ${userId}`);
+          // Remove invalid player IDs from array
+          const validPlayerIds = mobilePlayerIds.filter(id => !result.invalidPlayerIds.includes(id));
           await User.findByIdAndUpdate(userId, {
-            $unset: { oneSignalPlayerId: '' }
+            oneSignalPlayerIds: validPlayerIds,
+            oneSignalPlayerId: validPlayerIds.length > 0 ? validPlayerIds[0] : null
           });
         } else if (result && result.success) {
-          console.log(`✅ OneSignal notification sent to offline user: ${userId}`);
+          console.log(`✅ OneSignal notification sent to ${mobilePlayerIds.length} device(s) for offline user: ${userId}`);
         }
       } else {
         console.log(`⚠️ User ${userId} has no OneSignal player ID (web or mobile), saving to database`);

@@ -18,13 +18,36 @@ router.post('/register-web-push', isAuth, async (req, res) => {
       });
     }
 
-    await User.findByIdAndUpdate(userId, {
-      oneSignalWebPlayerId: playerId.trim()
-    });
+    const trimmedPlayerId = playerId.trim();
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({
+        message: 'User not found',
+      });
+    }
 
-    res.status(200).json({
-      message: 'Web push player ID registered successfully',
-    });
+    // Add to array if it doesn't exist
+    if (!user.oneSignalWebPlayerIds || !Array.isArray(user.oneSignalWebPlayerIds)) {
+      user.oneSignalWebPlayerIds = [];
+    }
+    
+    if (!user.oneSignalWebPlayerIds.includes(trimmedPlayerId)) {
+      user.oneSignalWebPlayerIds.push(trimmedPlayerId);
+      // Also update legacy field for backward compatibility
+      user.oneSignalWebPlayerId = trimmedPlayerId;
+      await user.save();
+      
+      res.status(200).json({
+        message: 'Web push player ID registered successfully',
+        totalDevices: user.oneSignalWebPlayerIds.length,
+      });
+    } else {
+      res.status(200).json({
+        message: 'Web push player ID already registered',
+        totalDevices: user.oneSignalWebPlayerIds.length,
+      });
+    }
   } catch (error) {
     res.status(500).json({
       message: 'Failed to register web push player ID',

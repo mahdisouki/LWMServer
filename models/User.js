@@ -85,8 +85,10 @@ const userSchema = new mongoose.Schema({
 
   },
   breaks: [breakSchema],
-  oneSignalPlayerId: { type: String }, // OneSignal player ID for push notifications
-  oneSignalWebPlayerId: { type: String }, // OneSignal player ID for web push notifications
+  oneSignalPlayerId: { type: String }, // OneSignal player ID for push notifications (legacy - kept for backward compatibility)
+  oneSignalPlayerIds: [{ type: String }], // OneSignal player IDs array for mobile push notifications (multiple devices)
+  oneSignalWebPlayerId: { type: String }, // OneSignal player ID for web push notifications (legacy - kept for backward compatibility)
+  oneSignalWebPlayerIds: [{ type: String }], // OneSignal player IDs array for web push notifications (multiple browsers/devices)
 }, { discriminatorKey: 'roleType' });
 
 // Add compound index to ensure deviceId is unique per user (not globally)
