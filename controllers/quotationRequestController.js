@@ -89,8 +89,30 @@ const quotationRequestController = {
                 items,
                 estimatedPrices,
             });
-            sendQuoteRequestConfirmationEmail(email, newQuotation)
+
+            // Send confirmation email to user
+            sendQuoteRequestConfirmationEmail(email, newQuotation);
+
+            // Save quotation to database
             await newQuotation.save();
+
+            // Send email to responsible person (similar to contact request / moving service)
+            const quotationData = {
+                firstName,
+                lastName,
+                line1: address,
+                line2: '',
+                postcode,
+                email,
+                phoneNumber,
+
+                Notes: comments || 'No additional comments',
+                items,
+            };
+
+            const responsibleEmail = 'eyatrk24@gmail.com';
+            await sendQuotationEmail({ responsibleEmail, quotationData });
+
             emitNotificationToUser("67cb6810c9e768ec25d39523", "Quotations", "A new quotation request has been submitted");
 
             res.status(201).json({

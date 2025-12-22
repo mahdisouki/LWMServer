@@ -8,6 +8,32 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
     },
   });
 
+  // Helper function to detect if URL is a video
+  const isVideoUrl = (url) => {
+    const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv'];
+    const lowerUrl = url.toLowerCase();
+    return videoExtensions.some(ext => lowerUrl.includes(ext)) || lowerUrl.includes('/video/');
+  };
+
+  // Generate files list HTML
+  let filesListHTML = '';
+  if (contactData.files && contactData.files.length > 0) {
+    const filesList = contactData.files
+      .map((file, index) => {
+        const fileType = isVideoUrl(file) ? 'Video' : 'Image';
+        return `<li style="margin: 5px 0;"><a href="${file}" target="_blank" style="color: #4CAF50; text-decoration: none;">Item ${index + 1} - View ${fileType}</a></li>`;
+      })
+      .join('');
+
+    filesListHTML = `
+        <h3 style="margin-top: 20px; margin-bottom: 10px; color: #4CAF50;">Uploaded Items (${contactData.files.length}):</h3>
+        <div style="padding: 10px; background-color: #f5f5f5; border-radius: 4px; border: 1px solid #ddd; margin-top: 10px;">
+          <ul style="list-style-type: none; padding: 0; margin: 0;">
+            ${filesList}
+          </ul>
+        </div>`;
+  }
+
   // Email to the responsible person
   const mailOptionsToResponsible = {
     from: `"London Waste Management"<${contactData.email}>`,
@@ -43,12 +69,7 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
       }</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Extra Info:</strong> ${contactData.extraInfo
       }</p>
-        ${contactData.files && contactData.files.length > 0
-        ? `<div style='margin-top: 15px;'><strong>Uploaded Files:</strong><ul>${contactData.files
-          .map((f) => `<li><a href='${f}'>${f}</a></li>`)
-          .join('')}</ul></div>`
-        : ''
-      }
+        ${filesListHTML}
       </div>
       <div style="text-align: center; margin-top: 20px;">
         <p style="font-size: 14px; color: #888;">London Waste Management</p>
