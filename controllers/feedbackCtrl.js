@@ -5,7 +5,7 @@ const APIfeatures = require('../utils/APIFeatures');
 const feedbackCtrl = {
     createFeedback: async (req, res) => {
         try {
-            const { name, description, rate } = req.body;
+            const { name, description, rate, isVisible, createdByType } = req.body;
             const image = req.file ? req.file.path : null; // Handle image upload via Cloudinary
 
             // if (!image) {
@@ -20,7 +20,9 @@ const feedbackCtrl = {
                 name,
                 description,
                 image,
-                rate
+                rate,
+                isVisible: isVisible !== undefined ? isVisible : false,
+                createdByType: createdByType || 'user'
             });
 
             await newFeedback.save();
@@ -40,10 +42,13 @@ const feedbackCtrl = {
         try {
             const { page = 1, limit = 9, search, minRate, maxRate } = req.query;
 
-            let filters = {};
+            let filters = { isVisible: true }; // Only show visible feedbacks
             if (req.query.filters) {
                 try {
-                    filters = JSON.parse(req.query.filters);
+                    const parsedFilters = JSON.parse(req.query.filters);
+                    filters = { ...filters, ...parsedFilters };
+                    // Ensure isVisible is always true for public endpoint
+                    filters.isVisible = true;
                 } catch (parseError) {
                     return res.status(400).json({
                         message: "Invalid JSON format in filters",
@@ -119,7 +124,7 @@ const feedbackCtrl = {
 
     updateFeedback: async (req, res) => {
         const { id } = req.params;
-        const { name, description, rate } = req.body;
+        const { name, description, rate, isVisible } = req.body;
         const image = req.file ? req.file.path : undefined;
 
         // Create a dynamic update object
@@ -133,6 +138,8 @@ const feedbackCtrl = {
             updates.rate = rate;
         }
         if (image) updates.image = image;
+        if (isVisible !== undefined) updates.isVisible = isVisible;
+
 
         try {
             const updatedFeedback = await Feedback.findByIdAndUpdate(
@@ -150,6 +157,66 @@ const feedbackCtrl = {
         } catch (error) {
             res.status(500).json({
                 message: "Failed to update feedback",
+                error: error.message
+            });
+        }
+    },
+
+    getAllFeedbacksForAdmin: async (req, res) => {
+        try {
+            const { page = 1, limit = 9, search, keyword, minRate, maxRate } = req.query;
+
+            let filters = {};
+
+            // Admin endpoint: Always return ALL feedbacks (visible and hidden)
+            // No isVisible filter = returns everything
+
+            // Add search logic - use keyword or search parameter
+            const searchTerm = search || keyword;
+            if (searchTerm) {
+                filters = {
+                    ...filters,
+                    $or: [
+                        { name: { $regex: searchTerm, $options: 'i' } },
+                        { description: { $regex: searchTerm, $options: 'i' } },
+                    ],
+                };
+            }
+
+            // Add rate filters
+            if (minRate || maxRate) {
+                filters.rate = {};
+                if (minRate) filters.rate.$gte = parseFloat(minRate);
+                if (maxRate) filters.rate.$lte = parseFloat(maxRate);
+            }
+
+            // Note: If you need to handle custom filters from query params,
+            // read them directly from req.query (e.g., req.query.status, req.query.category)
+            // instead of trying to parse req.query.filters as JSON
+
+            const query = Feedback.find(filters);
+
+            const features = new APIfeatures(query, req.query)
+                .sorting()
+                .paginating();
+
+            const feedbacks = await features.query.exec();
+            const total = await Feedback.countDocuments(filters);
+
+            res.status(200).json({
+                message: "All feedbacks retrieved successfully for admin",
+                feedbacks,
+                meta: {
+                    currentPage: parseInt(page, 10),
+                    limit: parseInt(limit, 10),
+                    total,
+                    count: feedbacks.length,
+                },
+            });
+
+        } catch (error) {
+            res.status(500).json({
+                message: "Failed to retrieve feedbacks",
                 error: error.message
             });
         }
