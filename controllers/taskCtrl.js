@@ -1740,6 +1740,11 @@ const taskCtrl = {
                 taskId: taskId,
                 paymentAmountType: actualPaymentType,
               },
+              payment_method_options: {
+                link: {
+                  enabled: false,
+                },
+              },
             });
 
             return res.json({
