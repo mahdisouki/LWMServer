@@ -6,10 +6,19 @@ const { sendRefundEmail } = require('../services/emailsService');
 
 // PayPal Client setup
 function PayPalClient() {
-    return new paypal.core.PayPalHttpClient(new paypal.core.SandboxEnvironment(
-        process.env.PAYPAL_CLIENT_ID,
-        process.env.PAYPAL_CLIENT_SECRET
-    ));
+    const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox';
+    const clientId = process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    
+    if (!clientId || !clientSecret) {
+        throw new Error("PayPal credentials are required");
+    }
+    
+    const environment = PAYPAL_MODE === 'live'
+        ? new paypal.core.LiveEnvironment(clientId, clientSecret)
+        : new paypal.core.SandboxEnvironment(clientId, clientSecret);
+    
+    return new paypal.core.PayPalHttpClient(environment);
 }
 
 async function verifyStripeRefund(refundId) {

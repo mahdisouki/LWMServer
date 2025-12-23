@@ -10,6 +10,27 @@ const MINIMUM_PRICE = 45; // Minimum price including VAT (£37.5 + £7.5 VAT)
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
 const CLIENT_URL = 'https://client.londonwastemanagement.uk';
 
+// PayPal environment configuration
+const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox'; // 'sandbox' or 'live'
+
+// Helper function to create PayPal environment based on PAYPAL_MODE
+function createPayPalEnvironment() {
+    const clientId = process.env.PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+    
+    if (!clientId || !clientSecret) {
+        throw new Error("PayPal credentials (PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET) are required in environment variables");
+    }
+    
+    if (PAYPAL_MODE === 'live') {
+        console.log('🔴 Using PayPal LIVE environment');
+        return new paypal.core.LiveEnvironment(clientId, clientSecret);
+    } else {
+        console.log('🟡 Using PayPal SANDBOX environment');
+        return new paypal.core.SandboxEnvironment(clientId, clientSecret);
+    }
+}
+
 async function calculateTotalPrice(taskId) {
     const task = await Task.findById(taskId).populate("items.standardItemId");
     if (!task) throw new Error("Task not found");
@@ -234,12 +255,15 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
     });
 
     try {
-        const environment = new paypal.core.SandboxEnvironment(process.env.PAYPAL_CLIENT_ID, process.env.PAYPAL_CLIENT_SECRET);
+        const environment = createPayPalEnvironment();
         const client = new paypal.core.PayPalHttpClient(environment);
         const order = await client.execute(request);
         return order.result.links.find(link => link.rel === "approve").href;
     } catch (error) {
         console.error("Failed to create PayPal payment link:", error);
+        if (error.statusCode === 401) {
+            console.error("❌ PayPal authentication failed. Check your CLIENT_ID and CLIENT_SECRET match the PAYPAL_MODE (sandbox/live)");
+        }
         throw error;
     }
 };
@@ -284,10 +308,7 @@ async function createPayPalOrder(amountInPence, taskId, fullBreakdown, task, pay
 
 // Fetch PayPal Order Details
 const getPayPalOrderDetails = async (orderId) => {
-    const environment = new paypal.core.SandboxEnvironment(
-        process.env.PAYPAL_CLIENT_ID,
-        process.env.PAYPAL_CLIENT_SECRET
-    );
+    const environment = createPayPalEnvironment();
     const client = new paypal.core.PayPalHttpClient(environment);
 
     const request = new paypal.orders.OrdersGetRequest(orderId);
@@ -297,10 +318,7 @@ const getPayPalOrderDetails = async (orderId) => {
 
 // Capture PayPal Payment
 const capturePayPalPayment = async (orderId) => {
-    const environment = new paypal.core.SandboxEnvironment(
-        process.env.PAYPAL_CLIENT_ID,
-        process.env.PAYPAL_CLIENT_SECRET
-    );
+    const environment = createPayPalEnvironment();
     const client = new paypal.core.PayPalHttpClient(environment);
 
     const request = new paypal.orders.OrdersCaptureRequest(orderId);
@@ -316,12 +334,7 @@ const capturePayPalPayment = async (orderId) => {
 };
 
 function PayPalClient() {
-    return new paypal.core.PayPalHttpClient(
-        new paypal.core.SandboxEnvironment(
-            process.env.PAYPAL_CLIENT_ID,
-            process.env.PAYPAL_CLIENT_SECRET
-        )
-    );
+    return new paypal.core.PayPalHttpClient(createPayPalEnvironment());
 }
 
 async function testPayPal() {
