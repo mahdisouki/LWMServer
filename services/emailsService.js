@@ -909,10 +909,6 @@ module.exports = {
     const templatePath = path.join(__dirname, '../public/templates/bookingConfirmation.html');
     let template = fs.readFileSync(templatePath, 'utf8');
 
-    // Read the CSS file and inline it
-    const cssPath = path.join(__dirname, '../public/templates/bookingConfirmation.css');
-    const css = fs.readFileSync(cssPath, 'utf8');
-
     // Replace template variables
     template = template.replace('{{firstName}}', task.firstName);
     template = template.replace('{{lastName}}', task.lastName);
@@ -924,8 +920,8 @@ module.exports = {
     template = template.replace('{{businessName}}', task.bussinessName);
     template = template.replace('{{collectionAddress}}', task.collectionAddress);
 
-    // Inline the CSS into the HTML
-    const htmlContent = template.replace('</head>', `<style>${css}</style></head>`);
+    // Template now has all styles inline, no need to add external CSS
+    const htmlContent = template;
 
     // Generate invoice PDF
     const dirPath = path.join(__dirname, '../generated');
