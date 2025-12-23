@@ -143,6 +143,7 @@ const taskSchema = new Schema(
     repeatCustomer: { type: Number, default: 0 },
     reviewRequestSent: { type: Boolean, default: false },
     wasteTransferNoteSent: { type: Boolean, default: false },
+    applyMinFee: { type: Boolean, default: false }, // Admin option to apply minimum fee
   },
   { timestamps: true }
 );

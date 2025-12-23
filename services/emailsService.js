@@ -242,10 +242,11 @@ module.exports = {
     }
 
     // Check createdByType condition for minimum price enforcement
-    // Only skip minimum price if explicitly 'Admin', otherwise enforce it (for 'public' or undefined/null)
-    const enforceMinimumPrice = task.createdByType !== 'Admin';
+    // Only skip minimum price if explicitly 'Admin' AND applyMinFee is false
+    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
     console.log('=== INVOICE PDF PRICE CALCULATION ===');
     console.log('task.createdByType:', task.createdByType, 'Type:', typeof task.createdByType);
+    console.log('task.applyMinFee:', task.applyMinFee);
     console.log('enforceMinimumPrice:', enforceMinimumPrice);
     console.log('subtotal before minimum check:', subtotal);
 
@@ -254,7 +255,7 @@ module.exports = {
       console.log('Applying minimum price adjustment: £' + subtotal + ' → £37.5');
       subtotal = 37.5;
     } else {
-      console.log('Minimum price NOT applied (Admin task or subtotal >= 37.5)');
+      console.log('Minimum price NOT applied (Admin task without applyMinFee or subtotal >= 37.5)');
     }
 
     console.log("subtotal", subtotal)

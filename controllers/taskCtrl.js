@@ -92,6 +92,7 @@ async function calculateTotalPrice({
   hasDiscount,
   createdByType,
   available, // Add available parameter for discount calculation
+  applyMinFee = false, // Admin option to apply minimum fee
 }) {
   console.log('🚀 CALCULATE TOTAL PRICE FUNCTION CALLED');
   console.log('Items received:', items);
@@ -228,8 +229,8 @@ async function calculateTotalPrice({
 
   // 5. Enforce minimum price (before VAT) - if under £37.5, make it £37.5
   // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
-  // Skip minimum price enforcement if created by Admin
-  if (createdByType !== 'Admin' && subtotal < 37.5) {
+  // Skip minimum price enforcement if created by Admin, UNLESS applyMinFee is true
+  if ((createdByType !== 'Admin' || applyMinFee === true) && subtotal < 37.5) {
     subtotal = 37.5;
   }
 
@@ -280,6 +281,7 @@ const taskCtrl = {
         additionalNotes,
         privateNotes,
         discountType,
+        applyMinFee, // Admin option to apply minimum fee
       } = req.body;
 
       // For debugging: see what you get from frontend
@@ -316,6 +318,7 @@ const taskCtrl = {
         hasDiscount,
         available,
         createdByType, // Pass createdByType for discount calculation
+        applyMinFee: applyMinFee === true, // Pass applyMinFee to calculation
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
         // customDiscountPercent > 0,
@@ -404,6 +407,7 @@ const taskCtrl = {
         // customDiscountPercent > 0,
         additionalNotes,
         privateNotes,
+        applyMinFee: applyMinFee === true, // Save applyMinFee to database
       });
 
       const savedTask = await newTask.save();
@@ -1332,8 +1336,17 @@ const taskCtrl = {
         }
 
         // Add VAT
-        const vat = subtotal * 0.2;
-        const totalPrice = subtotal + vat;
+        let vat = subtotal * 0.2;
+        let totalPrice = subtotal + vat;
+
+        // Apply minimum fee if needed
+        const enforceMinimumPrice = populatedTask.createdByType !== 'Admin' || populatedTask.applyMinFee === true;
+        if (enforceMinimumPrice && subtotal < 37.5) {
+          subtotal = 37.5;
+          vat = subtotal * 0.2;
+          totalPrice = subtotal + vat;
+          console.log('Applied minimum price adjustment in updateTask');
+        }
 
         console.log('Final subtotal:', subtotal);
         console.log('VAT:', vat);
@@ -1636,9 +1649,10 @@ const taskCtrl = {
         finalPrice *= 0.9;
       }
 
-      // Apply minimum price (before VAT) - if under £30, make it £30
-      // When total is under £30, the full payment becomes £36 (this is a complete payment, not partial)
-      if (finalPrice < 37.5) {
+      // Apply minimum price (before VAT) - if under £37.5, make it £37.5
+      // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
+      const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+      if (enforceMinimumPrice && finalPrice < 37.5) {
         finalPrice = 37.5;
       }
 
@@ -1846,7 +1860,9 @@ const taskCtrl = {
           finalPrice *= 0.9;
         }
 
-        if (finalPrice < 37.5) {
+        // Apply minimum price if needed
+        const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+        if (enforceMinimumPrice && finalPrice < 37.5) {
           finalPrice = 37.5;
         }
 
@@ -2058,7 +2074,9 @@ const taskCtrl = {
           finalPrice *= 0.9;
         }
 
-        if (finalPrice < 37.5) {
+        // Apply minimum price if needed
+        const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+        if (enforceMinimumPrice && finalPrice < 37.5) {
           finalPrice = 37.5;
         }
 
@@ -2340,16 +2358,26 @@ const taskCtrl = {
         });
       }
 
-      // Enforce minimum price (before VAT)
-      // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
-      // if (subtotal < 37.5) {
-      //   const adjustment = 37.5 - subtotal;
-      //   subtotal = 37.5;
-      //   breakdown.push({
-      //     description: 'Minimum price adjustment',
-      //     amount: adjustment,
-      //   });
-      // }
+      // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      const isAvailableAnyTime = task.available === 'AnyTime';
+      const isCreatedByPublic = task.createdByType === 'public';
+      const hasItems = task.items && task.items.length > 0;
+      const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+        subtotal *= 0.9;
+      }
+
+      // Enforce minimum price (before VAT) if needed
+      const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+      if (enforceMinimumPrice && subtotal < 37.5) {
+        const adjustment = 37.5 - subtotal;
+        subtotal = 37.5;
+        breakdown.push({
+          description: 'Minimum price adjustment',
+          amount: adjustment,
+        });
+      }
 
       // Add VAT
       const vat = subtotal * 0.2;
@@ -2954,8 +2982,9 @@ const taskCtrl = {
 
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
       // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
-      // Skip minimum price enforcement if created by Admin
-      if (task.createdByType !== 'Admin' && subtotal < 37.5) {
+      // Skip minimum price enforcement if created by Admin, UNLESS applyMinFee is true
+      const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+      if (enforceMinimumPrice && subtotal < 37.5) {
         subtotal = 37.5;
       }
 
