@@ -72,30 +72,31 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
     // Send to responsible email
     await transporter.sendMail(mailOptionsToResponsible);
 
-    // Automatic reply to the user
-    const mailOptionsToUser = {
-        from: ` "London Waste Management" <${process.env.EMAIL_USER}>`,
-        to: quotationData.email, // User's email
-        subject: `Thank You for Your Quotation Request`,
-        html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e5e5e5; border-radius: 8px; background-color: #f3fdf3;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
-        </div>
-        <div style="text-align: center; padding: 20px; background-color: #e9ffe9; border-radius: 8px;">
-          <h2 style="color: #004d00; font-size: 24px;">Thank You!</h2>
-          <p style="font-size: 16px; color: #333;"> <strong>Dear, ${quotationData.email}</strong>,</p>
-          <p style="font-size: 16px; color: #333;">Thank you for your quotation request. We have received your submission and will get back to you shortly.</p>
-          <p style="font-size: 16px; color: #333;">If you have any questions, feel free to contact us.</p>
-          <p style="font-size: 16px; color: #333;">Best regards,</p>
-          <p style="font-size: 16px; color: #333;">London Waste Management</p>
-        </div>
-      </div>
-    `,
-  };
+    // Automatic reply to the user - COMMENTED OUT to avoid duplicate emails
+    // The user already receives a confirmation email via sendQuoteRequestConfirmationEmail in quotationRequestController.js
+    // const mailOptionsToUser = {
+    //     from: ` "London Waste Management" <${process.env.EMAIL_USER}>`,
+    //     to: quotationData.email, // User's email
+    //     subject: `Thank You for Your Quotation Request`,
+    //     html: `
+    //   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e5e5e5; border-radius: 8px; background-color: #f3fdf3;">
+    //     <div style="text-align: center; margin-bottom: 20px;">
+    //       <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
+    //     </div>
+    //     <div style="text-align: center; padding: 20px; background-color: #e9ffe9; border-radius: 8px;">
+    //       <h2 style="color: #004d00; font-size: 24px;">Thank You!</h2>
+    //       <p style="font-size: 16px; color: #333;"> <strong>Dear, ${quotationData.email}</strong>,</p>
+    //       <p style="font-size: 16px; color: #333;">Thank you for your quotation request. We have received your submission and will get back to you shortly.</p>
+    //       <p style="font-size: 16px; color: #333;">If you have any questions, feel free to contact us.</p>
+    //       <p style="font-size: 16px; color: #333;">Best regards,</p>
+    //       <p style="font-size: 16px; color: #333;">London Waste Management</p>
+    //     </div>
+    //   </div>
+    // `,
+    // };
 
     // Send auto-reply email
-    await transporter.sendMail(mailOptionsToUser);
+    // await transporter.sendMail(mailOptionsToUser);
 };
 
 module.exports = sendQuotationEmail;
