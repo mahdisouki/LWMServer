@@ -282,6 +282,7 @@ const taskCtrl = {
         privateNotes,
         discountType,
         applyMinFee, // Admin option to apply minimum fee
+        orderNumber, // Optional order number (for migrations or manual entry)
       } = req.body;
 
       // ✅ Convert FormData string to boolean
