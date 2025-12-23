@@ -2474,6 +2474,78 @@ const taskCtrl = {
         }
 
         res.status(200).send('Webhook received');
+      } else if (
+        event.type === 'checkout.session.async_payment_failed' ||
+        event.type === 'checkout.session.expired' ||
+        event.type === 'payment_intent.payment_failed'
+      ) {
+        // Handle payment failures
+        try {
+          let taskId = null;
+          let amountInCents = null;
+          let failureReason = null;
+          let customerEmail = null;
+          let paymentIntentId = null;
+
+          if (event.type === 'checkout.session.async_payment_failed' || event.type === 'checkout.session.expired') {
+            const session = event.data.object;
+            taskId = session.metadata && session.metadata.taskId;
+            amountInCents = session.amount_total || null;
+            customerEmail = session.customer_details && session.customer_details.email;
+            paymentIntentId = session.payment_intent || session.id;
+            if (event.type === 'checkout.session.async_payment_failed') {
+              failureReason = session.last_payment_error
+                ? session.last_payment_error.message
+                : 'Payment failed during checkout';
+            } else {
+              failureReason = 'Checkout session expired';
+            }
+          } else if (event.type === 'payment_intent.payment_failed') {
+            const intent = event.data.object;
+            paymentIntentId = intent.id;
+            amountInCents = intent.amount || null;
+            failureReason = intent.last_payment_error && intent.last_payment_error.message;
+            // taskId is usually in metadata if you set it when creating the intent
+            taskId = intent.metadata && intent.metadata.taskId;
+            customerEmail = intent.receipt_email || undefined;
+          }
+
+          if (!taskId) {
+            console.warn('Stripe failed payment webhook without taskId metadata, skipping email.');
+            return res.status(200).send('Ignored – no taskId');
+          }
+
+          const task = await Task.findById(taskId);
+          if (!task) {
+            console.warn(`Stripe failed payment webhook: task not found for ID ${taskId}`);
+            return res.status(200).send('Ignored – task not found');
+          }
+
+          const amountInGBP = amountInCents != null ? amountInCents / 100 : null;
+
+          // Send payment failed email (no PaymentHistory created for failures)
+          await sendPaymentFailedEmail({
+            email: task.email || customerEmail,
+            firstName: task.firstName,
+            lastName: task.lastName,
+            orderId: String(task._id),
+            amount: amountInGBP != null ? amountInGBP : undefined,
+            currency: 'GBP',
+            paymentType: 'Stripe',
+            reason: failureReason || `Stripe event type: ${event.type}`,
+          });
+
+          console.log(`Payment failed email sent for task ${taskId}, event: ${event.type}`);
+          return res.status(200).send('Failed payment handled');
+        } catch (innerErr) {
+          console.error('Error handling Stripe failed payment webhook:', innerErr);
+          // Do not fail webhook – just acknowledge
+          return res.status(200).send('Failed payment handling error (logged)');
+        }
+      } else {
+        // Log other events but don't process them
+        console.log(`Unhandled Stripe webhook event type: ${event.type}`);
+        return res.status(200).send('Event ignored');
       }
     } catch (err) {
       console.error(`Webhook error: ${err.message}`);
