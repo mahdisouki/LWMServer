@@ -516,19 +516,19 @@ module.exports = {
     }
     template = template.replace('{{refundRow}}', refundRow);
 
-    // Build bank transfer details section if payment method is bank_transfer
+    // Build bank transfer details section if payment method is BankTransfer
     let bankTransferDetails = '';
-    if (task.paymentMethod === 'bank_transfer') {
+    if (task.paymentMethod === 'BankTransfer') {
       bankTransferDetails = `
           <div class="bank-details-section">
             <div class="bank-details-header">
               <span>🏦 Bank Details:</span>
             </div>
             <div class="bank-details-content">
-              <div class="value"><strong>BANK NAME:</strong> LONDON WASTE MANAGEMENT (LLOYDS BUSINESS BANK)</div>
-              <div class="value"><strong>SORT CODE:</strong> 309626</div>
-              <div class="value"><strong>ACCOUNT NUMBER:</strong> 55867268</div>
-              <div class="value"><strong>COMPANY REGISTRATION NUMBER:</strong> 12206676</div>
+              <div class="value"><strong>Business Account Name:</strong> London Waste Management</div>
+              <div class="value"><strong>Sort Code:</strong> 30-96-26</div>
+              <div class="value"><strong>Account Number:</strong> 55867268</div>
+              <div class="value"><strong>Reference:</strong> ${task.orderNumber}</div>
             </div>
           </div>`;
     }
