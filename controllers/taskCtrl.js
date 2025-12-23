@@ -284,6 +284,10 @@ const taskCtrl = {
         applyMinFee, // Admin option to apply minimum fee
       } = req.body;
 
+      // ✅ Convert FormData string to boolean
+      // FormData sends boolean values as strings 'true' or 'false'
+      const applyMinFeeBoolean = applyMinFee === 'true' || applyMinFee === true;
+
       // For debugging: see what you get from frontend
       console.log('Received items:', req.body.items);
       console.log('additionalNotes', additionalNotes);
@@ -318,7 +322,7 @@ const taskCtrl = {
         hasDiscount,
         available,
         createdByType, // Pass createdByType for discount calculation
-        applyMinFee: applyMinFee === true, // Pass applyMinFee to calculation
+        applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
         // customDiscountPercent > 0,
@@ -407,7 +411,7 @@ const taskCtrl = {
         // customDiscountPercent > 0,
         additionalNotes,
         privateNotes,
-        applyMinFee: applyMinFee === true, // Save applyMinFee to database
+        applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
       });
 
       const savedTask = await newTask.save();
