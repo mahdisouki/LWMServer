@@ -30,7 +30,7 @@ const nodemailer = require('nodemailer');
 const sendPayementEmail = require('../utils/sendPayementEmail');
 // const sendPaymentConfirmationEmail = require('../utils/sendPayementRecivedEmail');
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
-const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail } = require('../services/emailsService');
+const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentFailedEmail } = require('../services/emailsService');
 const path = require('path');
 const fs = require('fs');
 const { generateOfficialInvoicePDF } = require('../services/emailsService');
@@ -1798,12 +1798,13 @@ const taskCtrl = {
         },
       );
 
-      if (paymentIntent.status === 'succeeded') {
-        const task = await Task.findById(taskId).populate(
-          'items.standardItemId',
-        );
-        if (!task) return res.status(404).json({ message: 'Task not found' });
+      // Load task once so we can use it in both success and failure branches
+      const task = await Task.findById(taskId).populate(
+        'items.standardItemId',
+      );
+      if (!task) return res.status(404).json({ message: 'Task not found' });
 
+      if (paymentIntent.status === 'succeeded') {
         const amountInCents = paymentIntent.amount;
         const amountInGBP = Number((amountInCents / 100).toFixed(2));
 
@@ -1970,6 +1971,26 @@ const taskCtrl = {
           task,
         });
       } else {
+        // For direct Stripe flow, track failure by email only (no PaymentHistory)
+        try {
+          const amountInCents = paymentIntent.amount;
+          const amountInGBP = Number((amountInCents / 100).toFixed(2));
+          await sendPaymentFailedEmail({
+            email: task.email,
+            firstName: task.firstName,
+            lastName: task.lastName,
+            orderId: String(task._id),
+            amount: amountInGBP,
+            currency: 'GBP',
+            paymentType: 'Stripe',
+            reason: paymentIntent.last_payment_error
+              ? paymentIntent.last_payment_error.message
+              : `Stripe status: ${paymentIntent.status}`,
+          });
+        } catch (failEmailErr) {
+          console.error('Error sending Stripe failed-payment email (direct flow):', failEmailErr);
+        }
+
         return res.status(400).json({
           message: 'Payment confirmation failed',
           status: paymentIntent.status,
@@ -2141,6 +2162,26 @@ const taskCtrl = {
       }
     } catch (error) {
       console.error('Error capturing PayPal payment:', error);
+
+      // For direct PayPal flow, also send a failed-payment email when capture throws
+      try {
+        const task = await Task.findById(taskId);
+        if (task) {
+          await sendPaymentFailedEmail({
+            email: task.email,
+            firstName: task.firstName,
+            lastName: task.lastName,
+            orderId: String(task._id),
+            amount: undefined,
+            currency: 'GBP',
+            paymentType: 'PayPal',
+            reason: error.message,
+          });
+        }
+      } catch (failEmailErr) {
+        console.error('Error sending PayPal failed-payment email (direct flow):', failEmailErr);
+      }
+
       return res.status(500).json({
         message: 'Failed to capture PayPal payment',
         error: error.message,
@@ -2366,12 +2407,14 @@ const taskCtrl = {
     const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
     try {
-      event = stripe.webhooks.constructEvent(
+      const event = stripe.webhooks.constructEvent(
         req.body,
         sig,
         endpointSecret,
       );
       console.log('Webhook verified:', event.type);
+
+      // ✅ SUCCESS EVENT (payment completed)
       if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
         const taskId = session.metadata.taskId;
@@ -2474,7 +2517,70 @@ const taskCtrl = {
         }
 
         res.status(200).send('Webhook received');
+        return res.status(200).send('Webhook received');
       }
+
+      // ❌ FAILURE / CANCELLATION EVENTS (no PaymentHistory yet)
+      if (event.type === 'checkout.session.expired' || event.type === 'payment_intent.payment_failed') {
+        try {
+          let taskId = null;
+          let amountInCents = null;
+          let failureReason = null;
+          let customerEmail = null;
+          let paymentIntentId = null;
+
+          if (event.type === 'checkout.session.expired') {
+            const session = event.data.object;
+            taskId = session.metadata && session.metadata.taskId;
+            amountInCents = session.amount_total || null;
+            customerEmail = session.customer_details && session.customer_details.email;
+            paymentIntentId = session.payment_intent || session.id;
+          } else if (event.type === 'payment_intent.payment_failed') {
+            const intent = event.data.object;
+            paymentIntentId = intent.id;
+            amountInCents = intent.amount || null;
+            failureReason = intent.last_payment_error && intent.last_payment_error.message;
+            // taskId is usually in metadata if you set it when creating the intent (not always in this project)
+            taskId = intent.metadata && intent.metadata.taskId;
+            customerEmail = intent.receipt_email || undefined;
+          }
+
+          if (!taskId) {
+            console.warn('Stripe failed payment webhook without taskId metadata, skipping DB tracking.');
+            return res.status(200).send('Ignored – no taskId');
+          }
+
+          const task = await Task.findById(taskId);
+          if (!task) {
+            console.warn(`Stripe failed payment webhook: task not found for ID ${taskId}`);
+            return res.status(200).send('Ignored – task not found');
+          }
+
+          const amountInGBP = amountInCents != null ? amountInCents / 100 : null;
+
+          // We do NOT create PaymentHistory for failed payments as per your note,
+          // just send an email so it’s visible to customer/admin.
+          await sendPaymentFailedEmail({
+            email: task.email || customerEmail,
+            firstName: task.firstName,
+            lastName: task.lastName,
+            orderId: String(task._id),
+            amount: amountInGBP != null ? amountInGBP : undefined,
+            currency: 'GBP',
+            paymentType: 'Stripe',
+            reason: failureReason || `Stripe event type: ${event.type}`,
+          });
+
+          return res.status(200).send('Failed payment handled');
+        } catch (innerErr) {
+          console.error('Error handling Stripe failed payment webhook:', innerErr);
+          // Do not fail webhook – just acknowledge
+          return res.status(200).send('Failed payment handling error (logged)');
+        }
+      }
+
+      // Other events: just acknowledge
+      return res.status(200).send('Event ignored');
     } catch (err) {
       console.error(`Webhook error: ${err.message}`);
       res.status(400).send(`Webhook Error: ${err.message}`);
@@ -2624,6 +2730,62 @@ const taskCtrl = {
 
           // (optional) send email async as above…
           return res.status(200).send('Processed');
+        }
+
+        // ❌ PayPal failure / denial events – no PaymentHistory yet, just notify by email
+        case 'PAYMENT.CAPTURE.DENIED':
+        case 'PAYMENT.CAPTURE.REFUNDED':
+        case 'PAYMENT.CAPTURE.REVERSED': {
+          try {
+            const capture = evt.resource;
+            const orderId = capture?.supplementary_data?.related_ids?.order_id;
+            const amountValue = capture?.amount?.value;
+            const currencyCode = capture?.amount?.currency_code || 'GBP';
+            const failureReason =
+              capture?.status_details?.reason ||
+              capture?.reason ||
+              `PayPal event type: ${evt.event_type}`;
+
+            if (!orderId) {
+              console.warn('PayPal failed capture webhook without orderId, skipping.');
+              return res.status(200).send('Ignored – no orderId');
+            }
+
+            const client = PayPalClient();
+            const getReq = new paypal.orders.OrdersGetRequest(orderId);
+            const getRes = await client.execute(getReq);
+            const pu = getRes.result.purchase_units?.[0];
+            const customIdRaw = pu?.custom_id;
+            const [customId] = (customIdRaw || '').split('|');
+            const payerEmail = getRes.result.payer?.email_address;
+
+            if (!customId) {
+              console.warn('PayPal failed capture webhook without custom_id, skipping.');
+              return res.status(200).send('Ignored – no custom_id');
+            }
+
+            const task = await Task.findById(customId);
+            if (!task) {
+              console.warn(`PayPal failed capture webhook: task not found for ID ${customId}`);
+              return res.status(200).send('Ignored – task not found');
+            }
+
+            await sendPaymentFailedEmail({
+              email: task.email || payerEmail,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              orderId: String(task._id),
+              amount: amountValue != null ? Number(amountValue) : undefined,
+              currency: currencyCode,
+              paymentType: 'PayPal',
+              reason: failureReason,
+            });
+
+            return res.status(200).send('PayPal failed payment handled');
+          } catch (paypalFailErr) {
+            console.error('Error handling PayPal failed payment webhook:', paypalFailErr);
+            return res.status(200).send('PayPal failed payment handling error (logged)');
+          }
         }
 
         default:
