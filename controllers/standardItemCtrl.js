@@ -1,6 +1,7 @@
 const StandardItem = require('../models/StandardItem');
-const ServiceCategory = require('../models/ServiceCategory.js')
-const mongoose = require('mongoose')
+const ServiceCategory = require('../models/ServiceCategory.js');
+const mongoose = require('mongoose');
+const { normalizeForSlugCompare } = require('../utils/slug');
 const {
   calculateTotalPrice,
   createStripePaymentIntent,
@@ -496,33 +497,42 @@ const standardItemCtrl = {
   },
   // Add this after getStandardItemById
   getStandardItemBySlug: async (req, res) => {
-  const { slug } = req.params;
-  try {
-    // Convert slug back to a searchable pattern
-    // "sofa-removal" -> regex that matches "Sofa Removal", "sofa removal", etc.
-    // Allow optional special characters: parentheses, slashes, dashes between words
-    let searchPattern = slug.replace(/-/g, '[\\s\\-–—/()]*');
-    
-    // Allow optional / between consecutive digits (e.g., "14" matches "1/4")
-    searchPattern = searchPattern.replace(/(\d)(\d)/g, '$1[/]?$2');
-    
-    const item = await StandardItem.findOne({
-      // Match with optional trailing parenthetical content and punctuation
-      itemName: { $regex: new RegExp(`^${searchPattern}(\\s*\\([^)]*\\))?[\\s\\-–—/()]*$`, 'i') }
-    }).populate('category');
-    
-    if (!item) {
-      console.log("standard item not found", searchPattern)
-      return res.status(404).json({ message: 'Standard item not found' });
+    const { slug } = req.params;
+    try {
+      // Normalize incoming slug for comparison
+      const target = normalizeForSlugCompare(slug);
+
+      // Fetch all items and find the one with matching normalized name
+      const items = await StandardItem.find({}).populate('category');
+
+      let matchedItem = null;
+      for (const item of items) {
+        const normalizedName = normalizeForSlugCompare(item.itemName);
+        if (normalizedName === target) {
+          matchedItem = item;
+          break;
+        }
+      }
+
+      if (!matchedItem) {
+        console.log('standard item not found for slug:', slug);
+        console.log('normalized target:', target);
+        const sample = items.slice(0, 5).map((i) => ({
+          name: i.itemName,
+          normalized: normalizeForSlugCompare(i.itemName),
+        }));
+        console.log('sample normalized item names:', sample);
+        return res.status(404).json({ message: 'Standard item not found' });
+      }
+
+      res.status(200).json(matchedItem);
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to get standard item',
+        error: error.message,
+      });
     }
-    res.status(200).json(item);
-  } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to get standard item', 
-      error: error.message 
-    });
-  }
-},
+  },
 
 };
 

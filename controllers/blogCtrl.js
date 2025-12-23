@@ -1,6 +1,7 @@
 // controllers/blogController.js
 const Blog = require('../models/Blog');
 const APIfeatures = require('../utils/APIFeatures'); // If you're using a utility for API features
+const { normalizeToSlug } = require('../utils/slug');
 
 const blogCtrl = {
     createBlog: async (req, res) => {
@@ -173,24 +174,6 @@ const blogCtrl = {
     getBlogBySlug: async (req, res) => {
         const { slug } = req.params;
         try {
-            // Helper function to normalize text to slug format
-            const normalizeToSlug = (text) => {
-                if (!text) return '';
-                return text
-                    .toLowerCase()
-                    .trim()
-                    // Normalize Unicode apostrophes and quotes (straight, curly, smart quotes, etc.)
-                    .replace(/[''""`´]/g, '')
-                    // Replace special characters (&, :, comma, etc.) with spaces
-                    .replace(/[&:,\'";!?.]/g, ' ')
-                    // Replace multiple spaces/hyphens with single hyphen
-                    .replace(/[\s\-_]+/g, '-')
-                    // Remove leading/trailing hyphens
-                    .replace(/^-+|-+$/g, '')
-                    // Remove any remaining non-alphanumeric characters except hyphens
-                    .replace(/[^a-z0-9\-]/g, '');
-            };
-
             // Normalize the incoming slug (remove any extra characters)
             const normalizedSlug = normalizeToSlug(slug);
 
