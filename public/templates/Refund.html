@@ -3,17 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--[if mso]>
+      <style type="text/css">
+        body,
+        table,
+        td {
+          font-family: Arial, sans-serif !important;
+        }
+      </style>
+    <![endif]-->
     <title>London Waste Management - Refund</title>
-    <style>
+    <style type="text/css">
+      /* Reset styles for email clients */
+      body,
+      table,
+      td,
+      p,
+      a,
+      li,
+      blockquote {
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+      }
+      table,
+      td {
+        mso-table-lspace: 0pt;
+        mso-table-rspace: 0pt;
+      }
+      img {
+        -ms-interpolation-mode: bicubic;
+        border: 0;
+        outline: none;
+        text-decoration: none;
+      }
+
+      /* Mobile styles */
       @media only screen and (max-width: 640px) {
         .email-container {
           width: 100% !important;
           max-width: 100% !important;
-          margin: 0 !important;
-          border-radius: 0 !important;
-        }
-        .email-wrapper {
-          padding: 0 !important;
         }
         .content-padding {
           padding: 20px 15px !important;
@@ -21,15 +49,10 @@
         .header-image {
           width: 100% !important;
           max-width: 100% !important;
-          display: block !important;
         }
         .top-banner {
-          border-radius: 0 !important;
           padding: 15px 20px !important;
           width: 100% !important;
-          max-width: 100% !important;
-          display: block !important;
-          box-sizing: border-box !important;
         }
         .top-banner h2 {
           font-size: 20px !important;
@@ -47,263 +70,395 @@
         .banner-container {
           width: 100% !important;
           max-width: 100% !important;
-          box-sizing: border-box !important;
           padding: 0 !important;
         }
       }
     </style>
   </head>
-  <body style="margin: 0; padding: 0; background: #ffffff">
-    <div
-      class="email-wrapper"
-      style="
-        font-family: Arial, sans-serif;
-        text-align: center;
-        padding: 0;
-        background: #ffffff;
-        min-height: 100vh;
-      "
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background-color: #ffffff;
+      font-family: Arial, Helvetica, sans-serif;
+    "
+  >
+    <!-- Wrapper Table -->
+    <table
+      role="presentation"
+      cellspacing="0"
+      cellpadding="0"
+      border="0"
+      width="100%"
+      style="background-color: #ffffff"
     >
-      <!-- Main Content Container -->
-      <div
-        class="email-container"
-        style="width: 600px; max-width: 100%; margin: 0 auto"
-      >
-        <!-- Header Image -->
-        <div
-          style="
-            padding: 0;
-            text-align: center;
-            background: #ffffff;
-            margin-bottom: 0;
-            width: 100%;
-            overflow: hidden;
-          "
-        >
-          <img
-            class="header-image"
-            src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png"
-            style="width: 100%; max-width: 600px; height: auto; display: block"
-            alt="London Waste Management"
-          />
-        </div>
-
-        <!-- Refund Banner (Top Banner - Light Green) -->
-        <div
-          class="banner-container"
-          style="
-            text-align: center;
-            width: 100%;
-            max-width: 100%;
-            margin: 5px 0 15px 0;
-            position: relative;
-            box-sizing: border-box;
-          "
-        >
-          <!-- Circular Green Badge with White Checkmark (Positioned above banner) -->
-          <div
-            class="checkmark-badge"
+      <tr>
+        <td align="center" style="padding: 0">
+          <!-- Main Content Container -->
+          <table
+            role="presentation"
+            class="email-container"
+            cellspacing="0"
+            cellpadding="0"
+            border="0"
+            width="600"
             style="
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              margin-bottom: -8px;
-              position: relative;
-              z-index: 1;
+              max-width: 600px;
               width: 100%;
+              margin: 0 auto;
+              background-color: #ffffff;
             "
           >
-            <img
-              src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763563161/Group_1261156220_s9jc7r.png"
-              alt="Checkmark"
-              style="width: 48px; height: 48px; display: block; margin: 0 auto"
-            />
-          </div>
-          <!-- Banner with Title -->
-          <div
-            class="top-banner"
-            style="
-              background: rgba(219, 249, 217, 0.41);
-              padding: 15px 30px;
-              text-align: center;
-              display: inline-block;
-              border-radius: 0;
-              width: auto;
-              margin-top: 0;
-            "
-          >
-            <!-- Title Text -->
-            <h2
-              style="
-                font-size: 24px;
-                font-weight: bold;
-                color: #1c1c1c;
-                margin: 0;
-                white-space: nowrap;
-                line-height: 1.2;
-              "
-            >
-              {{refundType}}
-            </h2>
-          </div>
-        </div>
-
-        <!-- Content Section -->
-        <div
-          class="content-padding"
-          style="padding: 30px 20px; background: #ffffff"
-        >
-          <!-- Text Content -->
-          <div style="text-align: left">
-            <!-- Greeting -->
-            <p
-              style="
-                font-size: 20px;
-                margin-bottom: 8px;
-                color: #000;
-                margin-top: 0;
-                line-height: 1.1;
-              "
-            >
-              Dear <strong>{{customerName}},</strong>
-            </p>
-            <div
-              style="
-                width: 110px;
-                height: 3px;
-                background: #15b654;
-                margin: 2px 0 22px 0;
-              "
-            ></div>
-
-            <!-- Confirmation Message -->
-            <p
-              style="
-                font-size: 16px;
-                line-height: 1.6;
-                margin-bottom: 15px;
-                color: #333;
-              "
-            >
-              We are writing to confirm that a
-              <strong style="color: #4caf50">{{refundType}}</strong> has been
-              issued for your recent payment to London Waste Management.
-            </p>
-
-            <!-- Refund Details Section -->
-            <div
-              style="
-                background: #f0fdef;
-                padding: 16px 18px;
-                margin: 25px 0;
-                border-radius: 0px;
-              "
-            >
-              <div style="margin-bottom: 12px">
-                <span style="font-weight: bold; color: #1c1c1c; font-size: 16px"
-                  >Refund Amount:</span
-                >
-                <span style="color: #1c1c1c; font-size: 16px; margin-left: 10px"
-                  ><strong style="color: #4caf50"
-                    >{{refundAmount}}</strong
-                  ></span
-                >
-              </div>
-              <div>
-                <span style="font-weight: bold; color: #1c1c1c; font-size: 16px"
-                  >Order Number:</span
-                >
-                <span style="color: #1c1c1c; font-size: 16px; margin-left: 10px"
-                  ><strong style="color: #4caf50"
-                    >#{{orderNumber}}</strong
-                  ></span
-                >
-              </div>
-            </div>
-
-            <!-- Timeline Information -->
-            <p
-              style="
-                font-size: 16px;
-                line-height: 1.6;
-                margin-bottom: 15px;
-                color: #333;
-              "
-            >
-              The amount has been refunded to your original method of payment
-              and should appear in your account within
-              <strong style="color: #4caf50">3-5 business days</strong>.
-            </p>
-
-            <!-- Apology Message -->
-            <p
-              style="
-                font-size: 16px;
-                line-height: 1.6;
-                margin-bottom: 20px;
-                color: #333;
-              "
-            >
-              We apologise for any inconvenience caused and thank you for your
-              understanding.
-            </p>
-
-            <!-- Assistance Information -->
-            <p
-              style="
-                font-size: 16px;
-                line-height: 1.6;
-                margin-bottom: 20px;
-                color: #333;
-              "
-            >
-              If you have any questions or need assistance, please contact us at
-              <a
-                href="mailto:hello@londonwastemanagement.com"
+            <!-- Header Image -->
+            <tr>
+              <td
                 style="
-                  color: #333 !important;
-                  text-decoration: none;
-                  font-weight: bold;
+                  padding: 0;
+                  text-align: center;
+                  background-color: #ffffff;
+                  margin-bottom: 0;
                 "
-                >hello@londonwastemanagement.com</a
               >
-              or call <strong style="color: #333">0203 097 1517</strong>.
-            </p>
+                <img
+                  class="header-image"
+                  src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png"
+                  alt="London Waste Management"
+                  width="600"
+                  style="
+                    width: 100%;
+                    max-width: 600px;
+                    height: auto;
+                    display: block;
+                    border: 0;
+                  "
+                />
+              </td>
+            </tr>
 
-            <!-- Closing -->
-            <p
-              style="
-                font-size: 16px;
-                line-height: 1.6;
-                margin-top: 30px;
-                color: #333;
-              "
-            >
-              Best Regards,<br />
-              <strong style="color: #4caf50">London Waste Management</strong>
-            </p>
-          </div>
-        </div>
+            <!-- Refund Banner Section -->
+            <tr>
+              <td
+                class="banner-container"
+                style="text-align: center; width: 100%; padding: 5px 0 15px 0"
+              >
+                <!-- Checkmark Badge -->
+                <table
+                  role="presentation"
+                  cellspacing="0"
+                  cellpadding="0"
+                  border="0"
+                  width="100%"
+                  style="margin-bottom: -8px"
+                >
+                  <tr>
+                    <td
+                      align="center"
+                      class="checkmark-badge"
+                      style="padding: 0"
+                    >
+                      <img
+                        src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763563161/Group_1261156220_s9jc7r.png"
+                        alt="Checkmark"
+                        width="48"
+                        height="48"
+                        style="
+                          width: 48px;
+                          height: 48px;
+                          display: block;
+                          margin: 0 auto;
+                          border: 0;
+                        "
+                      />
+                    </td>
+                  </tr>
+                </table>
 
-        <!-- Footer Section -->
-        <div
-          style="
-            padding: 15px 20px;
-            font-size: 12px;
-            text-align: center;
-            color: #666;
-            border-top: 1px solid #eee;
-            background: #ffffff;
-          "
-        >
-          London Waste Management |
-          <a
-            href="mailto:hello@londonwastemanagement.com"
-            style="color: #169b4f"
-            >hello@londonwastemanagement.com</a
-          >
-        </div>
-      </div>
-    </div>
+                <!-- Banner with Title -->
+                <table
+                  role="presentation"
+                  class="top-banner"
+                  cellspacing="0"
+                  cellpadding="0"
+                  border="0"
+                  style="
+                    background-color: rgba(219, 249, 217, 0.41);
+                    margin: 0 auto;
+                  "
+                >
+                  <tr>
+                    <td
+                      style="padding: 15px 30px; text-align: center"
+                    >
+                      <h2
+                        style="
+                          font-size: 24px;
+                          font-weight: bold;
+                          color: #1c1c1c;
+                          margin: 0;
+                          white-space: nowrap;
+                          line-height: 1.2;
+                          font-family: Arial, Helvetica, sans-serif;
+                        "
+                      >
+                        {{refundType}}
+                      </h2>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Content Section -->
+            <tr>
+              <td
+                class="content-padding"
+                style="padding: 30px 20px; background-color: #ffffff"
+              >
+                <table
+                  role="presentation"
+                  cellspacing="0"
+                  cellpadding="0"
+                  border="0"
+                  width="100%"
+                >
+                  <tr>
+                    <td style="text-align: left">
+                      <!-- Greeting -->
+                      <p
+                        style="
+                          font-size: 20px;
+                          margin: 0 0 8px 0;
+                          color: #000000;
+                          line-height: 1.1;
+                          font-family: Arial, Helvetica, sans-serif;
+                        "
+                      >
+                        Dear
+                        <strong style="font-weight: bold"
+                          >{{customerName}},</strong
+                        >
+                      </p>
+
+                      <!-- Green Line -->
+                      <table
+                        role="presentation"
+                        cellspacing="0"
+                        cellpadding="0"
+                        border="0"
+                        width="110"
+                      >
+                        <tr>
+                          <td
+                            style="
+                              width: 110px;
+                              height: 3px;
+                              background-color: #15b654;
+                              padding: 0;
+                              margin: 2px 0 22px 0;
+                            "
+                          ></td>
+                        </tr>
+                      </table>
+
+                      <!-- Confirmation Message -->
+                      <p
+                        style="
+                          font-size: 16px;
+                          line-height: 1.6;
+                          margin: 0 0 15px 0;
+                          color: #333333;
+                          font-family: Arial, Helvetica, sans-serif;
+                        "
+                      >
+                        We are writing to confirm that a
+                        <strong style="color: #4caf50; font-weight: bold"
+                          >{{refundType}}</strong
+                        >
+                        has been issued for your recent payment to London Waste
+                        Management.
+                      </p>
+
+                      <!-- Refund Details Section -->
+                      <table
+                        role="presentation"
+                        cellspacing="0"
+                        cellpadding="0"
+                        border="0"
+                        width="100%"
+                        style="background-color: #f0fdef; margin: 25px 0"
+                      >
+                        <tr>
+                          <td style="padding: 16px 18px">
+                            <table
+                              role="presentation"
+                              cellspacing="0"
+                              cellpadding="0"
+                              border="0"
+                              width="100%"
+                            >
+                              <tr>
+                                <td
+                                  style="
+                                    font-weight: bold;
+                                    color: #1c1c1c;
+                                    font-size: 16px;
+                                    padding-bottom: 12px;
+                                    font-family: Arial, Helvetica, sans-serif;
+                                  "
+                                >
+                                  Refund Amount:
+                                </td>
+                              </tr>
+                              <tr>
+                                <td
+                                  style="
+                                    color: #1c1c1c;
+                                    font-size: 16px;
+                                    padding-bottom: 12px;
+                                    font-family: Arial, Helvetica, sans-serif;
+                                  "
+                                >
+                                  <strong style="color: #4caf50; font-weight: bold"
+                                    >{{refundAmount}}</strong
+                                  >
+                                </td>
+                              </tr>
+                              <tr>
+                                <td
+                                  style="
+                                    font-weight: bold;
+                                    color: #1c1c1c;
+                                    font-size: 16px;
+                                    padding-bottom: 12px;
+                                    font-family: Arial, Helvetica, sans-serif;
+                                  "
+                                >
+                                  Order Number:
+                                </td>
+                              </tr>
+                              <tr>
+                                <td
+                                  style="
+                                    color: #1c1c1c;
+                                    font-size: 16px;
+                                    font-family: Arial, Helvetica, sans-serif;
+                                  "
+                                >
+                                  <strong style="color: #4caf50; font-weight: bold"
+                                    >#{{orderNumber}}</strong
+                                  >
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+
+                      <!-- Timeline Information -->
+                      <p
+                        style="
+                          font-size: 16px;
+                          line-height: 1.6;
+                          margin: 0 0 15px 0;
+                          color: #333333;
+                          font-family: Arial, Helvetica, sans-serif;
+                        "
+                      >
+                        The amount has been refunded to your original method of
+                        payment and should appear in your account within
+                        <strong style="color: #4caf50; font-weight: bold"
+                          >3-5 business days</strong
+                        >.
+                      </p>
+
+                      <!-- Apology Message -->
+                      <p
+                        style="
+                          font-size: 16px;
+                          line-height: 1.6;
+                          margin: 0 0 20px 0;
+                          color: #333333;
+                          font-family: Arial, Helvetica, sans-serif;
+                        "
+                      >
+                        We apologise for any inconvenience caused and thank you
+                        for your understanding.
+                      </p>
+
+                      <!-- Assistance Information -->
+                      <p
+                        style="
+                          font-size: 16px;
+                          line-height: 1.6;
+                          margin: 0 0 20px 0;
+                          color: #333333;
+                          font-family: Arial, Helvetica, sans-serif;
+                        "
+                      >
+                        If you have any questions or need assistance, please
+                        contact us at
+                        <a
+                          href="mailto:hello@londonwastemanagement.com"
+                          style="
+                            color: #333333;
+                            text-decoration: none;
+                            font-weight: bold;
+                          "
+                        >
+                          hello@londonwastemanagement.com
+                        </a>
+                        or call
+                        <strong style="color: #333333; font-weight: bold"
+                          >0203 097 1517</strong
+                        >.
+                      </p>
+
+                      <!-- Closing -->
+                      <p
+                        style="
+                          font-size: 16px;
+                          line-height: 1.6;
+                          margin: 30px 0 0 0;
+                          color: #333333;
+                          font-family: Arial, Helvetica, sans-serif;
+                        "
+                      >
+                        Best Regards,<br />
+                        <strong style="color: #4caf50; font-weight: bold"
+                          >London Waste Management</strong
+                        >
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Footer Section -->
+            <tr>
+              <td
+                style="
+                  padding: 15px 20px;
+                  font-size: 12px;
+                  text-align: center;
+                  color: #666666;
+                  border-top: 1px solid #eeeeee;
+                  background-color: #ffffff;
+                  font-family: Arial, Helvetica, sans-serif;
+                "
+              >
+                London Waste Management |
+                <a
+                  href="mailto:hello@londonwastemanagement.com"
+                  style="color: #169b4f; text-decoration: none"
+                >
+                  hello@londonwastemanagement.com
+                </a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>
