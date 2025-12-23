@@ -111,8 +111,10 @@ async function loadTaskData(taskId) {
  * @param {Object} params.task - The Task document
  * @param {Object} params.paymentHistory - The PaymentHistory document
  * @param {number} params.refundAmount - The amount refunded
+ * @param {boolean} params.isSplitRefund - Whether the refund was split across multiple transactions
+ * @param {Array} params.refundDetails - Array of refund details when split (optional)
  */
-async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
+async function sendRefundEmail({ task, paymentHistory, refundAmount, isSplitRefund = false, refundDetails = [] }) {
   const fs = require('fs');
   const path = require('path');
   const templatePath = path.join(__dirname, '../public/templates/Refund.html');
@@ -146,6 +148,76 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
   html = html.replace(/<span class="name">.*?<\/span>/, `<span class="name">${name}</span>`)
     .replace(/<span class="refund-amount">.*?<\/span>/, `<span class="refund-amount">${refundAmountStr}</span>`)
     .replace(/<span class="order-number">.*?<\/span>/, `<span class="order-number">${orderNumber}</span>`);
+
+  // Add split refund explanation if applicable
+  let splitRefundExplanation = '';
+  if (isSplitRefund && refundDetails && refundDetails.length > 1) {
+    const uniqueGateways = [...new Set(refundDetails.map(r => r.gateway))];
+    const isCrossPlatform = uniqueGateways.length > 1;
+
+    let explanationText = '';
+    if (isCrossPlatform) {
+      explanationText = `This refund has been processed across ${refundDetails.length} separate transactions using different payment methods (${uniqueGateways.join(' and ')}). `;
+    } else {
+      explanationText = `This refund has been processed across ${refundDetails.length} separate transactions. `;
+    }
+
+    explanationText += `You will receive the refund in the following amounts:`;
+
+    const refundBreakdown = refundDetails.map((detail, index) => {
+      return `<div style="margin: 8px 0; padding: 8px; background: #ffffff; border-left: 3px solid #4caf50;">
+                <span style="font-weight: bold; color: #1c1c1c;">${detail.gateway}:</span>
+                <span style="color: #1c1c1c; margin-left: 8px;">£${detail.amount.toFixed(2)}</span>
+              </div>`;
+    }).join('');
+
+    splitRefundExplanation = `
+      <div style="
+        background: #fff9e6;
+        padding: 16px 18px;
+        margin: 20px 0;
+        border-radius: 0px;
+        border-left: 4px solid #ff9800;
+      ">
+        <p style="
+          font-size: 15px;
+          line-height: 1.6;
+          margin-bottom: 12px;
+          color: #333;
+          font-weight: bold;
+        ">
+          ℹ️ Important Information:
+        </p>
+        <p style="
+          font-size: 15px;
+          line-height: 1.6;
+          margin-bottom: 12px;
+          color: #333;
+        ">
+          ${explanationText}
+        </p>
+        ${refundBreakdown}
+        <p style="
+          font-size: 14px;
+          line-height: 1.6;
+          margin-top: 12px;
+          margin-bottom: 0;
+          color: #666;
+        ">
+          Each transaction will appear separately in your account statement. The total refund amount is <strong>£${refundAmount.toFixed(2)}</strong>.
+        </p>
+      </div>
+    `;
+  }
+
+  // Insert the split refund explanation after the refund details section
+  // Find the closing div of the refund details section and insert after it
+  if (splitRefundExplanation) {
+    html = html.replace(
+      /(<\/div>\s*<!-- Timeline Information -->)/,
+      `${splitRefundExplanation}$1`
+    );
+  }
 
   // Generate and attach refund invoice PDF
   const dirPath = path.join(__dirname, '../generated');

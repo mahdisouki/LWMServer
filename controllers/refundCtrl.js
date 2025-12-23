@@ -173,7 +173,13 @@ exports.processRefund = async (req, res) => {
             }
             await task.save();
 
-            await sendRefundEmail({ task, paymentHistory: singlePaymentHistory, refundAmount });
+            await sendRefundEmail({
+                task,
+                paymentHistory: singlePaymentHistory,
+                refundAmount,
+                isSplitRefund: false,
+                refundDetails: []
+            });
 
             return res.status(200).json({
                 message: `Refund of £${refundAmount.toFixed(2)} processed successfully`,
@@ -291,8 +297,14 @@ exports.processRefund = async (req, res) => {
         }
         await task.save();
 
-        // Send refund email (use the first payment history for email)
-        await sendRefundEmail({ task, paymentHistory: availableHistories[0].paymentHistory, refundAmount });
+        // Send refund email with split refund information
+        await sendRefundEmail({
+            task,
+            paymentHistory: availableHistories[0].paymentHistory,
+            refundAmount,
+            isSplitRefund: refundResults.length > 1,
+            refundDetails: refundResults
+        });
 
         // Build response message
         const gatewayInfo = isCrossPlatform
