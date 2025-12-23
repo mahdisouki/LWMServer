@@ -173,20 +173,51 @@ const blogCtrl = {
     getBlogBySlug: async (req, res) => {
         const { slug } = req.params;
         try {
-            // Convert slug back to a searchable pattern
-            // "recycling-your-old-fridge" -> regex that matches "Recycling your old fridge", etc.
-            const searchPattern = slug.replace(/-/g, '\\s+');
+            // Helper function to normalize text to slug format
+            const normalizeToSlug = (text) => {
+                if (!text) return '';
+                return text
+                    .toLowerCase()
+                    .trim()
+                    // Normalize Unicode apostrophes and quotes (straight, curly, smart quotes, etc.)
+                    .replace(/[''""`´]/g, '')
+                    // Replace special characters (&, :, comma, etc.) with spaces
+                    .replace(/[&:,\'";!?.]/g, ' ')
+                    // Replace multiple spaces/hyphens with single hyphen
+                    .replace(/[\s\-_]+/g, '-')
+                    // Remove leading/trailing hyphens
+                    .replace(/^-+|-+$/g, '')
+                    // Remove any remaining non-alphanumeric characters except hyphens
+                    .replace(/[^a-z0-9\-]/g, '');
+            };
 
-            const blog = await Blog.findOne({
-                // Allow optional punctuation at the end (?, !, ., etc.) and trailing spaces
-                title: { $regex: new RegExp(`^${searchPattern}[?!.,;:\\s]*$`, 'i') }
-            }).populate('author', 'name');
+            // Normalize the incoming slug (remove any extra characters)
+            const normalizedSlug = normalizeToSlug(slug);
+
+            // Fetch all blogs and find the one with matching normalized title
+            const blogs = await Blog.find({}).populate('author', 'name');
+            
+            let blog = null;
+            for (const b of blogs) {
+                const normalizedTitle = normalizeToSlug(b.title);
+                if (normalizedTitle === normalizedSlug) {
+                    blog = b;
+                    break;
+                }
+            }
 
             if (!blog) {
-                console.log("blog not found", searchPattern)
+                // Debug: log first few normalized titles for troubleshooting
+                const sampleNormalized = blogs.slice(0, 5).map(b => ({
+                    title: b.title,
+                    normalized: normalizeToSlug(b.title)
+                }));
+                console.log("blog not found for slug:", slug);
+                console.log("normalized slug:", normalizedSlug);
+                console.log("sample normalized titles:", sampleNormalized);
                 return res.status(404).json({ message: 'Blog post not found' });
-                
             }
+            
             res.status(200).json(blog);
         } catch (error) {
             res.status(500).json({

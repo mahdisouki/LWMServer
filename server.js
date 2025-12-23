@@ -28,6 +28,7 @@ connectToDatabase()
     require('./jobs/AssignedStaffCron');
     require('./cron/clearNotifications');
     require('./cron/clearChats');
+    require('./cron/autoEndShifts');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })
