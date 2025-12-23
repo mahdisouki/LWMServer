@@ -142,6 +142,9 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
                         : paymentType === 'partial' ? "Partial Payment"
                             : "Payment",
                 description: `Payment for Task #${orderNumber}`,
+                images: [
+                    'https://res.cloudinary.com/dehzhd6xs/image/upload/v1766479049/Group_1261156242_1_caq0t0.png',
+                ],
             },
             unit_amount: amountInPence,
         },

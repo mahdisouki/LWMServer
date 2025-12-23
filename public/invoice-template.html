@@ -229,6 +229,28 @@
         color: #333;
       }
 
+      /* Customer notes box */
+      .notes-box {
+        background-color: #ffffff;
+        border-radius: 8px;
+        padding: 18px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        margin-bottom: 15px;
+      }
+
+      .notes-box strong {
+        color: #555;
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .notes-box .value {
+        font-size: 13px;
+        color: #333;
+        white-space: pre-wrap;
+      }
+
 
       .footer-right {
         flex: 1;
@@ -457,6 +479,10 @@
             <div class="date-time-box">
               <strong>Time:</strong>
               <span class="value">{{available}}</span>
+            </div>
+            <div class="notes-box">
+              <strong>Customer Notes:</strong>
+              <span class="value">{{additionalNotes}}</span>
             </div>
           </div>
 

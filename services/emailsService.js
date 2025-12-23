@@ -1145,7 +1145,7 @@ module.exports = {
 
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; padding: 24px; background-color: #ffffff;">
-          <div style="text-align: center; margin-bottom: 20px;">
+          <div style="text-align: center; margin-bottom: 20px; width: 100%; max-width: 600px;">
             <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png" alt="London Waste Management" style="max-width: 220px; height: auto;" />
           </div>
           <h2 style="margin: 0 0 12px; color: #b91c1c;">Payment Failed</h2>

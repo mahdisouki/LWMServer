@@ -26,3 +26,19 @@ exports.getPaymentHistoryById = async (req, res) => {
         res.status(500).json({ message: "Error fetching payment history by ID", error: error.message });
     }
 };
+
+// Get payment history by task ID
+exports.getPaymentHistoryByTaskId = async (req, res) => {
+    const { taskId } = req.params;
+
+    try {
+        const paymentHistories = await PaymentHistory.find({ taskId }).populate('taskId', 'firstName lastName phoneNumber');
+        if (!paymentHistories || paymentHistories.length === 0) {
+            return res.status(404).json({ message: "No payment history found for this task" });
+        }
+        res.status(200).json(paymentHistories);
+    } catch (error) {
+        console.error("Error fetching payment history by task ID:", error);
+        res.status(500).json({ message: "Error fetching payment history by task ID", error: error.message });
+    }
+};

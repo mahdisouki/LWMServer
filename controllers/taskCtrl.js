@@ -1726,7 +1726,7 @@ const taskCtrl = {
                     product_data: {
                       name: `Payment for Task ${taskId}`,
                       images: [
-                        'https://res.cloudinary.com/dfxeaeebv/image/upload/v1742959873/slpany1oqx09lxj72nmd.png',
+                        'https://res.cloudinary.com/dehzhd6xs/image/upload/v1766479049/Group_1261156242_1_caq0t0.png',
                       ],
                     },
                     unit_amount: amountInPence,
