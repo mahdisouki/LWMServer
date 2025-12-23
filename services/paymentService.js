@@ -50,8 +50,9 @@ async function calculateTotalPrice(taskId) {
     const vat = basePrice * VAT_RATE;
     let finalPrice = basePrice + vat;
 
-    // Apply minimum price of £45 (including VAT) - if under £37.5 base price, make it £37.5 + £7.5 VAT
-    if (finalPrice < MINIMUM_PRICE) {
+    // Apply minimum price if needed (check applyMinFee for Admin tasks)
+    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+    if (enforceMinimumPrice && finalPrice < MINIMUM_PRICE) {
         // Calculate the adjustment needed to reach £45 total
         const adjustment = MINIMUM_PRICE - finalPrice;
 
@@ -119,8 +120,9 @@ const calculateTotalPriceUpdate = async (taskId) => {
     const vat = basePrice * VAT_RATE;
     let finalPrice = basePrice + vat;
 
-    // Apply minimum price of £45 (including VAT) - if under £37.5 base price, make it £37.5 + £7.5 VAT
-    if (finalPrice < MINIMUM_PRICE) {
+    // Apply minimum price if needed (check applyMinFee for Admin tasks)
+    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+    if (enforceMinimumPrice && finalPrice < MINIMUM_PRICE) {
         finalPrice = MINIMUM_PRICE;
     }
 
