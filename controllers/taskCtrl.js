@@ -1977,6 +1977,26 @@ const taskCtrl = {
       }
     } catch (error) {
       console.error('Error confirming payment:', error);
+
+      // If Stripe returns a card_error (e.g. card_declined), send a failed-payment email
+      try {
+        const task = await Task.findById(taskId);
+        if (task) {
+          await sendPaymentFailedEmail({
+            email: task.email,
+            firstName: task.firstName,
+            lastName: task.lastName,
+            orderId: String(task._id),
+            amount: undefined, // we don't have a confirmed charge amount here
+            currency: 'GBP',
+            paymentType: 'Stripe',
+            reason: error?.message || 'Card was declined',
+          });
+        }
+      } catch (emailErr) {
+        console.error('Error sending Stripe failed-payment email (confirmStripeTaskPayment):', emailErr);
+      }
+
       return res
         .status(500)
         .json({ message: 'Error confirming payment', error: error.message });
@@ -2135,12 +2155,47 @@ const taskCtrl = {
           task,
         });
       } else {
+        // Capture did not complete successfully – send failed-payment email
+        try {
+          await sendPaymentFailedEmail({
+            email: task.email,
+            firstName: task.firstName,
+            lastName: task.lastName,
+            orderId: String(task._id),
+            amount: undefined,
+            currency: 'GBP',
+            paymentType: 'PayPal',
+            reason: `PayPal capture status: ${capture.result.status}`,
+          });
+        } catch (emailErr) {
+          console.error('Error sending PayPal failed-payment email (capturePayPalTaskPayment else):', emailErr);
+        }
+
         return res
           .status(400)
           .json({ message: 'Failed to capture payment', capture });
       }
     } catch (error) {
       console.error('Error capturing PayPal payment:', error);
+      // If capture throws (e.g. denied), send failed-payment email
+      try {
+        const task = await Task.findById(taskId);
+        if (task) {
+          await sendPaymentFailedEmail({
+            email: task.email,
+            firstName: task.firstName,
+            lastName: task.lastName,
+            orderId: String(task._id),
+            amount: undefined,
+            currency: 'GBP',
+            paymentType: 'PayPal',
+            reason: error.message || 'PayPal capture failed',
+          });
+        }
+      } catch (emailErr) {
+        console.error('Error sending PayPal failed-payment email (capturePayPalTaskPayment catch):', emailErr);
+      }
+
       return res.status(500).json({
         message: 'Failed to capture PayPal payment',
         error: error.message,
@@ -2696,6 +2751,52 @@ const taskCtrl = {
 
           // (optional) send email async as above…
           return res.status(200).send('Processed');
+        }
+
+        // Handle failed/denied PayPal captures – send failed-payment email only
+        case 'PAYMENT.CAPTURE.DENIED':
+        case 'PAYMENT.CAPTURE.REVERSED': {
+          try {
+            const capture = evt.resource;
+            const orderId = capture?.supplementary_data?.related_ids?.order_id;
+            if (!orderId) return res.status(200).send('Ignored – no order id');
+
+            const client = PayPalClient();
+            const getReq = new paypal.orders.OrdersGetRequest(orderId);
+            const getRes = await client.execute(getReq);
+            const pu = getRes.result.purchase_units?.[0];
+            const customIdRaw = pu?.custom_id;
+            const [customId] = (customIdRaw || '').split('|');
+            const payerEmail = getRes.result.payer?.email_address;
+
+            if (!customId) return res.status(200).send('Ignored – no custom_id');
+
+            const task = await Task.findById(customId);
+            if (!task) return res.status(200).send('Ignored – task not found');
+
+            const amountValue = capture?.amount?.value;
+            const currencyCode = capture?.amount?.currency_code || 'GBP';
+            const failureReason =
+              capture?.status_details?.reason ||
+              capture?.reason ||
+              `PayPal event type: ${evt.event_type}`;
+
+            await sendPaymentFailedEmail({
+              email: task.email || payerEmail,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              orderId: String(task._id),
+              amount: amountValue != null ? Number(amountValue) : undefined,
+              currency: currencyCode,
+              paymentType: 'PayPal',
+              reason: failureReason,
+            });
+
+            return res.status(200).send('PayPal failed payment handled');
+          } catch (err) {
+            console.error('Error handling PayPal failed payment webhook:', err);
+            return res.status(200).send('PayPal failed payment handling error (logged)');
+          }
         }
 
         default:
