@@ -164,11 +164,6 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
         success_url: `${CLIENT_URL}/payment/success?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=stripe`,
         cancel_url: `${CLIENT_URL}/payment/failed?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=stripe`,
         metadata: metadata,
-        payment_method_options: {
-            link: {
-                enabled: false,
-            },
-        },
         custom_text: {
             submit: {
                 message: "Thank you for choosing London Waste Management!",
