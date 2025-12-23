@@ -164,7 +164,6 @@ router.post('/task/pay/:taskId', taskCtrl.processTaskPayment);
 router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);
 
 router.post('/task/capture-paypal-payment', taskCtrl.capturePayPalTaskPayment);
-
 router.post('/task/sendPayement/:taskId', taskCtrl.generatePaymentLinks);
 // Stripe Webhook
 // router.post('/webhooks/stripe',express.raw({ type: 'application/json' }),  taskCtrl.handleStripeWebhook);

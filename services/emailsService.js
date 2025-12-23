@@ -1130,6 +1130,63 @@ module.exports = {
       throw error;
     }
   },
+
+  async sendPaymentFailedEmail({ email, firstName, lastName, orderId, amount, currency, paymentType, reason }) {
+    try {
+      const task = await Task.findById(orderId);
+      if (!task) {
+        throw new Error(`Task not found with ID: ${orderId}`);
+      }
+
+      const safeAmount = typeof amount === 'number' && !isNaN(amount) ? amount.toFixed(2) : 'N/A';
+      const safeCurrency = currency || 'GBP';
+      const safePaymentType = paymentType || 'Online Payment';
+      const displayName = `${firstName || ''} ${lastName || ''}`.trim() || 'Customer';
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #e5e7eb; padding: 24px; background-color: #ffffff;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png" alt="London Waste Management" style="max-width: 220px; height: auto;" />
+          </div>
+          <h2 style="margin: 0 0 12px; color: #b91c1c;">Payment Failed</h2>
+          <p style="margin: 0 0 12px; color: #111827;">
+            Hello ${displayName},
+          </p>
+          <p style="margin: 0 0 12px; color: #374151;">
+            Unfortunately, your recent ${safePaymentType} for order <strong>#${task.orderNumber || orderId}</strong> could not be completed.
+          </p>
+          <p style="margin: 0 0 12px; color: #374151;">
+            <strong>Amount:</strong> ${safeAmount !== 'N/A' ? `${safeCurrency} ${safeAmount}` : 'N/A'}<br/>
+            <strong>Payment method:</strong> ${safePaymentType}
+          </p>
+          ${reason ? `<p style="margin: 0 0 12px; color: #6b7280;"><strong>Reason:</strong><br/>${reason}</p>` : ''}
+          <p style="margin: 0 0 12px; color: #374151;">
+            No money has been taken from your account for this failed attempt. You can try again using the secure payment link we sent you, or choose another payment method.
+          </p>
+          <p style="margin: 0 0 12px; color: #374151;">
+            If you continue to experience issues, please contact us at
+            <a href="mailto:hello@londonwastemanagement.com" style="color: #16a34a; text-decoration: none;">hello@londonwastemanagement.com</a>
+            or call us on <a href="tel:02030971517" style="color: #16a34a; text-decoration: none;">0203 097 1517</a>.
+          </p>
+          <p style="margin: 16px 0 0; color: #4b5563; font-size: 13px;">
+            Kind regards,<br/>
+            <strong>London Waste Management</strong>
+          </p>
+        </div>
+      `;
+
+      await transporter.sendMail({
+        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+        to: email,
+        subject: `Payment Failed - Order #${task.orderNumber || orderId}`,
+        html,
+      });
+    } catch (error) {
+      console.error('Error sending payment failed email:', error);
+      // Do not rethrow: payment failure email should not break main flow
+    }
+  },
+
   sendRefundEmail,
 };
 
