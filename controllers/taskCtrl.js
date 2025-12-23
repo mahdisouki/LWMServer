@@ -406,6 +406,7 @@ const taskCtrl = {
         customDiscountPercent,
         discountType,
         hasDiscount,
+        orderNumber,
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
         // customDiscountPercent > 0,
