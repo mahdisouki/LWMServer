@@ -292,7 +292,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
                   <td align="center" style="padding:12px 16px 18px;">
                     <a href="${stripeLink}"
                       style="background:#635BFF; color:#ffffff; padding:10px 18px; font-size:13px; text-decoration:none; text-transform:uppercase; margin-right:6px; display:inline-block;">
-                      Pay with Stripe
+                      Pay with Credit Card / Debit Card
                     </a>
                     <a href="${paypalLink}"
                       style="background:#003087; color:#ffffff; padding:10px 18px; font-size:13px; text-decoration:none; text-transform:uppercase; display:inline-block;">
