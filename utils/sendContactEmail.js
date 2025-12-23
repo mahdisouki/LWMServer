@@ -141,7 +141,7 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
           <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" width="100%" class="main-table" style="border-collapse: collapse; margin: 0 auto; padding: 0; width: 100%; max-width: 600px; background: #ffffff;">
             <tr>
               <td class="section hero" style="padding: 0; line-height: 0;" align="center">
-                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png" alt="London Waste Management" width="600" style="display: block; width: 600px; max-width: 100%; height: auto; margin: 0; border: 0; line-height: 0;" />
+                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1766528514/Group_1261156245_ngvccs.png" alt="London Waste Management" width="600" style="display: block; width: 600px; max-width: 100%; height: auto; margin: 0; border: 0; line-height: 0;" />
               </td>
             </tr>
             <tr>

@@ -225,7 +225,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
           style="border-collapse:collapse; max-width:600px; background:#ffffff; box-shadow:0 15px 38px rgba(0,0,0,0.20);">
           <tr>
             <td style="padding:0; line-height:0;">
-              <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1763549850/Group_1261156226_hfpvko.png"
+              <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1766528514/Group_1261156245_ngvccs.png"
                 width="600"
                 style="display:block; width:100%; height:auto; border:0; margin:0;" />
             </td>
