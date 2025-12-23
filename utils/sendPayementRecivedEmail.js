@@ -330,6 +330,7 @@ module.exports = {
       billingName: `${task.firstName} ${task.lastName}`,
       billingAddress: task.billingAddress,
       email: task.email,
+      postcode: task.postcode,
       phone: task.phoneNumber,
       phone2: task.phoneNumber2,
       invoiceNumber: task.orderNumber,
