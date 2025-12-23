@@ -136,7 +136,7 @@ const sendContact2Email = async ({ responsibleEmail, contactData }) => {
                             </p>
                             <div style="width: 92px; height: 5px; background: #28c152; margin: 0 0 24px;"></div>
                             <p style="font-size: 17px; line-height: 1.8; margin: 0 0 18px; color: #374237;">
-                              Thank you for your moving service request. We have received your message and will get back to you as soon as possible.
+                              Thank you for contacting us. We have received your message and will get back to you as soon as possible.
                             </p>
                             <p style="font-size: 17px; line-height: 1.8; margin: 0 0 22px; color: #374237;">
                               If you have any questions or need assistance, please contact us at
