@@ -756,17 +756,27 @@ module.exports = {
     const task = await Task.findById(taskId).populate('items.standardItemId');
     if (!task) throw new Error('Task not found');
 
+    // Avoid sending duplicate waste transfer notes
+    if (task.wasteTransferNoteSent) {
+      return;
+    }
+
     const templatePath = path.join(__dirname, '../public/templates/wastenote.html');
     let template = fs.readFileSync(templatePath, 'utf8');
 
-    // Build product rows
-    const productRows = task.items.map(item => `
-      <div class="bg-white grid grid-cols-3 p-2 border-b border-gray-200">
-        <div>${item.standardItemId?.itemName || item.object || 'Unnamed Item'}</div>
-        <div class="text-center">${item.quantity || 1}</div>
-        <div class="text-right">£${(item.price || item.standardItemId?.price || 0).toFixed(2)}</div>
-      </div>
-    `).join('');
+    // Build product rows as HTML table rows (one row per product)
+    const productRows = task.items
+      .map((item) => {
+        const name = item.standardItemId?.itemName || item.object || 'Unnamed Item';
+        const quantity = item.quantity || 1;
+        const price = (item.price || item.standardItemId?.price || 0).toFixed(2);
+        return `<tr>
+  <td style="padding: 8px 10px; border-bottom: 1px solid #f3f4f6;">${name}</td>
+  <td style="padding: 8px 10px; border-bottom: 1px solid #f3f4f6; text-align: center;">${quantity}</td>
+  <td style="padding: 8px 10px; border-bottom: 1px solid #f3f4f6; text-align: right;">£${price}</td>
+</tr>`;
+      })
+      .join('');
 
     // Build EWC codes
     const ewcCodes = task.items
@@ -790,6 +800,10 @@ module.exports = {
       subject: `Waste Transfer Note for Order #${task.orderNumber}`,
       html: template,
     });
+
+    // Mark as sent
+    task.wasteTransferNoteSent = true;
+    await task.save();
   },
 
   async sendGeneralInvoiceEmail(taskId) {

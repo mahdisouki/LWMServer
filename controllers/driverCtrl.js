@@ -9,6 +9,7 @@ const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser, emitEvent } = require('../socket');
 const sendReviewRequestEmail = require('../utils/sendReviewEmail');
+const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const adminId = "67cb6810c9e768ec25d39523"
 
 function getTodayDateRange() {
@@ -991,6 +992,11 @@ const driverManagement = {
       // Update the task status
       task.taskStatus = taskStatus;
       await task.save();
+
+      // When job is completed, send Waste Transfer Note email
+      if (task.taskStatus === 'Completed') {
+        await sendWasteTransferNoteEmail(task._id);
+      }
       res
         .status(200)
         .json({
@@ -1048,6 +1054,9 @@ const driverManagement = {
       });
 
       await task.save();
+
+      // Ensure Waste Transfer Note email is sent after rating/completion
+      await sendWasteTransferNoteEmail(task._id);
       res.status(200).json({
         message: `Task rated successfully by `,
         task,

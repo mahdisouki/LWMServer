@@ -142,6 +142,7 @@ const taskSchema = new Schema(
     cashReceivedBy: { type: String },
     repeatCustomer: { type: Number, default: 0 },
     reviewRequestSent: { type: Boolean, default: false },
+    wasteTransferNoteSent: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

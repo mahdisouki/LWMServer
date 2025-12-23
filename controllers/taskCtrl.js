@@ -946,6 +946,8 @@ const taskCtrl = {
       // If the task status has just been switched to Completed, refresh daily sheets
       if (updatedTask && updatedTask.taskStatus === 'Completed') {
         await updateDailySheetForTask(updatedTask);
+        // Send Waste Transfer Note email once per task
+        await sendWasteTransferNoteEmail(updatedTask._id);
       }
 
       // Create a log of the status change
