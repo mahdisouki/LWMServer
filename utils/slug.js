@@ -8,27 +8,27 @@
  *  - "Environment‌ and‌ personal‌ responsibility‌" -> "environment-and-personal-responsibility"
  */
 const normalizeToSlug = (text) => {
-  if (!text) return '';
+    if (!text) return '';
 
-  return text
-    .toString()
-    // Normalize accents (é → e, etc.)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim()
-    // Normalize all quotes/apostrophes
-    .replace(/['’“”"`´]/g, '')
-    // Treat & and + as "and" for more human-friendly slugs
-    .replace(/[&+]/g, ' and ')
-    // Treat slashes, pipes, brackets, and most punctuation as separators
-    .replace(/[/\\|,:;!?.(){}\[\]<>\u2013\u2014]/g, ' ')
-    // Turn any run of non-alphanumeric into a single hyphen
-    .replace(/[^a-z0-9]+/g, '-')
-    // Collapse multiple hyphens
-    .replace(/-+/g, '-')
-    // Trim leading/trailing hyphens
-    .replace(/^-+|-+$/g, '');
+    return text
+        .toString()
+        // Normalize accents (é → e, etc.)
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim()
+        // Normalize all quotes/apostrophes
+        .replace(/['’“”"`´]/g, '')
+        // Treat + as "and" for more human-friendly slugs (preserve &)
+        .replace(/\+/g, ' and ')
+        // Treat slashes, pipes, brackets, and most punctuation as separators (preserve : and &)
+        .replace(/[/\\|,;!?.(){}\[\]<>\u2013\u2014]/g, ' ')
+        // Turn any run of non-alphanumeric (except & and :) into a single hyphen
+        .replace(/[^a-z0-9&:]+/g, '-')
+        // Collapse multiple hyphens
+        .replace(/-+/g, '-')
+        // Trim leading/trailing hyphens
+        .replace(/^-+|-+$/g, '');
 };
 
 /**
@@ -41,19 +41,19 @@ const normalizeToSlug = (text) => {
  *  all compare equal to "vacuumshoovers".
  */
 const normalizeForSlugCompare = (text) => {
-  if (!text) return '';
+    if (!text) return '';
 
-  return text
-    .toString()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+    return text
+        .toString()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
 };
 
 module.exports = {
-  normalizeToSlug,
-  normalizeForSlugCompare,
+    normalizeToSlug,
+    normalizeForSlugCompare,
 };
 
 
