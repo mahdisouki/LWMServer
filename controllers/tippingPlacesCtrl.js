@@ -4,6 +4,11 @@ const loggingService = require('../services/loggingService');
 const tippingPlaceController = {
     createTippingPlace: async (req, res) => {
         try {
+            // Handle image upload if provided
+            if (req.file) {
+                req.body.image = req.file.path;
+            }
+
             const newTippingPlace = new TippingPlace(req.body);
             await newTippingPlace.save();
 
@@ -57,6 +62,11 @@ const tippingPlaceController = {
             const oldTippingPlace = await TippingPlace.findById(id);
             if (!oldTippingPlace) {
                 return res.status(404).json({ message: "Tipping place not found" });
+            }
+
+            // Handle image upload if provided
+            if (req.file) {
+                req.body.image = req.file.path;
             }
 
             const updatedTippingPlace = await TippingPlace.findByIdAndUpdate(id, req.body, { new: true });

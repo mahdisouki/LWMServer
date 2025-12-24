@@ -1,4 +1,5 @@
 const QuotationRequest = require('../models/QuotationRequest');
+const Task = require('../models/Task');
 const sendQuotationEmail = require('../utils/sendQuotationEmail'); // Utility function to send email notifications
 const APIfeatures = require('../utils/APIFeatures');
 const FormData = require('form-data')
@@ -210,9 +211,31 @@ const quotationRequestController = {
             // Get total count for pagination
             const total = await QuotationRequest.countDocuments(query);
 
+            // Get all quotation IDs to check for associated orders
+            const quotationIds = quotations.map(q => q._id);
+
+            // Find all tasks that have these quotationIds
+            const tasksWithQuotations = await Task.find({
+                quotationId: { $in: quotationIds }
+            }).select('quotationId');
+
+            // Create a Set of quotationIds that have orders for quick lookup
+            const quotationsWithOrders = new Set(
+                tasksWithQuotations
+                    .map(task => task.quotationId?.toString())
+                    .filter(id => id)
+            );
+
+            // Add hasOrder field to each quotation (computed field, not in database schema)
+            const quotationsWithOrderStatus = quotations.map(quotation => {
+                const quotationObj = quotation.toObject();
+                quotationObj.hasOrder = quotationsWithOrders.has(quotation._id.toString());
+                return quotationObj;
+            });
+
             res.status(200).json({
                 message: "All quotations retrieved successfully",
-                quotations,
+                quotations: quotationsWithOrderStatus,
                 meta: {
                     currentPage: parseInt(page, 10),
                     limit: parseInt(limit, 10),

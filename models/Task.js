@@ -144,6 +144,12 @@ const taskSchema = new Schema(
     reviewRequestSent: { type: Boolean, default: false },
     wasteTransferNoteSent: { type: Boolean, default: false },
     applyMinFee: { type: Boolean, default: false }, // Admin option to apply minimum fee
+    quotationId: {
+      type: Schema.Types.ObjectId,
+      ref: 'QuotationRequest', // Reference to your Quotation model
+      required: false, // Make it optional
+      default: null
+    },
   },
   { timestamps: true }
 );

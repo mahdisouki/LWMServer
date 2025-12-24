@@ -283,6 +283,7 @@ const taskCtrl = {
         discountType,
         applyMinFee, // Admin option to apply minimum fee
         orderNumber, // Optional order number (for migrations or manual entry)
+        quotationId,
       } = req.body;
 
       // ✅ Convert FormData string to boolean
@@ -414,6 +415,7 @@ const taskCtrl = {
         additionalNotes,
         privateNotes,
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
+        quotationId: quotationId || null,
       });
 
       const savedTask = await newTask.save();
@@ -495,7 +497,7 @@ const taskCtrl = {
       const { data: tasks, meta } = await paginateQuery(
         Task,
         req.query,
-        ['paymentStatus', 'date', 'orderNumber'], // filters
+        ['paymentStatus', 'date', 'orderNumber', 'quotationId'], // filters
         [
           'firstName',
           'lastName',
