@@ -103,6 +103,32 @@
           max-height: none !important;
         }
       }
+
+      /* Read more expandable section */
+      .read-more-checkbox {
+        display: none !important;
+      }
+      .read-more-content {
+        display: none !important;
+      }
+      .read-more-checkbox:checked ~ .read-more-content {
+        display: block !important;
+      }
+      .read-more-checkbox:checked ~ p .read-more-label .read-more-text {
+        display: none !important;
+      }
+      .read-more-checkbox:checked ~ p .read-more-label .read-less-text {
+        display: inline !important;
+      }
+      .read-less-text {
+        display: none !important;
+      }
+      .read-more-label {
+        color: #4caf50 !important;
+        text-decoration: underline !important;
+        cursor: pointer !important;
+        font-weight: bold !important;
+      }
     </style>
   </head>
   <body
@@ -528,6 +554,12 @@
                       >
                         <tr>
                           <td style="padding: 20px">
+                            <input
+                              type="checkbox"
+                              id="read-more-toggle"
+                              class="read-more-checkbox"
+                              style="display: none !important"
+                            />
                             <p
                               style="
                                 font-size: 16px;
@@ -538,72 +570,95 @@
                               "
                             >
                               There is nothing else you need to do.
+                              <label
+                                for="read-more-toggle"
+                                class="read-more-label"
+                                style="
+                                  color: #4caf50 !important;
+                                  text-decoration: underline !important;
+                                  cursor: pointer !important;
+                                  font-weight: bold !important;
+                                  margin-left: 5px;
+                                "
+                              >
+                                <span class="read-more-text">Read more</span>
+                                <span
+                                  class="read-less-text"
+                                  style="display: none !important"
+                                  >Read less</span
+                                >
+                              </label>
                             </p>
-                            <p
-                              style="
-                                font-size: 16px;
-                                line-height: 1.6;
-                                margin: 0 0 15px 0;
-                                color: #333333;
-                                font-family: Arial, Helvetica, sans-serif;
-                              "
+                            <div
+                              class="read-more-content"
+                              style="margin-top: 0"
                             >
-                              If you wish to cancel please give us at least 48
-                              hours notice via email, in order to receive a full
-                              refund, otherwise our system will apply an
-                              automatic cancellation fee of £45.
-                            </p>
-                            <p
-                              style="
-                                font-size: 16px;
-                                line-height: 1.6;
-                                margin: 0 0 15px 0;
-                                color: #333333;
-                                font-family: Arial, Helvetica, sans-serif;
-                              "
-                            >
-                              If your collection is for tomorrow, please let us
-                              know in the next 30 minutes if you wish to change
-                              your mind.
-                            </p>
-                            <p
-                              style="
-                                font-size: 18px;
-                                font-weight: bold;
-                                line-height: 1.6;
-                                margin: 20px 0 10px 0;
-                                color: #333333;
-                                font-family: Arial, Helvetica, sans-serif;
-                              "
-                            >
-                              What happens next?
-                            </p>
-                            <p
-                              style="
-                                font-size: 16px;
-                                line-height: 1.6;
-                                margin: 0 0 15px 0;
-                                color: #333333;
-                                font-family: Arial, Helvetica, sans-serif;
-                              "
-                            >
-                              Our drivers will call you on the day when they are
-                              on their way to you and usually give around 20
-                              minutes notice before arriving within your
-                              scheduled time slot.
-                            </p>
-                            <p
-                              style="
-                                font-size: 16px;
-                                line-height: 1.6;
-                                margin: 0;
-                                color: #333333;
-                                font-family: Arial, Helvetica, sans-serif;
-                              "
-                            >
-                              You are not required to be present for your
-                              collection if the items are outside.
-                            </p>
+                              <p
+                                style="
+                                  font-size: 16px;
+                                  line-height: 1.6;
+                                  margin: 0 0 15px 0;
+                                  color: #333333;
+                                  font-family: Arial, Helvetica, sans-serif;
+                                "
+                              >
+                                If you wish to cancel please give us at least 48
+                                hours notice via email, in order to receive a
+                                full refund, otherwise our system will apply an
+                                automatic cancellation fee of £45.
+                              </p>
+                              <p
+                                style="
+                                  font-size: 16px;
+                                  line-height: 1.6;
+                                  margin: 0 0 15px 0;
+                                  color: #333333;
+                                  font-family: Arial, Helvetica, sans-serif;
+                                "
+                              >
+                                If your collection is for tomorrow, please let
+                                us know in the next 30 minutes if you wish to
+                                change your mind.
+                              </p>
+                              <p
+                                style="
+                                  font-size: 18px;
+                                  font-weight: bold;
+                                  line-height: 1.6;
+                                  margin: 20px 0 10px 0;
+                                  color: #333333;
+                                  font-family: Arial, Helvetica, sans-serif;
+                                "
+                              >
+                                What happens next?
+                              </p>
+                              <p
+                                style="
+                                  font-size: 16px;
+                                  line-height: 1.6;
+                                  margin: 0 0 15px 0;
+                                  color: #333333;
+                                  font-family: Arial, Helvetica, sans-serif;
+                                "
+                              >
+                                Our drivers will call you on the day when they
+                                are on their way to you and usually give around
+                                20 minutes notice before arriving within your
+                                scheduled time slot.
+                              </p>
+                              <p
+                                style="
+                                  font-size: 16px;
+                                  line-height: 1.6;
+                                  margin: 0;
+                                  color: #333333;
+                                  font-family: Arial, Helvetica, sans-serif;
+                                "
+                              >
+                                You are not required to be present for your
+                                collection if the items are outside.
+                              </p>
+                            </div>
                           </td>
                         </tr>
                       </table>
