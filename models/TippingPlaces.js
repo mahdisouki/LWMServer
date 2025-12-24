@@ -49,6 +49,9 @@ const TippingPlaceSchema = new Schema({
           required: false,
         },
       },
+    image: {
+        type: String
+    },
 }, { timestamps: true });
 
 const TippingPlace = mongoose.model('TippingPlace', TippingPlaceSchema);
