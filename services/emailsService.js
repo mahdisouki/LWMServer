@@ -827,12 +827,29 @@ module.exports = {
   },
 
   async sendWasteTransferNoteEmail(taskId) {
-    const task = await Task.findById(taskId).populate('items.standardItemId');
-    if (!task) throw new Error('Task not found');
+    // Use atomic operation to prevent race conditions - only update if not already sent
+    const task = await Task.findOneAndUpdate(
+      { 
+        _id: taskId, 
+        wasteTransferNoteSent: { $ne: true } // Only match if not already sent
+      },
+      { 
+        $set: { wasteTransferNoteSent: true } // Atomically set the flag
+      },
+      { 
+        new: true // Return updated document
+      }
+    ).populate('items.standardItemId');
 
-    // Avoid sending duplicate waste transfer notes
-    if (task.wasteTransferNoteSent) {
-      return;
+    // If task is null, it means either task doesn't exist or email was already sent
+    if (!task) {
+      // Check if task exists but email was already sent
+      const existingTask = await Task.findById(taskId);
+      if (existingTask && existingTask.wasteTransferNoteSent) {
+        // Email already sent, silently return
+        return;
+      }
+      throw new Error('Task not found');
     }
 
     const templatePath = path.join(__dirname, '../public/templates/wastenote.html');
@@ -868,16 +885,18 @@ module.exports = {
     template = template.replace(/{{timeSlot}}/g, task.available?.replace(/_/g, ' ') || '');
     template = template.replace(/{{additionalNotes}}/g, task.additionalNotes || 'No additional notes provided.');
 
-    await transporter.sendMail({
-      from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
-      to: task.email,
-      subject: `Waste Transfer Note for Order #${task.orderNumber}`,
-      html: template,
-    });
-
-    // Mark as sent
-    task.wasteTransferNoteSent = true;
-    await task.save();
+    try {
+      await transporter.sendMail({
+        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+        to: task.email,
+        subject: `Waste Transfer Note for Order #${task.orderNumber}`,
+        html: template,
+      });
+    } catch (error) {
+      // If email fails, reset the flag so it can be retried
+      await Task.findByIdAndUpdate(taskId, { $set: { wasteTransferNoteSent: false } });
+      throw error;
+    }
   },
 
   async sendGeneralInvoiceEmail(taskId) {
