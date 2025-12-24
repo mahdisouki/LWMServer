@@ -6,6 +6,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 const axios = require('axios');
 const { emitNotificationToUser } = require('../socket');
 const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
+const { User } = require('../models/User');
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
         try {
@@ -112,8 +113,30 @@ const quotationRequestController = {
 
             const responsibleEmail = 'eyatrk24@gmail.com';
             await sendQuotationEmail({ responsibleEmail, quotationData });
+            
+            // Send notification to all admins
+            try {
+                const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+                const customerName = firstName && lastName
+                    ? `${firstName} ${lastName}`
+                    : 'Customer';
+                const notificationMessage = `A new quotation request has been submitted by ${customerName}`;
 
-            emitNotificationToUser("67cb6810c9e768ec25d39523", "Quotations", "A new quotation request has been submitted");
+                // Send notification to all admins
+                for (const admin of adminUsers) {
+                    if (admin._id) {
+                        await emitNotificationToUser(
+                            admin._id.toString(),
+                            'Quotations',
+                            notificationMessage,
+                            customerName
+                        );
+                    }
+                }
+            } catch (notificationError) {
+                console.error('Error sending notification to admin:', notificationError);
+                // Don't fail the request if notification fails
+            }
 
             res.status(201).json({
                 message: 'Quotation request submitted successfully',
