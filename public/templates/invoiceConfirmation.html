@@ -15,6 +15,12 @@
     <title>London Waste Management - Invoice Confirmation</title>
     <style type="text/css">
       /* Reset styles for email clients */
+      html {
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
       body,
       table,
       td,
@@ -24,6 +30,12 @@
       blockquote {
         -webkit-text-size-adjust: 100%;
         -ms-text-size-adjust: 100%;
+      }
+      body {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        height: auto !important;
+        min-height: 100%;
       }
       table,
       td {
@@ -70,6 +82,26 @@
           margin: 3px 0 10px 0 !important;
           width: 100% !important;
         }
+        body {
+          overflow-y: auto !important;
+          -webkit-overflow-scrolling: touch !important;
+          height: auto !important;
+        }
+        html {
+          overflow-y: auto !important;
+          -webkit-overflow-scrolling: touch !important;
+        }
+      }
+
+      /* iOS specific fixes for scrolling */
+      @supports (-webkit-overflow-scrolling: touch) {
+        html,
+        body {
+          overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          height: auto !important;
+          max-height: none !important;
+        }
       }
     </style>
   </head>
@@ -79,6 +111,9 @@
       padding: 0;
       background-color: #ffffff;
       font-family: Arial, Helvetica, sans-serif;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      height: auto;
     "
   >
     <!-- Wrapper Table -->
@@ -88,7 +123,7 @@
       cellpadding="0"
       border="0"
       width="100%"
-      style="background-color: #ffffff"
+      style="background-color: #ffffff; height: auto; min-height: 100%"
     >
       <tr>
         <td align="center" style="padding: 0">
