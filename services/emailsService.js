@@ -590,7 +590,7 @@ module.exports = {
     await generateOfficialInvoicePDF(data, filePath);
 
     await sendEmail({
-      to: 'soukimahdi@gmail.com',
+      to: 'hello@londonwastemanagement.com',
       subject: `New Order #${data.orderNumber}`,
       html: `<p>New partial payment received for Order #${data.orderNumber}.</p>`,
       attachments: [{ path: filePath }],

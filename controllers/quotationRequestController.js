@@ -111,9 +111,9 @@ const quotationRequestController = {
                 items,
             };
 
-            const responsibleEmail = 'eyatrk24@gmail.com';
+            const responsibleEmail = 'hello@londonwastemanagement.com';
             await sendQuotationEmail({ responsibleEmail, quotationData });
-            
+
             // Send notification to all admins
             try {
                 const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
@@ -333,7 +333,7 @@ const quotationRequestController = {
                 files,
             };
 
-            const responsibleEmail = 'eyatrk24@gmail.com';
+            const responsibleEmail = 'hello@londonwastemanagement.com';
             const sendContactEmail = require('../utils/sendContactEmail');
             await sendContactEmail({ responsibleEmail, contactData });
 
