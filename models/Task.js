@@ -142,6 +142,7 @@ const taskSchema = new Schema(
     cashReceivedBy: { type: String },
     repeatCustomer: { type: Number, default: 0 },
     reviewRequestSent: { type: Boolean, default: false },
+    preventReviewEmail: { type: Boolean, default: false }, // Prevent sending review email for this task
     wasteTransferNoteSent: { type: Boolean, default: false },
     applyMinFee: { type: Boolean, default: false }, // Admin option to apply minimum fee
     quotationId: {

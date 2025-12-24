@@ -13,6 +13,7 @@ const sendGeneralContactEmail = async ({ responsibleEmail, contactData }) => {
   const mailOptionsToResponsible = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: responsibleEmail,
+    replyTo: contactData.email, // Replies go directly to the customer
     subject: `New Contact Request from ${contactData.fullName}`,
     html: `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">

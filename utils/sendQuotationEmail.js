@@ -28,6 +28,7 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
     const mailOptionsToResponsible = {
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: responsibleEmail, // Adresse email du responsable
+        replyTo: quotationData.email, // Replies go directly to the customer
         subject: `New Quotation Request from ${quotationData.firstName || ''} ${quotationData.lastName || ''}`.trim(),
         html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9; padding: 20px;">

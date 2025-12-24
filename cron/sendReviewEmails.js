@@ -3,25 +3,26 @@ const Task = require('../models/Task');
 const sendReviewRequestEmail = require('../utils/sendReviewEmail');
 
 /**
- * Sends review emails to customers who completed orders before 12 PM yesterday
+ * Sends review emails to customers who completed orders yesterday
  * Runs daily at 12:00 PM (noon)
- * Tasks completed before 12 PM on day X will receive review email on day X+1 at 12 PM
+ * Tasks completed on day X (any time) will receive review email on day X+1 at 12 PM
  * Only sends one review email per customer (by email address)
  * Increments repeatCustomer on all tasks for a customer when sending their first review email
  */
 async function sendScheduledReviewEmails() {
     try {
         const now = new Date();
-        // Calculate yesterday at 12:00 PM (noon) - this is the cutoff time
-        // Tasks completed before 12 PM yesterday should be sent today at 12 PM
-        const yesterdayNoon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0, 0);
+        // Calculate today at 00:00:00 - this is the cutoff time
+        // Tasks completed yesterday (any time) should be sent today at 12 PM
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
-        // Find tasks that were completed before 12 PM yesterday and haven't had review email sent
+        // Find tasks that were completed yesterday (any time) and haven't had review email sent
         // Only check finishDate since we're filtering by taskStatus: 'Completed'
         const tasksToProcess = await Task.find({
             taskStatus: 'Completed',
             reviewRequestSent: { $ne: true },
-            finishDate: { $exists: true, $lt: yesterdayNoon }, // Completed before yesterday 12 PM
+            preventReviewEmail: { $ne: true }, // Don't send if prevented
+            finishDate: { $exists: true, $lt: todayStart }, // Completed before today (i.e., yesterday or earlier)
             email: { $exists: true, $ne: null, $ne: '' } // Must have email
         }).sort({ finishDate: 1 }); // Sort by completion date, oldest first
 
