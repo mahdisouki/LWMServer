@@ -120,6 +120,12 @@
       .read-more-checkbox:checked ~ p .read-more-label .read-less-text {
         display: inline !important;
       }
+      .read-more-checkbox:not(:checked) ~ p .read-more-label .read-more-text {
+        display: inline !important;
+      }
+      .read-more-checkbox:not(:checked) ~ p .read-more-label .read-less-text {
+        display: none !important;
+      }
       .read-less-text {
         display: none !important;
       }
@@ -582,11 +588,7 @@
                                 "
                               >
                                 <span class="read-more-text">Read more</span>
-                                <span
-                                  class="read-less-text"
-                                  style="display: none !important"
-                                  >Read less</span
-                                >
+                                <span class="read-less-text">Read less</span>
                               </label>
                             </p>
                             <div
