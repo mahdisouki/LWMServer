@@ -196,13 +196,13 @@ const sendOneSignalWebNotification = async (playerId, title, message, data = {})
       // Web push specific options
       web_push: {
         // Optional: Add your website icon URL
-        chrome_web_icon: data.iconUrl || 'https://client.londonwastemanagement.uk/icon-192x192.png',
-        chrome_web_badge: data.badgeUrl || 'https://client.londonwastemanagement.uk/badge-96x96.png',
+        chrome_web_icon: data.iconUrl || 'https://www.londonwastemanagement.com/icon-192x192.png',
+        chrome_web_badge: data.badgeUrl || 'https://www.londonwastemanagement.com/badge-96x96.png',
         // Optional: Large image for notification
         chrome_web_image: data.imageUrl || undefined,
       },
       // URL to open when notification is clicked
-      url: data.url || 'https://client.londonwastemanagement.uk',
+      url: data.url || 'https://www.londonwastemanagement.com',
       // Web push buttons (optional)
       web_buttons: data.buttons || undefined,
     };
@@ -264,11 +264,11 @@ const sendOneSignalWebNotificationToMultiple = async (playerIds, title, message,
       data: data,
       // Web push specific options
       web_push: {
-        chrome_web_icon: data.iconUrl || 'https://client.londonwastemanagement.uk/icon-192x192.png',
-        chrome_web_badge: data.badgeUrl || 'https://client.londonwastemanagement.uk/badge-96x96.png',
+        chrome_web_icon: data.iconUrl || 'https://www.londonwastemanagement.com/icon-192x192.png',
+        chrome_web_badge: data.badgeUrl || 'https://www.londonwastemanagement.com/badge-96x96.png',
         chrome_web_image: data.imageUrl || undefined,
       },
-      url: data.url || 'https://client.londonwastemanagement.uk',
+      url: data.url || 'https://www.londonwastemanagement.com',
       web_buttons: data.buttons || undefined,
     };
 

@@ -127,6 +127,11 @@ function mapPaymentStatus(orderStatus) {
     return 'Paid';
   }
 
+  // Processing signifie aussi que c'est payé
+  if (status.includes('processing')) {
+    return 'Paid';
+  }
+
   if (status.includes('partial paid') || status.includes('partial')) {
     return 'partial_Paid';
   }
