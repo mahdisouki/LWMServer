@@ -3270,6 +3270,36 @@ const taskCtrl = {
       });
     }
   },
+
+  togglePreventReviewEmail: async (req, res) => {
+    const { taskId } = req.params;
+    const { preventReviewEmail } = req.body;
+    
+    try {
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      task.preventReviewEmail = preventReviewEmail !== undefined ? preventReviewEmail : !task.preventReviewEmail;
+      await task.save();
+
+      res.status(200).json({
+        message: `Review email ${task.preventReviewEmail ? 'prevented' : 'enabled'} for task ${task.orderNumber}`,
+        task: {
+          _id: task._id,
+          orderNumber: task.orderNumber,
+          preventReviewEmail: task.preventReviewEmail
+        }
+      });
+    } catch (error) {
+      console.error('Error toggling prevent review email:', error);
+      res.status(500).json({
+        message: 'Failed to update prevent review email setting',
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = taskCtrl;

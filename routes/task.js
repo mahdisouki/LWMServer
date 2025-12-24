@@ -174,4 +174,5 @@ router.post('/webhooks/paypal', express.json(), taskCtrl.handlePayPalWebhook);
 router.post('/task/:taskId/send-booking-confirmation', taskCtrl.sendBookingConfirmation);
 router.post('/task/:taskId/send-invoice', taskCtrl.sendInvoice);
 router.post('/task/:taskId/send-waste-transfer-note', taskCtrl.sendWasteTransferNote);
+router.put('/task/:taskId/prevent-review-email', isAuth, taskCtrl.togglePreventReviewEmail);
 module.exports = router;
