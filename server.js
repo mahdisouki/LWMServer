@@ -29,6 +29,7 @@ connectToDatabase()
     require('./cron/clearNotifications');
     require('./cron/clearChats');
     require('./cron/autoEndShifts');
+    require('./cron/sendReviewEmails');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })

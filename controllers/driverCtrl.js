@@ -8,7 +8,6 @@ const Payroll = require('../models/Payroll');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser, emitEvent } = require('../socket');
-const sendReviewRequestEmail = require('../utils/sendReviewEmail');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const adminId = "67cb6810c9e768ec25d39523"
 
@@ -1046,12 +1045,8 @@ const driverManagement = {
         _id: { $ne: task._id }
       });
 
-      // Send review email
-      await sendReviewRequestEmail({
-        email: task.email,
-        firstName: task.firstName,
-        orderId: task._id,
-      });
+      // Review email will be sent automatically the next day at 12pm via cron job
+      // See: cron/sendReviewEmails.js
 
       await task.save();
 
