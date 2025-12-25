@@ -829,14 +829,14 @@ module.exports = {
   async sendWasteTransferNoteEmail(taskId) {
     // Use atomic operation to prevent race conditions - only update if not already sent
     const task = await Task.findOneAndUpdate(
-      { 
-        _id: taskId, 
+      {
+        _id: taskId,
         wasteTransferNoteSent: { $ne: true } // Only match if not already sent
       },
-      { 
+      {
         $set: { wasteTransferNoteSent: true } // Atomically set the flag
       },
-      { 
+      {
         new: true // Return updated document
       }
     ).populate('items.standardItemId');
@@ -979,6 +979,12 @@ module.exports = {
       // Read the payment confirmation template
       const templatePath = path.join(__dirname, '../public/templates/invoiceConfirmation.html');
       let html = fs.readFileSync(templatePath, 'utf8');
+
+      // Verify template was read correctly and contains header sections
+      if (!html.includes('<!-- Header Image -->') || !html.includes('<!-- Invoice Confirmation Banner Section -->')) {
+        console.error('❌ ERROR: Template file is missing header sections!');
+        throw new Error('Template file structure is invalid - missing header sections');
+      }
 
       // Calculate VAT and subtotal from amount
       const total = parseFloat(amount) || 0;
@@ -1195,13 +1201,46 @@ module.exports = {
       html = html.replace(/<tr>[\s\S]*?VAT \(20%\)[\s\S]*?<\/tr>/g, '');
 
       // Update the confirmation message for payment confirmation (after orderNumber is replaced)
+      // Match the exact structure with font-weight attribute and newlines
       html = html.replace(
-        /Thank you for booking with[\s\S]*?<strong style="color: #4caf50">London Waste Management\.<\/strong>/,
-        `We've successfully received your payment for Order <strong style="color: #4caf50">#${task.orderNumber || orderId}</strong>. Thank you for choosing <strong style="color: #4caf50">London Waste Management</strong>!`
+        /Thank you for booking with[\s\S]*?<strong style="color: #4caf50[^"]*"[^>]*>London Waste Management\.<\/strong>/,
+        `We've successfully received your payment for Order <strong style="color: #4caf50; font-weight: bold">#${task.orderNumber || orderId}</strong>. Thank you for choosing <strong style="color: #4caf50; font-weight: bold">London Waste Management</strong>!`
       );
 
       // Change title from "Invoice Confirmation" to "Payment Confirmation"
       html = html.replace(/Invoice Confirmation/g, 'Payment Confirmation');
+
+      // Debug: Verify critical sections are present before sending
+      const hasHeaderImage = html.includes('header-image') || html.includes('Group_1261156245_ngvccs.png');
+      const hasBannerSection = html.includes('invoice-banner-container') || html.includes('top-banner');
+      const hasGreeting = html.includes('Dear') && !html.includes('{{firstName}}'); // Should have Dear but not the template variable
+      const hasPaymentMessage = html.includes("We've successfully received your payment") || html.includes('Thank you for booking with');
+
+      if (!hasHeaderImage) {
+        console.error('❌ ERROR: Header image section is MISSING from payment confirmation email HTML');
+      }
+      if (!hasBannerSection) {
+        console.error('❌ ERROR: Banner section is MISSING from payment confirmation email HTML');
+      }
+      if (!hasGreeting) {
+        console.error('❌ ERROR: Greeting section is MISSING from payment confirmation email HTML');
+      }
+      if (!hasPaymentMessage) {
+        console.error('❌ ERROR: Payment confirmation message is MISSING from email HTML');
+      }
+
+      // Log HTML structure for debugging if sections are missing
+      if (!hasHeaderImage || !hasBannerSection || !hasGreeting || !hasPaymentMessage) {
+        const headerIndex = html.indexOf('<!-- Header Image -->');
+        const bannerIndex = html.indexOf('<!-- Invoice Confirmation Banner Section -->');
+        const greetingIndex = html.indexOf('<!-- Greeting -->');
+        console.log('HTML structure check:');
+        console.log('- Header Image comment index:', headerIndex);
+        console.log('- Banner Section comment index:', bannerIndex);
+        console.log('- Greeting comment index:', greetingIndex);
+        console.log('- HTML length:', html.length);
+        console.log('- First 500 chars:', html.substring(0, 500));
+      }
 
       // Send email
       await transporter.sendMail({
