@@ -18,9 +18,43 @@ const paginateQuery = async (
     const queryFilter = {};
 
     if (keyword && searchFields.length > 0) {
-        queryFilter.$or = searchFields.map((field) => ({
-            [field]: { $regex: keyword, $options: 'i' },
-        }));
+        // Check if both firstName and lastName are in searchFields and keyword contains a space (full name search)
+        const hasFirstName = searchFields.includes('firstName');
+        const hasLastName = searchFields.includes('lastName');
+        const keywordParts = keyword.trim().split(/\s+/);
+
+        if (hasFirstName && hasLastName && keywordParts.length >= 2) {
+            // Full name search: match firstName + lastName combination
+            // Support both "John Doe" (firstName=John, lastName=Doe) and "Doe John" (firstName=Doe, lastName=John)
+            const orConditions = searchFields
+                .filter(field => field !== 'firstName' && field !== 'lastName')
+                .map((field) => ({
+                    [field]: { $regex: keyword, $options: 'i' },
+                }));
+
+            // Add full name combinations
+            orConditions.push(
+                {
+                    $and: [
+                        { firstName: { $regex: keywordParts[0], $options: 'i' } },
+                        { lastName: { $regex: keywordParts.slice(1).join(' '), $options: 'i' } }
+                    ]
+                },
+                {
+                    $and: [
+                        { firstName: { $regex: keywordParts.slice(1).join(' '), $options: 'i' } },
+                        { lastName: { $regex: keywordParts[0], $options: 'i' } }
+                    ]
+                }
+            );
+
+            queryFilter.$or = orConditions;
+        } else {
+            // Regular search across all fields
+            queryFilter.$or = searchFields.map((field) => ({
+                [field]: { $regex: keyword, $options: 'i' },
+            }));
+        }
     }
 
     for (const field of filterFields) {
