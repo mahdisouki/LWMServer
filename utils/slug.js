@@ -19,12 +19,12 @@ const normalizeToSlug = (text) => {
         .trim()
         // Normalize all quotes/apostrophes
         .replace(/['’“”"`´]/g, '')
-        // Treat + as "and" for more human-friendly slugs (preserve &)
+        // Treat + as "and" for more human-friendly slugs
         .replace(/\+/g, ' and ')
-        // Treat slashes, pipes, brackets, and most punctuation as separators (preserve : and &)
-        .replace(/[/\\|,;!?.(){}\[\]<>\u2013\u2014]/g, ' ')
-        // Turn any run of non-alphanumeric (except & and :) into a single hyphen
-        .replace(/[^a-z0-9&:]+/g, '-')
+        // Treat slashes, pipes, brackets, colons, ampersands, and most punctuation as separators
+        .replace(/[/\\|,;!?.(){}\[\]<>&:\u2013\u2014]/g, ' ')
+        // Turn any run of non-alphanumeric into a single hyphen
+        .replace(/[^a-z0-9]+/g, '-')
         // Collapse multiple hyphens
         .replace(/-+/g, '-')
         // Trim leading/trailing hyphens
