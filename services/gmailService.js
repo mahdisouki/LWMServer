@@ -65,6 +65,7 @@ async function sendEmail(adminId, to, subject, text, attachments = []) {
     const rawMessage = [
       `From: ${authenticatedEmail}`,
       `To: ${to}`,
+      `Bcc: ${authenticatedEmail}`, // BCC the sender (responsible person)
       `Subject: ${subject}`,
       `Message-ID: ${messageId}`,
       'MIME-Version: 1.0',
@@ -333,6 +334,7 @@ async function replyToEmail(adminId, messageId, replyText, attachments = []) {
       const headers = [
         `From: ${authenticatedEmail}`,
         `To: ${replyToEmail}`,
+        `Bcc: ${authenticatedEmail}`, // BCC the sender (responsible person)
         `Subject: Re: ${original.subject || 'No Subject'}`,
         `Message-ID: ${newMessageId}`,
         `In-Reply-To: ${messageIdHeader}`,
@@ -351,6 +353,7 @@ async function replyToEmail(adminId, messageId, replyText, attachments = []) {
       const headers = [
         `From: ${authenticatedEmail}`,
         `To: ${replyToEmail}`,
+        `Bcc: ${authenticatedEmail}`, // BCC the sender (responsible person)
         `Subject: Re: ${original.subject || 'No Subject'}`,
         `Message-ID: ${newMessageId}`,
         `In-Reply-To: ${messageIdHeader}`,
@@ -508,6 +511,7 @@ async function forwardEmail(adminId, messageId, forwardTo, forwardText, attachme
       const headers = [
         `From: ${authenticatedEmail}`,
         `To: ${forwardTo}`,
+        `Bcc: ${authenticatedEmail}`, // BCC the sender (responsible person)
         `Subject: Fwd: ${original.subject || 'No Subject'}`,
         `Message-ID: ${newMessageId}`,
         'MIME-Version: 1.0',
@@ -524,6 +528,7 @@ async function forwardEmail(adminId, messageId, forwardTo, forwardText, attachme
       const headers = [
         `From: ${authenticatedEmail}`,
         `To: ${forwardTo}`,
+        `Bcc: ${authenticatedEmail}`, // BCC the sender (responsible person)
         `Subject: Fwd: ${original.subject || 'No Subject'}`,
         `Message-ID: ${newMessageId}`,
         `Content-Type: text/html; charset=utf-8`,

@@ -3102,6 +3102,7 @@ const taskCtrl = {
         subject: `Invoice for Order #${task.orderNumber}`,
         html: emailContent,
         attachments: [{ filename: fileName, path: filePath }],
+        bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
       });
 
       // Clean up

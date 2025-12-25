@@ -200,6 +200,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   const mailOptions = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: customerEmail,
+    bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     subject: `${getPaymentTypeDescription(paymentType)} Request for Task #${taskDetails.orderNumber}`,
     html: `<!DOCTYPE html>
 <html lang="en">

@@ -39,6 +39,7 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
     from: `"London Waste Management"<${contactData.email}>`,
     to: responsibleEmail,
     replyTo: contactData.email, // Replies go directly to the customer
+    bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     subject: `New Moving Service Request from ${contactData.fullName}`,
     html: `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
@@ -83,6 +84,7 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
   const mailOptionsToUser = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: contactData.email,
+    bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     subject: 'Thank You for your Moving Service Request!',
     html: `
       <!DOCTYPE html>

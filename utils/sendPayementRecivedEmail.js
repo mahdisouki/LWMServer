@@ -65,6 +65,7 @@ async function sendEmail({ to, subject, html, attachments = [] }) {
       subject,
       html,
       attachments,
+      bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     });
   } catch (error) {
     console.log(error);
@@ -160,6 +161,7 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount }) {
     subject: `Refund for Order #${task.orderNumber}`,
     html,
     attachments: [{ filename: fileName, path: filePath }],
+    bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
   });
   fs.unlinkSync(filePath);
 }
@@ -585,6 +587,7 @@ module.exports = {
       to: task.email,
       subject: 'London Waste Management - Customer Review',
       html: htmlContent,
+      bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     });
   },
 
@@ -707,6 +710,7 @@ module.exports = {
       to: email,
       subject: 'Thank You for Your Quotation Request',
       html: htmlContent,
+      bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     });
   },
 
@@ -747,6 +751,7 @@ module.exports = {
       to: task.email,
       subject: `Waste Transfer Note for Order #${task.orderNumber}`,
       html: template,
+      bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     });
   },
 
@@ -769,6 +774,7 @@ module.exports = {
       subject: `Invoice for Order #${task.orderNumber}`,
       html: `<p>Please find attached your official invoice for Order #${task.orderNumber}.</p>`,
       attachments: [{ filename: fileName, path: filePath }],
+      bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     });
 
     fs.unlinkSync(filePath);
@@ -811,7 +817,8 @@ module.exports = {
       to: task.email,
       subject: `Booking Confirmation - Order #${task.orderNumber}`,
       html: htmlContent,
-      attachments: [{ filename: fileName, path: filePath }]
+      attachments: [{ filename: fileName, path: filePath }],
+      bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     });
 
     fs.unlinkSync(filePath);
@@ -965,6 +972,7 @@ const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
           content: pdfBuffer,
         },
       ],
+      bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     };
 
     await transporter.sendMail(mailOptions);

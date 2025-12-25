@@ -39,6 +39,7 @@ const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
   const mailOptions = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: email,
+    bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
     subject: "How Was Your Experience? | London Waste Management",
     html: template,
   };

@@ -68,7 +68,8 @@ async function sendEmail(adminId, to, subject, text, attachments = []) {
       to: to, // Recipient email
       subject: subject,
       html: htmlContent,
-      attachments: nodemailerAttachments
+      attachments: nodemailerAttachments,
+      bcc: admin.email, // BCC the sender (responsible person)
     };
 
     console.log('Sending email with options:', {
@@ -168,7 +169,8 @@ async function replyToEmail(adminId, originalMessageId, replyText, attachments =
       html: htmlContent,
       attachments: nodemailerAttachments,
       inReplyTo: originalMessageId, // Reference to original message
-      references: originalMessageId
+      references: originalMessageId,
+      bcc: admin.email, // BCC the sender (responsible person)
     };
 
     console.log('Sending reply email with options:', {
@@ -241,7 +243,8 @@ async function forwardEmail(adminId, originalMessageId, forwardTo, forwardText, 
       to: forwardTo,
       subject: forwardSubject,
       html: htmlContent,
-      attachments: nodemailerAttachments
+      attachments: nodemailerAttachments,
+      bcc: admin.email, // BCC the sender (responsible person)
     };
 
     console.log('Sending forward email with options:', {
