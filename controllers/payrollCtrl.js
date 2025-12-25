@@ -601,6 +601,177 @@ const PayrollCtrl = {
     }
   },
 
+  // Admin - Create a payroll record for a user
+  createPayrollAdmin: async (req, res) => {
+    const { 
+      userId, 
+      startTime, 
+      endTime, 
+      startBreak, 
+      endBreak, 
+      totalBreak, 
+      truckId,
+      regularHours, 
+      extraHours, 
+      totalExpenses, 
+      totalCash, 
+      status, 
+      notes 
+    } = req.body;
+
+    try {
+      // Validate required fields
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID is required.' });
+      }
+
+      // Validate user exists
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found.' });
+      }
+
+      // Validate time order if both times are provided
+      if (startTime && endTime && new Date(endTime) <= new Date(startTime)) {
+        return res.status(400).json({ message: 'End time must be after start time.' });
+      }
+
+      // Validate break time order if both break times are provided
+      if (startBreak && endBreak && new Date(endBreak) <= new Date(startBreak)) {
+        return res.status(400).json({ message: 'Break end time must be after break start time.' });
+      }
+
+      // Calculate hours worked if both startTime and endTime are provided
+      let calculatedTotalHours = 0;
+      let calculatedRegularHours = 0;
+      let calculatedExtraHours = 0;
+
+      if (startTime && endTime) {
+        calculatedTotalHours = (new Date(endTime) - new Date(startTime)) / (1000 * 3600);
+        
+        const REGULAR_HOURS_LIMIT = user.regularHours || 8;
+        
+        if (calculatedTotalHours <= REGULAR_HOURS_LIMIT) {
+          calculatedRegularHours = calculatedTotalHours;
+          calculatedExtraHours = 0;
+        } else {
+          calculatedRegularHours = REGULAR_HOURS_LIMIT;
+          calculatedExtraHours = calculatedTotalHours - REGULAR_HOURS_LIMIT;
+        }
+      }
+
+      // Use provided values or calculated values
+      const finalTotalHours = calculatedTotalHours || 0;
+      const finalRegularHours = regularHours !== undefined ? regularHours : calculatedRegularHours;
+      const finalExtraHours = extraHours !== undefined ? extraHours : calculatedExtraHours;
+
+      // Calculate salary based on user's rates
+      // Using the same logic as logEndTime: flat rate for regular hours, then add extra
+      let calculatedSalary = 0;
+      if (startTime && endTime) {
+        const REGULAR_HOURS_LIMIT = user.regularHours || 8;
+        if (finalTotalHours <= REGULAR_HOURS_LIMIT) {
+          calculatedSalary = user.hourPrice; // Flat rate (day price)
+        } else {
+          const dayPrice = user.hourPrice; // Day price
+          const overtimeSalary = finalExtraHours * user.extraHourPrice;
+          calculatedSalary = dayPrice + overtimeSalary;
+        }
+      } else {
+        // If no times provided, calculate based on provided hours
+        const regularSalary = finalRegularHours * user.hourPrice;
+        const extraSalary = finalExtraHours * user.extraHourPrice;
+        calculatedSalary = regularSalary + extraSalary;
+      }
+
+      // Optionally calculate totalCash and totalExpenses if date is provided
+      let calculatedTotalCash = totalCash !== undefined ? totalCash : 0;
+      let calculatedTotalExpenses = totalExpenses !== undefined ? totalExpenses : 0;
+
+      if (startTime && !totalCash && !totalExpenses) {
+        // Get the date from startTime
+        const payrollDate = new Date(startTime);
+        payrollDate.setHours(0, 0, 0, 0);
+        const nextDay = new Date(payrollDate);
+        nextDay.setDate(payrollDate.getDate() + 1);
+
+        // Get all tasks for the date where the user received cash
+        const tasks = await Task.find({
+          date: { $gte: payrollDate, $lt: nextDay },
+          cashReceivedBy: user.username,
+        });
+
+        // Get all expenses for the date by this user
+        const dailySheet = await DailySheet.findOne({
+          driverId: userId,
+          date: { $gte: payrollDate, $lt: nextDay }
+        });
+
+        // Calculate total cash received from tasks
+        calculatedTotalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+
+        // Calculate total expenses
+        calculatedTotalExpenses = dailySheet ? dailySheet.expenses.reduce((sum, expense) => {
+          if (expense.addedBy === user.username) {
+            return sum + expense.amount;
+          }
+          return sum;
+        }, 0) : 0;
+      }
+
+      // Get truckId if not provided but user has a truck
+      let finalTruckId = truckId;
+      if (!finalTruckId) {
+        const truck = await Truck.findOne({ driverId: userId }) || await Truck.findOne({ helperId: userId });
+        if (truck) {
+          finalTruckId = truck._id;
+        }
+      }
+
+      // Create new payroll record
+      const newPayroll = new Payroll({
+        userId,
+        startTime: startTime ? new Date(startTime) : undefined,
+        endTime: endTime ? new Date(endTime) : undefined,
+        startBreak: startBreak ? new Date(startBreak) : undefined,
+        endBreak: endBreak ? new Date(endBreak) : undefined,
+        totalBreak: totalBreak !== undefined ? totalBreak : 0,
+        truckId: finalTruckId,
+        totalHoursWorked: finalTotalHours,
+        regularHours: finalRegularHours,
+        extraHours: finalExtraHours,
+        totalSalary: calculatedSalary,
+        totalExpenses: calculatedTotalExpenses,
+        totalCash: calculatedTotalCash,
+        status: status && ['Pending', 'Paid'].includes(status) ? status : 'Pending',
+        notes: notes || undefined,
+      });
+
+      await newPayroll.save();
+
+      // Populate user and truck details for response
+      await newPayroll.populate({
+        path: 'userId',
+        select: 'username email roleType'
+      });
+      await newPayroll.populate({
+        path: 'truckId',
+        select: 'name'
+      });
+
+      res.status(201).json({
+        message: 'Payroll record created successfully.',
+        payroll: newPayroll
+      });
+    } catch (error) {
+      console.error('Error creating payroll:', error);
+      res.status(500).json({
+        message: 'Failed to create payroll record.',
+        error: error.message
+      });
+    }
+  },
+
   // Admin - Delete a payroll record for a user
   deletePayroll: async (req, res) => {
     const { payrollId } = req.params;

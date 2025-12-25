@@ -36,6 +36,9 @@ router.get('/payroll/admin/user/:userId',PayrollCtrl.getPayrollsByUserId);
 // a payroll record for a user by payroll ID
 router.put('/payroll/admin/update/:payrollId', isAuth, PayrollCtrl.updatePayrollAdmin);
 
+// Admin - Create a payroll record for a user
+router.post('/payroll/admin/create', isAuth, PayrollCtrl.createPayrollAdmin);
+
 // Admin - Delete a payroll record for a user by payroll ID
 router.delete('/payroll/admin/delete/:payrollId', isAuth, PayrollCtrl.deletePayroll);
 
