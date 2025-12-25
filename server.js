@@ -124,7 +124,7 @@ const corsOptions = {
     'http://192.168.1.73:5173',
     'http://192.168.1.20:5173',
     'http://192.168.1.73:5173',
-    'https://stagingadmin.londonwastemanagement.uk',
+    'https://stagingadmin.londonwastemanagement.uk/',
     'https://londonwastemanagement.com',
     'https://www.londonwastemanagement.com',
     'http://lwmtest-botest-lzlcjq-c53a95-191-101-81-116.traefik.me',
