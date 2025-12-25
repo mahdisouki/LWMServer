@@ -107,8 +107,9 @@ const quotationRequestController = {
                 postcode,
                 email,
                 phoneNumber,
+                comments,
 
-                Notes: comments || 'No additional comments',
+
                 items,
             };
 
@@ -356,7 +357,7 @@ const quotationRequestController = {
                 files,
             };
 
-            const responsibleEmail = 'hello@londonwastemanagement.com';
+            const responsibleEmail = 'eyatrk24@gmail.com';
             const sendContactEmail = require('../utils/sendContactEmail');
             await sendContactEmail({ responsibleEmail, contactData });
 

@@ -51,9 +51,7 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
             <p style="font-size: 16px; margin-bottom: 10px;">
                 <strong>Phone Number:</strong> ${quotationData.phoneNumber}
             </p>
-            <p style="font-size: 16px; margin-bottom: 10px;">
-                <strong>Company Name:</strong> ${quotationData.companyName || 'Not provided'}
-            </p>
+
             <p style="font-size: 16px; margin-bottom: 10px;">
                 <strong>Comments:</strong> ${quotationData.comments || 'No additional comments'}
             </p>
