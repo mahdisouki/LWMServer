@@ -1697,7 +1697,9 @@ const taskCtrl = {
             method: 'online',
             status: 'Not_Paid',
           };
-          task.paymentStatus = 'Unpaid'; // Reste 'Unpaid' jusqu'à confirmation
+          // For public users, keep 'Failed' status until payment succeeds (no 'Unpaid' state)
+          // For others, set to 'Unpaid' until confirmation
+          task.paymentStatus = task.createdByType === 'public' ? 'Failed' : 'Unpaid';
         } else {
           // Vrai dépôt partiel
           task.paidAmount = {
@@ -1710,7 +1712,9 @@ const taskCtrl = {
             method: 'online',
             status: 'Not_Paid',
           };
-          task.paymentStatus = 'Unpaid'; // Reste 'Unpaid' jusqu'à confirmation
+          // For public users, keep 'Failed' status until payment succeeds (no 'Unpaid' state)
+          // For others, set to 'Unpaid' until confirmation
+          task.paymentStatus = task.createdByType === 'public' ? 'Failed' : 'Unpaid';
         }
       } else {
         amountToPay = finalPrice; // Paiement complet
@@ -1726,7 +1730,9 @@ const taskCtrl = {
           method: 'online',
           status: 'Not_Paid',
         };
-        task.paymentStatus = 'Unpaid'; // Reste 'Unpaid' jusqu'à confirmation
+        // For public users, keep 'Failed' status until payment succeeds (no 'Unpaid' state)
+        // For others, set to 'Unpaid' until confirmation
+        task.paymentStatus = task.createdByType === 'public' ? 'Failed' : 'Unpaid';
       }
 
       const amountInPence = Math.round(amountToPay * 100);
@@ -3274,7 +3280,7 @@ const taskCtrl = {
   togglePreventReviewEmail: async (req, res) => {
     const { taskId } = req.params;
     const { preventReviewEmail } = req.body;
-    
+
     try {
       const task = await Task.findById(taskId);
       if (!task) {
