@@ -183,17 +183,79 @@ function mapPaymentMethod(paymentMethod) {
   return 'cash'; // Default
 }
 
-// 🗺️ Mappe le time slot → Task available
-function mapAvailable(orderNotes) {
-  const notes = (orderNotes || '').toLowerCase();
+// 🗺️ Parse Collection Date (format: "3 January, 2026" ou "26 December, 2025")
+function parseCollectionDate(dateStr) {
+  if (!dateStr || !dateStr.trim()) {
+    return new Date();
+  }
 
-  if (notes.includes('7am') || notes.includes('12pm') || notes.includes('morning') || 
-      notes.includes('between 7') || notes.includes('before 12')) {
+  try {
+    // Format: "3 January, 2026" ou "26 December, 2025"
+    const dateStrTrimmed = dateStr.trim();
+    const date = new Date(dateStrTrimmed);
+    
+    // Vérifie si la date est valide
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+    
+    console.warn(`⚠️ Date de collection invalide: ${dateStr}, utilisation de la date actuelle`);
+    return new Date();
+  } catch (e) {
+    console.warn(`⚠️ Erreur parsing Collection Date: ${dateStr}, utilisation de la date actuelle`);
+    return new Date();
+  }
+}
+
+// 🗺️ Parse Order Date pour createdAt (format: "2025-12-24 16:08")
+function parseOrderDate(dateStr) {
+  if (!dateStr || !dateStr.trim()) {
+    return new Date();
+  }
+
+  try {
+    // Format: "2025-12-24 16:08"
+    if (dateStr.includes(' ')) {
+      const [datePart, timePart] = dateStr.split(' ');
+      const [year, month, day] = datePart.split('-');
+      const [hour, minute] = (timePart || '00:00').split(':');
+      return new Date(year, month - 1, day, hour || 0, minute || 0);
+    } else {
+      return new Date(dateStr);
+    }
+  } catch (e) {
+    console.warn(`⚠️ Erreur parsing Order Date: ${dateStr}, utilisation de la date actuelle`);
+    return new Date();
+  }
+}
+
+// 🗺️ Mappe le time slot → Task available
+function mapAvailable(timeSlot) {
+  if (!timeSlot || !timeSlot.trim()) {
+    return 'AnyTime';
+  }
+
+  const slot = timeSlot.toLowerCase().trim();
+
+  if (slot === 'asap') {
+    return 'AnyTime';
+  }
+
+  // Format: "07:00 - 12:00" ou "12:00 - 17:00"
+  if (slot.includes('07:00') || slot.includes('7am') || (slot.includes('12:00') && slot.includes('07'))) {
     return '7am-12pm';
   }
 
-  if (notes.includes('12pm') || notes.includes('5pm') || notes.includes('afternoon') || 
-      notes.includes('between 2-5') || notes.includes('2-5pm') || notes.includes('after 12')) {
+  if ((slot.includes('12:00') && slot.includes('17:00')) || (slot.includes('12:00') && slot.includes('5pm'))) {
+    return '12pm-5pm';
+  }
+
+  // Fallback: chercher dans le time slot
+  if (slot.includes('morning') || slot.includes('before 12')) {
+    return '7am-12pm';
+  }
+
+  if (slot.includes('afternoon') || slot.includes('after 12')) {
     return '12pm-5pm';
   }
 
@@ -223,24 +285,16 @@ function loadOrdersFromCsv(csvFilePath) {
             const postcode = (row['Postcode (Billing)'] || '').trim();
             const totalPrice = Number(row['Order Total Amount'] || 0) || 0;
             
-            // Date de commande
-            const dateStr = row['Order Date'] || new Date().toISOString();
-            let date = new Date();
-            try {
-              // Format: "2025-12-24 00:22"
-              if (dateStr.includes(' ')) {
-                const [datePart, timePart] = dateStr.split(' ');
-                const [year, month, day] = datePart.split('-');
-                const [hour, minute] = (timePart || '00:00').split(':');
-                date = new Date(year, month - 1, day, hour || 0, minute || 0);
-              } else {
-                date = new Date(dateStr);
-              }
-            } catch (e) {
-              console.warn(
-                `⚠️ Date invalide pour order ${orderNumber}: ${dateStr}, utilisation de la date actuelle`,
-              );
-            }
+            // Collection Date → pour le champ date du Task
+            const collectionDateStr = row['Collection Date'] || '';
+            const collectionDate = parseCollectionDate(collectionDateStr);
+            
+            // Order Date → pour createdAt
+            const orderDateStr = row['Order Date'] || new Date().toISOString();
+            const orderDate = parseOrderDate(orderDateStr);
+
+            // Time Slot → pour available
+            const timeSlot = row['Time Slot'] || '';
 
             // Adresses
             const billingAddress = (row['Address 1&2 (Billing)'] || '').trim();
@@ -254,7 +308,7 @@ function loadOrdersFromCsv(csvFilePath) {
             const orderStatus = row['Order Status'] || '';
             const paymentMethodRaw = row['Payment Method Title'] || '';
 
-            // Time slot / Available
+            // Customer Note
             const customerNote = (row['Customer Note'] || '').trim();
 
             ordersMap.set(orderNumber, {
@@ -269,7 +323,9 @@ function loadOrdersFromCsv(csvFilePath) {
               collectionAddress: collectionAddress || undefined,
               bussinessName: bussinessName || undefined,
               totalPrice,
-              date,
+              date: collectionDate, // Collection Date pour le champ date
+              orderDate: orderDate, // Order Date pour createdAt
+              timeSlot: timeSlot, // Time Slot pour available
               orderStatus,
               paymentMethodRaw,
               customerNote,
@@ -359,7 +415,7 @@ async function migrateFromCsv(csvFilePath, dryRun = false, verbose = false) {
       // Mappe les statuts
       const paymentStatus = mapPaymentStatus(order.orderStatus);
       const paymentMethod = mapPaymentMethod(order.paymentMethodRaw);
-      const available = mapAvailable(order.customerNote);
+      const available = mapAvailable(order.timeSlot); // Utilise Time Slot directement
 
       // Détermine taskStatus selon orderStatus
       let taskStatus = 'New';
@@ -377,7 +433,7 @@ async function migrateFromCsv(csvFilePath, dryRun = false, verbose = false) {
         phoneNumber: order.phoneNumber,
         postcode: order.postcode,
         totalPrice: order.totalPrice || 0,
-        date: order.date || new Date(),
+        date: order.date || new Date(), // Collection Date
         items: resolvedItems,
 
         // Champs optionnels de base
@@ -404,6 +460,10 @@ async function migrateFromCsv(csvFilePath, dryRun = false, verbose = false) {
       };
 
       const task = new Task(taskData);
+      // Définir createdAt manuellement avec Order Date
+      if (order.orderDate) {
+        task.createdAt = order.orderDate;
+      }
       await task.save();
       
       const standardInTask = resolvedItems.filter(i => i.standardItemId).length;

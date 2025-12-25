@@ -6,7 +6,7 @@ const paginateQuery = async (
 ) => {
     const {
         page = 1,
-        limit = 10,
+        limit = 1000,
         keyword,
         sort = '-createdAt',
     } = queryParams;
