@@ -18,7 +18,7 @@ router.get('/driver/helper-info', isAuth, driverCtrl.getHelperInfoForDriver);
 router.post('/trucks/end/:truckId', isAuth, multer.array('uploads'), driverCtrl.updateTruckEnd);
 router.get('/trucks/status/:truckId', driverCtrl.getTruckFullStatus);
 router.put('/tasks/update-status/:taskId', isAuth, driverCtrl.updateJobStatus);
-router.put('/tasks/rate/:taskId', driverCtrl.rateTask);
+router.put('/tasks/rate/:taskId',isAuth, driverCtrl.rateTask);
 
 router.post('/location/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.uploadInitialConditionPhotos);
 router.post('/truck/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.uploadFinalConditionPhotos);

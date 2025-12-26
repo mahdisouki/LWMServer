@@ -1015,17 +1015,16 @@ const driverManagement = {
   rateTask: async (req, res) => {
     const { taskId } = req.params;
     const { clientFeedback, clientFeedbackScale, cashAmount } = req.body;
-    // const userId = req.user._id;
+    const userId = req.user._id;
 
     try {
       // Get user info
-      // const userInfo = await getUserModel(userId);
-      // if (!userInfo) {
-      //   return res.status(404).json({ message: 'User not found' });
-      // }
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
 
-      // const { type } = userInfo;
-
+      console.log("username" , userInfo.user.username ,"cashAmount" ,cashAmount)
       const task = await Task.findById(taskId);
       if (!task) {
         console.log("task not found")
@@ -1037,7 +1036,7 @@ const driverManagement = {
       task.clientFeedbackScale = clientFeedbackScale;
       task.taskStatus = "Completed"
       task.cashReceived = cashAmount;
-
+      task.cashReceivedBy= userInfo.user.username
       // Check if this is the first task completed by this client (using email)
       const previousCompletedTasks = await Task.find({
         email: task.email,
