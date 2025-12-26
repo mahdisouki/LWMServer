@@ -666,23 +666,10 @@ const PayrollCtrl = {
       const finalExtraHours = extraHours !== undefined ? extraHours : calculatedExtraHours;
 
       // Calculate salary based on user's rates
-      // Using the same logic as logEndTime: flat rate for regular hours, then add extra
-      let calculatedSalary = 0;
-      if (startTime && endTime) {
-        const REGULAR_HOURS_LIMIT = user.regularHours || 8;
-        if (finalTotalHours <= REGULAR_HOURS_LIMIT) {
-          calculatedSalary = user.hourPrice; // Flat rate (day price)
-        } else {
-          const dayPrice = user.hourPrice; // Day price
-          const overtimeSalary = finalExtraHours * user.extraHourPrice;
-          calculatedSalary = dayPrice + overtimeSalary;
-        }
-      } else {
-        // If no times provided, calculate based on provided hours
-        const regularSalary = finalRegularHours * user.hourPrice;
-        const extraSalary = finalExtraHours * user.extraHourPrice;
-        calculatedSalary = regularSalary + extraSalary;
-      }
+      // Using the same logic as updatePayrollAdmin: hourly rate for regular hours + extra hour price for extra hours
+      const regularSalary = user.hourPrice;
+      const extraSalary = finalExtraHours * user.extraHourPrice;
+      const calculatedSalary = regularSalary + extraSalary;
 
       // Optionally calculate totalCash and totalExpenses if date is provided
       let calculatedTotalCash = totalCash !== undefined ? totalCash : 0;
