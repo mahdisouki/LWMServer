@@ -984,11 +984,11 @@ module.exports = {
       await module.exports.generateOfficialInvoicePDF(task, filePath);
 
       // Read the payment confirmation template
-      const templatePath = path.join(__dirname, '../public/templates/invoiceConfirmation.html');
+      const templatePath = path.join(__dirname, '../public/templates/paymentConfirmation.html');
       let html = fs.readFileSync(templatePath, 'utf8');
 
       // Verify template was read correctly and contains header sections
-      if (!html.includes('<!-- Header Image -->') || !html.includes('<!-- Invoice Confirmation Banner Section -->')) {
+      if (!html.includes('<!-- Header Image -->') || !html.includes('<!-- Payment Confirmation Banner Section -->')) {
         console.error('❌ ERROR: Template file is missing header sections!');
         throw new Error('Template file structure is invalid - missing header sections');
       }
@@ -1204,24 +1204,14 @@ module.exports = {
       html = html.replace(/{{totalPrice}}/g, fullTotalPrice.toFixed(2));
       html = html.replace(/{{paymentMethod}}/g, paymentMethod);
 
-      // Remove VAT (20%) line from Payment Confirmation email body
-      html = html.replace(/<tr>[\s\S]*?VAT \(20%\)[\s\S]*?<\/tr>/g, '');
-
-      // Update the confirmation message for payment confirmation (after orderNumber is replaced)
-      // Match the exact structure with font-weight attribute and newlines
-      html = html.replace(
-        /Thank you for booking with[\s\S]*?<strong style="color: #4caf50[^"]*"[^>]*>London Waste Management\.<\/strong>/,
-        `We've successfully received your payment for Order <strong style="color: #4caf50; font-weight: bold">#${task.orderNumber || orderId}</strong>. Thank you for choosing <strong style="color: #4caf50; font-weight: bold">London Waste Management</strong>!`
-      );
-
-      // Change title from "Invoice Confirmation" to "Payment Confirmation"
-      html = html.replace(/Invoice Confirmation/g, 'Payment Confirmation');
+      // Note: VAT line is not included in the payment confirmation template for full payments
+      // The template already has the correct payment confirmation message
 
       // Debug: Verify critical sections are present before sending
       const hasHeaderImage = html.includes('header-image') || html.includes('Group_1261156245_ngvccs.png');
-      const hasBannerSection = html.includes('invoice-banner-container') || html.includes('top-banner');
+      const hasBannerSection = html.includes('payment-banner-container') || html.includes('top-banner');
       const hasGreeting = html.includes('Dear') && !html.includes('{{firstName}}'); // Should have Dear but not the template variable
-      const hasPaymentMessage = html.includes("We've successfully received your payment") || html.includes('Thank you for booking with');
+      const hasPaymentMessage = html.includes("We've successfully received your payment");
 
       if (!hasHeaderImage) {
         console.error('❌ ERROR: Header image section is MISSING from payment confirmation email HTML');
@@ -1239,7 +1229,7 @@ module.exports = {
       // Log HTML structure for debugging if sections are missing
       if (!hasHeaderImage || !hasBannerSection || !hasGreeting || !hasPaymentMessage) {
         const headerIndex = html.indexOf('<!-- Header Image -->');
-        const bannerIndex = html.indexOf('<!-- Invoice Confirmation Banner Section -->');
+        const bannerIndex = html.indexOf('<!-- Payment Confirmation Banner Section -->');
         const greetingIndex = html.indexOf('<!-- Greeting -->');
         console.log('HTML structure check:');
         console.log('- Header Image comment index:', headerIndex);
