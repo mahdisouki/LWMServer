@@ -103,38 +103,6 @@
           max-height: none !important;
         }
       }
-
-      /* Read more expandable section */
-      .read-more-checkbox {
-        display: none !important;
-      }
-      .read-more-content {
-        display: none !important;
-      }
-      .read-more-checkbox:checked ~ .read-more-content {
-        display: block !important;
-      }
-      .read-more-checkbox:checked ~ p .read-more-label .read-more-text {
-        display: none !important;
-      }
-      .read-more-checkbox:checked ~ p .read-more-label .read-less-text {
-        display: inline !important;
-      }
-      .read-more-checkbox:not(:checked) ~ p .read-more-label .read-more-text {
-        display: inline !important;
-      }
-      .read-more-checkbox:not(:checked) ~ p .read-more-label .read-less-text {
-        display: none !important;
-      }
-      .read-less-text {
-        display: none !important;
-      }
-      .read-more-label {
-        color: #4caf50 !important;
-        text-decoration: underline !important;
-        cursor: pointer !important;
-        font-weight: bold !important;
-      }
     </style>
   </head>
   <body
@@ -544,12 +512,6 @@
                       >
                         <tr>
                           <td style="padding: 20px">
-                            <input
-                              type="checkbox"
-                              id="read-more-toggle"
-                              class="read-more-checkbox"
-                              style="display: none !important"
-                            />
                             <h3
                               style="
                                 font-size: 18px;
@@ -562,33 +524,7 @@
                             >
                               IMPORTANT NEXT STEPS
                             </h3>
-                            <p
-                              style="
-                                font-size: 16px;
-                                line-height: 1.6;
-                                margin: 0 0 15px 0;
-                                color: #333333;
-                                font-family: Arial, Helvetica, sans-serif;
-                              "
-                            >
-                              <label
-                                for="read-more-toggle"
-                                class="read-more-label"
-                                style="
-                                  color: #4caf50 !important;
-                                  text-decoration: underline !important;
-                                  cursor: pointer !important;
-                                  font-weight: bold !important;
-                                "
-                              >
-                                <span class="read-more-text">Read more</span>
-                                <span class="read-less-text">Read less</span>
-                              </label>
-                            </p>
-                            <div
-                              class="read-more-content"
-                              style="margin-top: 0"
-                            >
+                            <div style="margin-top: 0">
                               <p
                                 style="
                                   font-size: 16px;
