@@ -879,6 +879,20 @@ module.exports = {
       .map(i => `<p><span class="text-[#8bc53f]">${i.standardItemId.ewcCode}</span> : ${i.standardItemId.itemName}</p>`)
       .join('');
 
+    // Helper function to escape HTML and convert newlines to <br>
+    const formatNotes = (notes) => {
+      if (!notes) return 'No additional notes provided.';
+      // Escape HTML special characters
+      const escaped = notes
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      // Convert newlines to <br> tags
+      return escaped.replace(/\n/g, '<br>');
+    };
+
     // Replace placeholders
     template = template.replace(/{{firstName}}/g, task.firstName);
     template = template.replace(/{{orderNumber}}/g, task.orderNumber);
@@ -887,7 +901,7 @@ module.exports = {
     template = template.replace(/{{ewcCodes}}/g, ewcCodes || '');
     template = template.replace(/{{collectionAddress}}/g, task.collectionAddress || '');
     template = template.replace(/{{timeSlot}}/g, task.available?.replace(/_/g, ' ') || '');
-    template = template.replace(/{{additionalNotes}}/g, task.additionalNotes || 'No additional notes provided.');
+    template = template.replace(/{{additionalNotes}}/g, formatNotes(task.additionalNotes));
 
     try {
       await transporter.sendMail({
