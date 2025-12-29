@@ -195,6 +195,7 @@ module.exports = {
     let subtotal = 0;
     let vat = 0;
     let total = 0;
+    let subtotalBeforeDiscounts = 0; // Track subtotal with original prices (before per-item discounts)
 
     // Calculate subtotal and handle discounts based on discountType
     task.items.forEach((item) => {
@@ -211,6 +212,9 @@ module.exports = {
             : 0;
 
       const itemSubtotal = itemPrice + positionPrice;
+      
+      // Always add to subtotalBeforeDiscounts (original prices)
+      subtotalBeforeDiscounts += itemSubtotal;
 
       // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
       let finalItemTotal = itemSubtotal;
@@ -344,7 +348,11 @@ module.exports = {
         task.available === '7am-12pm' ? 'Morning (7am to 12pm)' :
           task.available === '12pm-5pm' ? 'Afternoon (12pm to 5pm)' : task.available,
       itemRows,
-      subtotal: (subtotal || 0).toFixed(2),
+      // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
+      // For no discounts, show subtotal after any automatic 10% discount
+      subtotal: (task.hasDiscount && (task.discountType === "perItem" || task.discountType === "percentage"))
+        ? (subtotalBeforeDiscounts || 0).toFixed(2)
+        : (subtotal || 0).toFixed(2),
       vat: (vat || 0).toFixed(2),
       totalPrice: (total || 0).toFixed(2),
       hasDiscount: task.hasDiscount,

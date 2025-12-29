@@ -273,6 +273,7 @@ module.exports = {
     let vat = 0;
     let total = 0;
     let itemDiscountTotal = 0; // Track total item discount for per-item discounts
+    let subtotalBeforeDiscounts = 0; // Track subtotal with original prices (before per-item discounts)
 
     // Calculate subtotal and handle discounts based on discountType
     task.items.forEach((item) => {
@@ -289,6 +290,9 @@ module.exports = {
             : 0;
 
       const itemSubtotal = itemPrice + positionPrice;
+      
+      // Always add to subtotalBeforeDiscounts (original prices)
+      subtotalBeforeDiscounts += itemSubtotal;
 
       // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
       let finalItemTotal = itemSubtotal;
@@ -451,7 +455,11 @@ module.exports = {
         task.available === '7am-12pm' ? 'Morning (7am to 12pm)' :
           task.available === '12pm-5pm' ? 'Afternoon (12pm to 5pm)' : task.available,
       itemRows,
-      subtotal: (subtotal || 0).toFixed(2),
+      // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
+      // For no discounts, show subtotal after any automatic 10% discount
+      subtotal: (task.hasDiscount && (task.discountType === "perItem" || task.discountType === "percentage"))
+        ? (subtotalBeforeDiscounts || 0).toFixed(2)
+        : (subtotal || 0).toFixed(2),
       vat: (vat || 0).toFixed(2),
       totalPrice: (total || 0).toFixed(2),
       hasDiscount: task.hasDiscount,
@@ -1276,16 +1284,24 @@ module.exports = {
       const isPartialPaid = isDepositOnly && !isFullyPaid;
 
       if (!isPartialPaid) {
-        // For fully paid (including remaining payment): remove {{#if isPartialPaid}}...{{else}}, keep {{else}}...{{/if}} content
+        // For fully paid (including remaining payment): 
+        // Process conditionals in a way that preserves the "IMPORTANT NEXT STEPS" section
+        
+        // 1. First, handle the nested conditional inside "IMPORTANT NEXT STEPS" section (has {{else}})
         // Match: {{#if isPartialPaid}}...{{else}}...{{/if}} and replace with just the {{else}} content
+        // This should match the block around line 568-609 in the template
         html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}([\s\S]*?){{\/if}}/g, '$1');
-        // Also handle any remaining {{#if isPartialPaid}} blocks without {{else}} (message at bottom) - remove them completely
+        
+        // 2. Then, handle any remaining {{#if isPartialPaid}} blocks without {{else}} - remove them completely
+        // This handles:
+        //   - The partial payment table rows (around line 458-508)
+        //   - The "Please settle the remaining balance" message (around line 514-527)
         html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{\/if}}/g, '');
       } else {
         // For deposit-only payment: process all {{#if isPartialPaid}} blocks
-        // First, handle blocks with {{else}} (in table) - keep content before {{else}}, remove {{else}}...{{/if}}
+        // First, handle blocks with {{else}} - keep content before {{else}}, remove {{else}}...{{/if}}
         html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{else}}[\s\S]*?{{\/if}}/g, '$1');
-        // Then, handle remaining blocks without {{else}} (message at bottom) - remove tags but keep content
+        // Then, handle remaining blocks without {{else}} - remove tags but keep content
         // Use a simple regex to match and remove remaining {{#if isPartialPaid}}...{{/if}} blocks
         let iterations = 0;
         let previousHtml = '';
@@ -1312,7 +1328,12 @@ module.exports = {
       html = html.replace(/{{orderNumber}}/g, task.orderNumber || orderId);
       html = html.replace(/{{total}}/g, total.toFixed(2));
       html = html.replace(/{{vat}}/g, vat.toFixed(2));
-      html = html.replace(/{{subtotal}}/g, subtotal.toFixed(2));
+      // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
+      // For no discounts, show subtotal after any automatic 10% discount
+      const subtotalForDisplay = (task.hasDiscount && (task.discountType === "perItem" || task.discountType === "percentage"))
+        ? subtotalBeforeDiscounts
+        : subtotal;
+      html = html.replace(/{{subtotal}}/g, subtotalForDisplay.toFixed(2));
       html = html.replace(/{{paymentDate}}/g, paymentDate || new Date().toLocaleString());
       html = html.replace(/{{paymentType}}/g, paymentType || 'Payment');
       // Discount variables
@@ -1332,6 +1353,7 @@ module.exports = {
       const hasBannerSection = html.includes('payment-banner-container') || html.includes('top-banner');
       const hasGreeting = html.includes('Dear') && !html.includes('{{firstName}}'); // Should have Dear but not the template variable
       const hasPaymentMessage = html.includes("We've successfully received your payment");
+      const hasImportantNextSteps = html.includes('IMPORTANT NEXT STEPS') || html.includes('What happens next?');
 
       if (!hasHeaderImage) {
         console.error('❌ ERROR: Header image section is MISSING from payment confirmation email HTML');
@@ -1344,6 +1366,9 @@ module.exports = {
       }
       if (!hasPaymentMessage) {
         console.error('❌ ERROR: Payment confirmation message is MISSING from email HTML');
+      }
+      if (!hasImportantNextSteps) {
+        console.error('❌ ERROR: IMPORTANT NEXT STEPS section is MISSING from payment confirmation email HTML');
       }
 
       // Log HTML structure for debugging if sections are missing
