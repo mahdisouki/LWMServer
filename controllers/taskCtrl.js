@@ -3390,6 +3390,39 @@ const taskCtrl = {
       // Fetch updated tasks
       const updatedTasks = await Task.find({ _id: { $in: taskIds } });
 
+      // Update daily sheets for all affected dates
+      try {
+        // Extract unique dates from updated tasks
+        const uniqueDates = [...new Set(
+          updatedTasks
+            .filter(task => task.date)
+            .map(task => task.date.toISOString().split('T')[0])
+        )];
+
+        // Update daily sheets for each unique date
+        for (const date of uniqueDates) {
+          try {
+            console.log('Updating daily sheets after multiple task status update for date:', date);
+            const mockReq = {
+              body: { date }
+            };
+            const mockRes = {
+              status: () => ({ json: () => { } }),
+              json: () => { }
+            };
+
+            await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+            console.log('Daily sheets updated for date:', date);
+          } catch (dateError) {
+            console.error(`Error updating daily sheets for date ${date}:`, dateError);
+            // Continue with other dates even if one fails
+          }
+        }
+      } catch (dailySheetError) {
+        console.error('Error updating daily sheets after multiple task status update:', dailySheetError);
+        // Don't fail the main operation if daily sheet update fails
+      }
+
       res.status(200).json({
         message: `${updateResult.modifiedCount} task(s) updated successfully`,
         updatedCount: updateResult.modifiedCount,
@@ -3400,6 +3433,60 @@ const taskCtrl = {
       console.error('Error updating tasks:', error);
       res.status(500).json({
         message: 'Failed to update tasks',
+        error: error.message,
+      });
+    }
+  },
+
+  takeOverOrder: async (req, res) => {
+    const { taskId } = req.params;
+    const userId = req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    try {
+      // Check if task exists
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      const lock = await OrderLock.findOne({ taskId });
+
+      if (!lock) {
+        // If not locked, just lock it for the current user
+        const newLock = await OrderLock.create({
+          taskId,
+          lockedBy: userId,
+          expiresAt: new Date(Date.now() + LOCK_DURATION),
+        });
+
+        return res.json({
+          message: 'Order locked successfully',
+          isLocked: true,
+          lockedBy: newLock.lockedBy,
+        });
+      }
+
+      // Force unlock and lock for current user
+      await lock.deleteOne();
+
+      const newLock = await OrderLock.create({
+        taskId,
+        lockedBy: userId,
+        expiresAt: new Date(Date.now() + LOCK_DURATION),
+      });
+
+      res.json({
+        message: 'Order taken over successfully',
+        isLocked: true,
+        lockedBy: newLock.lockedBy,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to take over order',
         error: error.message,
       });
     }

@@ -676,7 +676,7 @@ const dailySheetController = {
 
         const jobsCancelled = await Task.find({
           _id: { $in: allTaskIdsForDate },
-          taskStatus: 'Declined',
+          taskStatus: { $in: ['Declined', 'Cancelled'] },
         });
 
 
