@@ -144,6 +144,7 @@ const taskSchema = new Schema(
     reviewRequestSent: { type: Boolean, default: false },
     preventReviewEmail: { type: Boolean, default: false }, // Prevent sending review email for this task
     wasteTransferNoteSent: { type: Boolean, default: false },
+    reasonForCancellation: { type: String },
     applyMinFee: { type: Boolean, default: false }, // Admin option to apply minimum fee
     quotationId: {
       type: Schema.Types.ObjectId,

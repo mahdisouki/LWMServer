@@ -285,7 +285,7 @@ const taskCtrl = {
         orderNumber, // Optional order number (for migrations or manual entry)
         quotationId,
       } = req.body;
-
+      console.log('req.body.location', req.body.location);
       // ✅ Convert FormData string to boolean
       // FormData sends boolean values as strings 'true' or 'false'
       const applyMinFeeBoolean = applyMinFee === 'true' || applyMinFee === true;
@@ -3333,6 +3333,73 @@ const taskCtrl = {
       console.error('Error toggling prevent review email:', error);
       res.status(500).json({
         message: 'Failed to update prevent review email setting',
+        error: error.message,
+      });
+    }
+  },
+  updateMultipleTasksStatus: async (req, res) => {
+    const { taskIds, taskStatus, reasonForCancellation } = req.body;
+
+    try {
+      // Validate required fields
+      if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
+        return res.status(400).json({ message: 'taskIds array is required and must not be empty' });
+      }
+
+      if (!taskStatus) {
+        return res.status(400).json({ message: 'taskStatus is required' });
+      }
+
+      // Validate task status
+      const validStatuses = ['Not_Completed', 'Completed', 'Cancelled', 'On_Hold', 'Processing', 'New'];
+      if (!validStatuses.includes(taskStatus)) {
+        return res.status(400).json({ message: 'Invalid task status' });
+      }
+
+      // If status is Cancelled, reasonForCancellation is required
+      if (taskStatus === 'Cancelled' && !reasonForCancellation) {
+        return res.status(400).json({ message: 'reasonForCancellation is required when status is Cancelled' });
+      }
+
+      // Validate all task IDs are valid MongoDB ObjectIds
+      const invalidIds = taskIds.filter(id => !mongoose.Types.ObjectId.isValid(id));
+      if (invalidIds.length > 0) {
+        return res.status(400).json({ 
+          message: 'Invalid task IDs provided', 
+          invalidIds 
+        });
+      }
+
+      // Build update object
+      const updateData = { taskStatus };
+      if (taskStatus === 'Cancelled' && reasonForCancellation) {
+        updateData.reasonForCancellation = reasonForCancellation;
+      }
+
+      // Update all tasks in bulk
+      const updateResult = await Task.updateMany(
+        { _id: { $in: taskIds } },
+        { $set: updateData }
+      );
+
+      // Check if any tasks were found
+      if (updateResult.matchedCount === 0) {
+        return res.status(404).json({ message: 'No tasks found with the provided IDs' });
+      }
+
+      // Fetch updated tasks
+      const updatedTasks = await Task.find({ _id: { $in: taskIds } });
+
+      res.status(200).json({
+        message: `${updateResult.modifiedCount} task(s) updated successfully`,
+        updatedCount: updateResult.modifiedCount,
+        matchedCount: updateResult.matchedCount,
+        tasks: updatedTasks,
+      });
+    } catch (error) {
+      console.error('Error updating tasks:', error);
+      res.status(500).json({
+        message: 'Failed to update tasks',
         error: error.message,
       });
     }

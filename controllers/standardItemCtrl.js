@@ -162,8 +162,38 @@ const standardItemCtrl = {
       let filter = {};
   
       // 🔍 Add search condition if provided
-      if (search) {
-        filter.itemName = { $regex: search, $options: 'i' };
+      if (search && search.trim()) {
+        const searchTerm = search.trim();
+        
+        // Normalize text: remove accents/diacritics for better matching
+        // e.g., "lampe" matches "lamp" and vice versa
+        const normalizeText = (text) => {
+          return text
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '') // Remove diacritics
+            .toLowerCase();
+        };
+
+        const normalizedSearch = normalizeText(searchTerm);
+        
+        // Escape special regex characters
+        const escapeRegex = (str) => {
+          return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        };
+
+        // Create flexible regex pattern that allows characters in between
+        // This enables partial matching like "lamp" matching "lampe"
+        const searchRegex = new RegExp(
+          escapeRegex(normalizedSearch)
+            .split('')
+            .join('.*?'), // Allow optional characters between each character
+          'i' // case-insensitive
+        );
+
+        filter.itemName = { 
+          $regex: searchRegex
+          // Case-insensitive matching is already handled by the 'i' flag in the RegExp
+        };
       }
   
       // Filter by Category if provided
@@ -231,6 +261,7 @@ const standardItemCtrl = {
         });
       }
     } catch (error) {
+      console.error('Error fetching standard items:', error);
       res.status(500).json({
         message: 'Failed to get standard items',
         error: error.message

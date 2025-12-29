@@ -138,6 +138,65 @@
  *         description: Error capturing PayPal payment
  */
 
+/**
+ * @swagger
+ * /api/task/tasks/update-status:
+ *   put:
+ *     summary: Update status of multiple tasks
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - taskIds
+ *               - taskStatus
+ *             properties:
+ *               taskIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of task IDs to update
+ *                 example: ["605c5fc2f7a84e3e9c43c6b2", "605c5fc2f7a84e3e9c43c6b3"]
+ *               taskStatus:
+ *                 type: string
+ *                 enum: [Not_Completed, Completed, Cancelled, On_Hold, Processing, New]
+ *                 description: The new status for the tasks
+ *                 example: "Cancelled"
+ *               reasonForCancellation:
+ *                 type: string
+ *                 description: Required when taskStatus is Cancelled
+ *                 example: "Customer requested cancellation"
+ *     responses:
+ *       200:
+ *         description: Tasks updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 updatedCount:
+ *                   type: number
+ *                 matchedCount:
+ *                   type: number
+ *                 tasks:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Task'
+ *       400:
+ *         description: Bad request - invalid input
+ *       404:
+ *         description: No tasks found with provided IDs
+ *       500:
+ *         description: Failed to update tasks
+ */
+
 const express = require('express');
 const router = express.Router();
 const taskCtrl = require('../controllers/taskCtrl');
@@ -175,4 +234,5 @@ router.post('/task/:taskId/send-booking-confirmation', taskCtrl.sendBookingConfi
 router.post('/task/:taskId/send-invoice', taskCtrl.sendInvoice);
 router.post('/task/:taskId/send-waste-transfer-note', taskCtrl.sendWasteTransferNote);
 router.put('/task/:taskId/prevent-review-email', isAuth, taskCtrl.togglePreventReviewEmail);
+router.put('/tasks/update-status', isAuth, checkRole('Admin'), taskCtrl.updateMultipleTasksStatus);
 module.exports = router;
