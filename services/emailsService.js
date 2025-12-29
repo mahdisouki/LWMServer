@@ -272,6 +272,7 @@ module.exports = {
     let subtotal = 0;
     let vat = 0;
     let total = 0;
+    let itemDiscountTotal = 0; // Track total item discount for per-item discounts
 
     // Calculate subtotal and handle discounts based on discountType
     task.items.forEach((item) => {
@@ -292,7 +293,13 @@ module.exports = {
       // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
       let finalItemTotal = itemSubtotal;
       if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
-        finalItemTotal = (item.customPrice * item.quantity) + positionPrice;
+        const customPrice = Number(item.customPrice);
+        finalItemTotal = (customPrice * item.quantity) + positionPrice;
+        // Calculate discount: (originalPrice - customPrice) * quantity
+        const originalItemPrice = item.standardItemId
+          ? Number(item.standardItemId.price)
+          : Number(item.price);
+        itemDiscountTotal += (originalItemPrice - customPrice) * item.quantity;
       }
 
       subtotal += finalItemTotal;
@@ -304,14 +311,16 @@ module.exports = {
       subtotal -= percentageDiscount;
     }
 
-    // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+    // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
     const isAvailableAnyTime = task.available === 'AnyTime';
     const isCreatedByPublic = task.createdByType === 'public';
     const hasItems = task.items && task.items.length > 0;
     const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
 
+    let automaticDiscount10Percent = 0;
     if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
       console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice PDF');
+      automaticDiscount10Percent = subtotal * 0.1;
       subtotal *= 0.9;
     }
 
@@ -458,7 +467,8 @@ module.exports = {
       paymentStatusUnpaid: paymentStatusUnpaidDisplay,
       // Discount display logic based on discount type
       showDiscountRow:
-        task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
+        (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) ||
+          (task.hasDiscount && task.discountType === "perItem")
           ? 'block'
           : 'none',
       discountLabel:
@@ -470,7 +480,9 @@ module.exports = {
       // discountAmount: task.hasDiscount && (task.discountType === "percentage" || task.customDiscountPercent > 0)
       //   ? discountAmount.toFixed(2)
       //   : '0.00',
-      discountAmount: percentageDiscount.toFixed(2),
+      discountAmount: (task.hasDiscount && task.discountType === "perItem")
+        ? itemDiscountTotal.toFixed(2)
+        : percentageDiscount.toFixed(2),
       // Asset paths with base64 encoding
       logoPath: asset('london_waste_logo 1.png'),
       bgPath: asset('green-bg.png'),
@@ -494,6 +506,9 @@ module.exports = {
       // Deposit badge information
       showDepositBadge,
       depositBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1764167162/king_q_2_5_1_skicfb.png',
+      // 10% automatic discount information
+      hasAutomaticDiscount: automaticDiscount10Percent > 0,
+      automaticDiscountAmount: automaticDiscount10Percent.toFixed(2),
     };
 
     // Build discount columns for the table header based on discount type
@@ -506,8 +521,13 @@ module.exports = {
 
     // Build discount row for the summary based on discount type
     let discountRow = '';
-    if (vars.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
-      discountRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div><span>${vars.discountLabel} :</span><span>-£${vars.discountAmount}</span></div>`;
+    // Show 10% automatic discount if applicable
+    if (vars.hasAutomaticDiscount) {
+      discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">Discount (10%)</span>\n                <span class="summary-value">-£${vars.automaticDiscountAmount}</span>\n              </div>`;
+    }
+    // Show other discounts (percentage or per-item) if applicable
+    if (vars.hasDiscount && ((task.discountType === "percentage" && task.customDiscountPercent > 0) || task.discountType === "perItem")) {
+      discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">${vars.discountLabel}</span>\n                <span class="summary-value">-£${vars.discountAmount}</span>\n              </div>`;
     }
     template = template.replace('{{discountRow}}', discountRow);
 
@@ -1007,10 +1027,72 @@ module.exports = {
         throw new Error('Template file structure is invalid - missing header sections');
       }
 
-      // Calculate VAT and subtotal from amount
-      const total = parseFloat(amount) || 0;
-      const subtotal = total / 1.2; // Remove VAT (20%)
-      const vat = total - subtotal;
+      // Calculate subtotal, discount, VAT, and total from task (same as invoice)
+      let subtotalBeforeDiscounts = 0;
+      let itemDiscountTotal = 0; // Track total item discount for per-item discounts
+
+      // Calculate subtotal from items (before discounts)
+      task.items.forEach((item) => {
+        // For custom items, use item.price; for standard items, use standardItemId.price
+        const itemPrice = item.standardItemId
+          ? (item.standardItemId.price * item.quantity || 0)
+          : (item.price * item.quantity || 0);
+
+        const positionPrice =
+          item.Objectsposition === 'InsideWithDismantling'
+            ? (item.standardItemId?.insideWithDismantlingPrice || 0)
+            : item.Objectsposition === 'Inside'
+              ? (item.standardItemId?.insidePrice || 0)
+              : 0;
+
+        const itemSubtotal = itemPrice + positionPrice;
+
+        // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
+        if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
+          const customPrice = Number(item.customPrice);
+          // Calculate discount: (originalPrice - customPrice) * quantity
+          const originalItemPrice = item.standardItemId
+            ? Number(item.standardItemId.price)
+            : Number(item.price);
+          itemDiscountTotal += (originalItemPrice - customPrice) * item.quantity;
+        }
+
+        subtotalBeforeDiscounts += itemSubtotal;
+      });
+
+      // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      const isAvailableAnyTime = task.available === 'AnyTime';
+      const isCreatedByPublic = task.createdByType === 'public';
+      const hasItems = task.items && task.items.length > 0;
+      const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+
+      let automaticDiscount10Percent = 0;
+      let subtotal = subtotalBeforeDiscounts;
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+        automaticDiscount10Percent = subtotal * 0.1;
+        subtotal *= 0.9;
+      }
+
+      // Handle percentage discount on total only if hasDiscount is true and discountType is "percentage"
+      let percentageDiscount = 0;
+      if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
+        percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
+        subtotal -= percentageDiscount;
+      }
+
+      // Apply minimum price (before VAT) - if under £37.5, make it £37.5
+      const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+      if (enforceMinimumPrice && subtotal < 37.5) {
+        subtotal = 37.5;
+      }
+
+      // Calculate VAT and total
+      const vat = subtotal * 0.2;
+      const total = subtotal + vat;
+
+      // Calculate total discount amount for display (subtotal before discounts - subtotal after discounts)
+      const subtotalAfterDiscounts = subtotal;
+      const totalDiscountAmount = subtotalBeforeDiscounts - subtotalAfterDiscounts;
 
       // Detect if this is a DEPOSIT payment
       const isDeposit = task.paymentStatus === 'partial_Paid' &&
@@ -1138,15 +1220,36 @@ module.exports = {
         }
       }
 
+      // Calculate discount label and amount for display
+      let discountLabel = '';
+      let discountAmount = 0;
+      let hasDiscount = false;
+
+      if (automaticDiscount10Percent > 0) {
+        hasDiscount = true;
+        discountLabel = 'Discount (10%)';
+        discountAmount = automaticDiscount10Percent;
+      }
+
+      if (task.hasDiscount && task.discountType === "perItem" && itemDiscountTotal > 0) {
+        hasDiscount = true;
+        discountLabel = 'Item Discounts';
+        discountAmount = itemDiscountTotal;
+      } else if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
+        hasDiscount = true;
+        discountLabel = `Discount (${task.customDiscountPercent}%)`;
+        discountAmount = percentageDiscount;
+      }
+
       // Handle Handlebars conditionals first
       // Remove discount section if no discount
-      if (!task.hasDiscount) {
+      if (!hasDiscount) {
         html = html.replace(/{{#if hasDiscount}}[\s\S]*?{{\/if}}/g, '');
       } else {
         // Replace discount variables inside the conditional block
         html = html.replace(/{{customDiscountPercent}}/g, (task.customDiscountPercent || 0).toFixed(2));
-        const discountAmount = ((subtotal * (task.customDiscountPercent || 0)) / 100).toFixed(2);
-        html = html.replace(/{{discountAmount}}/g, discountAmount);
+        html = html.replace(/{{discountAmount}}/g, discountAmount.toFixed(2));
+        html = html.replace(/{{discountLabel}}/g, discountLabel);
         // Remove only the hasDiscount Handlebars conditional tags but keep the content
         // Remove {{#if hasDiscount}} tag
         html = html.replace(/{{#if hasDiscount}}/g, '');
@@ -1212,6 +1315,9 @@ module.exports = {
       html = html.replace(/{{subtotal}}/g, subtotal.toFixed(2));
       html = html.replace(/{{paymentDate}}/g, paymentDate || new Date().toLocaleString());
       html = html.replace(/{{paymentType}}/g, paymentType || 'Payment');
+      // Discount variables
+      html = html.replace(/{{discountLabel}}/g, discountLabel || 'Discount');
+      html = html.replace(/{{hasDiscount}}/g, hasDiscount ? 'true' : 'false');
       // Partial payment variables - replace these after conditionals are processed
       html = html.replace(/{{depositAmount}}/g, depositAmount.toFixed(2));
       html = html.replace(/{{remainingAmount}}/g, remainingAmount.toFixed(2));

@@ -103,7 +103,6 @@
           max-height: none !important;
         }
       }
-
     </style>
   </head>
   <body
@@ -378,6 +377,127 @@
                                     border-bottom: 1px solid #e0e0e0;
                                   "
                                 >
+                                  Subtotal:
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  £{{subtotal}}
+                                </td>
+                              </tr>
+                              {{#if hasAutomaticDiscount}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Discount (10%):
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  -£{{automaticDiscountAmount}}
+                                </td>
+                              </tr>
+                              {{/if}} {{#if hasDiscount}} {{#if
+                              isPerItemDiscount}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Item Discounts:
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  -£{{itemDiscountAmount}}
+                                </td>
+                              </tr>
+                              {{else}} {{#if discountAmount}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Discount ({{customDiscountPercent}}%):
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  -£{{discountAmount}}
+                                </td>
+                              </tr>
+                              {{/if}} {{/if}} {{/if}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  VAT (20%):
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  £{{vat}}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                    font-weight: bold;
+                                  "
+                                >
+                                  Total Amount (Including VAT):
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                    font-weight: bold;
+                                  "
+                                >
+                                  £{{totalPrice}}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
                                   Deposit:
                                 </td>
                                 <td
@@ -409,30 +529,69 @@
                                   £{{remainingAmount}}
                                 </td>
                               </tr>
+                              {{else}}
+                              <!-- Full Payment: Show VAT and Total -->
                               <tr>
                                 <td
                                   style="
                                     padding: 8px 0;
                                     border-bottom: 1px solid #e0e0e0;
-                                    font-weight: bold;
                                   "
                                 >
-                                  Total Amount (Including VAT):
+                                  Subtotal:
                                 </td>
                                 <td
                                   style="
                                     padding: 8px 0;
                                     text-align: right;
                                     border-bottom: 1px solid #e0e0e0;
-                                    font-weight: bold;
                                   "
                                 >
-                                  £{{totalPrice}}
+                                  £{{subtotal}}
                                 </td>
                               </tr>
-                              {{else}}
-                              <!-- Full Payment: Show VAT and Total -->
-                              {{#if hasDiscount}}
+                              {{#if hasAutomaticDiscount}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Discount (10%):
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  -£{{automaticDiscountAmount}}
+                                </td>
+                              </tr>
+                              {{/if}} {{#if hasDiscount}} {{#if
+                              isPerItemDiscount}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Item Discounts:
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  -£{{itemDiscountAmount}}
+                                </td>
+                              </tr>
+                              {{else}} {{#if discountAmount}}
                               <tr>
                                 <td
                                   style="
@@ -452,7 +611,7 @@
                                   -£{{discountAmount}}
                                 </td>
                               </tr>
-                              {{/if}}
+                              {{/if}} {{/if}} {{/if}}
                               <tr>
                                 <td
                                   style="
@@ -553,6 +712,19 @@
                               >
                                 There is nothing else you need to do.
                               </p>
+                              {{#if isPartialPaid}}
+                              <p
+                                style="
+                                  font-size: 16px;
+                                  line-height: 1.6;
+                                  margin: 0 0 15px 0;
+                                  color: #333333;
+                                  font-family: Arial, Helvetica, sans-serif;
+                                "
+                              >
+                                The deposit amount is non-refundable.
+                              </p>
+                              {{else}}
                               <p
                                 style="
                                   font-size: 16px;
@@ -567,6 +739,7 @@
                                 full refund, otherwise our system will apply an
                                 automatic cancellation fee of £45.
                               </p>
+
                               <p
                                 style="
                                   font-size: 16px;
@@ -580,6 +753,7 @@
                                 us know in the next 30 minutes if you wish to
                                 change your mind.
                               </p>
+                              {{/if}}
                               <p
                                 style="
                                   font-size: 18px;

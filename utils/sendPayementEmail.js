@@ -121,11 +121,38 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
       </div>
     `;
 
+  // Calculate item discount total for per-item discounts
+  let itemDiscountTotal = 0;
+  if (taskDetails.hasDiscount && taskDetails.discountType === "perItem" && taskDetails.items) {
+    taskDetails.items.forEach((item) => {
+      if (item.customPrice) {
+        const originalItemPrice = item.standardItemId
+          ? Number(item.standardItemId.price)
+          : Number(item.price);
+        const customPrice = Number(item.customPrice);
+        const quantity = Number(item.quantity) || 1;
+        itemDiscountTotal += (originalItemPrice - customPrice) * quantity;
+      }
+    });
+  }
+
   // Discount row for summary
   let discountRowHtml = '';
-  if (taskDetails.hasDiscount && taskDetails.discountType === "percentage" && taskDetails.customDiscountPercent > 0) {
-    const discountAmount = ((subtotal * taskDetails.customDiscountPercent) / 100).toFixed(2);
-    discountRowHtml = `<p style="margin:0 0 8px; font-size:13px;">Discount (${taskDetails.customDiscountPercent}%)<span style="float:right; font-weight:bold;">-£${discountAmount}</span></p>`;
+  if (taskDetails.hasDiscount) {
+    let discountAmount = 0;
+    let discountLabel = '';
+
+    if (taskDetails.discountType === "percentage" && taskDetails.customDiscountPercent > 0) {
+      discountAmount = ((subtotal * taskDetails.customDiscountPercent) / 100).toFixed(2);
+      discountLabel = `Discount (${taskDetails.customDiscountPercent}%)`;
+    } else if (taskDetails.discountType === "perItem" && itemDiscountTotal > 0) {
+      discountAmount = itemDiscountTotal.toFixed(2);
+      discountLabel = 'Item Discounts';
+    }
+
+    if (discountAmount > 0) {
+      discountRowHtml = `<p style="margin:0 0 8px; font-size:13px;">${discountLabel}<span style="float:right; font-weight:bold;">-£${discountAmount}</span></p>`;
+    }
   }
 
   // Invoice summary box (right side of price breakdown)
@@ -140,8 +167,10 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
           VAT
           <span style="float:right; font-weight:bold;">£${vatAmount.toFixed(2)}</span>
         </p>
-        <p style="margin:8px 0 0; font-size:12px; text-transform:uppercase;">Invoice Total</p>
-        <p style="margin:0; font-size:22px; font-weight:bold; color:#ffffff;">£${Number(totall).toFixed(2)}</p>
+        <p style="margin:8px 0 0; font-size:13px; text-transform:uppercase;">
+          Invoice Total
+          <span style="float:right; font-weight:bold; font-size:22px;">£${Number(totall).toFixed(2)}</span>
+        </p>
       </div>
     `;
 
