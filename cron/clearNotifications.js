@@ -4,12 +4,13 @@ const Notification = require('../models/Notification');
 // Schedule a job to run every day at midnight
 cron.schedule('0 0 * * *', async () => {
     try {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0); // Start of today
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7); // 7 days ago
+        oneWeekAgo.setHours(0, 0, 0, 0); // Start of that day
 
-        // Delete only notifications older than today that have been read
+        // Delete only notifications older than a week that have been read
         const result = await Notification.deleteMany({
-            createdAt: { $lt: today },
+            createdAt: { $lt: oneWeekAgo },
             read: true,
         });
 
