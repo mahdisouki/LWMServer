@@ -272,6 +272,7 @@ module.exports = {
     let subtotal = 0;
     let vat = 0;
     let total = 0;
+    let itemDiscountTotal = 0; // Track total item discount for per-item discounts
 
     // Calculate subtotal and handle discounts based on discountType
     task.items.forEach((item) => {
@@ -292,7 +293,13 @@ module.exports = {
       // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
       let finalItemTotal = itemSubtotal;
       if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
-        finalItemTotal = (item.customPrice * item.quantity) + positionPrice;
+        const customPrice = Number(item.customPrice);
+        finalItemTotal = (customPrice * item.quantity) + positionPrice;
+        // Calculate discount: (originalPrice - customPrice) * quantity
+        const originalItemPrice = item.standardItemId
+          ? Number(item.standardItemId.price)
+          : Number(item.price);
+        itemDiscountTotal += (originalItemPrice - customPrice) * item.quantity;
       }
 
       subtotal += finalItemTotal;
@@ -304,14 +311,16 @@ module.exports = {
       subtotal -= percentageDiscount;
     }
 
-    // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+    // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
     const isAvailableAnyTime = task.available === 'AnyTime';
     const isCreatedByPublic = task.createdByType === 'public';
     const hasItems = task.items && task.items.length > 0;
     const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
 
+    let automaticDiscount10Percent = 0;
     if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
       console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice PDF');
+      automaticDiscount10Percent = subtotal * 0.1;
       subtotal *= 0.9;
     }
 
@@ -458,7 +467,8 @@ module.exports = {
       paymentStatusUnpaid: paymentStatusUnpaidDisplay,
       // Discount display logic based on discount type
       showDiscountRow:
-        task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0
+        (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) ||
+          (task.hasDiscount && task.discountType === "perItem")
           ? 'block'
           : 'none',
       discountLabel:
@@ -470,7 +480,9 @@ module.exports = {
       // discountAmount: task.hasDiscount && (task.discountType === "percentage" || task.customDiscountPercent > 0)
       //   ? discountAmount.toFixed(2)
       //   : '0.00',
-      discountAmount: percentageDiscount.toFixed(2),
+      discountAmount: (task.hasDiscount && task.discountType === "perItem")
+        ? itemDiscountTotal.toFixed(2)
+        : percentageDiscount.toFixed(2),
       // Asset paths with base64 encoding
       logoPath: asset('london_waste_logo 1.png'),
       bgPath: asset('green-bg.png'),
@@ -494,6 +506,9 @@ module.exports = {
       // Deposit badge information
       showDepositBadge,
       depositBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1764167162/king_q_2_5_1_skicfb.png',
+      // 10% automatic discount information
+      hasAutomaticDiscount: automaticDiscount10Percent > 0,
+      automaticDiscountAmount: automaticDiscount10Percent.toFixed(2),
     };
 
     // Build discount columns for the table header based on discount type
@@ -506,8 +521,13 @@ module.exports = {
 
     // Build discount row for the summary based on discount type
     let discountRow = '';
-    if (vars.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
-      discountRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div><span>${vars.discountLabel} :</span><span>-£${vars.discountAmount}</span></div>`;
+    // Show 10% automatic discount if applicable
+    if (vars.hasAutomaticDiscount) {
+      discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">Discount (10%)</span>\n                <span class="summary-value">-£${vars.automaticDiscountAmount}</span>\n              </div>`;
+    }
+    // Show other discounts (percentage or per-item) if applicable
+    if (vars.hasDiscount && ((task.discountType === "percentage" && task.customDiscountPercent > 0) || task.discountType === "perItem")) {
+      discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">${vars.discountLabel}</span>\n                <span class="summary-value">-£${vars.discountAmount}</span>\n              </div>`;
     }
     template = template.replace('{{discountRow}}', discountRow);
 

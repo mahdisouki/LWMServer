@@ -2907,6 +2907,10 @@ const taskCtrl = {
       const paymentMethod = latestPayment?.paymentType || task.paidAmount?.method || task.paymentMethod || 'Online Payment';
       const subtotalBeforeDiscount = task.totalPrice;
 
+      // Calculate item discount total for perItem discounts
+      let itemDiscountTotal = 0;
+      let originalSubtotalBeforePerItemDiscounts = 0; // Track original subtotal before per-item discounts
+
       // Calculate subtotal and handle discounts based on discountType
       task.items.forEach((item) => {
         let itemPrice = 0;
@@ -2931,14 +2935,20 @@ const taskCtrl = {
 
         // Calculate total: (itemPrice * quantity) + positionFee
         let finalItemTotal;
+        let originalItemTotal;
 
         if (item.standardItemId) {
           // For standard items: (itemPrice * quantity) + positionFee
-          finalItemTotal = (itemPrice * quantity) + positionFee;
+          originalItemTotal = (itemPrice * quantity) + positionFee;
+          finalItemTotal = originalItemTotal;
         } else {
           // For custom items: itemPrice * quantity (no position fee)
-          finalItemTotal = itemPrice * quantity;
+          originalItemTotal = itemPrice * quantity;
+          finalItemTotal = originalItemTotal;
         }
+
+        // Track original subtotal BEFORE per-item discounts
+        originalSubtotalBeforePerItemDiscounts += originalItemTotal;
 
         // Handle item-specific discount only if hasDiscount is true and discountType is "perItem"
         if (
@@ -2951,9 +2961,13 @@ const taskCtrl = {
           if (item.standardItemId) {
             // For standard items with discount: (customPrice * quantity) + positionFee
             finalItemTotal = (customPrice * quantity) + positionFee;
+            // Calculate discount: (originalPrice - customPrice) * quantity
+            itemDiscountTotal += (itemPrice - customPrice) * quantity;
           } else {
             // For custom items with discount: customPrice * quantity
             finalItemTotal = customPrice * quantity;
+            // Calculate discount: (originalPrice - customPrice) * quantity
+            itemDiscountTotal += (itemPrice - customPrice) * quantity;
           }
         }
 
@@ -2974,24 +2988,34 @@ const taskCtrl = {
         );
       });
 
+      // Capture subtotal before any percentage discount, 10% discount, or minimum price adjustments
+      // For per-item discounts, use the original subtotal before per-item discounts were applied
+      // For other cases, use the current subtotal
+      const subtotalBeforeDiscounts = (task.hasDiscount && task.discountType === 'perItem')
+        ? originalSubtotalBeforePerItemDiscounts
+        : subtotal;
+
+      // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      const isAvailableAnyTime = task.available === 'AnyTime';
+      const isCreatedByPublic = task.createdByType === 'public';
+      const hasItems = task.items && task.items.length > 0;
+      const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+
+      let automaticDiscount10Percent = 0;
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+        console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice email');
+        automaticDiscount10Percent = subtotal * 0.1;
+        subtotal *= 0.9;
+      }
+
       // Handle percentage discount on total only if hasDiscount is true and discountType is "percentage"
+      // Note: Percentage discount is calculated AFTER the 10% automatic discount is applied
       if (
         task.hasDiscount &&
         task.discountType === 'percentage' &&
         task.customDiscountPercent > 0
       ) {
         percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
-      }
-
-      // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
-      const isAvailableAnyTime = task.available === 'AnyTime';
-      const isCreatedByPublic = task.createdByType === 'public';
-      const hasItems = task.items && task.items.length > 0;
-      const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
-
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
-        console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice email');
-        subtotal *= 0.9;
       }
 
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
@@ -3085,9 +3109,15 @@ const taskCtrl = {
         lastName: task.lastName,
         orderNumber: task.orderNumber,
         totalPrice: total.toFixed(2),
-        hasDiscount: task.customDiscountPercent > 0,
+        hasDiscount: task.hasDiscount && (task.customDiscountPercent > 0 || task.discountType === 'perItem'),
+        hasAutomaticDiscount: automaticDiscount10Percent > 0,
+        automaticDiscountAmount: automaticDiscount10Percent.toFixed(2),
+        isPerItemDiscount: task.hasDiscount && task.discountType === 'perItem',
+        discountType: task.discountType || 'percentage',
         customDiscountPercent: task.customDiscountPercent,
         discountAmount: percentageDiscount.toFixed(2),
+        itemDiscountAmount: itemDiscountTotal.toFixed(2),
+        subtotal: subtotalBeforeDiscounts.toFixed(2),
         vat: vat.toFixed(2),
         total: total.toFixed(2),
         isPartialPaid: isPartialPaid,
