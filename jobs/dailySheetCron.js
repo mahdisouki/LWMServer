@@ -1,10 +1,10 @@
 const cron = require('node-cron');
 const dailySheetController = require('../controllers/dailySheetController'); // Adjust the path as necessary
 
-// Schedule the cron job for 1:45 PM every day
-cron.schedule('0 5 * * *', async () => {
+// Schedule the cron job for 3:00 AM every day
+cron.schedule('0 3 * * *', async () => {
   try {
-    console.log('Generating daily sheets for all drivers at 6 PM...');
+    console.log('Generating daily sheets for all drivers at 3 AM...');
     
     // Get today's date in YYYY-MM-DD format
     const today = new Date();
