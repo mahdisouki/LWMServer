@@ -8,7 +8,7 @@ const paymentHistorySchema = new Schema({
     phoneNumber: { type: String, required: true },
     amount: { type: Number, required: true }, // Montant total
     currency: { type: String, default: "GBP" },
-    paymentType: { type: String, enum: ["Stripe", "PayPal"], required: true },
+    paymentType: { type: String, enum: ["Stripe", "PayPal", "BankTransfer", "Cash"], required: true },
     paymentDate: { type: Date, default: Date.now },
     transactionId: { type: String, required: true },
     payerAccount: { type: String },
@@ -23,7 +23,7 @@ const paymentHistorySchema = new Schema({
     // Refund tracking fields
     refunds: [{
         refundId: { type: String, required: true },
-        gateway: { type: String, enum: ["stripe", "paypal"], required: true },
+        gateway: { type: String, enum: ["stripe", "paypal", "banktransfer", "cash"], required: true },
         amountGBP: { type: Number, required: true },
         currency: { type: String, default: "GBP" },
         status: { type: String },

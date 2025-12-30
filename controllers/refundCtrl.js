@@ -9,15 +9,15 @@ function PayPalClient() {
     const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox';
     const clientId = process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-    
+
     if (!clientId || !clientSecret) {
         throw new Error("PayPal credentials are required");
     }
-    
+
     const environment = PAYPAL_MODE === 'live'
         ? new paypal.core.LiveEnvironment(clientId, clientSecret)
         : new paypal.core.SandboxEnvironment(clientId, clientSecret);
-    
+
     return new paypal.core.PayPalHttpClient(environment);
 }
 
@@ -34,7 +34,7 @@ async function verifyPayPalRefund(refundId) {
 
 // Helper function to process a single refund for a payment history
 async function processSingleRefund(paymentHistory, amountToRefund) {
-    const gateway = String(paymentHistory.paymentType || '').toLowerCase();
+    let gateway = String(paymentHistory.paymentType || '').toLowerCase();
     let refundId = null;
     let refundStatus = null;
     let rawPayload = null;
@@ -75,6 +75,23 @@ async function processSingleRefund(paymentHistory, amountToRefund) {
                 throw error;
             }
         }
+    } else if (paymentHistory.paymentType === 'BankTransfer' || paymentHistory.paymentType === 'Cash') {
+        // Manual refunds - no API call needed
+        const paymentTypeLower = paymentHistory.paymentType.toLowerCase();
+        refundId = `${paymentTypeLower}_refund_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        refundStatus = 'MANUAL_PROCESSED';
+        verified = true;
+        rawPayload = {
+            type: paymentTypeLower,
+            processedAt: new Date().toISOString(),
+            note: `Manual ${paymentHistory.paymentType} refund processed`
+        };
+        // Set gateway based on payment type
+        if (paymentHistory.paymentType === 'BankTransfer') {
+            gateway = 'banktransfer';
+        } else {
+            gateway = 'cash';
+        }
     }
 
     return { verified, refundId, refundStatus, rawPayload, gateway };
@@ -91,6 +108,20 @@ exports.processRefund = async (req, res) => {
         // Find ALL payment histories for this task (deposit + remaining)
         const paymentHistories = await PaymentHistory.find({ taskId });
         if (!paymentHistories || paymentHistories.length === 0) {
+            // Check if this is a cash or bank transfer payment that should use manual refund endpoint
+            const isCash = task.paymentMethod === 'cash' ||
+                task.paidAmount?.method === 'cash' ||
+                task.remainingAmount?.method === 'cash';
+            const isBankTransfer = task.paymentMethod === 'BankTransfer' ||
+                task.paidAmount?.method === 'BankTransfer' ||
+                task.remainingAmount?.method === 'BankTransfer';
+
+            if (isCash || isBankTransfer) {
+                return res.status(400).json({
+                    message: "Cash and Bank Transfer refunds must be processed using the /refund/manual endpoint"
+                });
+            }
+
             return res.status(404).json({ message: "Payment history not found" });
         }
 
@@ -331,5 +362,165 @@ exports.processRefund = async (req, res) => {
     } catch (error) {
         console.error("Error processing refund:", error);
         res.status(500).json({ message: "Error processing refund", error: error.message });
+    }
+};
+
+/**
+ * Process manual refund for Cash and Bank Transfer payments
+ * Creates PaymentHistory if missing and tracks the refund
+ */
+exports.processManualRefund = async (req, res) => {
+    const { taskId, refundAmount, bankReference, notes } = req.body;
+
+    try {
+        if (!taskId || !refundAmount) {
+            return res.status(400).json({ message: "Task ID and refund amount are required" });
+        }
+
+        const task = await Task.findById(taskId).populate('items.standardItemId');
+        if (!task) {
+            return res.status(404).json({ message: "Task not found" });
+        }
+
+        // Determine payment method
+        const isCash = task.paymentMethod === 'cash' ||
+            task.paidAmount?.method === 'cash' ||
+            task.remainingAmount?.method === 'cash';
+        const isBankTransfer = task.paymentMethod === 'BankTransfer' ||
+            task.paidAmount?.method === 'BankTransfer' ||
+            task.remainingAmount?.method === 'BankTransfer';
+
+        if (!isCash && !isBankTransfer) {
+            return res.status(400).json({
+                message: "This task is not paid via Cash or Bank Transfer. Use the standard refund endpoint for online payments."
+            });
+        }
+
+        const paymentMethod = isCash ? 'Cash' : 'BankTransfer';
+        const gateway = isCash ? 'cash' : 'banktransfer';
+
+        // Calculate total paid from task amounts (cash/bank transfer may not have PaymentHistory)
+        const depositAmount = task.paidAmount?.amount || 0;
+        const remainingPaymentAmount = task.remainingAmount?.amount || 0;
+        // For cash, also check cashReceived field
+        const cashAmount = isCash ? (task.cashReceived || 0) : 0;
+        const totalPaid = Math.max(depositAmount + remainingPaymentAmount, cashAmount);
+
+        if (totalPaid <= 0) {
+            return res.status(400).json({
+                message: "Cannot determine total paid amount for this task"
+            });
+        }
+
+        // Check existing payment histories
+        const paymentHistories = await PaymentHistory.find({ taskId });
+        const totalRefundedSoFar = paymentHistories.reduce((sum, ph) => {
+            return sum + (ph.refundedTotalGBP || 0);
+        }, 0);
+
+        const availableToRefund = totalPaid - totalRefundedSoFar;
+
+        if (refundAmount <= 0) {
+            return res.status(400).json({ message: "Invalid refund amount" });
+        }
+
+        if (refundAmount > availableToRefund) {
+            return res.status(400).json({
+                message: `Refund amount exceeds available amount. Total paid: £${totalPaid.toFixed(2)}, Already refunded: £${totalRefundedSoFar.toFixed(2)}, Available: £${availableToRefund.toFixed(2)}`
+            });
+        }
+
+        // Find or create PaymentHistory for this payment method
+        let paymentHistory = paymentHistories.find(ph => ph.paymentType === paymentMethod);
+
+        if (!paymentHistory) {
+            // Create a PaymentHistory record if it doesn't exist
+            paymentHistory = await PaymentHistory.create({
+                taskId: task._id,
+                firstName: task.firstName,
+                lastName: task.lastName,
+                phoneNumber: task.phoneNumber,
+                amount: totalPaid,
+                currency: 'GBP',
+                paymentType: paymentMethod,
+                paymentDate: task.date || new Date(),
+                transactionId: `${gateway}_${task.orderNumber || task._id}_${Date.now()}`,
+                payerAccount: task.email,
+            });
+        }
+
+        // Process the manual refund
+        const refundId = `${gateway}_refund_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+        // Create refund record with metadata
+        const refundRecord = {
+            refundId: refundId,
+            gateway: gateway,
+            amountGBP: Number(refundAmount),
+            currency: 'GBP',
+            status: 'MANUAL_PROCESSED',
+            createdAt: new Date(),
+            metadata: {
+                type: gateway,
+                processedAt: new Date().toISOString(),
+                bankReference: bankReference || null,
+                notes: notes || null,
+                processedBy: req.user?._id || null,
+            }
+        };
+
+        // Update PaymentHistory with refund
+        await PaymentHistory.updateOne(
+            { _id: paymentHistory._id },
+            {
+                $push: { refunds: refundRecord },
+                $inc: { refundedTotalGBP: Number(refundAmount) }
+            }
+        );
+
+        // Update task payment status
+        const updatedHistories = await PaymentHistory.find({ taskId });
+        const newTotalRefunded = updatedHistories.reduce((sum, ph) => {
+            return sum + (ph.refundedTotalGBP || 0);
+        }, 0);
+        const remainingAmount = totalPaid - newTotalRefunded;
+
+        if (remainingAmount <= 0.01) {
+            task.paymentStatus = 'refunded';
+        } else {
+            task.paymentStatus = 'partial_Refunded';
+        }
+        await task.save();
+
+        // Send refund email
+        await sendRefundEmail({
+            task,
+            paymentHistory: paymentHistory,
+            refundAmount,
+            isSplitRefund: false,
+            refundDetails: [{
+                paymentHistoryId: paymentHistory._id,
+                transactionId: paymentHistory.transactionId,
+                gateway: paymentMethod, // Display name
+                amount: refundAmount
+            }]
+        });
+
+        return res.status(200).json({
+            message: `${paymentMethod} refund of £${refundAmount.toFixed(2)} processed successfully`,
+            refundId: refundId,
+            paymentMethod: paymentMethod,
+            remainingAmount,
+            totalRefunded: newTotalRefunded,
+            totalPaid: totalPaid,
+            bankReference: bankReference || null
+        });
+
+    } catch (error) {
+        console.error("Error processing manual refund:", error);
+        res.status(500).json({
+            message: "Error processing manual refund",
+            error: error.message
+        });
     }
 };
