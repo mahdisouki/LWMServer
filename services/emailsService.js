@@ -1258,16 +1258,9 @@ module.exports = {
       const remainingAmount = task.remainingAmount?.amount || 0;
       const fullTotalPrice = task.totalPrice || (depositAmount + remainingAmount);
 
-      // Determine if this is a true partial payment (deposit paid but remaining not paid)
-      const isDepositOnly = task.paymentStatus === 'partial_Paid' &&
-        task.paidAmount?.status === 'Paid' &&
-        task.remainingAmount?.status === 'Not_Paid';
-
-      const isFullyPaid = task.paymentStatus === 'Paid' ||
-        (task.paidAmount?.status === 'Paid' && task.remainingAmount?.status === 'Paid');
-
-      // isPartialPaid is true ONLY if it's a deposit-only payment (not fully paid)
-      const isPartialPaid = isDepositOnly && !isFullyPaid;
+      // Match the same logic as invoice confirmation email
+      // isPartialPaid is true if paymentStatus is 'partial_Paid'
+      const isPartialPaid = task.paymentStatus === 'partial_Paid';
 
       // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
       // For no discounts, show subtotal after any automatic 10% discount
