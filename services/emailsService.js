@@ -5,6 +5,7 @@ const path = require('path');
 const https = require('https');
 const { chromium } = require('playwright');
 const PDFDocument = require('pdfkit');
+const Handlebars = require('handlebars');
 const Task = require('../models/Task');
 const StandardItem = require('../models/StandardItem');
 const transporter = nodemailer.createTransport({
@@ -290,7 +291,7 @@ module.exports = {
             : 0;
 
       const itemSubtotal = itemPrice + positionPrice;
-      
+
       // Always add to subtotalBeforeDiscounts (original prices)
       subtotalBeforeDiscounts += itemSubtotal;
 
@@ -1027,10 +1028,10 @@ module.exports = {
 
       // Read the payment confirmation template
       const templatePath = path.join(__dirname, '../public/templates/paymentConfirmation.html');
-      let html = fs.readFileSync(templatePath, 'utf8');
+      const templateSource = fs.readFileSync(templatePath, 'utf8');
 
       // Verify template was read correctly and contains header sections
-      if (!html.includes('<!-- Header Image -->') || !html.includes('<!-- Payment Confirmation Banner Section -->')) {
+      if (!templateSource.includes('<!-- Header Image -->') || !templateSource.includes('<!-- Payment Confirmation Banner Section -->')) {
         console.error('❌ ERROR: Template file is missing header sections!');
         throw new Error('Template file structure is invalid - missing header sections');
       }
@@ -1232,6 +1233,8 @@ module.exports = {
       let discountLabel = '';
       let discountAmount = 0;
       let hasDiscount = false;
+      let hasAutomaticDiscount = automaticDiscount10Percent > 0;
+      let isPerItemDiscount = false;
 
       if (automaticDiscount10Percent > 0) {
         hasDiscount = true;
@@ -1241,6 +1244,7 @@ module.exports = {
 
       if (task.hasDiscount && task.discountType === "perItem" && itemDiscountTotal > 0) {
         hasDiscount = true;
+        isPerItemDiscount = true;
         discountLabel = 'Item Discounts';
         discountAmount = itemDiscountTotal;
       } else if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
@@ -1249,30 +1253,12 @@ module.exports = {
         discountAmount = percentageDiscount;
       }
 
-      // Handle Handlebars conditionals first
-      // Remove discount section if no discount
-      if (!hasDiscount) {
-        html = html.replace(/{{#if hasDiscount}}[\s\S]*?{{\/if}}/g, '');
-      } else {
-        // Replace discount variables inside the conditional block
-        html = html.replace(/{{customDiscountPercent}}/g, (task.customDiscountPercent || 0).toFixed(2));
-        html = html.replace(/{{discountAmount}}/g, discountAmount.toFixed(2));
-        html = html.replace(/{{discountLabel}}/g, discountLabel);
-        // Remove only the hasDiscount Handlebars conditional tags but keep the content
-        // Remove {{#if hasDiscount}} tag
-        html = html.replace(/{{#if hasDiscount}}/g, '');
-        // Remove the {{/if}} that belongs to hasDiscount (it's right after the discount row)
-        // Match: </tr> followed by {{/if}} (this is the closing tag for hasDiscount)
-        html = html.replace(/<\/tr>\s*{{\/if}}/g, '</tr>');
-      }
-
-      // Calculate values for partial payment display FIRST (before conditionals)
+      // Calculate values for partial payment display
       const depositAmount = task.paidAmount?.amount || 0;
       const remainingAmount = task.remainingAmount?.amount || 0;
       const fullTotalPrice = task.totalPrice || (depositAmount + remainingAmount);
 
       // Determine if this is a true partial payment (deposit paid but remaining not paid)
-      // OR if both are paid (remaining payment was just completed or full payment)
       const isDepositOnly = task.paymentStatus === 'partial_Paid' &&
         task.paidAmount?.status === 'Paid' &&
         task.remainingAmount?.status === 'Not_Paid';
@@ -1283,67 +1269,59 @@ module.exports = {
       // isPartialPaid is true ONLY if it's a deposit-only payment (not fully paid)
       const isPartialPaid = isDepositOnly && !isFullyPaid;
 
-      if (!isPartialPaid) {
-        // For fully paid (including remaining payment): 
-        // Process conditionals in a way that preserves the "IMPORTANT NEXT STEPS" section
-        
-        // 1. First, handle the nested conditional inside "IMPORTANT NEXT STEPS" section (has {{else}})
-        // Match: {{#if isPartialPaid}}...{{else}}...{{/if}} and replace with just the {{else}} content
-        // This should match the block around line 568-609 in the template
-        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{else}}([\s\S]*?){{\/if}}/g, '$1');
-        
-        // 2. Then, handle any remaining {{#if isPartialPaid}} blocks without {{else}} - remove them completely
-        // This handles:
-        //   - The partial payment table rows (around line 458-508)
-        //   - The "Please settle the remaining balance" message (around line 514-527)
-        html = html.replace(/{{#if isPartialPaid}}[\s\S]*?{{\/if}}/g, '');
-      } else {
-        // For deposit-only payment: process all {{#if isPartialPaid}} blocks
-        // First, handle blocks with {{else}} - keep content before {{else}}, remove {{else}}...{{/if}}
-        html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{else}}[\s\S]*?{{\/if}}/g, '$1');
-        // Then, handle remaining blocks without {{else}} - remove tags but keep content
-        // Use a simple regex to match and remove remaining {{#if isPartialPaid}}...{{/if}} blocks
-        let iterations = 0;
-        let previousHtml = '';
-        while (html.includes('{{#if isPartialPaid}}') && html !== previousHtml && iterations < 10) {
-          previousHtml = html;
-          html = html.replace(/{{#if isPartialPaid}}([\s\S]*?){{\/if}}/g, '$1');
-          iterations++;
-        }
-      }
-
-      // Final cleanup: remove any remaining Handlebars tags for isPartialPaid that might have been missed
-      // Remove any remaining {{#if isPartialPaid}} tags
-      html = html.replace(/{{#if isPartialPaid}}/g, '');
-      // Remove {{else}} tags (these are only for isPartialPaid, hasDiscount doesn't use else)
-      html = html.replace(/{{else}}/g, '');
-      // Remove remaining {{/if}} tags that are for isPartialPaid
-      // Since hasDiscount is processed earlier and its {{/if}} is already removed, 
-      // we can safely remove any remaining {{/if}} tags
-      html = html.replace(/{{\/if}}/g, '');
-
-      // Replace template variables
-      html = html.replace(/{{firstName}}/g, firstName || '');
-      html = html.replace(/{{lastName}}/g, lastName || '');
-      html = html.replace(/{{orderNumber}}/g, task.orderNumber || orderId);
-      html = html.replace(/{{total}}/g, total.toFixed(2));
-      html = html.replace(/{{vat}}/g, vat.toFixed(2));
       // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
       // For no discounts, show subtotal after any automatic 10% discount
       const subtotalForDisplay = (task.hasDiscount && (task.discountType === "perItem" || task.discountType === "percentage"))
         ? subtotalBeforeDiscounts
         : subtotal;
-      html = html.replace(/{{subtotal}}/g, subtotalForDisplay.toFixed(2));
-      html = html.replace(/{{paymentDate}}/g, paymentDate || new Date().toLocaleString());
-      html = html.replace(/{{paymentType}}/g, paymentType || 'Payment');
-      // Discount variables
-      html = html.replace(/{{discountLabel}}/g, discountLabel || 'Discount');
-      html = html.replace(/{{hasDiscount}}/g, hasDiscount ? 'true' : 'false');
-      // Partial payment variables - replace these after conditionals are processed
-      html = html.replace(/{{depositAmount}}/g, depositAmount.toFixed(2));
-      html = html.replace(/{{remainingAmount}}/g, remainingAmount.toFixed(2));
-      html = html.replace(/{{totalPrice}}/g, fullTotalPrice.toFixed(2));
-      html = html.replace(/{{paymentMethod}}/g, paymentMethod);
+
+      // Compile template with Handlebars
+      let html;
+      try {
+        const template = Handlebars.compile(templateSource);
+        const templateData = {
+          firstName: firstName || '',
+          lastName: lastName || '',
+          orderNumber: task.orderNumber || orderId,
+          total: total.toFixed(2),
+          vat: vat.toFixed(2),
+          subtotal: subtotalForDisplay.toFixed(2),
+          paymentDate: paymentDate || new Date().toLocaleString(),
+          paymentType: paymentType || 'Payment',
+          paymentMethod: paymentMethod,
+          hasDiscount: hasDiscount,
+          hasAutomaticDiscount: hasAutomaticDiscount,
+          isPerItemDiscount: isPerItemDiscount,
+          discountLabel: discountLabel || 'Discount',
+          discountAmount: discountAmount.toFixed(2),
+          automaticDiscountAmount: automaticDiscount10Percent.toFixed(2),
+          itemDiscountAmount: itemDiscountTotal.toFixed(2),
+          customDiscountPercent: task.customDiscountPercent || 0,
+          isPartialPaid: isPartialPaid,
+          depositAmount: depositAmount.toFixed(2),
+          remainingAmount: remainingAmount.toFixed(2),
+          totalPrice: fullTotalPrice.toFixed(2),
+        };
+
+        // Log template data for debugging
+        console.log('Payment Confirmation Template Data:', {
+          isPartialPaid: templateData.isPartialPaid,
+          hasDiscount: templateData.hasDiscount,
+          orderNumber: templateData.orderNumber,
+        });
+
+        html = template(templateData);
+
+        // Verify IMPORTANT NEXT STEPS section is present
+        if (!html.includes('IMPORTANT NEXT STEPS')) {
+          console.error('❌ ERROR: IMPORTANT NEXT STEPS section missing from compiled HTML!');
+          console.log('HTML length:', html.length);
+          console.log('HTML snippet around line 529:', html.substring(html.indexOf('Please settle') || 0, (html.indexOf('Please settle') || 0) + 500));
+        }
+      } catch (error) {
+        console.error('❌ ERROR compiling Handlebars template:', error);
+        throw error;
+      }
 
       // Note: VAT line is not included in the payment confirmation template for full payments
       // The template already has the correct payment confirmation message
