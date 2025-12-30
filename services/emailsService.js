@@ -1507,10 +1507,9 @@ module.exports = {
 
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: `Payment Failed - Order #${task.orderNumber || orderId}`,
+        to: process.env.EMAIL_USER, // Send only to responsible email, not to customer
+        subject: `Payment Failed - Order #${task.orderNumber || orderId} - Customer: ${email}`,
         html,
-        bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
       });
     } catch (error) {
       console.error('Error sending payment failed email:', error);
