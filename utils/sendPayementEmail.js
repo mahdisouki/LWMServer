@@ -15,10 +15,31 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   const vatRow = breakdown.find(item => item.description === "VAT (20%)");
   const vatAmount = vatRow ? parseFloat(vatRow.amount) : 0;
 
-  // Calculate subtotal from the full task total (totall), not the partial payment (totalPrice)
-  const subtotal = Number(totall) - vatAmount;
+  // Calculate subtotal BEFORE discounts from items (original prices)
+  let subtotalBeforeDiscounts = 0;
+  if (taskDetails.items && taskDetails.items.length > 0) {
+    taskDetails.items.forEach((item) => {
+      // For custom items, use item.price; for standard items, use standardItemId.price
+      const itemPrice = item.standardItemId
+        ? (item.standardItemId.price * item.quantity || 0)
+        : (item.price * item.quantity || 0);
 
-  console.log("taskDetails", taskDetails, "totalPrice (partial payment)", totalPrice, "totall (full task total)", totall, "vatAmount", vatAmount, "subtotal", subtotal, "amountToPay", amountToPay, "paymentType", paymentType)
+      const positionPrice =
+        item.Objectsposition === 'InsideWithDismantling'
+          ? (item.standardItemId?.insideWithDismantlingPrice || 0)
+          : item.Objectsposition === 'Inside'
+            ? (item.standardItemId?.insidePrice || 0)
+            : 0;
+
+      const itemSubtotal = itemPrice + positionPrice;
+      subtotalBeforeDiscounts += itemSubtotal;
+    });
+  }
+
+  // Calculate subtotal AFTER discounts (this is what totall - vatAmount gives us)
+  const subtotalAfterDiscounts = Number(totall) - vatAmount;
+
+  console.log("taskDetails", taskDetails, "totalPrice (partial payment)", totalPrice, "totall (full task total)", totall, "vatAmount", vatAmount, "subtotalBeforeDiscounts", subtotalBeforeDiscounts, "subtotalAfterDiscounts", subtotalAfterDiscounts, "amountToPay", amountToPay, "paymentType", paymentType)
 
   // Compute remaining based on paid so far plus this payment
   // For deposit payments, we need to check if the paidAmount is already set to the deposit amount
@@ -138,29 +159,36 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
 
   // Discount row for summary
   let discountRowHtml = '';
+  let calculatedDiscountAmount = 0;
   if (taskDetails.hasDiscount) {
     let discountAmount = 0;
     let discountLabel = '';
 
     if (taskDetails.discountType === "percentage" && taskDetails.customDiscountPercent > 0) {
-      discountAmount = ((subtotal * taskDetails.customDiscountPercent) / 100).toFixed(2);
+      // Calculate discount from subtotal BEFORE discounts
+      discountAmount = (subtotalBeforeDiscounts * taskDetails.customDiscountPercent) / 100;
       discountLabel = `Discount (${taskDetails.customDiscountPercent}%)`;
     } else if (taskDetails.discountType === "perItem" && itemDiscountTotal > 0) {
-      discountAmount = itemDiscountTotal.toFixed(2);
+      discountAmount = itemDiscountTotal;
       discountLabel = 'Item Discounts';
     }
 
+    calculatedDiscountAmount = discountAmount;
+
     if (discountAmount > 0) {
-      discountRowHtml = `<p style="margin:0 0 8px; font-size:13px;">${discountLabel}<span style="float:right; font-weight:bold;">-£${discountAmount}</span></p>`;
+      discountRowHtml = `<p style="margin:0 0 8px; font-size:13px;">${discountLabel}<span style="float:right; font-weight:bold;">-£${discountAmount.toFixed(2)}</span></p>`;
     }
   }
+
+  // Use subtotal BEFORE discounts for display
+  const subtotalForDisplay = subtotalBeforeDiscounts;
 
   // Invoice summary box (right side of price breakdown)
   const summaryBoxHtml = `
       <div style="background:#34C759; padding:14px; color:#ffffff;">
         <p style="margin:0 0 6px; font-size:13px;">
           Subtotal
-          <span style="float:right; font-weight:bold;">£${subtotal.toFixed(2)}</span>
+          <span style="float:right; font-weight:bold;">£${subtotalForDisplay.toFixed(2)}</span>
         </p>
         ${discountRowHtml}
         <p style="margin:0 0 8px; font-size:13px;">
