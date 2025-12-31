@@ -2885,6 +2885,28 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
 
+      // Check if task is refunded or partially refunded
+      const isRefunded = task.paymentStatus === 'refunded' || task.paymentStatus === 'partial_Refunded';
+      
+      // Calculate total refunded amount from PaymentHistory
+      const PaymentHistory = require('../models/PaymentHistory');
+      let totalRefundedAmount = 0;
+      let refundInfo = null;
+      
+      if (isRefunded) {
+        const paymentHistories = await PaymentHistory.find({ taskId: task._id });
+        totalRefundedAmount = paymentHistories.reduce((sum, ph) => {
+          return sum + (ph.refundedTotalGBP || 0);
+        }, 0);
+        
+        const isFullRefund = task.paymentStatus === 'refunded';
+        refundInfo = {
+          isRefund: true,
+          refundAmount: totalRefundedAmount,
+          isFullRefund: isFullRefund
+        };
+      }
+
       // Ensure directory exists
       const dirPath = path.join(__dirname, '../generated');
       if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
@@ -2892,8 +2914,8 @@ const taskCtrl = {
       const fileName = `invoice-${task.orderNumber}.pdf`;
       const filePath = path.join(dirPath, fileName);
 
-      // Generate the official invoice PDF
-      await generateOfficialInvoicePDF(task, filePath);
+      // Generate the official invoice PDF with refund info if applicable
+      await generateOfficialInvoicePDF(task, filePath, refundInfo);
 
       // Email content in branded design
       const depositAmount = task.paidAmount?.amount || 0;
@@ -2901,7 +2923,6 @@ const taskCtrl = {
       const isPartialPaid = task.paymentStatus === 'partial_Paid';
 
       // Get payment method from PaymentHistory or task
-      const PaymentHistory = require('../models/PaymentHistory');
       const latestPayment = await PaymentHistory.findOne({ taskId: task._id })
         .sort({ paymentDate: -1 });
       const paymentMethod = latestPayment?.paymentType || task.paidAmount?.method || task.paymentMethod || 'Online Payment';
