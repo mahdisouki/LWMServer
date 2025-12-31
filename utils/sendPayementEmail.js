@@ -157,6 +157,18 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     });
   }
 
+  // Calculate 10% automatic discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+  const isAvailableAnyTime = taskDetails.available === 'AnyTime';
+  const isCreatedByPublic = taskDetails.createdByType === 'public';
+  const hasItems = taskDetails.items && taskDetails.items.length > 0;
+  const allItemsOutside = hasItems && taskDetails.items.every((i) => i.Objectsposition === 'Outside');
+
+  let automaticDiscount10Percent = 0;
+  if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+    console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in payment email');
+    automaticDiscount10Percent = subtotalBeforeDiscounts * 0.1;
+  }
+
   // Discount row for summary
   let discountRowHtml = '';
   let calculatedDiscountAmount = 0;
@@ -178,6 +190,13 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     if (discountAmount > 0) {
       discountRowHtml = `<p style="margin:0 0 8px; font-size:13px;">${discountLabel}<span style="float:right; font-weight:bold;">-£${discountAmount.toFixed(2)}</span></p>`;
     }
+  }
+
+  // Display automatic 10% discount before other discounts if it exists
+  if (automaticDiscount10Percent > 0) {
+    const automaticDiscountHtml = `<p style="margin:0 0 8px; font-size:13px;">Discount (10%)<span style="float:right; font-weight:bold;">-£${automaticDiscount10Percent.toFixed(2)}</span></p>`;
+    // Prepend automatic discount to existing discount row
+    discountRowHtml = automaticDiscountHtml + discountRowHtml;
   }
 
   // Use subtotal BEFORE discounts for display
