@@ -428,6 +428,11 @@ module.exports = {
     const showPartialRefundBadge = isRefund && !isFullRefund ? 'block' : 'none';
     const showRefundRow = isRefund ? 'block' : 'none';
 
+    // Adjust total by subtracting refund amount if there's a refund
+    if (isRefund && refundAmount > 0) {
+      total = Math.max(0, total - refundAmount);
+    }
+
     // Detect if this is a DEPOSIT payment (partial payment where deposit is paid but remaining is not)
     // A deposit is when: paymentStatus is 'partial_Paid', paidAmount is 'Paid', and remainingAmount is 'Not_Paid'
     const isDeposit = task.paymentStatus === 'partial_Paid' &&
