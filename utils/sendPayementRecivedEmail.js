@@ -40,7 +40,7 @@ async function buildWasteTransferNoteDetails(task) {
           name: item.object || 'Other item',
           quantity: item.quantity || 1,
           price: item.price || 0,
-          ewcCode: 'N/A',
+          ewcCode: item.ewcCode || 'N/A', // Use custom item's EWC code
         };
       }
 
@@ -738,10 +738,17 @@ module.exports = {
       </div>
     `).join('');
 
-    // Build EWC codes
+    // Build EWC codes - include both standard and custom items
     const ewcCodes = task.items
-      .filter(i => i.standardItemId?.ewcCode)
-      .map(i => `<p><span class="text-[#8bc53f]">${i.standardItemId.ewcCode}</span> : ${i.standardItemId.itemName}</p>`)
+      .filter(i => {
+        // Include if it's a standard item with EWC code OR a custom item with EWC code
+        return (i.standardItemId?.ewcCode) || (i.ewcCode);
+      })
+      .map(i => {
+        const code = i.standardItemId?.ewcCode || i.ewcCode;
+        const name = i.standardItemId?.itemName || i.object || 'Unnamed Item';
+        return `<p><span class="text-[#8bc53f]">${code}</span> : ${name}</p>`;
+      })
       .join('');
 
     // Replace placeholders

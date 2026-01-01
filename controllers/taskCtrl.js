@@ -362,6 +362,7 @@ const taskCtrl = {
                 ? Number(item.customPrice)
                 : undefined,
             Objectsposition: item.Objectsposition || 'Outside',
+            ewcCode: item.ewcCode || null, // Add EWC code support for custom items
           })),
         );
       }
@@ -1207,6 +1208,7 @@ const taskCtrl = {
                 quantity: Number(obj.quantity) || 1,
                 customPrice: obj.customPrice !== undefined ? Number(obj.customPrice) : undefined,
                 price: Number(obj.price) || 0,
+                ewcCode: obj.ewcCode || null, // Add EWC code support for custom items
               };
               console.log('Converted custom item:', JSON.stringify(customItem, null, 2));
               return customItem;
@@ -2887,18 +2889,18 @@ const taskCtrl = {
 
       // Check if task is refunded or partially refunded
       const isRefunded = task.paymentStatus === 'refunded' || task.paymentStatus === 'partial_Refunded';
-      
+
       // Calculate total refunded amount from PaymentHistory
       const PaymentHistory = require('../models/PaymentHistory');
       let totalRefundedAmount = 0;
       let refundInfo = null;
-      
+
       if (isRefunded) {
         const paymentHistories = await PaymentHistory.find({ taskId: task._id });
         totalRefundedAmount = paymentHistories.reduce((sum, ph) => {
           return sum + (ph.refundedTotalGBP || 0);
         }, 0);
-        
+
         const isFullRefund = task.paymentStatus === 'refunded';
         refundInfo = {
           isRefund: true,
@@ -3385,9 +3387,9 @@ const taskCtrl = {
       // Validate all task IDs are valid MongoDB ObjectIds
       const invalidIds = taskIds.filter(id => !mongoose.Types.ObjectId.isValid(id));
       if (invalidIds.length > 0) {
-        return res.status(400).json({ 
-          message: 'Invalid task IDs provided', 
-          invalidIds 
+        return res.status(400).json({
+          message: 'Invalid task IDs provided',
+          invalidIds
         });
       }
 

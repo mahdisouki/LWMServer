@@ -3,6 +3,7 @@ const { Schema } = mongoose;
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
 const Counter = require('./Counter');
 const DailySheet = require('./DailySheet');
+const EWC_CODES = require('../config/ewcCodes');
 
 const taskSchema = new Schema(
   {
@@ -31,6 +32,11 @@ const taskSchema = new Schema(
         quantity: { type: Number, default: 0 },
         price: { type: Number },
         customPrice: { type: Number },
+        ewcCode: {
+          type: String,
+          required: false,
+          enum: EWC_CODES, // Enumerated EWC codes for custom items
+        },
       },
     ],
     initialConditionPhotos: [
