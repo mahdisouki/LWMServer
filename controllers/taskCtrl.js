@@ -138,7 +138,7 @@ async function calculateTotalPrice({
         baseItemPrice = Number(standardItem.price);
       }
 
-      // Calculate position fee (added once, not multiplied by quantity)
+      // Calculate position fee (multiplied by quantity)
       if (item.Objectsposition === 'InsideWithDismantling') {
         positionFee = Number(standardItem.insideWithDismantlingPrice);
       } else if (item.Objectsposition === 'Inside') {
@@ -152,12 +152,12 @@ async function calculateTotalPrice({
       console.log('StandardItem:', standardItem);
       console.log('Position:', item.Objectsposition, 'Type:', typeof item.Objectsposition);
       console.log('Base item price (without position fees):', baseItemPrice);
-      console.log('Position fee (added once):', positionFee);
+      console.log('Position fee (per unit):', positionFee);
       console.log('Quantity:', quantity);
 
-      const itemSubtotal = (baseItemPrice * quantity) + positionFee;
-      console.log('Item subtotal (basePrice*quantity + positionFee):', itemSubtotal);
-      console.log('Formula:', `(${baseItemPrice} × ${quantity}) + ${positionFee} = ${itemSubtotal}`);
+      const itemSubtotal = (baseItemPrice * quantity) + (positionFee * quantity);
+      console.log('Item subtotal (basePrice*quantity + positionFee*quantity):', itemSubtotal);
+      console.log('Formula:', `(${baseItemPrice} × ${quantity}) + (${positionFee} × ${quantity}) = ${itemSubtotal}`);
 
       // Handle item-specific discount if discountType is "perItem"
       let finalItemTotal = itemSubtotal;
@@ -178,7 +178,7 @@ async function calculateTotalPrice({
           positionFee = Number(standardItem.insidePrice);
         }
 
-        finalItemTotal = customPrice * quantity + positionFee;
+        finalItemTotal = (customPrice * quantity) + (positionFee * quantity);
       }
 
       subtotal += finalItemTotal;
@@ -1270,7 +1270,7 @@ const taskCtrl = {
             itemPrice = Number(item.standardItemId.price);
             console.log('Standard item base price:', itemPrice);
 
-            // Position fee (added once, not per quantity)
+            // Position fee (multiplied by quantity)
             if (item.Objectsposition === 'InsideWithDismantling') {
               positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
             } else if (item.Objectsposition === 'Inside') {
@@ -1286,12 +1286,12 @@ const taskCtrl = {
           const quantity = Number(item.quantity) || 1;
           console.log('Quantity:', quantity);
 
-          // Calculate total: (itemPrice * quantity) + positionFee
+          // Calculate total: (itemPrice * quantity) + (positionFee * quantity)
           let finalItemTotal;
 
           if (item.standardItemId) {
-            // For standard items: (itemPrice * quantity) + positionFee
-            finalItemTotal = (itemPrice * quantity) + positionFee;
+            // For standard items: (itemPrice * quantity) + (positionFee * quantity)
+            finalItemTotal = (itemPrice * quantity) + (positionFee * quantity);
           } else {
             // For custom items: itemPrice * quantity (no position fee)
             finalItemTotal = itemPrice * quantity;
@@ -1319,9 +1319,9 @@ const taskCtrl = {
             console.log('Applying custom price discount:', customPrice);
 
             if (item.standardItemId) {
-              // For standard items with discount: (customPrice * quantity) + positionFee
-              finalItemTotal = (customPrice * quantity) + positionFee;
-              console.log('Standard item with discount formula:', `(${customPrice} × ${quantity}) + ${positionFee} = ${finalItemTotal}`);
+              // For standard items with discount: (customPrice * quantity) + (positionFee * quantity)
+              finalItemTotal = (customPrice * quantity) + (positionFee * quantity);
+              console.log('Standard item with discount formula:', `(${customPrice} × ${quantity}) + (${positionFee} × ${quantity}) = ${finalItemTotal}`);
             } else {
               // For custom items with discount: customPrice * quantity
               finalItemTotal = customPrice * quantity;
@@ -1623,7 +1623,7 @@ const taskCtrl = {
             baseItemPrice = Number(item.standardItemId.price);
           }
 
-          // Calculate position fee (added once, not multiplied by quantity)
+          // Calculate position fee (multiplied by quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
             positionFee = item.standardItemId.insideWithDismantlingPrice;
           } else if (item.Objectsposition === 'Inside') {
@@ -1631,8 +1631,8 @@ const taskCtrl = {
           }
           // Outside position has no additional fee
 
-          // Total price for this item: (baseItemPrice * quantity) + positionFee
-          const totalItemPrice = (baseItemPrice * itemQuantity) + positionFee;
+          // Total price for this item: (baseItemPrice * quantity) + (positionFee * quantity)
+          const totalItemPrice = (baseItemPrice * itemQuantity) + (positionFee * itemQuantity);
 
           return {
             itemDescription: item.standardItemId.itemName,
@@ -1855,7 +1855,7 @@ const taskCtrl = {
               itemPrice = Number(item.standardItemId.price);
             }
 
-            // Calculate position fee (added once, not multiplied by quantity)
+            // Calculate position fee (multiplied by quantity)
             let positionFee = 0;
             if (item.Objectsposition === 'InsideWithDismantling') {
               positionFee = item.standardItemId.insideWithDismantlingPrice;
@@ -1864,7 +1864,7 @@ const taskCtrl = {
             }
             // Outside position has no additional fee
 
-            basePrice += (itemPrice * quantity) + positionFee;
+            basePrice += (itemPrice * quantity) + (positionFee * quantity);
           });
 
         let finalPrice = basePrice;
@@ -2069,7 +2069,7 @@ const taskCtrl = {
               itemPrice = Number(item.standardItemId.price);
             }
 
-            // Calculate position fee (added once, not multiplied by quantity)
+            // Calculate position fee (multiplied by quantity)
             let positionFee = 0;
             if (item.Objectsposition === 'InsideWithDismantling') {
               positionFee = item.standardItemId.insideWithDismantlingPrice;
@@ -2078,7 +2078,7 @@ const taskCtrl = {
             }
             // Outside position has no additional fee
 
-            basePrice += (itemPrice * quantity) + positionFee;
+            basePrice += (itemPrice * quantity) + (positionFee * quantity);
           });
 
         let finalPrice = basePrice;
@@ -2303,7 +2303,7 @@ const taskCtrl = {
           itemPrice = Number(item.standardItemId.price);
           itemDescription = item.standardItemId.itemName;
 
-          // Position fee (added once, not per quantity)
+          // Position fee (multiplied by quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
             positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
           } else if (item.Objectsposition === 'Inside') {
@@ -2316,13 +2316,13 @@ const taskCtrl = {
 
         const quantity = Number(item.quantity) || 1;
 
-        // Calculate total: (itemPrice * quantity) + positionFee
+        // Calculate total: (itemPrice * quantity) + (positionFee * quantity)
         let finalItemTotal;
         let displayPrice = itemPrice;
 
         if (item.standardItemId) {
-          // For standard items: (itemPrice * quantity) + positionFee
-          finalItemTotal = (itemPrice * quantity) + positionFee;
+          // For standard items: (itemPrice * quantity) + (positionFee * quantity)
+          finalItemTotal = (itemPrice * quantity) + (positionFee * quantity);
         } else {
           // For custom items: itemPrice * quantity (no position fee)
           finalItemTotal = itemPrice * quantity;
@@ -2336,8 +2336,8 @@ const taskCtrl = {
         ) {
           displayPrice = Number(item.customPrice);
           if (item.standardItemId) {
-            // For standard items with discount: (customPrice * quantity) + positionFee
-            finalItemTotal = (Number(item.customPrice) * quantity) + positionFee;
+            // For standard items with discount: (customPrice * quantity) + (positionFee * quantity)
+            finalItemTotal = (Number(item.customPrice) * quantity) + (positionFee * quantity);
           } else {
             // For custom items with discount: customPrice * quantity
             finalItemTotal = Number(item.customPrice) * quantity;
@@ -2943,7 +2943,7 @@ const taskCtrl = {
           // Base item price (outside position)
           itemPrice = Number(item.standardItemId.price);
 
-          // Position fee (added once, not per quantity)
+          // Position fee (multiplied by quantity)
           if (item.Objectsposition === 'InsideWithDismantling') {
             positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
           } else if (item.Objectsposition === 'Inside') {
@@ -2956,13 +2956,13 @@ const taskCtrl = {
 
         const quantity = Number(item.quantity) || 1;
 
-        // Calculate total: (itemPrice * quantity) + positionFee
+        // Calculate total: (itemPrice * quantity) + (positionFee * quantity)
         let finalItemTotal;
         let originalItemTotal;
 
         if (item.standardItemId) {
-          // For standard items: (itemPrice * quantity) + positionFee
-          originalItemTotal = (itemPrice * quantity) + positionFee;
+          // For standard items: (itemPrice * quantity) + (positionFee * quantity)
+          originalItemTotal = (itemPrice * quantity) + (positionFee * quantity);
           finalItemTotal = originalItemTotal;
         } else {
           // For custom items: itemPrice * quantity (no position fee)
@@ -2982,8 +2982,8 @@ const taskCtrl = {
           let customPrice = Number(item.customPrice);
 
           if (item.standardItemId) {
-            // For standard items with discount: (customPrice * quantity) + positionFee
-            finalItemTotal = (customPrice * quantity) + positionFee;
+            // For standard items with discount: (customPrice * quantity) + (positionFee * quantity)
+            finalItemTotal = (customPrice * quantity) + (positionFee * quantity);
             // Calculate discount: (originalPrice - customPrice) * quantity
             itemDiscountTotal += (itemPrice - customPrice) * quantity;
           } else {
@@ -3007,7 +3007,7 @@ const taskCtrl = {
           'FinalItemTotal:',
           finalItemTotal,
           'Formula:',
-          item.standardItemId ? `(${itemPrice} × ${quantity}) + ${positionFee} = ${finalItemTotal}` : `${itemPrice} × ${quantity} = ${finalItemTotal}`
+          item.standardItemId ? `(${itemPrice} × ${quantity}) + (${positionFee} × ${quantity}) = ${finalItemTotal}` : `${itemPrice} × ${quantity} = ${finalItemTotal}`
         );
       });
 

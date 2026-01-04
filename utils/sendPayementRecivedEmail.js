@@ -204,13 +204,14 @@ module.exports = {
         ? (item.standardItemId.price * item.quantity || 0)
         : (item.price * item.quantity || 0);
 
-      const positionPrice =
+      const positionPricePerUnit =
         item.Objectsposition === 'InsideWithDismantling'
           ? (item.standardItemId?.insideWithDismantlingPrice || 0)
           : item.Objectsposition === 'Inside'
             ? (item.standardItemId?.insidePrice || 0)
             : 0;
 
+      const positionPrice = positionPricePerUnit * (item.quantity || 1);
       const itemSubtotal = itemPrice + positionPrice;
       
       // Always add to subtotalBeforeDiscounts (original prices)
@@ -274,13 +275,14 @@ module.exports = {
           ? (item.standardItemId.price * item.quantity || 0)
           : (item.price * item.quantity || 0);
 
-        const positionPrice =
+        const positionPricePerUnit =
           item.Objectsposition === 'InsideWithDismantling'
             ? (item.standardItemId?.insideWithDismantlingPrice || 0)
             : item.Objectsposition === 'Inside'
               ? (item.standardItemId?.insidePrice || 0)
               : 0;
 
+        const positionPrice = positionPricePerUnit * (item.quantity || 1);
         const itemSubtotal = itemPrice + positionPrice;
 
         // Handle different discount types
@@ -310,7 +312,7 @@ module.exports = {
             <td>£${displayPrice.toFixed(2)}</td>
             <td>£${item.customPrice ? discountedPrice.toFixed(2) : displayPrice.toFixed(2)}</td>
             <td>${item.Objectsposition}</td>
-            <td>£${positionPrice.toFixed(2)}</td>
+            <td>£${positionPricePerUnit.toFixed(2)}</td>
             <td>£${finalItemTotal.toFixed(2)}</td>
           </tr>`;
         } else {
@@ -321,7 +323,7 @@ module.exports = {
             <td>${item.quantity}</td>
             <td>£${displayPrice.toFixed(2)}</td>
             <td>${item.Objectsposition}</td>
-            <td>£${positionPrice.toFixed(2)}</td>
+            <td>£${positionPricePerUnit.toFixed(2)}</td>
             <td>£${finalItemTotal.toFixed(2)}</td>
           </tr>`;
         }

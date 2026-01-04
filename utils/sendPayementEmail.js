@@ -24,13 +24,14 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         ? (item.standardItemId.price * item.quantity || 0)
         : (item.price * item.quantity || 0);
 
-      const positionPrice =
+      const positionPricePerUnit =
         item.Objectsposition === 'InsideWithDismantling'
           ? (item.standardItemId?.insideWithDismantlingPrice || 0)
           : item.Objectsposition === 'Inside'
             ? (item.standardItemId?.insidePrice || 0)
             : 0;
 
+      const positionPrice = positionPricePerUnit * (item.quantity || 1);
       const itemSubtotal = itemPrice + positionPrice;
       subtotalBeforeDiscounts += itemSubtotal;
     });
@@ -90,12 +91,13 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         discountedPrice = `£${originalPrice.toFixed(2)}`;
       }
 
-      // Calculate position fee
-      const positionFee = !item.standardItemId ? "0.00" :
-        item.Objectsposition === "Outside" ? "0.00" :
-          item.Objectsposition === "InsideWithDismantling" ? parseFloat(item.insideWithDismantlingPrice || 0).toFixed(2) :
-            item.Objectsposition === "Inside" ? parseFloat(item.insidePrice || 0).toFixed(2) :
-              "0.00";
+      // Calculate position fee per unit (for display only - total column already includes quantity)
+      const positionFeePerUnit = !item.standardItemId ? 0 :
+        item.Objectsposition === "Outside" ? 0 :
+          item.Objectsposition === "InsideWithDismantling" ? parseFloat(item.insideWithDismantlingPrice || 0) :
+            item.Objectsposition === "Inside" ? parseFloat(item.insidePrice || 0) :
+              0;
+      const positionFee = positionFeePerUnit.toFixed(2);
 
       return `
           <tr>

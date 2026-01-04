@@ -43,15 +43,20 @@ async function calculateTotalPrice(taskId) {
         let price = 0;
 
         if (item.standardItemId) {
-            // Use position-specific prices for standard items
+            // Calculate base item price and position fee separately
+            const baseItemPrice = item.standardItemId.price;
+            let positionFee = 0;
+
+            // Calculate position fee (multiplied by quantity)
             if (item.Objectsposition === 'InsideWithDismantling') {
-                price = (item.standardItemId.insideWithDismantlingPrice) * quantity;
+                positionFee = item.standardItemId.insideWithDismantlingPrice || 0;
             } else if (item.Objectsposition === 'Inside') {
-                price = (item.standardItemId.insidePrice) * quantity;
-            } else {
-                // Default to Outside position
-                price = item.standardItemId.price * quantity;
+                positionFee = item.standardItemId.insidePrice || 0;
             }
+            // Outside position has no additional fee
+
+            // Total price: (baseItemPrice * quantity) + (positionFee * quantity)
+            price = (baseItemPrice * quantity) + (positionFee * quantity);
         } else {
             // Custom items use their own price
             price = item.price * quantity;
@@ -110,15 +115,20 @@ const calculateTotalPriceUpdate = async (taskId) => {
         if (item.standardItemId) {
             const standardItem = await StandardItem.findById(item.standardItemId);
             if (standardItem) {
-                // Use position-specific prices for standard items
+                // Calculate base item price and position fee separately
+                const baseItemPrice = standardItem.price;
+                let positionFee = 0;
+
+                // Calculate position fee (multiplied by quantity)
                 if (item.Objectsposition === 'InsideWithDismantling') {
-                    price = (standardItem.insideWithDismantlingPrice) * quantity;
+                    positionFee = standardItem.insideWithDismantlingPrice || 0;
                 } else if (item.Objectsposition === 'Inside') {
-                    price = (standardItem.insidePrice) * quantity;
-                } else {
-                    // Default to Outside position
-                    price = standardItem.price * quantity;
+                    positionFee = standardItem.insidePrice || 0;
                 }
+                // Outside position has no additional fee
+
+                // Total price: (baseItemPrice * quantity) + (positionFee * quantity)
+                price = (baseItemPrice * quantity) + (positionFee * quantity);
             }
         } else if (item.price) {
             price = Number(item.price) * quantity;
