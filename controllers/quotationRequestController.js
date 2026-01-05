@@ -164,6 +164,7 @@ const quotationRequestController = {
                 keyword,
                 startDate,
                 endDate,
+                reason,
                 sortBy = 'createdAt',
                 sortOrder = 'desc'
             } = req.query;
@@ -192,6 +193,18 @@ const quotationRequestController = {
                 }
                 if (endDate) {
                     query.createdAt.$lte = new Date(endDate);
+                }
+            }
+
+            // Add reason filter if provided
+            if (reason) {
+                if (reason === 'other') {
+                    // When filtering by "other", filter by customReason field
+                    query.reason = 'other';
+                    query.customReason = { $exists: true, $ne: null, $ne: '' };
+                } else {
+                    // For predefined reasons, filter by reason field
+                    query.reason = reason;
                 }
             }
 
