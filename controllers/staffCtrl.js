@@ -826,6 +826,114 @@ const staffManagement = {
         error: error.message
       });
     }
+  },
+
+  logoutUserFromAllDevices: async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+      // Check if admin is trying to log out themselves
+      if (req.user._id.toString() === userId) {
+        return res.status(400).json({
+          message: 'You cannot log yourself out. Please use the logout endpoint.',
+        });
+      }
+
+      // Find the user to log out
+      const userToLogout = await User.findById(userId);
+      if (!userToLogout) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      // Clear refresh token
+      userToLogout.refreshToken = undefined;
+
+      // Clear all devices
+      userToLogout.devices = [];
+
+      // Clear OneSignal player IDs
+      userToLogout.oneSignalPlayerIds = [];
+      userToLogout.oneSignalPlayerId = undefined;
+      userToLogout.oneSignalWebPlayerIds = [];
+      userToLogout.oneSignalWebPlayerId = undefined;
+
+      // Clear FCM and APNS tokens
+      userToLogout.fcmToken = undefined;
+      userToLogout.apnsToken = undefined;
+
+      await userToLogout.save();
+
+      // Get socket instance and emit logout event before disconnecting
+      const { getIo, disconnectUser } = require('../socket');
+      let disconnected = false;
+      
+      try {
+        const io = getIo();
+        if (io) {
+          // Find and emit to user's socket(s) before disconnecting
+          const userIdStr = userId.toString();
+          const sockets = io.sockets.sockets;
+          
+          for (const [socketId, socket] of sockets) {
+            if (socket.user && socket.user.userId && socket.user.userId.toString() === userIdStr) {
+              // Emit custom logout event to notify the user
+              socket.emit('forceLogout', {
+                message: 'You have been logged out from all devices by an administrator.',
+                timestamp: new Date(),
+              });
+            }
+          }
+          
+          // Small delay to ensure message is sent before disconnect
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (socketError) {
+        console.error('Error emitting logout event:', socketError);
+      }
+
+      // Disconnect user from socket connections
+      try {
+        disconnected = disconnectUser(userId);
+      } catch (disconnectError) {
+        console.error('Error disconnecting user from socket:', disconnectError);
+      }
+
+      // Create a log of the logout action
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'LOGOUT',
+        entityType: 'USER',
+        entityId: userId,
+        changes: {
+          loggedOutBy: {
+            adminId: req.user._id,
+            adminUsername: req.user.username,
+            targetUserId: userId,
+            targetUsername: userToLogout.username,
+            disconnectedFromSocket: disconnected,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(200).json({
+        message: 'User logged out from all devices successfully',
+        disconnectedFromSocket: disconnected,
+        user: {
+          id: userToLogout._id,
+          username: userToLogout.username,
+          email: userToLogout.email,
+        },
+      });
+    } catch (error) {
+      console.error('Error logging out user from all devices:', error);
+      res.status(500).json({
+        message: 'Failed to log out user from all devices',
+        error: error.message,
+      });
+    }
   }
 };
 

@@ -1509,6 +1509,34 @@ const isUserOnline = (userId) => {
   return userSocketMap.hasOwnProperty(userId);
 };
 
+// Function to disconnect a user from all their socket connections
+const disconnectUser = (userId) => {
+  if (!io) return false;
+  
+  let disconnected = false;
+  const userIdStr = userId.toString();
+  
+  // Find all sockets for this user
+  const sockets = io.sockets.sockets;
+  for (const [socketId, socket] of sockets) {
+    if (socket.user && socket.user.userId && socket.user.userId.toString() === userIdStr) {
+      socket.disconnect(true); // Force disconnect
+      disconnected = true;
+    }
+  }
+  
+  // Remove from userSocketMap
+  if (userSocketMap[userIdStr]) {
+    delete userSocketMap[userIdStr];
+  }
+  
+  if (disconnected) {
+    console.log(`User ${userId} disconnected from all socket connections`);
+  }
+  
+  return disconnected;
+};
+
 module.exports = {
   initSocket,
   emitEvent,
@@ -1516,4 +1544,5 @@ module.exports = {
   emitNotificationToUser,
   getOnlineUsers,
   isUserOnline,
+  disconnectUser,
 };
