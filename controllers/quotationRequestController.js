@@ -417,6 +417,60 @@ const quotationRequestController = {
             });
         }
     },
+
+    updateQuotation: async (req, res) => {
+        const { id } = req.params;
+        const { reason, customReason } = req.body;
+
+        try {
+            // Validate reason if provided
+            if (reason && !['no response', 'price too high', 'other'].includes(reason)) {
+                return res.status(400).json({
+                    message: 'Invalid reason. Must be one of: no response, price too high, other'
+                });
+            }
+
+            // If reason is 'other', customReason should be provided
+            if (reason === 'other' && !customReason) {
+                return res.status(400).json({
+                    message: 'customReason is required when reason is "other"'
+                });
+            }
+
+            // Build update object
+            const updateData = {};
+            if (reason !== undefined) {
+                updateData.reason = reason;
+            }
+            if (customReason !== undefined) {
+                updateData.customReason = customReason;
+            }
+            // Clear customReason if reason is not 'other'
+            if (reason && reason !== 'other') {
+                updateData.customReason = null;
+            }
+
+            const quotation = await QuotationRequest.findByIdAndUpdate(
+                id,
+                updateData,
+                { new: true, runValidators: true }
+            );
+
+            if (!quotation) {
+                return res.status(404).json({ message: 'Quotation not found' });
+            }
+
+            res.status(200).json({
+                message: 'Quotation updated successfully',
+                quotation
+            });
+        } catch (error) {
+            res.status(500).json({
+                message: 'Failed to update quotation',
+                error: error.message,
+            });
+        }
+    },
 };
 
 module.exports = quotationRequestController;

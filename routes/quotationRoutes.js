@@ -25,6 +25,9 @@ router.patch('/quotation/:id/read', isAuth, checkRole('Admin'), quotationRequest
 // Route to mark a quotation as unread
 router.patch('/quotation/:id/unread', isAuth, checkRole('Admin'), quotationRequestController.markQuotationAsUnread);
 
+// Route to update quotation (e.g., set reason)
+router.patch('/quotation/:id', isAuth, checkRole('Admin'), quotationRequestController.updateQuotation);
+
 router.post("/sendMovingQuote", formLimiter, multer.array('files'), quotationRequestController.sendMovingServiceEmail);
 
 module.exports = router;

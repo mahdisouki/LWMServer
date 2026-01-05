@@ -14,6 +14,16 @@ const quotationRequestSchema = new Schema({
   comments: { type: String, required: false },
   items: [{ type: String, required: false }],
   read: { type: Boolean, default: false },
+  reason: {
+    type: String,
+    enum: ['no response', 'price too high', 'other'],
+    required: false
+  },
+  customReason: {
+    type: String,
+    required: false
+  },
+
   createdAt: { type: Date, default: Date.now }
 });
 
