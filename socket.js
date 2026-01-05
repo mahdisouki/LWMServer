@@ -53,6 +53,7 @@ const initSocket = (server) => {
         'https://driver.londonwastemanagement.uk',
         'https://client.londonwastemanagement.uk',
         'https://admin.londonwastemanagement.uk',
+        'https://stagingadmin.londonwastemanagement.uk',
         'http://localhost:8081',  // React Native Metro bundler
         'http://192.168.1.15:8081',  // React Native on your network
         'http://10.0.2.2:3000',  // Android emulator

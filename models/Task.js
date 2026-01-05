@@ -158,6 +158,10 @@ const taskSchema = new Schema(
       required: false, // Make it optional
       default: null
     },
+    googleCalendarEventId: { 
+      type: String, 
+      required: false 
+    },
   },
   { timestamps: true }
 );
