@@ -50,6 +50,8 @@ const staffManagement = {
         CIN,
         designation,
         permissions,
+        address,
+        postcode,
       } = req.body;
 
       // Get file paths
@@ -57,6 +59,11 @@ const staffManagement = {
       const driverLicenseUrl = req.files['DriverLicense'] ? req.files['DriverLicense'][0].path : null;
       const addressProofUrl = req.files['addressProof'] ? req.files['addressProof'][0].path : null;
       const natInsuranceUrl = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : null;
+      const drivingLicenseFrontUrl = req.files['drivingLicenseFront'] ? req.files['drivingLicenseFront'][0].path : null;
+      const drivingLicenseBackUrl = req.files['drivingLicenseBack'] ? req.files['drivingLicenseBack'][0].path : null;
+      const rightToWorkShareCodeUrl = req.files['rightToWorkShareCode'] ? req.files['rightToWorkShareCode'][0].path : null;
+      const passportUrl = req.files['passport'] ? req.files['passport'][0].path : null;
+      const signedStarterFormUrl = req.files['signedStarterForm'] ? req.files['signedStarterForm'][0].path : null;
 
       if (!username || !email || !password || !role || !phoneNumber) {
         return res.status(400).json({
@@ -89,7 +96,14 @@ const staffManagement = {
           gender,
           CIN,
           designation,
+          address,
+          postcode,
           DriverLicense: driverLicenseUrl,
+          drivingLicenseFront: drivingLicenseFrontUrl,
+          drivingLicenseBack: drivingLicenseBackUrl,
+          rightToWorkShareCode: rightToWorkShareCodeUrl,
+          passport: passportUrl,
+          signedStarterForm: signedStarterFormUrl,
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
         });
@@ -106,7 +120,14 @@ const staffManagement = {
           gender,
           designation,
           CIN,
+          address,
+          postcode,
           DriverLicense: driverLicenseUrl,
+          drivingLicenseFront: drivingLicenseFrontUrl,
+          drivingLicenseBack: drivingLicenseBackUrl,
+          rightToWorkShareCode: rightToWorkShareCodeUrl,
+          passport: passportUrl,
+          signedStarterForm: signedStarterFormUrl,
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
           permissions: parsedPermissions || {},
@@ -121,7 +142,14 @@ const staffManagement = {
           picture: pictureUrl,
           gender,
           designation,
+          address,
+          postcode,
           DriverLicense: driverLicenseUrl,
+          drivingLicenseFront: drivingLicenseFrontUrl,
+          drivingLicenseBack: drivingLicenseBackUrl,
+          rightToWorkShareCode: rightToWorkShareCodeUrl,
+          passport: passportUrl,
+          signedStarterForm: signedStarterFormUrl,
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
         });
@@ -312,10 +340,15 @@ const staffManagement = {
 
       // Check if any files are included in the request and update their respective fields
       if (req.files) {
-        updateData.picture = req.files['picture'] ? req.files['picture'][0].path : undefined;
-        updateData.DriverLicense = req.files['DriverLicense'] ? req.files['DriverLicense'][0].path : undefined;
-        updateData.addressProof = req.files['addressProof'] ? req.files['addressProof'][0].path : undefined;
-        updateData.NatInsurance = req.files['NatInsurance'] ? req.files['NatInsurance'][0].path : undefined;
+        if (req.files['picture']) updateData.picture = req.files['picture'][0].path;
+        if (req.files['DriverLicense']) updateData.DriverLicense = req.files['DriverLicense'][0].path;
+        if (req.files['addressProof']) updateData.addressProof = req.files['addressProof'][0].path;
+        if (req.files['NatInsurance']) updateData.NatInsurance = req.files['NatInsurance'][0].path;
+        if (req.files['drivingLicenseFront']) updateData.drivingLicenseFront = req.files['drivingLicenseFront'][0].path;
+        if (req.files['drivingLicenseBack']) updateData.drivingLicenseBack = req.files['drivingLicenseBack'][0].path;
+        if (req.files['rightToWorkShareCode']) updateData.rightToWorkShareCode = req.files['rightToWorkShareCode'][0].path;
+        if (req.files['passport']) updateData.passport = req.files['passport'][0].path;
+        if (req.files['signedStarterForm']) updateData.signedStarterForm = req.files['signedStarterForm'][0].path;
       }
 
       // If password is included, hash it before updating
@@ -866,14 +899,14 @@ const staffManagement = {
       // Get socket instance and emit logout event before disconnecting
       const { getIo, disconnectUser } = require('../socket');
       let disconnected = false;
-      
+
       try {
         const io = getIo();
         if (io) {
           // Find and emit to user's socket(s) before disconnecting
           const userIdStr = userId.toString();
           const sockets = io.sockets.sockets;
-          
+
           for (const [socketId, socket] of sockets) {
             if (socket.user && socket.user.userId && socket.user.userId.toString() === userIdStr) {
               // Emit custom logout event to notify the user
@@ -883,7 +916,7 @@ const staffManagement = {
               });
             }
           }
-          
+
           // Small delay to ensure message is sent before disconnect
           await new Promise(resolve => setTimeout(resolve, 100));
         }

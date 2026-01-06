@@ -7,11 +7,31 @@ const multer = require('../middlewares/multer');
 const { checkPermissions } = require('../middlewares/permissions');
 
 
-router.post('/create-staff', isAuth, checkRole('Admin'), multer.fields([{ name: 'picture', maxCount: 1 }, { name: 'DriverLicense', maxCount: 1 }, { name: 'addressProof', maxCount: 1 }, { name: 'NatInsurance', maxCount: 1 }]), staffCtrl.addStaff);
+router.post('/create-staff', isAuth, checkRole('Admin'), multer.fields([
+  { name: 'picture', maxCount: 1 }, 
+  { name: 'DriverLicense', maxCount: 1 }, 
+  { name: 'addressProof', maxCount: 1 }, 
+  { name: 'NatInsurance', maxCount: 1 },
+  { name: 'drivingLicenseFront', maxCount: 1 },
+  { name: 'drivingLicenseBack', maxCount: 1 },
+  { name: 'rightToWorkShareCode', maxCount: 1 },
+  { name: 'passport', maxCount: 1 },
+  { name: 'signedStarterForm', maxCount: 1 }
+]), staffCtrl.addStaff);
 router.get('/staff', isAuth, staffCtrl.getAllStaff);
 router.get('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.getStaffById);
 router.delete('/staff/:id', isAuth, checkRole('Admin'), staffCtrl.deleteStaff);
-router.put('/staff/:id', isAuth, checkRole('Admin'), multer.fields([{ name: 'picture', maxCount: 1 }, { name: 'DriverLicense', maxCount: 1 }, { name: 'addressProof', maxCount: 1 }, { name: 'NatInsurance', maxCount: 1 }]), staffCtrl.updateStaff);
+router.put('/staff/:id', isAuth, checkRole('Admin'), multer.fields([
+  { name: 'picture', maxCount: 1 }, 
+  { name: 'DriverLicense', maxCount: 1 }, 
+  { name: 'addressProof', maxCount: 1 }, 
+  { name: 'NatInsurance', maxCount: 1 },
+  { name: 'drivingLicenseFront', maxCount: 1 },
+  { name: 'drivingLicenseBack', maxCount: 1 },
+  { name: 'rightToWorkShareCode', maxCount: 1 },
+  { name: 'passport', maxCount: 1 },
+  { name: 'signedStarterForm', maxCount: 1 }
+]), staffCtrl.updateStaff);
 router.post('/assignDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl.assignDriverToTruck);
 router.put('/updateDriverLocation/:driverId', isAuth, checkRole('Admin'), staffCtrl.updateDriverLocation);
 router.post('/assignHelper/:helperId', isAuth, checkRole('Admin'), staffCtrl.assignHelperToTruck);
