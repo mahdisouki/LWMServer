@@ -996,6 +996,32 @@ const driverManagement = {
       if (task.taskStatus === 'Completed') {
         await sendWasteTransferNoteEmail(task._id);
       }
+
+      // Update Google Calendar event if it exists
+      if (task.googleCalendarEventId) {
+        try {
+          const { updateCalendarEvent } = require('../services/calendarService');
+          const { User } = require('../models/User');
+          const admin = await User.findOne({ 
+            role: 'Admin',
+            gmailTokens: { $exists: true, $ne: null }
+          });
+          
+          if (admin) {
+            await updateCalendarEvent(admin._id.toString(), task, task.googleCalendarEventId);
+            console.log('✅ Calendar event updated for order:', task.orderNumber);
+          }
+        } catch (calendarError) {
+          if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
+              calendarError.message?.includes('INVALID_GRANT')) {
+            console.error('⚠️ Calendar integration requires re-authentication.');
+            console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + admin?._id);
+          } else {
+            console.error('❌ Error updating calendar event:', calendarError.message);
+          }
+        }
+      }
+
       res
         .status(200)
         .json({

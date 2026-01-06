@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const Admin = require('../models/Admin');
-const oauth2Client = require('../services/googleClient');
+const googleClient = require('../services/googleClient');
+const oauth2Client = googleClient.oauth2Client || googleClient;
 
 // Increase max listeners to prevent warnings
 oauth2Client.setMaxListeners(20);

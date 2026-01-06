@@ -24,5 +24,7 @@ router.put('/admin/updateProfile', isAuth, checkRole('Admin'), multer.single('pi
 // update admin email signature
 router.put('/admin/email-signature', isAuth, checkRole('Admin'), staffCtrl.updateEmailSignature);
 router.post('/optimise/:truckId', staffCtrl.optimizeTasks)
+// Admin - Log out user from all devices
+router.post('/staff/:userId/logout-all-devices', isAuth, checkRole('Admin'), staffCtrl.logoutUserFromAllDevices);
 
 module.exports = router;
