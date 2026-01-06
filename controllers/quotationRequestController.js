@@ -165,6 +165,9 @@ const quotationRequestController = {
                 startDate,
                 endDate,
                 reason,
+                status, // 'accepted', 'rejected', 'pending'
+                statusDateStart, // Filter by status date (Task createdAt for accepted, QuotationRequest updatedAt for rejected)
+                statusDateEnd,
                 sortBy = 'createdAt',
                 sortOrder = 'desc'
             } = req.query;
@@ -185,7 +188,7 @@ const quotationRequestController = {
                 };
             }
 
-            // Add date range if provided
+            // Add date range if provided (for quotation creation date)
             if (startDate || endDate) {
                 query.createdAt = {};
                 if (startDate) {
@@ -208,53 +211,98 @@ const quotationRequestController = {
                 }
             }
 
-            // Calculate skip value for pagination
-            const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-
             // Build sort object
             const sort = {};
             sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
-            // Execute query with pagination and sorting
-            const quotations = await QuotationRequest
-                .find(query)
-                .sort(sort)
-                .skip(skip)
-                .limit(parseInt(limit, 10));
+            // If status or statusDate filtering is needed, fetch all matching quotations first
+            // Otherwise, apply pagination at database level for better performance
+            const needsStatusFiltering = status || statusDateStart || statusDateEnd;
 
-            // Get total count for pagination
-            const total = await QuotationRequest.countDocuments(query);
+            let quotations;
+            if (needsStatusFiltering) {
+                // Fetch all quotations matching the base query (no pagination yet)
+                quotations = await QuotationRequest.find(query).sort(sort);
+            } else {
+                // Apply pagination at database level for better performance
+                const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+                quotations = await QuotationRequest
+                    .find(query)
+                    .sort(sort)
+                    .skip(skip)
+                    .limit(parseInt(limit, 10));
+            }
 
             // Get all quotation IDs to check for associated orders
             const quotationIds = quotations.map(q => q._id);
 
-            // Find all tasks that have these quotationIds
+            // Find all tasks that have these quotationIds with createdAt dates
             const tasksWithQuotations = await Task.find({
                 quotationId: { $in: quotationIds }
-            }).select('quotationId');
+            }).select('quotationId createdAt');
 
-            // Create a Set of quotationIds that have orders for quick lookup
-            const quotationsWithOrders = new Set(
-                tasksWithQuotations
-                    .map(task => task.quotationId?.toString())
-                    .filter(id => id)
-            );
+            // Create a Map of quotationId -> Task createdAt for quick lookup
+            const quotationsWithOrders = new Map();
+            tasksWithQuotations.forEach(task => {
+                if (task.quotationId) {
+                    const quotationIdStr = task.quotationId.toString();
+                    // If multiple tasks exist, keep the earliest one (first order)
+                    if (!quotationsWithOrders.has(quotationIdStr) ||
+                        task.createdAt < quotationsWithOrders.get(quotationIdStr)) {
+                        quotationsWithOrders.set(quotationIdStr, task.createdAt);
+                    }
+                }
+            });
 
-            // Add hasOrder field to each quotation (computed field, not in database schema)
-            const quotationsWithOrderStatus = quotations.map(quotation => {
+            // Add status and statusDate fields to each quotation using model method
+            let quotationsWithStatus = quotations.map(quotation => {
                 const quotationObj = quotation.toObject();
-                quotationObj.hasOrder = quotationsWithOrders.has(quotation._id.toString());
+                const quotationIdStr = quotation._id.toString();
+                const taskCreatedAt = quotationsWithOrders.get(quotationIdStr) || null;
+
+                // Use the model's instance method to compute status
+                const statusInfo = quotation.getStatusSync(taskCreatedAt);
+                quotationObj.status = statusInfo.status;
+                quotationObj.statusDate = statusInfo.statusDate;
+                quotationObj.hasOrder = statusInfo.hasOrder;
+
                 return quotationObj;
             });
 
+            // Filter by status if provided
+            if (status) {
+                quotationsWithStatus = quotationsWithStatus.filter(q => q.status === status);
+            }
+
+            // Filter by status date range if provided
+            if (statusDateStart || statusDateEnd) {
+                quotationsWithStatus = quotationsWithStatus.filter(q => {
+                    if (!q.statusDate) return false; // Skip pending quotes without statusDate
+
+                    const statusDate = new Date(q.statusDate);
+                    if (statusDateStart && statusDate < new Date(statusDateStart)) return false;
+                    if (statusDateEnd && statusDate > new Date(statusDateEnd)) return false;
+                    return true;
+                });
+            }
+
+            // Get total count before pagination (for accurate pagination metadata)
+            const total = quotationsWithStatus.length;
+
+            // Apply pagination if status filtering was applied
+            if (needsStatusFiltering) {
+                const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+                quotationsWithStatus = quotationsWithStatus.slice(skip, skip + parseInt(limit, 10));
+            }
+
             res.status(200).json({
                 message: "All quotations retrieved successfully",
-                quotations: quotationsWithOrderStatus,
+                quotations: quotationsWithStatus,
                 meta: {
                     currentPage: parseInt(page, 10),
                     limit: parseInt(limit, 10),
                     total,
-                    count: quotations.length,
+                    count: quotationsWithStatus.length,
                 },
             });
         } catch (error) {
@@ -282,7 +330,14 @@ const quotationRequestController = {
                 await quotation.save();
             }
 
-            res.status(200).json(quotation);
+            // Use the model's instance method to compute status
+            const statusInfo = await quotation.computeStatus();
+            const quotationObj = quotation.toObject();
+            quotationObj.status = statusInfo.status;
+            quotationObj.statusDate = statusInfo.statusDate;
+            quotationObj.hasOrder = statusInfo.hasOrder;
+
+            res.status(200).json(quotationObj);
         } catch (error) {
             res.status(500).json({
                 message: 'Failed to retrieve quotation',
@@ -436,31 +491,59 @@ const quotationRequestController = {
         const { reason, customReason } = req.body;
 
         try {
+            // First, get the existing quotation to check its current state
+            const existingQuotation = await QuotationRequest.findById(id);
+
+            if (!existingQuotation) {
+                return res.status(404).json({ message: 'Quotation not found' });
+            }
+
             // Validate reason if provided
-            if (reason && !['no response', 'price too high', 'other'].includes(reason)) {
+            if (reason !== undefined && !['no response', 'price too high', 'other'].includes(reason)) {
                 return res.status(400).json({
                     message: 'Invalid reason. Must be one of: no response, price too high, other'
                 });
             }
 
-            // If reason is 'other', customReason should be provided
-            if (reason === 'other' && !customReason) {
-                return res.status(400).json({
-                    message: 'customReason is required when reason is "other"'
-                });
-            }
-
             // Build update object
             const updateData = {};
+
+            // Handle reason updates
             if (reason !== undefined) {
                 updateData.reason = reason;
+
+                // If reason is being set to 'other' for the first time, customReason is required
+                if (reason === 'other' && existingQuotation.reason !== 'other' && !customReason) {
+                    return res.status(400).json({
+                        message: 'customReason is required when reason is "other"'
+                    });
+                }
+
+                // Clear customReason if reason is being changed to something other than 'other'
+                if (reason !== 'other') {
+                    updateData.customReason = null;
+                }
             }
+
+            // Handle customReason updates
             if (customReason !== undefined) {
-                updateData.customReason = customReason;
-            }
-            // Clear customReason if reason is not 'other'
-            if (reason && reason !== 'other') {
-                updateData.customReason = null;
+                // Determine what the final reason will be
+                const finalReason = reason !== undefined ? reason : existingQuotation.reason;
+
+                if (finalReason === 'other') {
+                    // Allow updating customReason when reason is 'other'
+                    updateData.customReason = customReason || null;
+                } else {
+                    // If reason is not 'other', don't allow setting customReason
+                    // But allow clearing it if it exists
+                    if (customReason && customReason.trim() !== '') {
+                        return res.status(400).json({
+                            message: 'customReason can only be set when reason is "other"'
+                        });
+                    }
+                    // If customReason is empty/null, allow clearing it
+                    updateData.customReason = null;
+                }
             }
 
             const quotation = await QuotationRequest.findByIdAndUpdate(
@@ -468,10 +551,6 @@ const quotationRequestController = {
                 updateData,
                 { new: true, runValidators: true }
             );
-
-            if (!quotation) {
-                return res.status(404).json({ message: 'Quotation not found' });
-            }
 
             res.status(200).json({
                 message: 'Quotation updated successfully',
