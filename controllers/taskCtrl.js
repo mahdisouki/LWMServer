@@ -2635,6 +2635,8 @@ const taskCtrl = {
           paymentDate: new Date(),
           transactionId: paymentIntentId,
           payerAccount,
+          status: 'success',
+          statusMessage: `Payment successful via Stripe. Transaction ID: ${paymentIntentId}. Amount: £${amountInGBP.toFixed(2)}. Payment type: ${paymentAmountType === 'deposit' ? 'Deposit' : paymentAmountType === 'remaining' ? 'Remaining' : 'Full payment'}.`,
         });
 
         // Construire le breakdown complet pour l'email
@@ -2725,7 +2727,22 @@ const taskCtrl = {
 
           const amountInGBP = amountInCents != null ? amountInCents / 100 : null;
 
-          // Send payment failed email (no PaymentHistory created for failures)
+          // Create PaymentHistory entry for failed payment
+          await PaymentHistory.create({
+            taskId: task._id,
+            firstName: task.firstName,
+            lastName: task.lastName,
+            phoneNumber: task.phoneNumber,
+            amount: amountInGBP != null ? amountInGBP : 0,
+            paymentType: 'Stripe',
+            paymentDate: new Date(),
+            transactionId: paymentIntentId || 'failed',
+            payerAccount: task.email || customerEmail,
+            status: 'failed',
+            errorMessage: failureReason || `Stripe payment failed. Event type: ${event.type}`,
+          });
+
+          // Send payment failed email
           await sendPaymentFailedEmail({
             email: task.email || customerEmail,
             firstName: task.firstName,
@@ -2818,6 +2835,8 @@ const taskCtrl = {
             paymentDate: new Date(cap.create_time),
             transactionId: cap.id,
             payerAccount: payerEmail || `PayPal ${cap.id}`,
+            status: 'success',
+            statusMessage: `Payment successful via PayPal. Transaction ID: ${cap.id}. Amount: ${cap.amount.currency_code} ${cap.amount.value}. Payment type: ${paymentTypeMeta === 'deposit' ? 'Deposit' : paymentTypeMeta === 'remaining' ? 'Remaining' : 'Full payment'}.`,
           });
 
           // fire-and-forget the email (don't block webhook)
@@ -2885,6 +2904,8 @@ const taskCtrl = {
             paymentDate: new Date(capture.create_time),
             transactionId: capture.id,
             payerAccount: payerEmail || `PayPal ${capture.id}`,
+            status: 'success',
+            statusMessage: `Payment captured successfully via PayPal. Transaction ID: ${capture.id}. Amount: ${capture.amount.currency_code} ${capture.amount.value}. Payment type: ${paymentTypeMeta === 'deposit' ? 'Deposit' : paymentTypeMeta === 'remaining' ? 'Remaining' : 'Full payment'}.`,
           });
 
           // Send notification to admins only
@@ -2927,6 +2948,22 @@ const taskCtrl = {
               capture?.status_details?.reason ||
               capture?.reason ||
               `PayPal event type: ${evt.event_type}`;
+
+            // Create PaymentHistory entry for failed payment
+            await PaymentHistory.create({
+              taskId: task._id,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              phoneNumber: task.phoneNumber,
+              amount: amountValue != null ? Number(amountValue) : 0,
+              currency: currencyCode,
+              paymentType: 'PayPal',
+              paymentDate: new Date(),
+              transactionId: capture?.id || 'failed',
+              payerAccount: payerEmail || task.email,
+              status: 'failed',
+              errorMessage: failureReason || `PayPal payment ${evt.event_type}`,
+            });
 
             await sendPaymentFailedEmail({
               email: task.email || payerEmail,

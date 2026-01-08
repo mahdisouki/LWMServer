@@ -30,12 +30,14 @@ const {
     userSignIn,
     driverSignIn,
     refresh,
+    logout,
   } = require("../controllers/authCtrl");
-const { verifyRefreshToken } = require("../middlewares/auth");
+const { verifyRefreshToken, isAuth } = require("../middlewares/auth");
 
 
 router.post("/sign-in" , userSignIn);
 router.post("/driver-sign-in" , driverSignIn);
 router.post("/refresh" ,verifyRefreshToken, refresh);
+router.post("/logout" , isAuth, logout);
 
 module.exports = router;
