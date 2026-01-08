@@ -40,8 +40,9 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB limit for files
-    files: 10 // Maximum 10 files
+    fileSize: 100 * 1024 * 1024, // 100MB limit per file
+    // Note: File count limit should be specified in multer.array('fieldname', maxCount)
+    // Example: multer.array('uploads', 50) allows up to 50 files
   }
 });
 
