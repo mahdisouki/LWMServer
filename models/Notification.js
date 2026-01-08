@@ -22,6 +22,7 @@ const notificationSchema = new mongoose.Schema({
       "Busy_Days",
       "Emails",
       "Quotations",
+      "Payment",
     ],
     required: true,
   },
