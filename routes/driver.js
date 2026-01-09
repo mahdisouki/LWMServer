@@ -4,26 +4,74 @@ const driverCtrl = require('../controllers/driverCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
+const multerLib = require('multer');
+
+// Helper function to wrap multer middleware with error handling
+const handleMulterError = (multerMiddleware) => {
+  return (req, res, next) => {
+    multerMiddleware(req, res, (err) => {
+      if (err) {
+        // Handle multer errors
+        if (err.code === 'LIMIT_FILE_COUNT') {
+          return res.status(400).json({
+            message: 'Too many files uploaded',
+            error: `Maximum ${err.limit || 50} files allowed per upload`,
+            code: err.code
+          });
+        }
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({
+            message: 'File too large',
+            error: 'Maximum file size is 100MB per file',
+            code: err.code
+          });
+        }
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({
+            message: 'Unexpected file field',
+            error: err.message,
+            code: err.code
+          });
+        }
+        // Handle other multer errors
+        if (err instanceof multerLib.MulterError) {
+          return res.status(400).json({
+            message: 'File upload error',
+            error: err.message,
+            code: err.code
+          });
+        }
+        // Handle other errors
+        return res.status(400).json({
+          message: 'File upload error',
+          error: err.message
+        });
+      }
+      next();
+    });
+  };
+};
 
 
 router.get('/driver', isAuth, driverCtrl.getTasksForDriver);
 router.get('/driver/tasks-by-date', isAuth, driverCtrl.getTasksPerDate);
 router.post('/driver/add-tipping-to-truck', isAuth, driverCtrl.addTippingRequestToTruck);
-router.post('/trucks/start/:truckId', isAuth, multer.array('uploads'), driverCtrl.updateTruckStart);
+router.post('/trucks/start/:truckId', isAuth, handleMulterError(multer.array('uploads', 20)), driverCtrl.updateTruckStart);
 router.put('/driver', isAuth, multer.fields([{ name: 'picture', maxCount: 1 }, { name: 'DriverLicense', maxCount: 1 }, { name: 'addressProof', maxCount: 1 }, { name: 'NatInsurance', maxCount: 1 }]), driverCtrl.updateDriverProfile);
 router.post('/driver/mark-day-start', isAuth, multer.none(), driverCtrl.markDayStart);
 
 router.get('/driver/helper-location', isAuth, driverCtrl.getHelperLocationForDriver);
 router.get('/driver/helper-info', isAuth, driverCtrl.getHelperInfoForDriver);
-router.post('/trucks/end/:truckId', isAuth, multer.array('uploads'), driverCtrl.updateTruckEnd);
+router.post('/trucks/end/:truckId', isAuth, handleMulterError(multer.array('uploads', 20)), driverCtrl.updateTruckEnd);
 router.get('/trucks/status/:truckId', driverCtrl.getTruckFullStatus);
 router.put('/tasks/update-status/:taskId', isAuth, driverCtrl.updateJobStatus);
 router.put('/tasks/rate/:taskId',isAuth, driverCtrl.rateTask);
 
-router.post('/location/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.uploadInitialConditionPhotos);
-router.post('/truck/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.uploadFinalConditionPhotos);
-router.post('/truck/uploadIntermediateItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.intermediateConditionPhotos);
-router.post('/additional-items/uploadItem/:taskId', isAuth, multer.array('uploads'), driverCtrl.addAdditionalItems);
+// Task image uploads - allow up to 50 files per upload
+router.post('/location/uploadItem/:taskId', isAuth, handleMulterError(multer.array('uploads', 50)), driverCtrl.uploadInitialConditionPhotos);
+router.post('/truck/uploadItem/:taskId', isAuth, handleMulterError(multer.array('uploads', 50)), driverCtrl.uploadFinalConditionPhotos);
+router.post('/truck/uploadIntermediateItem/:taskId', isAuth, handleMulterError(multer.array('uploads', 50)), driverCtrl.intermediateConditionPhotos);
+router.post('/additional-items/uploadItem/:taskId', isAuth, handleMulterError(multer.array('uploads', 50)), driverCtrl.addAdditionalItems);
 
 router.post('/break/start', isAuth, driverCtrl.startBreak);
 router.post('/break/end', isAuth, driverCtrl.endBreak);
@@ -57,5 +105,6 @@ router.post('/cleanup-truck-tasks', isAuth, async (req, res) => {
     });
   }
 });
+
 
 module.exports = router;

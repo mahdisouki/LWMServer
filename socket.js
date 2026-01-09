@@ -1329,20 +1329,42 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
     'Busy_Days': 'Busy Days Update',
     'Emails': 'Email Update',
     'Quotations': 'Quotation Update',
+    'Payment': 'Payment Update',
   };
   const title = titleMap[type] || 'Notification';
 
-  if (socketId && io) {
-    // User is online - send via socket
-    io.to(socketId).emit('notification', {
-      userId: userId,
-      type: type,
-      title: title,
+  // ALWAYS save to database FIRST (before sending via socket/OneSignal)
+  let savedNotification = null;
+  try {
+    savedNotification = await Notification.create({
+      userId,
+      type,
       message: notificationMessage,
       senderName: senderName,
-      read: false
+      read: false,
     });
-    console.log(`✅ Socket notification sent to online user: ${userId}`);
+    console.log(`✅ Notification saved to database for user: ${userId}`);
+  } catch (dbError) {
+    console.error(`❌ Error saving notification to database for user ${userId}:`, dbError);
+    // Continue with sending even if DB save fails, but log the error
+  }
+
+  if (socketId && io) {
+    // User is online - send via socket
+    try {
+      io.to(socketId).emit('notification', {
+        userId: userId,
+        type: type,
+        title: title,
+        message: notificationMessage,
+        senderName: senderName,
+        read: false,
+        notificationId: savedNotification?._id // Include DB notification ID
+      });
+      console.log(`✅ Socket notification sent to online user: ${userId}`);
+    } catch (socketError) {
+      console.error(`❌ Error sending socket notification to user ${userId}:`, socketError);
+    }
   } else {
     // User is offline - check for web or mobile OneSignal
     try {
@@ -1350,9 +1372,9 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
       
       // Priority 1: Try web push (for desktop/browser users)
       // Check for array of web player IDs first, then fallback to single ID for backward compatibility
-      const webPlayerIds = (user.oneSignalWebPlayerIds && user.oneSignalWebPlayerIds.length > 0) 
+      const webPlayerIds = (user?.oneSignalWebPlayerIds && user.oneSignalWebPlayerIds.length > 0) 
         ? user.oneSignalWebPlayerIds 
-        : (user.oneSignalWebPlayerId ? [user.oneSignalWebPlayerId] : []);
+        : (user?.oneSignalWebPlayerId ? [user.oneSignalWebPlayerId] : []);
       
       if (user && webPlayerIds.length > 0) {
         const { sendOneSignalWebNotificationToMultiple, sendOneSignalWebNotification } = require('./services/oneSignalService');
@@ -1384,9 +1406,9 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
       }
       // Priority 2: Try mobile push (for mobile app users)
       // Check for array of mobile player IDs first, then fallback to single ID for backward compatibility
-      const mobilePlayerIds = (user.oneSignalPlayerIds && user.oneSignalPlayerIds.length > 0)
+      const mobilePlayerIds = (user?.oneSignalPlayerIds && user.oneSignalPlayerIds.length > 0)
         ? user.oneSignalPlayerIds
-        : (user.oneSignalPlayerId ? [user.oneSignalPlayerId] : []);
+        : (user?.oneSignalPlayerId ? [user.oneSignalPlayerId] : []);
       
       if (user && mobilePlayerIds.length > 0) {
         // Send to all mobile player IDs
@@ -1413,8 +1435,6 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
         } else if (result && result.success) {
           console.log(`✅ OneSignal notification sent to ${mobilePlayerIds.length} device(s) for offline user: ${userId}`);
         }
-      } else {
-        console.log(`⚠️ User ${userId} has no OneSignal player ID (web or mobile), saving to database`);
       }
 
       // Always save to database as backup
@@ -1427,20 +1447,8 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
       });
       console.log(`�� Notification saved to database for user: ${userId}`);
     } catch (error) {
-      console.error(`❌ Error sending notification to user ${userId}:`, error);
-      
-      // Fallback: save to database
-      try {
-        await Notification.create({
-          userId,
-          type,
-          message: notificationMessage,
-          senderName: senderName,
-          read: false,
-        });
-      } catch (dbError) {
-        console.error(`❌ Error saving notification to database:`, dbError);
-      }
+      console.error(`❌ Error sending OneSignal notification to user ${userId}:`, error);
+      // Database already saved at the beginning, so we can continue
     }
   }
 };

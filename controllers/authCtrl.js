@@ -177,3 +177,27 @@ exports.refresh = async (req, res) => {
     }
   }
 };
+
+exports.logout = async (req, res) => {
+  try {
+    const user = req.user; // User from isAuth middleware
+    
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    // Invalidate refresh token by clearing it
+    user.refreshToken = undefined;
+    await user.save();
+
+    console.log(`User ${user._id} logged out successfully`);
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Logged out successfully" 
+    });
+  } catch (error) {
+    console.error("Error during logout:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
