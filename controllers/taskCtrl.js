@@ -471,7 +471,7 @@ const taskCtrl = {
           adminId = req.user._id;
         } else {
           // Find first admin with Google tokens
-          const admin = await User.findOne({ 
+          const admin = await User.findOne({
             role: 'Admin',
             gmailTokens: { $exists: true, $ne: null }
           });
@@ -479,22 +479,22 @@ const taskCtrl = {
             adminId = admin._id;
           }
         }
-        
+
         if (adminId) {
           const calendarEvent = await createCalendarEvent(adminId.toString(), savedTask);
-          
+
           // Save calendar event ID to task
           savedTask.googleCalendarEventId = calendarEvent.id;
           await savedTask.save();
-          
+
           console.log('✅ Calendar event created for order:', savedTask.orderNumber);
         } else {
           console.log('⚠️ No admin with Google Calendar access found. Skipping calendar event creation.');
         }
       } catch (calendarError) {
         // Don't fail the task creation if calendar fails
-        if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
-            calendarError.message?.includes('INVALID_GRANT')) {
+        if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
+          calendarError.message?.includes('INVALID_GRANT')) {
           console.error('⚠️ Calendar integration requires re-authentication.');
           console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId ? adminId.toString() : 'ADMIN_ID'));
         } else {
@@ -1011,20 +1011,20 @@ const taskCtrl = {
           if (req.user && req.user.role && req.user.role.includes('Admin')) {
             adminId = req.user._id;
           } else {
-            const admin = await User.findOne({ 
+            const admin = await User.findOne({
               role: 'Admin',
               gmailTokens: { $exists: true, $ne: null }
             });
             if (admin) adminId = admin._id;
           }
-          
+
           if (adminId) {
             await updateCalendarEvent(adminId.toString(), updatedTask, updatedTask.googleCalendarEventId);
             console.log('✅ Calendar event updated for order:', updatedTask.orderNumber);
           }
         } catch (calendarError) {
-          if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
-              calendarError.message?.includes('INVALID_GRANT')) {
+          if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
+            calendarError.message?.includes('INVALID_GRANT')) {
             console.error('⚠️ Calendar integration requires re-authentication.');
             console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId || 'ADMIN_ID'));
           } else {
@@ -1483,8 +1483,8 @@ const taskCtrl = {
 
       // Update Google Calendar event if it exists and relevant fields changed
       if (updatedTask.googleCalendarEventId && (
-        updates.date || updates.available || updates.taskStatus || 
-        updates.firstName || updates.lastName || updates.location || 
+        updates.date || updates.available || updates.taskStatus ||
+        updates.firstName || updates.lastName || updates.location ||
         updates.items || updates.totalPrice
       )) {
         try {
@@ -1492,20 +1492,20 @@ const taskCtrl = {
           if (req.user && req.user.role && req.user.role.includes('Admin')) {
             adminId = req.user._id;
           } else {
-            const admin = await User.findOne({ 
+            const admin = await User.findOne({
               role: 'Admin',
               gmailTokens: { $exists: true, $ne: null }
             });
             if (admin) adminId = admin._id;
           }
-          
+
           if (adminId) {
             await updateCalendarEvent(adminId.toString(), updatedTask, updatedTask.googleCalendarEventId);
             console.log('✅ Calendar event updated for order:', updatedTask.orderNumber);
           }
         } catch (calendarError) {
-          if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
-              calendarError.message?.includes('INVALID_GRANT')) {
+          if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
+            calendarError.message?.includes('INVALID_GRANT')) {
             console.error('⚠️ Calendar integration requires re-authentication.');
             console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId || 'ADMIN_ID'));
           } else {
@@ -3258,7 +3258,6 @@ const taskCtrl = {
         subject: `Invoice for Order #${task.orderNumber}`,
         html: emailContent,
         attachments: [{ filename: fileName, path: filePath }],
-        bcc: process.env.EMAIL_USER, // BCC the sender (responsible person)
       });
 
       // Clean up
