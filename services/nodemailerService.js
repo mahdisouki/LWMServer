@@ -2,6 +2,7 @@ const nodemailer = require('nodemailer');
 const Admin = require('../models/Admin');
 const fs = require('fs');
 const path = require('path');
+const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
 
 // Create a reusable transporter object using SMTP transport
 const createTransporter = async (adminId) => {
@@ -62,12 +63,12 @@ async function sendEmail(adminId, to, subject, text, attachments = []) {
       };
     });
 
-    // Email options
+    // Email options with staging indicators
     const mailOptions = {
       from: admin.email, // Sender email
       to: to, // Recipient email
-      subject: subject,
-      html: htmlContent,
+      subject: addStagingToSubject(subject),
+      html: addStagingBanner(htmlContent),
       attachments: nodemailerAttachments,
     };
 
@@ -160,12 +161,12 @@ async function replyToEmail(adminId, originalMessageId, replyText, attachments =
       };
     });
 
-    // Email options for reply
+    // Email options for reply with staging indicators
     const mailOptions = {
       from: admin.email,
       to: 'recipient@example.com', // You might want to extract this from the original message
-      subject: replySubject,
-      html: htmlContent,
+      subject: addStagingToSubject(replySubject),
+      html: addStagingBanner(htmlContent),
       attachments: nodemailerAttachments,
       inReplyTo: originalMessageId, // Reference to original message
       references: originalMessageId,
@@ -235,12 +236,12 @@ async function forwardEmail(adminId, originalMessageId, forwardTo, forwardText, 
       };
     });
 
-    // Email options for forward
+    // Email options for forward with staging indicators
     const mailOptions = {
       from: admin.email,
       to: forwardTo,
-      subject: forwardSubject,
-      html: htmlContent,
+      subject: addStagingToSubject(forwardSubject),
+      html: addStagingBanner(htmlContent),
       attachments: nodemailerAttachments,
     };
 

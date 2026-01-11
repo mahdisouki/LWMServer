@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 
 const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
     const transporter = nodemailer.createTransport({
@@ -29,8 +30,8 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: responsibleEmail, // Adresse email du responsable
         replyTo: quotationData.email, // Replies go directly to the customer
-        subject: `New Quotation Request from ${quotationData.firstName || ''} ${quotationData.lastName || ''}`.trim(),
-        html: `
+        subject: addStagingToSubject(`New Quotation Request from ${quotationData.firstName || ''} ${quotationData.lastName || ''}`.trim()),
+        html: addStagingBanner(`
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9; padding: 20px;">
            <div style="text-align: center; margin-bottom: 20px;">
           <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
@@ -65,7 +66,7 @@ const sendQuotationEmail = async ({ responsibleEmail, quotationData }) => {
                 <p>Thank you for using London Waste Management!</p>
             </footer>
         </div>
-    `,
+    `),
     };
 
     // Send to responsible email
