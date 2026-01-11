@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
+const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 
 const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
   const transporter = nodemailer.createTransport({
@@ -39,8 +40,8 @@ const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
   const mailOptions = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: "How Was Your Experience? | London Waste Management",
-    html: template,
+    subject: addStagingToSubject("How Was Your Experience? | London Waste Management"),
+    html: addStagingBanner(template),
   };
 
   try {

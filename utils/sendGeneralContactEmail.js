@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 
 const sendGeneralContactEmail = async ({ responsibleEmail, contactData }) => {
   const transporter = nodemailer.createTransporter({
@@ -14,8 +15,8 @@ const sendGeneralContactEmail = async ({ responsibleEmail, contactData }) => {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: responsibleEmail,
     replyTo: contactData.email, // Replies go directly to the customer
-    subject: `New Contact Request from ${contactData.fullName}`,
-    html: `
+    subject: addStagingToSubject(`New Contact Request from ${contactData.fullName}`),
+    html: addStagingBanner(`
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
         <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
@@ -37,15 +38,15 @@ const sendGeneralContactEmail = async ({ responsibleEmail, contactData }) => {
         <p style="font-size: 14px; color: #888;">London Waste Management</p>
       </div>
     </div>
-  `,
+  `),
   };
 
   // Email to the user (confirmation)
   const mailOptionsToUser = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: contactData.email,
-    subject: 'Thank you for contacting London Waste Management!',
-    html: `
+    subject: addStagingToSubject('Thank you for contacting London Waste Management!'),
+    html: addStagingBanner(`
       <div style="padding: 40px 0 0; font-family: Arial, sans-serif; text-align: center;">
         <div style="max-width: 90%; margin: auto; background: #ffffff; border-radius: 12px 12px 8px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); overflow: hidden; position: relative; z-index: 2;">
           
@@ -91,7 +92,7 @@ const sendGeneralContactEmail = async ({ responsibleEmail, contactData }) => {
           </div>
         </div>
       </div>
-    `,
+    `),
   };
 
   // Send both emails

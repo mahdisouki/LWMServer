@@ -43,6 +43,7 @@ const transporter = nodemailer.createTransport({
 });
 const cloudinary = require('../helper/cloudinaryConfig');
 const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } = require('../services/calendarService');
+const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
 
 // Helper to update daily sheets when a task changes (e.g. status moved to Completed)
 const updateDailySheetForTask = async (task) => {
@@ -3351,8 +3352,8 @@ const taskCtrl = {
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: task.email,
-        subject: `Invoice for Order #${task.orderNumber}`,
-        html: emailContent,
+        subject: addStagingToSubject(`Invoice for Order #${task.orderNumber}`),
+        html: addStagingBanner(emailContent),
         attachments: [{ filename: fileName, path: filePath }],
       });
 

@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
+
 const sendContactEmail = async ({ responsibleEmail, contactData }) => {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -39,8 +41,8 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
     from: `"London Waste Management"<${contactData.email}>`,
     to: responsibleEmail,
     replyTo: contactData.email, // Replies go directly to the customer
-    subject: `New Moving Service Request from ${contactData.fullName}`,
-    html: `
+    subject: addStagingToSubject(`New Moving Service Request from ${contactData.fullName}`),
+    html: addStagingBanner(`
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
         <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
@@ -194,7 +196,7 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
           </table>
         </body>
       </html>
-    `,
+    `),
   };
   // Send both emails
   await transporter.sendMail(mailOptionsToResponsible);

@@ -8,6 +8,7 @@ const PDFDocument = require('pdfkit');
 const Handlebars = require('handlebars');
 const Task = require('../models/Task');
 const StandardItem = require('../models/StandardItem');
+const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -60,11 +61,15 @@ async function buildWasteTransferNoteDetails(task) {
 
 async function sendEmail({ to, subject, html, attachments = [] }) {
   try {
+    // Add staging indicators
+    const finalSubject = addStagingToSubject(subject);
+    const finalHtml = addStagingBanner(html);
+    
     return await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to,
-      subject,
-      html,
+      subject: finalSubject,
+      html: finalHtml,
       attachments,
     });
   } catch (error) {
@@ -235,8 +240,8 @@ async function sendRefundEmail({ task, paymentHistory, refundAmount, isSplitRefu
   await transporter.sendMail({
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: task.email,
-    subject: `Refund for Order #${task.orderNumber}`,
-    html,
+    subject: addStagingToSubject(`Refund for Order #${task.orderNumber}`),
+    html: addStagingBanner(html),
     attachments: [{ filename: fileName, path: filePath }],
   });
   fs.unlinkSync(filePath);
@@ -735,8 +740,8 @@ module.exports = {
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
-      subject: 'London Waste Management - Customer Review',
-      html: htmlContent,
+      subject: addStagingToSubject('London Waste Management - Customer Review'),
+      html: addStagingBanner(htmlContent),
     });
   },
 
@@ -857,8 +862,8 @@ module.exports = {
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: 'Thank You for Your Quotation Request',
-      html: htmlContent,
+      subject: addStagingToSubject('Thank You for Your Quotation Request'),
+      html: addStagingBanner(htmlContent),
     });
   },
 
@@ -946,8 +951,8 @@ module.exports = {
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: task.email,
-        subject: `Waste Transfer Note for Order #${task.orderNumber}`,
-        html: template,
+        subject: addStagingToSubject(`Waste Transfer Note for Order #${task.orderNumber}`),
+        html: addStagingBanner(template),
       });
     } catch (error) {
       // If email fails, reset the flag so it can be retried
@@ -972,8 +977,8 @@ module.exports = {
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
-      subject: `Invoice for Order #${task.orderNumber}`,
-      html: `<p>Please find attached your official invoice for Order #${task.orderNumber}.</p>`,
+      subject: addStagingToSubject(`Invoice for Order #${task.orderNumber}`),
+      html: addStagingBanner(`<p>Please find attached your official invoice for Order #${task.orderNumber}.</p>`),
       attachments: [{ filename: fileName, path: filePath }],
     });
 
@@ -1011,8 +1016,8 @@ module.exports = {
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
-      subject: `Booking Confirmation - Order #${task.orderNumber}`,
-      html: htmlContent,
+      subject: addStagingToSubject(`Booking Confirmation - Order #${task.orderNumber}`),
+      html: addStagingBanner(htmlContent),
       attachments: [{ filename: fileName, path: filePath }],
     });
 
@@ -1367,8 +1372,8 @@ module.exports = {
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: email,
-        subject: `Payment Confirmation - Order #${task.orderNumber}`,
-        html: html,
+        subject: addStagingToSubject(`Payment Confirmation - Order #${task.orderNumber}`),
+        html: addStagingBanner(html),
         attachments: [{ filename: fileName, path: filePath }],
       });
 
@@ -1515,8 +1520,8 @@ module.exports = {
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: process.env.EMAIL_USER, // Send only to responsible email, not to customer
-        subject: `Payment Failed - Order #${task.orderNumber || orderId} - Customer: ${email}`,
-        html,
+        subject: addStagingToSubject(`Payment Failed - Order #${task.orderNumber || orderId} - Customer: ${email}`),
+        html: addStagingBanner(html),
       });
     } catch (error) {
       console.error('Error sending payment failed email:', error);
@@ -1662,11 +1667,11 @@ const sendGeneralInvoiceEmail = async ({ responsibleEmail, taskData }) => {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: responsibleEmail,
-      subject: 'New Invoice',
-      html: `
+      subject: addStagingToSubject('New Invoice'),
+      html: addStagingBanner(`
         <h1>New Invoice</h1>
         <p>Please find attached the invoice for your recent order.</p>
-      `,
+      `),
       attachments: [
         {
           filename: 'invoice.pdf',

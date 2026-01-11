@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 
 const VAT_RATE = 0.2; // 20% VAT
 
@@ -278,8 +279,8 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   const mailOptions = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: customerEmail,
-    subject: `${getPaymentTypeDescription(paymentType)} Request for Task #${taskDetails.orderNumber}`,
-    html: `<!DOCTYPE html>
+    subject: addStagingToSubject(`${getPaymentTypeDescription(paymentType)} Request for Task #${taskDetails.orderNumber}`),
+    html: addStagingBanner(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
@@ -403,7 +404,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     </tr>
   </table>
 </body>
-</html>`,
+</html>`),
   };
 
   await transporter.sendMail(mailOptions);

@@ -1,4 +1,6 @@
 const nodemailer = require('nodemailer');
+const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
+
 const sendContact2Email = async ({ responsibleEmail, contactData }) => {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -13,8 +15,8 @@ const sendContact2Email = async ({ responsibleEmail, contactData }) => {
     from: `"London Waste Management"<${contactData.email}>`,
     to: responsibleEmail,
     replyTo: contactData.email, // Replies go directly to the customer
-    subject: `New Contact Request from ${contactData.firstName} ${contactData.lastName}`,
-    html: `
+    subject: addStagingToSubject(`New Contact Request from ${contactData.firstName} ${contactData.lastName}`),
+    html: addStagingBanner(`
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
         <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
@@ -45,15 +47,15 @@ const sendContact2Email = async ({ responsibleEmail, contactData }) => {
         <p style="font-size: 14px; color: #888;">London Waste Management</p>
       </div>
     </div>
-  `,
+  `),
   };
 
   // Email to the user
   const mailOptionsToUser = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`, // Your email
     to: contactData.email,
-    subject: 'Thank You for your Contact Request!',
-    html: `
+    subject: addStagingToSubject('Thank You for your Contact Request!'),
+    html: addStagingBanner(`
       <!DOCTYPE html>
       <html lang="en">
         <head>
@@ -163,7 +165,7 @@ const sendContact2Email = async ({ responsibleEmail, contactData }) => {
           </table>
         </body>
       </html>
-    `,
+    `),
   };
 
   // Send both emails
