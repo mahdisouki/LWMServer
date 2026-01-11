@@ -968,7 +968,7 @@ const driverManagement = {
       });
     }
   },
-
+// this api is not used in the project
   updateJobStatus: async (req, res) => {
     const { taskId } = req.params;
     const { taskStatus } = req.body;

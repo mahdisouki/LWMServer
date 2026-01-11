@@ -966,6 +966,7 @@ const taskCtrl = {
       });
     }
   },
+  //this is used by admin to update task status
   traiterTask: async (req, res) => {
     const { taskId } = req.params;
     const { taskStatus } = req.body;
@@ -1543,7 +1544,7 @@ const taskCtrl = {
       });
     }
   },
-
+//this api used by driver to mark the task as started or finished
   updateTaskStatus: async (req, res) => {
     const { taskId } = req.params;
     const { action } = req.body;
@@ -1578,6 +1579,35 @@ const taskCtrl = {
             ipAddress: req.ip,
             userAgent: req.headers['user-agent'],
           });
+        }
+
+        // Update Google Calendar event if it exists
+        if (task.googleCalendarEventId) {
+          try {
+            let adminId = null;
+            if (req.user && req.user.role && req.user.role.includes('Admin')) {
+              adminId = req.user._id;
+            } else {
+              const admin = await User.findOne({ 
+                role: 'Admin',
+                gmailTokens: { $exists: true, $ne: null }
+              });
+              if (admin) adminId = admin._id;
+            }
+            
+            if (adminId) {
+              await updateCalendarEvent(adminId.toString(), task, task.googleCalendarEventId);
+              console.log('✅ Calendar event updated for order:', task.orderNumber);
+            }
+          } catch (calendarError) {
+            if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
+                calendarError.message?.includes('INVALID_GRANT')) {
+              console.error('⚠️ Calendar integration requires re-authentication.');
+              console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId || 'ADMIN_ID'));
+            } else {
+              console.error('❌ Error updating calendar event:', calendarError.message);
+            }
+          }
         }
 
         // Notify all admins that the task has been started (New -> Processing)
@@ -1656,6 +1686,35 @@ const taskCtrl = {
             ipAddress: req.ip,
             userAgent: req.headers['user-agent'],
           });
+        }
+
+        // Update Google Calendar event if it exists
+        if (task.googleCalendarEventId) {
+          try {
+            let adminId = null;
+            if (req.user && req.user.role && req.user.role.includes('Admin')) {
+              adminId = req.user._id;
+            } else {
+              const admin = await User.findOne({ 
+                role: 'Admin',
+                gmailTokens: { $exists: true, $ne: null }
+              });
+              if (admin) adminId = admin._id;
+            }
+            
+            if (adminId) {
+              await updateCalendarEvent(adminId.toString(), task, task.googleCalendarEventId);
+              console.log('✅ Calendar event updated for order:', task.orderNumber);
+            }
+          } catch (calendarError) {
+            if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
+                calendarError.message?.includes('INVALID_GRANT')) {
+              console.error('⚠️ Calendar integration requires re-authentication.');
+              console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId || 'ADMIN_ID'));
+            } else {
+              console.error('❌ Error updating calendar event:', calendarError.message);
+            }
+          }
         }
 
         // Notify all admins that the task has been completed (Processing -> Completed)
