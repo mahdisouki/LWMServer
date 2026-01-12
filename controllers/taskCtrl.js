@@ -1545,7 +1545,7 @@ const taskCtrl = {
       });
     }
   },
-//this api used by driver to mark the task as started or finished
+  //this api used by driver to mark the task as started or finished
   updateTaskStatus: async (req, res) => {
     const { taskId } = req.params;
     const { action } = req.body;
@@ -1589,20 +1589,20 @@ const taskCtrl = {
             if (req.user && req.user.role && req.user.role.includes('Admin')) {
               adminId = req.user._id;
             } else {
-              const admin = await User.findOne({ 
+              const admin = await User.findOne({
                 role: 'Admin',
                 gmailTokens: { $exists: true, $ne: null }
               });
               if (admin) adminId = admin._id;
             }
-            
+
             if (adminId) {
               await updateCalendarEvent(adminId.toString(), task, task.googleCalendarEventId);
               console.log('✅ Calendar event updated for order:', task.orderNumber);
             }
           } catch (calendarError) {
-            if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
-                calendarError.message?.includes('INVALID_GRANT')) {
+            if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
+              calendarError.message?.includes('INVALID_GRANT')) {
               console.error('⚠️ Calendar integration requires re-authentication.');
               console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId || 'ADMIN_ID'));
             } else {
@@ -1642,6 +1642,7 @@ const taskCtrl = {
       if (action === 'mark_finish') {
         const oldStatus = task.taskStatus;
         task.taskStatus = 'Completed';
+
         if (!task.startDate) {
           return res.status(400).json({
             message: "Task hasn't been started yet",
@@ -1667,10 +1668,14 @@ const taskCtrl = {
         }
 
         task.finishDate = now;
+        console.log("task.finishDate", task.finishDate)
         const timeElapsed = (now - task.startDate) / 1000;
-
+        console.log("timeElapsed", timeElapsed)
         task.timeSpent = timeElapsed;
         await task.save();
+
+        // Send Waste Transfer Note email after task is successfully completed
+        await sendWasteTransferNoteEmail(task._id);
 
         // Create a log of the status change
         if (req.user) {
@@ -1696,20 +1701,20 @@ const taskCtrl = {
             if (req.user && req.user.role && req.user.role.includes('Admin')) {
               adminId = req.user._id;
             } else {
-              const admin = await User.findOne({ 
+              const admin = await User.findOne({
                 role: 'Admin',
                 gmailTokens: { $exists: true, $ne: null }
               });
               if (admin) adminId = admin._id;
             }
-            
+
             if (adminId) {
               await updateCalendarEvent(adminId.toString(), task, task.googleCalendarEventId);
               console.log('✅ Calendar event updated for order:', task.orderNumber);
             }
           } catch (calendarError) {
-            if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
-                calendarError.message?.includes('INVALID_GRANT')) {
+            if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
+              calendarError.message?.includes('INVALID_GRANT')) {
               console.error('⚠️ Calendar integration requires re-authentication.');
               console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId || 'ADMIN_ID'));
             } else {

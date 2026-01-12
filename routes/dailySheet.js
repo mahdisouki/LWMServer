@@ -30,4 +30,9 @@ router.put('/update-price/:tippingRequestId', dailySheetController.updateTipping
 router.post('/:driverId/:date/expense', parser.single('receipt'), dailySheetController.addExpense);
 router.put('/:driverId/:date/expense/:expenseId', parser.single('receipt'), dailySheetController.updateExpense);
 router.delete('/:driverId/:date/expense/:expenseId', dailySheetController.deleteExpense);
+router.post('/:driverId/:date/pcn-damage', parser.single('proof'), dailySheetController.addPcnDamage);
+router.get('/pcn-damages', dailySheetController.getAllPcnDamages);
+router.get('/:driverId/:date/pcn-damages', dailySheetController.getPcnDamages);
+router.patch('/:driverId/:date/pcn-damage/:pcnDamageId', parser.single('proof'), dailySheetController.updatePcnDamage);
+router.delete('/:driverId/:date/pcn-damage/:pcnDamageId', dailySheetController.deletePcnDamage);
 module.exports = router;
