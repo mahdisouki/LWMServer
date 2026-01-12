@@ -11,7 +11,7 @@ const dailySheetSchema = new Schema({
   jobsCancelled: [{ type: Schema.Types.ObjectId, ref: 'Task' }], // List of cancelled jobs
 
   // Tipping requests for the day
-  tippingRequests: [{ type: Schema.Types.ObjectId, ref: 'TippingRequest' }], 
+  tippingRequests: [{ type: Schema.Types.ObjectId, ref: 'TippingRequest' }],
   fuelLogs: [
     {
       amount: Number,         // price paid for fuel (e.g., 60.00)
@@ -33,12 +33,26 @@ const dailySheetSchema = new Schema({
       time: { type: Date, default: Date.now },        // Time of the expense
     }
   ],
+  pcnDamages: [
+    {
+      reason: { type: String, required: true },       // Reason for PCN/Damage
+      amount: { type: Number, required: true },       // Amount to deduct
+      deductedFromUserId: {
+        type: Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+      },                                              // User ID (Driver or Helper) to deduct from
+      proofUrl: { type: String },                     // URL to uploaded proof (image/URL)
+      addedBy: { type: String },                      // User name or ID who added this
+      time: { type: Date, default: Date.now },        // Time of the PCN/Damage
+    }
+  ],
   // Total cash received from all tasks paid in cash
   totalCash: { type: Number, default: 0 }
 }, { timestamps: true });
 
 // Pre-save hook to calculate total cash from all tasks
-dailySheetSchema.pre('save', async function(next) {
+dailySheetSchema.pre('save', async function (next) {
   try {
     // Combine all job IDs from different statuses
     const allJobIds = [
@@ -54,7 +68,7 @@ dailySheetSchema.pre('save', async function(next) {
         _id: { $in: allJobIds },
         paymentMethod: 'cash'
       });
-      
+
       // Sum up cash received from all cash-paid tasks
       this.totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
     }

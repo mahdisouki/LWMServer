@@ -225,10 +225,22 @@ const PayrollCtrl = {
       });
 
       // Get all expenses for today by this user
-      const dailySheet = await DailySheet.findOne({
+      // For helpers, we need to get the driver's daily sheet via truck
+      let dailySheet = await DailySheet.findOne({
         driverId: userId,
         date: { $gte: today, $lt: tomorrow }
       });
+
+      // If user is a helper and no daily sheet found, find via truck
+      if (!dailySheet) {
+        const truck = await Truck.findOne({ helperId: userId });
+        if (truck && truck.driverId) {
+          dailySheet = await DailySheet.findOne({
+            driverId: truck.driverId,
+            date: { $gte: today, $lt: tomorrow }
+          });
+        }
+      }
 
       // Calculate total cash received from tasks
       const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
@@ -241,12 +253,22 @@ const PayrollCtrl = {
         return sum;
       }, 0) : 0;
 
+      // Calculate PCN/Damages deductions for this user
+      const totalPcnDamages = dailySheet ? dailySheet.pcnDamages.reduce((sum, pcn) => {
+        // Only count PCN/Damages that should be deducted from this user
+        if (pcn.deductedFromUserId && pcn.deductedFromUserId.toString() === userId.toString()) {
+          return sum + pcn.amount;
+        }
+        return sum;
+      }, 0) : 0;
+
       payroll.endTime = end;
       payroll.totalHoursWorked = totalHoursWorked;
       payroll.regularHours = regularHours;
       payroll.extraHours = overtimeHours;
       payroll.totalSalary = totalSalary;
       payroll.totalExpenses = totalExpenses;
+      payroll.totalPcnDamages = totalPcnDamages;
       payroll.totalCash = totalCash;
 
       // Update the user's total hours worked and total salary
@@ -533,7 +555,7 @@ const PayrollCtrl = {
 
   // Admin - Update a payroll record for a user
   updatePayrollAdmin: async (req, res) => {
-    const { startTime, endTime, startBreak, endBreak, totalBreak, regularHours, extraHours, totalExpenses, totalCash, status, notes } = req.body;
+    const { startTime, endTime, startBreak, endBreak, totalBreak, regularHours, extraHours, totalExpenses, totalPcnDamages, totalCash, status, notes } = req.body;
     const { payrollId } = req.params;
 
     try {
@@ -570,11 +592,6 @@ const PayrollCtrl = {
       if (totalExpenses !== undefined) payroll.totalExpenses = totalExpenses;
       if (totalCash !== undefined) payroll.totalCash = totalCash;
 
-      // Update status if provided
-      if (status && ['Pending', 'Paid'].includes(status)) {
-        payroll.status = status;
-      }
-
       // Calculate salary based on hours and user's rates
       const user = await User.findById(payroll.userId);
       if (!user) {
@@ -585,6 +602,48 @@ const PayrollCtrl = {
       const regularSalary = (payroll.regularHours || 0) * user.hourPrice;
       const extraSalary = (payroll.extraHours || 0) * user.extraHourPrice;
       payroll.totalSalary = regularSalary + extraSalary;
+
+      // Update totalPcnDamages: use provided value if manually set, otherwise calculate from daily sheet
+      if (totalPcnDamages !== undefined) {
+        // Use the manually provided value (admin override)
+        payroll.totalPcnDamages = totalPcnDamages;
+      } else if (payroll.startTime) {
+        // Calculate from daily sheet if not manually set
+        const payrollDate = new Date(payroll.startTime);
+        payrollDate.setHours(0, 0, 0, 0);
+        const nextDay = new Date(payrollDate);
+        nextDay.setDate(payrollDate.getDate() + 1);
+
+        // Get the daily sheet for this date
+        let dailySheet = await DailySheet.findOne({
+          driverId: payroll.userId,
+          date: { $gte: payrollDate, $lt: nextDay }
+        });
+
+        // If user is a helper and no daily sheet found, find via truck
+        if (!dailySheet) {
+          const truck = await Truck.findOne({ helperId: payroll.userId });
+          if (truck && truck.driverId) {
+            dailySheet = await DailySheet.findOne({
+              driverId: truck.driverId,
+              date: { $gte: payrollDate, $lt: nextDay }
+            });
+          }
+        }
+
+        // Calculate totalPcnDamages from daily sheet
+        payroll.totalPcnDamages = dailySheet ? dailySheet.pcnDamages.reduce((sum, pcn) => {
+          if (pcn.deductedFromUserId && pcn.deductedFromUserId.toString() === payroll.userId.toString()) {
+            return sum + pcn.amount;
+          }
+          return sum;
+        }, 0) : 0;
+      }
+
+      // Update status if provided
+      if (status && ['Pending', 'Paid'].includes(status)) {
+        payroll.status = status;
+      }
 
       await payroll.save();
 
@@ -603,20 +662,21 @@ const PayrollCtrl = {
 
   // Admin - Create a payroll record for a user
   createPayrollAdmin: async (req, res) => {
-    const { 
-      userId, 
-      startTime, 
-      endTime, 
-      startBreak, 
-      endBreak, 
-      totalBreak, 
+    const {
+      userId,
+      startTime,
+      endTime,
+      startBreak,
+      endBreak,
+      totalBreak,
       truckId,
-      regularHours, 
-      extraHours, 
-      totalExpenses, 
-      totalCash, 
-      status, 
-      notes 
+      regularHours,
+      extraHours,
+      totalExpenses,
+      totalPcnDamages,
+      totalCash,
+      status,
+      notes
     } = req.body;
 
     try {
@@ -648,9 +708,9 @@ const PayrollCtrl = {
 
       if (startTime && endTime) {
         calculatedTotalHours = (new Date(endTime) - new Date(startTime)) / (1000 * 3600);
-        
+
         const REGULAR_HOURS_LIMIT = user.regularHours || 8;
-        
+
         if (calculatedTotalHours <= REGULAR_HOURS_LIMIT) {
           calculatedRegularHours = calculatedTotalHours;
           calculatedExtraHours = 0;
@@ -671,11 +731,13 @@ const PayrollCtrl = {
       const extraSalary = finalExtraHours * user.extraHourPrice;
       const calculatedSalary = regularSalary + extraSalary;
 
-      // Optionally calculate totalCash and totalExpenses if date is provided
+      // Optionally calculate totalCash, totalExpenses, and totalPcnDamages if date is provided
       let calculatedTotalCash = totalCash !== undefined ? totalCash : 0;
       let calculatedTotalExpenses = totalExpenses !== undefined ? totalExpenses : 0;
+      let calculatedTotalPcnDamages = totalPcnDamages !== undefined ? totalPcnDamages : 0;
 
-      if (startTime && !totalCash && !totalExpenses) {
+      // Calculate from daily sheet if startTime is provided and values not manually set
+      if (startTime) {
         // Get the date from startTime
         const payrollDate = new Date(startTime);
         payrollDate.setHours(0, 0, 0, 0);
@@ -689,21 +751,48 @@ const PayrollCtrl = {
         });
 
         // Get all expenses for the date by this user
-        const dailySheet = await DailySheet.findOne({
+        // For helpers, we need to get the driver's daily sheet via truck
+        let dailySheet = await DailySheet.findOne({
           driverId: userId,
           date: { $gte: payrollDate, $lt: nextDay }
         });
 
-        // Calculate total cash received from tasks
-        calculatedTotalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
-
-        // Calculate total expenses
-        calculatedTotalExpenses = dailySheet ? dailySheet.expenses.reduce((sum, expense) => {
-          if (expense.addedBy === user.username) {
-            return sum + expense.amount;
+        // If user is a helper and no daily sheet found, find via truck
+        if (!dailySheet) {
+          const truck = await Truck.findOne({ helperId: userId });
+          if (truck && truck.driverId) {
+            dailySheet = await DailySheet.findOne({
+              driverId: truck.driverId,
+              date: { $gte: payrollDate, $lt: nextDay }
+            });
           }
-          return sum;
-        }, 0) : 0;
+        }
+
+        // Calculate total cash received from tasks (use provided value if specified, otherwise calculate)
+        if (totalCash === undefined) {
+          calculatedTotalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+        }
+
+        // Calculate total expenses (use provided value if specified, otherwise calculate)
+        if (totalExpenses === undefined) {
+          calculatedTotalExpenses = dailySheet ? dailySheet.expenses.reduce((sum, expense) => {
+            if (expense.addedBy === user.username) {
+              return sum + expense.amount;
+            }
+            return sum;
+          }, 0) : 0;
+        }
+
+        // Calculate totalPcnDamages from daily sheet (use provided value if manually set, otherwise calculate)
+        if (totalPcnDamages === undefined) {
+          calculatedTotalPcnDamages = dailySheet ? dailySheet.pcnDamages.reduce((sum, pcn) => {
+            // Only count PCN/Damages that should be deducted from this user
+            if (pcn.deductedFromUserId && pcn.deductedFromUserId.toString() === userId.toString()) {
+              return sum + pcn.amount;
+            }
+            return sum;
+          }, 0) : 0;
+        }
       }
 
       // Get truckId if not provided but user has a truck
@@ -729,6 +818,7 @@ const PayrollCtrl = {
         extraHours: finalExtraHours,
         totalSalary: calculatedSalary,
         totalExpenses: calculatedTotalExpenses,
+        totalPcnDamages: calculatedTotalPcnDamages,
         totalCash: calculatedTotalCash,
         status: status && ['Pending', 'Paid'].includes(status) ? status : 'Pending',
         notes: notes || undefined,
