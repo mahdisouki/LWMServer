@@ -48,6 +48,8 @@ const truckSchema = new Schema({
   loadCapacity: { type: Number },
   matricule: { type: String, required: true, unique: true },
   fuelNumber: { type: String, required: true, unique: true },
+  vanHire: { type: Number, default: 0 }, // Daily van hire cost (Column E)
+  insurance: { type: Number, default: 0 }, // Daily insurance cost (Column F)
 });
 
 // Static method to clean up corrupted tasks data

@@ -1,0 +1,412 @@
+const BlueSheet = require('../models/BlueSheet');
+const Truck = require('../models/Truck');
+const Task = require('../models/Task');
+const TippingRequest = require('../models/TippingRequest');
+const Payroll = require('../models/Payroll');
+const DailySheet = require('../models/DailySheet');
+const Driver = require('../models/Driver');
+const Helper = require('../models/Helper');
+const PaymentHistory = require('../models/PaymentHistory');
+
+// Commission pool (fixed daily amount - usually £3,760)
+const COMMISSION_POOL = 3760;
+
+// Helper function to format date to YYYY-MM-DD
+const formatDate = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const blueSheetController = {
+  // Generate blue sheets for all trucks for a specific date
+  generateBlueSheetsForAllTrucks: async (req, res) => {
+    try {
+      // Parse and validate input date
+      const inputDate = req.body.date ? new Date(req.body.date) : new Date();
+      if (isNaN(inputDate)) {
+        return res.status(400).json({ message: 'Invalid date format' });
+      }
+
+      const formattedDate = req.body.date || formatDate(new Date());
+      const dateObj = new Date(formattedDate);
+      dateObj.setHours(0, 0, 0, 0);
+      const startOfDay = new Date(dateObj);
+      const endOfDay = new Date(dateObj);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // Get all trucks
+      const trucks = await Truck.find().populate('driverId helperId');
+      const blueSheets = [];
+      const truckRouteTotals = [];
+
+      // First pass: Calculate route totals for all trucks
+      for (const truck of trucks) {
+        let routeTotal = 0;
+        const taskIdsForDate = [];
+
+        // Get tasks for this truck and date
+        if (truck.tasks) {
+          let tasksForDate = [];
+          if (truck.tasks instanceof Map) {
+            tasksForDate = truck.tasks.get(formattedDate) || [];
+          } else if (typeof truck.tasks === 'object') {
+            tasksForDate = truck.tasks[formattedDate] || [];
+          }
+
+          // Extract task IDs
+          if (Array.isArray(tasksForDate)) {
+            const taskIds = tasksForDate
+              .map(task => {
+                if (typeof task === 'string') return task;
+                if (task && task.taskId && (task.type === 'task' || task.type === 'Task')) {
+                  return task.taskId;
+                }
+                return null;
+              })
+              .filter(id => id !== null);
+
+            taskIdsForDate.push(...taskIds);
+          }
+        }
+
+        // Get tasks for this truck and date (includes paid, partial paid, and unpaid)
+        const tasks = await Task.find({
+          _id: { $in: taskIdsForDate },
+          paymentStatus: { $in: ['Paid', 'partial_Paid', 'Unpaid'] }, // Fixed: 'Unpaid' with capital U
+          date: { $gte: startOfDay, $lt: endOfDay },
+        });
+
+        // Calculate route total (sum of all task prices for this van route)
+        routeTotal = tasks.reduce((sum, task) => sum + (task.totalPrice || 0), 0);
+
+        truckRouteTotals.push({
+          truckId: truck._id,
+          routeTotal,
+        });
+      }
+
+      // Calculate total route total for all trucks (this is totalIn - Column B)
+      const totalIn = truckRouteTotals.reduce((sum, t) => sum + t.routeTotal, 0);
+      
+      console.log('📊 BlueSheet Calculation Debug:');
+      console.log('Total trucks:', trucks.length);
+      console.log('Truck route totals:', truckRouteTotals);
+      console.log('Total In (sum of all route totals):', totalIn);
+
+      // Second pass: Generate blue sheets for each truck
+      for (const truck of trucks) {
+        const truckData = truckRouteTotals.find(t => t.truckId.toString() === truck._id.toString());
+        const routeTotal = truckData ? truckData.routeTotal : 0;
+
+        // Calculate commission percentage and amount (Column E and F)
+        let commissionPercentage = 0;
+        let commission = 0;
+        if (totalIn > 0) {
+          commissionPercentage = routeTotal / totalIn; // Column E: Percentage commission (D / B)
+          commission = commissionPercentage * COMMISSION_POOL; // Column F: Commission Paid day (E * C)
+          
+          console.log(`Truck ${truck.name || truck._id}: routeTotal=${routeTotal}, totalIn=${totalIn}, commissionPercentage=${commissionPercentage}, commission=${commission}`);
+        } else {
+          console.log(`⚠️ TotalIn is 0 - cannot calculate commission percentage for truck ${truck.name || truck._id}`);
+        }
+
+        // Get tipping for this day (Column G: Tipping for this day)
+        let tipping = 0;
+        if (truck.driverId || truck.helperId) {
+          const userIds = [];
+          if (truck.driverId) userIds.push(truck.driverId._id || truck.driverId);
+          if (truck.helperId) userIds.push(truck.helperId._id || truck.helperId);
+
+          const tippingRequests = await TippingRequest.find({
+            userId: { $in: userIds },
+            status: 'Accepted',
+            createdAt: { $gte: startOfDay, $lt: endOfDay },
+          });
+
+          tipping = tippingRequests.reduce((sum, tr) => sum + (tr.price || 0), 0);
+        }
+
+        // Get van hire and insurance from truck
+        const vanHire = truck.vanHire || 0;
+        const insurance = truck.insurance || 0;
+
+        // Get driver OT (extraHours * extraHourPrice)
+        let driverOT = 0;
+        if (truck.driverId) {
+          const driverId = truck.driverId._id || truck.driverId;
+          const driverPayroll = await Payroll.findOne({
+            userId: driverId,
+            truckId: truck._id,
+            startTime: { $gte: startOfDay, $lt: endOfDay },
+          }).populate('userId');
+
+          if (driverPayroll && driverPayroll.extraHours) {
+            const driver = await Driver.findById(driverId);
+            if (driver && driver.extraHourPrice) {
+              driverOT = driverPayroll.extraHours * driver.extraHourPrice;
+            }
+          }
+        }
+
+        // Get helper OT (extraHours * extraHourPrice)
+        let labourOT = 0;
+        if (truck.helperId) {
+          const helperId = truck.helperId._id || truck.helperId;
+          const helperPayroll = await Payroll.findOne({
+            userId: helperId,
+            truckId: truck._id,
+            startTime: { $gte: startOfDay, $lt: endOfDay },
+          }).populate('userId');
+
+          if (helperPayroll && helperPayroll.extraHours) {
+            const helper = await Helper.findById(helperId);
+            if (helper && helper.extraHourPrice) {
+              labourOT = helperPayroll.extraHours * helper.extraHourPrice;
+            }
+          }
+        }
+
+        // Get fuel from DailySheet (sum of fuelLogs amounts)
+        let fuel = 0;
+        if (truck.driverId) {
+          const driverId = truck.driverId._id || truck.driverId;
+          const dailySheet = await DailySheet.findOne({
+            driverId: driverId,
+            date: { $gte: startOfDay, $lt: endOfDay },
+          });
+
+          if (dailySheet && dailySheet.fuelLogs && dailySheet.fuelLogs.length > 0) {
+            fuel = dailySheet.fuelLogs.reduce((sum, log) => sum + (log.amount || 0), 0);
+          }
+        }
+
+        // Get tasks for this date
+        let taskIdsForDate = [];
+        if (truck.tasks) {
+          let tasksForDate = [];
+          if (truck.tasks instanceof Map) {
+            tasksForDate = truck.tasks.get(formattedDate) || [];
+          } else if (typeof truck.tasks === 'object') {
+            tasksForDate = truck.tasks[formattedDate] || [];
+          }
+
+          if (Array.isArray(tasksForDate)) {
+            taskIdsForDate = tasksForDate
+              .map(task => {
+                if (typeof task === 'string') return task;
+                if (task && task.taskId && (task.type === 'task' || task.type === 'Task')) {
+                  return task.taskId;
+                }
+                return null;
+              })
+              .filter(id => id !== null);
+          }
+        }
+
+        // Calculate Stripe commission (1.4% + 20p per transaction)
+        let stripeCom = 0;
+        if (taskIdsForDate.length > 0) {
+          const stripePayments = await PaymentHistory.find({
+            taskId: { $in: taskIdsForDate },
+            paymentType: 'Stripe',
+            paymentDate: { $gte: startOfDay, $lt: endOfDay },
+          });
+
+          stripeCom = stripePayments.reduce((sum, payment) => {
+            // Stripe amounts are stored in cents, convert to GBP
+            const amountInGBP = payment.amount / 100;
+            const commission = (amountInGBP * 0.014) + 0.20; // 1.4% + 20p
+            return sum + commission;
+          }, 0);
+        }
+
+        // Calculate PayPal commission (2.9% + 30p per transaction)
+        let paypalComi = 0;
+        if (taskIdsForDate.length > 0) {
+          const paypalPayments = await PaymentHistory.find({
+            taskId: { $in: taskIdsForDate },
+            paymentType: 'PayPal',
+            paymentDate: { $gte: startOfDay, $lt: endOfDay },
+          });
+
+          paypalComi = paypalPayments.reduce((sum, payment) => {
+            // PayPal amounts are stored in GBP directly
+            const amountInGBP = payment.amount;
+            const commission = (amountInGBP * 0.029) + 0.30; // 2.9% + 30p
+            return sum + commission;
+          }, 0);
+        }
+
+        // Calculate otherCosts (Column J: combines vanHire, insurance, driverOT, labourOT, stripeCom, paypalComi)
+        const otherCosts = (vanHire || 0) + 
+                          (insurance || 0) + 
+                          (driverOT || 0) + 
+                          (labourOT || 0) + 
+                          (stripeCom || 0) + 
+                          (paypalComi || 0);
+
+        // Get tipping request IDs for this date
+        let tippingRequestIds = [];
+        if (truck.driverId || truck.helperId) {
+          const userIds = [];
+          if (truck.driverId) userIds.push(truck.driverId._id || truck.driverId);
+          if (truck.helperId) userIds.push(truck.helperId._id || truck.helperId);
+
+          const tippingRequests = await TippingRequest.find({
+            userId: { $in: userIds },
+            createdAt: { $gte: startOfDay, $lt: endOfDay },
+          });
+
+          tippingRequestIds = tippingRequests.map(tr => tr._id);
+        }
+
+        // Create or update blue sheet
+        const blueSheet = await BlueSheet.findOneAndUpdate(
+          { truckId: truck._id, date: dateObj },
+          {
+            truckId: truck._id,
+            date: dateObj,
+            totalIn, // Column B: Total In (all vans combined)
+            totalCommissionPool: COMMISSION_POOL, // Column C: Commission would charge
+            routeTotal, // Column D: TEAM 3 route
+            commissionPercentage, // Column E: Percentage commission
+            commission, // Column F: Commission Paid day
+            tipping, // Column G: Tipping for this day
+            fuel, // Column H: FUEL
+            pcnDamage: 0, // Column I: PCN (default to 0, can be updated manually)
+            otherCosts, // Column J: Other costs
+            // Profit (Column K) is calculated in pre-save hook
+            tasks: taskIdsForDate,
+            tippingRequests: tippingRequestIds,
+          },
+          { new: true, upsert: true }
+        );
+
+        // Profit is calculated in pre-save hook, but let's ensure it's set
+        await blueSheet.save();
+
+        blueSheets.push(blueSheet);
+      }
+
+      res.status(201).json({
+        message: 'Blue sheets generated successfully',
+        blueSheets,
+        totalIn, // Total of all vans combined
+        totalCommissionPool: COMMISSION_POOL,
+      });
+    } catch (error) {
+      console.error('Error generating blue sheets:', error);
+      res.status(500).json({
+        message: 'Error generating blue sheets',
+        error: error.message || 'Unknown error occurred',
+      });
+    }
+  },
+
+  // Get blue sheet for a specific truck and date
+  getBlueSheetForTruck: async (req, res) => {
+    try {
+      const { truckId } = req.params;
+      const { date } = req.query;
+
+      if (!date) {
+        return res.status(400).json({ message: 'Date parameter is required' });
+      }
+
+      const dateObj = new Date(date);
+      dateObj.setHours(0, 0, 0, 0);
+
+      const blueSheet = await BlueSheet.findOne({
+        truckId,
+        date: dateObj,
+      })
+        .populate('truckId', 'name matricule driverId helperId')
+        .populate('tasks')
+        .populate('tippingRequests');
+
+      if (!blueSheet) {
+        return res.status(404).json({ message: 'Blue sheet not found for this truck and date' });
+      }
+
+      res.status(200).json({
+        message: 'Blue sheet retrieved successfully',
+        blueSheet,
+      });
+    } catch (error) {
+      console.error('Error retrieving blue sheet:', error);
+      res.status(500).json({
+        message: 'Error retrieving blue sheet',
+        error: error.message || 'Unknown error occurred',
+      });
+    }
+  },
+
+  // Get all blue sheets for a specific date
+  getBlueSheetsForDate: async (req, res) => {
+    try {
+      const { date } = req.query;
+
+      if (!date) {
+        return res.status(400).json({ message: 'Date parameter is required' });
+      }
+
+      const dateObj = new Date(date);
+      dateObj.setHours(0, 0, 0, 0);
+
+      const blueSheets = await BlueSheet.find({
+        date: dateObj,
+      })
+        .populate('truckId', 'name matricule driverId helperId')
+        .sort({ 'truckId.name': 1 });
+
+      res.status(200).json({
+        message: 'Blue sheets retrieved successfully',
+        blueSheets,
+        date: formatDate(dateObj),
+      });
+    } catch (error) {
+      console.error('Error retrieving blue sheets:', error);
+      res.status(500).json({
+        message: 'Error retrieving blue sheets',
+        error: error.message || 'Unknown error occurred',
+      });
+    }
+  },
+
+  // Update blue sheet (for manual updates like PCN/DAMAGE, otherCosts, etc.)
+  updateBlueSheet: async (req, res) => {
+    try {
+      const { blueSheetId } = req.params;
+      const { pcnDamage, otherCosts } = req.body;
+
+      const blueSheet = await BlueSheet.findById(blueSheetId);
+
+      if (!blueSheet) {
+        return res.status(404).json({ message: 'Blue sheet not found' });
+      }
+
+      // Update only provided fields
+      if (pcnDamage !== undefined) blueSheet.pcnDamage = pcnDamage;
+      if (otherCosts !== undefined) blueSheet.otherCosts = otherCosts;
+
+      // Profit will be recalculated in pre-save hook
+      await blueSheet.save();
+
+      res.status(200).json({
+        message: 'Blue sheet updated successfully',
+        blueSheet,
+      });
+    } catch (error) {
+      console.error('Error updating blue sheet:', error);
+      res.status(500).json({
+        message: 'Error updating blue sheet',
+        error: error.message || 'Unknown error occurred',
+      });
+    }
+  },
+};
+
+module.exports = blueSheetController;
