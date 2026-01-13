@@ -30,6 +30,7 @@ const nodemailer = require('nodemailer');
 const sendPayementEmail = require('../utils/sendPayementEmail');
 // const sendPaymentConfirmationEmail = require('../utils/sendPayementRecivedEmail');
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
+const Coupon = require('../models/Coupon');
 const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentFailedEmail } = require('../services/emailsService');
 const path = require('path');
 const fs = require('fs');
@@ -95,6 +96,7 @@ async function calculateTotalPrice({
   createdByType,
   available, // Add available parameter for discount calculation
   applyMinFee = false, // Admin option to apply minimum fee
+  couponCode = null, // Coupon code to apply
 }) {
   console.log('🚀 CALCULATE TOTAL PRICE FUNCTION CALLED');
   console.log('Items received:', items);
@@ -199,6 +201,43 @@ async function calculateTotalPrice({
     subtotal -= percentageDiscount;
   }
 
+  // 3.5. Apply coupon discount if coupon code is provided
+  let couponDiscount = 0;
+  let couponPercentage = 0;
+  if (couponCode) {
+    try {
+      // Ensure couponCode is a string before calling toUpperCase
+      const couponCodeStr = String(couponCode).trim();
+      if (couponCodeStr) {
+        const coupon = await Coupon.findOne({ code: couponCodeStr.toUpperCase() });
+        if (coupon) {
+          const validation = coupon.validateCoupon();
+          if (validation.valid) {
+            couponPercentage = validation.percentage;
+            const subtotalBeforeCoupon = subtotal;
+            couponDiscount = (subtotal * couponPercentage) / 100;
+            // Explicitly subtract the discount - ensure it's a subtraction
+            subtotal = Number((subtotal - couponDiscount).toFixed(2));
+            console.log(`=== COUPON DISCOUNT DEBUG ===`);
+            console.log(`Coupon Code: "${couponCodeStr}"`);
+            console.log(`Coupon Percentage: ${couponPercentage}%`);
+            console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
+            console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
+            console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
+            console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
+            console.log(`✅ Coupon "${couponCodeStr}" applied: ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+          } else {
+            console.log(`⚠️ Coupon "${couponCodeStr}" is invalid: ${validation.message}`);
+          }
+        } else {
+          console.log(`⚠️ Coupon code "${couponCodeStr}" not found`);
+        }
+      }
+    } catch (error) {
+      console.error('Error validating coupon:', error);
+    }
+  }
+
   // 4. Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
   console.log('=== DISCOUNT CHECK DEBUG ===');
   console.log('available:', available, 'Type:', typeof available);
@@ -240,9 +279,19 @@ async function calculateTotalPrice({
   const vat = subtotal * 0.2;
   const totalPrice = subtotal + vat;
 
+  console.log(`=== FINAL PRICE CALCULATION ===`);
+  console.log(`Final subtotal (after all discounts): £${subtotal.toFixed(2)}`);
+  console.log(`VAT (20%): £${vat.toFixed(2)}`);
+  console.log(`Total Price: £${totalPrice.toFixed(2)}`);
+  if (couponDiscount > 0) {
+    console.log(`Coupon discount applied: £${couponDiscount.toFixed(2)} (${couponPercentage}%)`);
+  }
+
   return {
     totalPrice: Number(totalPrice.toFixed(2)),
     vat: Number(vat.toFixed(2)),
+    couponDiscount: Number(couponDiscount.toFixed(2)),
+    couponPercentage: couponPercentage,
   };
 }
 function hasPerItemDiscount(arr) {
@@ -286,6 +335,7 @@ const taskCtrl = {
         applyMinFee, // Admin option to apply minimum fee
         orderNumber, // Optional order number (for migrations or manual entry)
         quotationId,
+        couponCode, // Coupon code to apply
       } = req.body;
       console.log('req.body.location', req.body.location);
       // ✅ Convert FormData string to boolean
@@ -311,14 +361,56 @@ const taskCtrl = {
         hasPerItemDiscount(items) ||
         hasPerItemDiscount(objects);
 
+      // Validate coupon code if provided
+      let coupon = null;
+      let couponId = null;
+      if (couponCode) {
+        try {
+          // Ensure couponCode is a string before calling toUpperCase
+          const couponCodeStr = String(couponCode).trim();
+          if (!couponCodeStr) {
+            return res.status(400).json({
+              message: 'Coupon code cannot be empty',
+              error: 'COUPON_INVALID'
+            });
+          }
+          
+          coupon = await Coupon.findOne({ code: couponCodeStr.toUpperCase() });
+          console.log('coupon', couponCode);
+          if (coupon) {
+            const validation = coupon.validateCoupon();
+            if (!validation.valid) {
+              return res.status(400).json({
+                message: `Invalid coupon code: ${validation.message}`,
+                error: 'COUPON_INVALID'
+              });
+            }
+            couponId = coupon._id;
+            console.log(`✅ Coupon "${couponCodeStr}" validated: ${validation.percentage}% discount`);
+          } else {
+            return res.status(400).json({
+              message: 'Coupon code not found',
+              error: 'COUPON_NOT_FOUND'
+            });
+          }
+        } catch (error) {
+          console.error('Error validating coupon:', error);
+          return res.status(500).json({
+            message: 'Error validating coupon code',
+            error: error.message
+          });
+        }
+      }
+
       // Calculate price using new logic
       console.log('=== PRICE CALCULATION DEBUG ===');
       console.log('Items being passed to calculateTotalPrice:', items);
       console.log('Objects being passed to calculateTotalPrice:', objects);
       console.log('available being passed:', available, 'Type:', typeof available);
       console.log('createdByType being passed:', createdByType, 'Type:', typeof createdByType);
+      console.log('couponCode being passed:', couponCode);
 
-      const { totalPrice, vat } = await calculateTotalPrice({
+      const { totalPrice, vat, couponDiscount, couponPercentage } = await calculateTotalPrice({
         items, // Pass items directly for the function
         objects,
         customDiscountPercent,
@@ -327,6 +419,7 @@ const taskCtrl = {
         available,
         createdByType, // Pass createdByType for discount calculation
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
+        couponCode: couponCode || null, // Pass coupon code
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
         // customDiscountPercent > 0,
@@ -412,6 +505,8 @@ const taskCtrl = {
         discountType,
         hasDiscount,
         orderNumber,
+        couponCode: couponCode ? String(couponCode).trim().toUpperCase() : null,
+        couponId: couponId,
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
         // customDiscountPercent > 0,
@@ -422,6 +517,17 @@ const taskCtrl = {
       });
 
       const savedTask = await newTask.save();
+
+      // Increment coupon usage count if coupon was applied
+      if (coupon && couponId) {
+        try {
+          await coupon.incrementUsage();
+          console.log(`✅ Coupon usage incremented for "${couponCode}"`);
+        } catch (error) {
+          console.error('Error incrementing coupon usage:', error);
+          // Don't fail the task creation if coupon increment fails
+        }
+      }
 
       // Create a log of the task creation
       if (req.user) {
@@ -1484,37 +1590,37 @@ const taskCtrl = {
       console.log('Updated task:', JSON.stringify(updatedTask, null, 2));
 
       // Update Google Calendar event if it exists and relevant fields changed
-      if (updatedTask.googleCalendarEventId && (
-        updates.date || updates.available || updates.taskStatus ||
-        updates.firstName || updates.lastName || updates.location ||
-        updates.items || updates.totalPrice
-      )) {
-        try {
-          let adminId = null;
-          if (req.user && req.user.role && req.user.role.includes('Admin')) {
-            adminId = req.user._id;
-          } else {
-            const admin = await User.findOne({
-              role: 'Admin',
-              gmailTokens: { $exists: true, $ne: null }
-            });
-            if (admin) adminId = admin._id;
-          }
+      // if (updatedTask.googleCalendarEventId && (
+      //   updates.date || updates.available || updates.taskStatus ||
+      //   updates.firstName || updates.lastName || updates.location ||
+      //   updates.items || updates.totalPrice
+      // )) {
+      //   try {
+      //     let adminId = null;
+      //     if (req.user && req.user.role && req.user.role.includes('Admin')) {
+      //       adminId = req.user._id;
+      //     } else {
+      //       const admin = await User.findOne({
+      //         role: 'Admin',
+      //         gmailTokens: { $exists: true, $ne: null }
+      //       });
+      //       if (admin) adminId = admin._id;
+      //     }
 
-          if (adminId) {
-            await updateCalendarEvent(adminId.toString(), updatedTask, updatedTask.googleCalendarEventId);
-            console.log('✅ Calendar event updated for order:', updatedTask.orderNumber);
-          }
-        } catch (calendarError) {
-          if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
-            calendarError.message?.includes('INVALID_GRANT')) {
-            console.error('⚠️ Calendar integration requires re-authentication.');
-            console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId || 'ADMIN_ID'));
-          } else {
-            console.error('❌ Error updating calendar event:', calendarError.message);
-          }
-        }
-      }
+      //     if (adminId) {
+      //       await updateCalendarEvent(adminId.toString(), updatedTask, updatedTask.googleCalendarEventId);
+      //       console.log('✅ Calendar event updated for order:', updatedTask.orderNumber);
+      //     }
+      //   } catch (calendarError) {
+      //     if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
+      //       calendarError.message?.includes('INVALID_GRANT')) {
+      //       console.error('⚠️ Calendar integration requires re-authentication.');
+      //       console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + (adminId || 'ADMIN_ID'));
+      //     } else {
+      //       console.error('❌ Error updating calendar event:', calendarError.message);
+      //     }
+      //   }
+      // }
 
       // Create a log of the changes
       await loggingService.createLog({

@@ -135,6 +135,8 @@ const taskSchema = new Schema(
     hasDiscount: { type: Boolean, default: false },
     discountType: { type: String, enum: ["perItem", "percentage"] },
     customDiscountPercent: { type: Number, default: 0 },
+    couponCode: { type: String, default: null }, // Coupon code applied to this task
+    couponId: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to coupon used
     email: { type: String },
     additionalNotes: { type: String, required: false },
     privateNotes: { type: String },

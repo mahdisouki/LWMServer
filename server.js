@@ -190,6 +190,7 @@ const customerRoutes = require('./routes/customerRoutes');
 const feedbackRoutes = require('./routes/feedback');
 const announcementRoutes = require('./routes/announcement');
 const analyticsRoutes = require('./routes/analytics');
+const couponRoutes = require('./routes/coupon');
 
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
@@ -225,6 +226,7 @@ app.use('/api/customers', customerRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/coupons', couponRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;
