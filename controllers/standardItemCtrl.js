@@ -12,6 +12,93 @@ const paypal = require('@paypal/checkout-server-sdk');
 const { PayPalClient } = require('../services/paymentService.js');
 const loggingService = require('../services/loggingService');
 
+// Helper function to get logical sort order for items (smallest to largest)
+const getItemSortOrder = (itemName) => {
+  if (!itemName) return 9999; // Items without names go to the end
+  
+  const name = itemName.toLowerCase().trim();
+  
+  // Sofas and seating (smallest to largest)
+  if (name.includes('arm chair')) return 1;
+  if (name.includes('2 seater') || name.includes('two seater')) return 2;
+  if (name.includes('3 seater') || name.includes('three seater')) return 3;
+  if (name.includes('corner')) {
+    if (name.includes('large')) return 5;
+    return 4;
+  }
+  if (name.includes('sofa')) {
+    // Generic sofa (not specified seater) comes after 3 seater
+    if (name.includes('large')) return 6;
+    return 3.5;
+  }
+  
+  // Tables (smallest to largest)
+  if (name.includes('coffee table') || name.includes('side table')) return 10;
+  if (name.includes('dining table')) {
+    if (name.includes('small')) return 11;
+    if (name.includes('large') || name.includes('extendable')) return 13;
+    return 12;
+  }
+  
+  // Beds (smallest to largest)
+  if (name.includes('single bed')) return 20;
+  if (name.includes('double bed')) return 21;
+  if (name.includes('king bed') || name.includes('super king')) return 22;
+  
+  // Wardrobes (smallest to largest)
+  if (name.includes('wardrobe')) {
+    if (name.includes('small') || name.includes('2 door')) return 30;
+    if (name.includes('large') || name.includes('3 door') || name.includes('4 door')) return 32;
+    return 31;
+  }
+  
+  // Mattresses (smallest to largest)
+  if (name.includes('mattress')) {
+    if (name.includes('single')) return 40;
+    if (name.includes('double')) return 41;
+    if (name.includes('king') || name.includes('super king')) return 42;
+  }
+  
+  // Fridges and Freezers (smallest to largest) - IMPROVED
+  if (name.includes('freezer') || name.includes('fridge') || name.includes('refrigerator')) {
+    if (name.includes('mini')) return 50;      // Mini Fridge
+    if (name.includes('small')) return 51;     // Small Fridge
+    if (name.includes('chest freezer')) return 52;  // Chest Freezer
+    if (name.includes('standard') || name.includes('fridge freezer')) return 53;  // Standard Fridge Freezer
+    if (name.includes('american') || name.includes('double')) return 54;  // American (Double) Fridge
+    if (name.includes('commercial')) return 55;  // Commercial Fridge
+    // Generic fridge/freezer (not specified size)
+    return 53.5;
+  }
+  
+  // Printers (smallest to largest)
+  if (name.includes('printer')) {
+    if (name.includes('small')) return 60;
+    if (name.includes('office') || name.includes('standard')) return 61;
+    if (name.includes('large')) return 62;
+    return 61.5;
+  }
+  
+  // BBQs (smallest to largest)
+  if (name.includes('bbq') || name.includes('barbecue')) {
+    if (name.includes('small')) return 70;
+    if (name.includes('large')) return 71;
+    return 70.5;
+  }
+  
+  // Other appliances (smallest/common items first)
+  if (name.includes('toaster')) return 80;
+  if (name.includes('radio')) return 81;
+  if (name.includes('sewing machine')) return 82;
+  if (name.includes('tumble dryer') || name.includes('dryer')) return 83;
+  if (name.includes('storage heater')) return 84;
+  if (name.includes('treadmill')) return 85;
+  if (name.includes('bike') || name.includes('bicycle')) return 86;
+  
+  // Default: alphabetical sort order (use name as fallback)
+  return 9000 + name.charCodeAt(0);
+};
+
 const standardItemCtrl = {
   createStandardItem: async (req, res) => {
     try {
@@ -206,6 +293,8 @@ const standardItemCtrl = {
   
       // Determine sort option
       let sortOption = { createdAt: -1, _id: 1 }; // Default: newest first
+      let useCustomSort = false; // Flag for custom category-based sorting
+      
       if (sort) {
         switch (sort) {
           case 'name-asc':
@@ -223,42 +312,93 @@ const standardItemCtrl = {
           default:
             sortOption = { createdAt: -1, _id: 1 };
         }
+      } else if (category) {
+        // When category is selected and no explicit sort, use custom logical sort
+        useCustomSort = true;
       }
   
       // Count total matching items
       const total = await StandardItem.countDocuments(filter);
   
       // Build the query
-      let query = StandardItem.find(filter)
-        .sort(sortOption)
-        .populate('category');
-  
+      let query = StandardItem.find(filter).populate('category');
+
       let items;
-      if (isPaginationDisabled) {
-        items = await query.exec();
-        return res.status(200).json({
-          message: 'All standard items fetched successfully',
-          items,
-          meta: {
-            currentPage: 1,
-            limit: total,
-            total,
-            count: items.length
+      
+      if (useCustomSort) {
+        // Fetch all items for custom sorting (categories typically don't have many items)
+        const allItems = await query.exec();
+        
+        // Apply custom logical sorting
+        allItems.sort((a, b) => {
+          const orderA = getItemSortOrder(a.itemName);
+          const orderB = getItemSortOrder(b.itemName);
+          
+          // If same order, sort alphabetically
+          if (orderA === orderB) {
+            return a.itemName.localeCompare(b.itemName);
           }
+          
+          return orderA - orderB;
         });
+        
+        // Apply pagination after sorting
+        if (isPaginationDisabled) {
+          items = allItems;
+          return res.status(200).json({
+            message: 'All standard items fetched successfully',
+            items,
+            meta: {
+              currentPage: 1,
+              limit: total,
+              total,
+              count: items.length
+            }
+          });
+        } else {
+          const skip = (pageNum - 1) * limitNum;
+          items = allItems.slice(skip, skip + limitNum);
+          return res.status(200).json({
+            message: 'All standard items fetched successfully',
+            items,
+            meta: {
+              currentPage: pageNum,
+              limit: limitNum,
+              total,
+              count: items.length
+            }
+          });
+        }
       } else {
-        const skip = (pageNum - 1) * limitNum;
-        items = await query.skip(skip).limit(limitNum).exec();
-        return res.status(200).json({
-          message: 'All standard items fetched successfully',
-          items,
-          meta: {
-            currentPage: pageNum,
-            limit: limitNum,
-            total,
-            count: items.length
-          }
-        });
+        // Normal sorting (use MongoDB sort)
+        query = query.sort(sortOption);
+        
+        if (isPaginationDisabled) {
+          items = await query.exec();
+          return res.status(200).json({
+            message: 'All standard items fetched successfully',
+            items,
+            meta: {
+              currentPage: 1,
+              limit: total,
+              total,
+              count: items.length
+            }
+          });
+        } else {
+          const skip = (pageNum - 1) * limitNum;
+          items = await query.skip(skip).limit(limitNum).exec();
+          return res.status(200).json({
+            message: 'All standard items fetched successfully',
+            items,
+            meta: {
+              currentPage: pageNum,
+              limit: limitNum,
+              total,
+              count: items.length
+            }
+          });
+        }
       }
     } catch (error) {
       console.error('Error fetching standard items:', error);

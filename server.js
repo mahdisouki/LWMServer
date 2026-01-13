@@ -167,6 +167,7 @@ const driverRouter = require("./routes/driver");
 const tippingRouter = require("./routes/tipping");
 const dayoffRouter = require("./routes/dayoff");
 const dailySheetRoutes = require("./routes/dailySheet");
+const blueSheetRoutes = require("./routes/blueSheet");
 const payrollsRoutes = require("./routes/payrolls");
 const messageRoutes = require("./routes/messages");
 const tippingPlacesRoutes = require('./routes/tippingPlaces')
@@ -202,6 +203,7 @@ app.use('/api', driverRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
 app.use("/api/dailySheets", dailySheetRoutes);
+app.use("/api/blueSheets", blueSheetRoutes);
 app.use("/api", payrollsRoutes);
 app.use("/api", messageRoutes);
 app.use('/api/tippingPlaces', tippingPlacesRoutes);
