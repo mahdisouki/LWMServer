@@ -968,7 +968,7 @@ const driverManagement = {
       });
     }
   },
-// this api is not used in the project
+  // this api is not used in the project
   updateJobStatus: async (req, res) => {
     const { taskId } = req.params;
     const { taskStatus } = req.body;
@@ -1002,18 +1002,18 @@ const driverManagement = {
         try {
           const { updateCalendarEvent } = require('../services/calendarService');
           const { User } = require('../models/User');
-          const admin = await User.findOne({ 
+          const admin = await User.findOne({
             role: 'Admin',
             gmailTokens: { $exists: true, $ne: null }
           });
-          
+
           if (admin) {
             await updateCalendarEvent(admin._id.toString(), task, task.googleCalendarEventId);
             console.log('✅ Calendar event updated for order:', task.orderNumber);
           }
         } catch (calendarError) {
-          if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') || 
-              calendarError.message?.includes('INVALID_GRANT')) {
+          if (calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
+            calendarError.message?.includes('INVALID_GRANT')) {
             console.error('⚠️ Calendar integration requires re-authentication.');
             console.error('💡 Admin should visit: /api/gmail/auth/google?adminId=' + admin?._id);
           } else {
@@ -1040,7 +1040,7 @@ const driverManagement = {
 
   rateTask: async (req, res) => {
     const { taskId } = req.params;
-    const { clientFeedback, clientFeedbackScale, cashAmount } = req.body;
+    const { clientFeedback, clientFeedbackScale, cashAmount, customerNotPresent } = req.body;
     const userId = req.user._id;
 
     try {
@@ -1050,19 +1050,39 @@ const driverManagement = {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      console.log("username" , userInfo.user.username ,"cashAmount" ,cashAmount)
+      console.log("username", userInfo.user.username, "cashAmount", cashAmount);
       const task = await Task.findById(taskId);
       if (!task) {
-        console.log("task not found")
+        console.log("task not found");
         return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // Handle signature upload if provided
+      let signaturePath = null;
+      if (req.file) {
+        signaturePath = req.file.path;
+      }
+
+      // Validate: if customer is not present, signature should not be provided
+      const isCustomerNotPresent = customerNotPresent === 'true' || customerNotPresent === true;
+
+      if (isCustomerNotPresent && signaturePath) {
+        return res.status(400).json({
+          message: 'Cannot have signature when customer is not present'
+        });
       }
 
       // Update task with the client satisfaction rating and feedback
       task.clientFeedback = clientFeedback;
       task.clientFeedbackScale = clientFeedbackScale;
-      task.taskStatus = "Completed"
+      task.taskStatus = "Completed";
       task.cashReceived = cashAmount;
-      task.cashReceivedBy= userInfo.user.username
+      task.cashReceivedBy = userInfo.user.username;
+
+      // Save signature and customer presence status (same as other feedback fields)
+      task.customerSignature = signaturePath || null;
+      task.customerNotPresent = isCustomerNotPresent;
+
       // Check if this is the first task completed by this client (using email)
       const previousCompletedTasks = await Task.find({
         email: task.email,
@@ -1078,7 +1098,7 @@ const driverManagement = {
       // Ensure Waste Transfer Note email is sent after rating/completion
       await sendWasteTransferNoteEmail(task._id);
       res.status(200).json({
-        message: `Task rated successfully by `,
+        message: `Task rated successfully`,
         task,
       });
     } catch (error) {

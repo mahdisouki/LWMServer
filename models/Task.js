@@ -148,6 +148,8 @@ const taskSchema = new Schema(
     timeSpent: { type: Number },
     cashReceived: { type: Number },
     cashReceivedBy: { type: String },
+    customerSignature: { type: String }, // Path to customer signature image
+    customerNotPresent: { type: Boolean, default: false }, // Driver can tick if customer is not present
     repeatCustomer: { type: Number, default: 0 },
     reviewRequestSent: { type: Boolean, default: false },
     preventReviewEmail: { type: Boolean, default: false }, // Prevent sending review email for this task
@@ -160,9 +162,9 @@ const taskSchema = new Schema(
       required: false, // Make it optional
       default: null
     },
-    googleCalendarEventId: { 
-      type: String, 
-      required: false 
+    googleCalendarEventId: {
+      type: String,
+      required: false
     },
   },
   { timestamps: true }
