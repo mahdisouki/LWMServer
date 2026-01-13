@@ -1079,10 +1079,8 @@ const driverManagement = {
       task.cashReceived = cashAmount;
       task.cashReceivedBy = userInfo.user.username;
 
-      // Add signature and customer presence status
-      if (signaturePath) {
-        task.customerSignature = signaturePath;
-      }
+      // Save signature and customer presence status (same as other feedback fields)
+      task.customerSignature = signaturePath || null;
       task.customerNotPresent = isCustomerNotPresent;
 
       // Check if this is the first task completed by this client (using email)
