@@ -629,7 +629,7 @@ const taskCtrl = {
       const task = await Task.findById(taskId).populate(
         'createdBy',
         'email name',
-      ); // optional fields;
+      ).populate('couponId', 'code percentage discountType validFrom validTo maxUses currentUses');; // optional fields;
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
