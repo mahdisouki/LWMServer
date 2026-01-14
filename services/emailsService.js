@@ -486,11 +486,8 @@ module.exports = {
         task.available === '7am-12pm' ? 'Morning (7am to 12pm)' :
           task.available === '12pm-5pm' ? 'Afternoon (12pm to 5pm)' : task.available,
       itemRows,
-      // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
-      // For no discounts, show subtotal after any automatic 10% discount
-      subtotal: (task.hasDiscount && (task.discountType === "perItem" || task.discountType === "percentage"))
-        ? (subtotalBeforeDiscounts || 0).toFixed(2)
-        : (subtotal || 0).toFixed(2),
+      // Always show subtotal with original prices (before all discounts)
+      subtotal: (subtotalBeforeDiscounts || 0).toFixed(2),
       vat: (vat || 0).toFixed(2),
       totalPrice: (total || 0).toFixed(2),
       hasDiscount: task.hasDiscount,
@@ -567,6 +564,10 @@ module.exports = {
     // Show other discounts (percentage or per-item) if applicable
     if (vars.hasDiscount && ((task.discountType === "percentage" && task.customDiscountPercent > 0) || task.discountType === "perItem")) {
       discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">${vars.discountLabel}</span>\n                <span class="summary-value">-£${vars.discountAmount}</span>\n              </div>`;
+    }
+    // Show coupon discount if applicable
+    if (couponCode && couponDiscount > 0) {
+      discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">Coupon Discount (${couponCode} - ${couponPercentage}%)</span>\n                <span class="summary-value">-£${couponDiscount.toFixed(2)}</span>\n              </div>`;
     }
     template = template.replace('{{discountRow}}', discountRow);
 
@@ -1315,11 +1316,8 @@ module.exports = {
       // isPartialPaid is true if paymentStatus is 'partial_Paid'
       const isPartialPaid = task.paymentStatus === 'partial_Paid';
 
-      // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
-      // For no discounts, show subtotal after any automatic 10% discount
-      const subtotalForDisplay = (task.hasDiscount && (task.discountType === "perItem" || task.discountType === "percentage"))
-        ? subtotalBeforeDiscounts
-        : subtotal;
+      // Always show subtotal with original prices (before all discounts)
+      const subtotalForDisplay = subtotalBeforeDiscounts;
 
       // Compile template with Handlebars
       let html;

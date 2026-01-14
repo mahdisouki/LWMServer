@@ -212,7 +212,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         // Calculate coupon discount from subtotal after other discounts
         const subtotalAfterDiscounts = subtotalBeforeDiscounts - automaticDiscount10Percent - calculatedDiscountAmount;
         const couponDiscount = (subtotalAfterDiscounts * coupon.percentage) / 100;
-        couponDiscountHtml = `<p style="margin:0 0 8px; font-size:13px;">Coupon Discount (${coupon.percentage}% - ${coupon.code})<span style="float:right; font-weight:bold;">-£${couponDiscount.toFixed(2)}</span></p>`;
+        couponDiscountHtml = `<p style="margin:0 0 8px; font-size:13px;">Coupon Discount (${coupon.code} - ${coupon.percentage}%)<span style="float:right; font-weight:bold;">-£${couponDiscount.toFixed(2)}</span></p>`;
       }
     } catch (error) {
       console.error('Error fetching coupon for payment email:', error);
