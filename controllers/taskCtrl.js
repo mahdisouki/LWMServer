@@ -3654,13 +3654,17 @@ const taskCtrl = {
       let couponPercentage = 0;
       if (task.couponCode) {
         try {
-          const coupon = await Coupon.findOne({ code: task.couponCode });
+          // Normalize coupon code to uppercase to match Coupon model storage
+          const normalizedCouponCode = String(task.couponCode).trim().toUpperCase();
+          const coupon = await Coupon.findOne({ code: normalizedCouponCode });
           if (coupon) {
             couponCode = coupon.code;
             couponPercentage = coupon.percentage;
             // Calculate coupon discount on subtotal after other discounts
             couponDiscount = (subtotal * couponPercentage) / 100;
             subtotal -= couponDiscount;
+          } else {
+            console.warn(`Coupon code "${normalizedCouponCode}" not found in database for task ${task.orderNumber}`);
           }
         } catch (error) {
           console.error('Error fetching coupon for invoice:', error);
@@ -3766,9 +3770,9 @@ const taskCtrl = {
         customDiscountPercent: task.customDiscountPercent,
         discountAmount: percentageDiscount.toFixed(2),
         itemDiscountAmount: itemDiscountTotal.toFixed(2),
-        hasCoupon: couponCode !== null,
-        couponCode: couponCode,
-        couponPercentage: couponPercentage,
+        hasCoupon: couponCode && couponDiscount > 0,
+        couponCode: couponCode || '',
+        couponPercentage: couponPercentage || 0,
         couponDiscount: couponDiscount.toFixed(2),
         subtotal: subtotalBeforeDiscounts.toFixed(2),
         vat: vat.toFixed(2),
