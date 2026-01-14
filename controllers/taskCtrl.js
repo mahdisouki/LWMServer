@@ -32,6 +32,7 @@ const sendPayementEmail = require('../utils/sendPayementEmail');
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
 const Coupon = require('../models/Coupon');
 const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentFailedEmail } = require('../services/emailsService');
+const { sendRetargetingEmail } = require('../utils/sendRetargetingEmail');
 const path = require('path');
 const fs = require('fs');
 const { generateOfficialInvoicePDF } = require('../services/emailsService');
@@ -374,7 +375,7 @@ const taskCtrl = {
               error: 'COUPON_INVALID'
             });
           }
-          
+
           coupon = await Coupon.findOne({ code: couponCodeStr.toUpperCase() });
           console.log('coupon', couponCode);
           if (coupon) {
@@ -3637,6 +3638,189 @@ const taskCtrl = {
       res.status(500).json({
         message: 'Failed to send waste transfer note',
         error: error.message,
+      });
+    }
+  },
+
+  sendRetargetingEmailWithCoupon: async (req, res) => {
+    try {
+      const { taskId } = req.body;
+
+      if (!taskId) {
+        return res.status(400).json({
+          message: 'Task ID is required in request body'
+        });
+      }
+
+      // Find the task with populated items
+      const task = await Task.findById(taskId).populate('items.standardItemId');
+
+      if (!task) {
+        return res.status(404).json({
+          message: 'Task not found'
+        });
+      }
+
+      // Validate task conditions
+      if (task.createdByType !== 'public') {
+        return res.status(400).json({
+          message: 'This feature is only available for public orders'
+        });
+      }
+
+      if (task.paymentStatus !== 'Failed') {
+        return res.status(400).json({
+          message: 'This feature is only available for orders with failed payment status'
+        });
+      }
+
+      if (!task.email) {
+        return res.status(400).json({
+          message: 'Customer email is required to send retargeting email'
+        });
+      }
+
+      // Check if retargeting email was already sent
+      if (task.retargetingEmailSent) {
+        return res.status(400).json({
+          message: 'Retargeting email has already been sent for this order',
+          sentAt: task.retargetingEmailSentAt
+        });
+      }
+
+      // Generate unique coupon codes
+      const timestamp = Date.now().toString().slice(-8);
+      const coupon20Code = `RET20${timestamp}${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+      const coupon10Code = `RET10${timestamp}${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+
+      // Calculate expiration dates from current time (when email is sent)
+      const emailSentAt = new Date();
+      const expiresAt20Percent = new Date(emailSentAt);
+      expiresAt20Percent.setHours(expiresAt20Percent.getHours() + 24); // 24 hours from now
+
+      const expiresAt10Percent = new Date(emailSentAt);
+      expiresAt10Percent.setHours(expiresAt10Percent.getHours() + 72); // 72 hours from now
+
+      // Create 20% coupon (24 hours, single use)
+      const coupon20 = new Coupon({
+        code: coupon20Code.toUpperCase(),
+        percentage: 20,
+        expirationDuration: 24,
+        expiresAt: expiresAt20Percent, // Explicitly set expiration date
+        description: `Retargeting coupon (20%) for order ${task.orderNumber}`,
+        maxUsage: 1, // Single use only
+        isActive: true
+      });
+      await coupon20.save();
+
+      // Create 10% coupon (72 hours, single use)
+      const coupon10 = new Coupon({
+        code: coupon10Code.toUpperCase(),
+        percentage: 10,
+        expirationDuration: 72,
+        expiresAt: expiresAt10Percent, // Explicitly set expiration date
+        description: `Retargeting coupon (10%) for order ${task.orderNumber}`,
+        maxUsage: 1, // Single use only
+        isActive: true
+      });
+      await coupon10.save();
+
+      // Calculate discounted totals with minimum fee enforcement
+      const originalTotal = task.totalPrice;
+      const MINIMUM_TOTAL = 45; // Minimum total after discount
+
+      // Calculate 20% discount
+      let discount20Amount = (originalTotal * 20) / 100;
+      let discountedTotal20 = originalTotal - discount20Amount;
+      let minFeeApplied20 = false;
+
+      // Enforce minimum fee - if discounted total is below £45, set to £45
+      if (discountedTotal20 < MINIMUM_TOTAL) {
+        discountedTotal20 = MINIMUM_TOTAL;
+        discount20Amount = originalTotal - MINIMUM_TOTAL; // Adjust discount amount shown
+        minFeeApplied20 = true;
+      }
+
+      // Calculate 10% discount
+      let discount10Amount = (originalTotal * 10) / 100;
+      let discountedTotal10 = originalTotal - discount10Amount;
+      let minFeeApplied10 = false;
+
+      // Enforce minimum fee - if discounted total is below £45, set to £45
+      if (discountedTotal10 < MINIMUM_TOTAL) {
+        discountedTotal10 = MINIMUM_TOTAL;
+        discount10Amount = originalTotal - MINIMUM_TOTAL; // Adjust discount amount shown
+        minFeeApplied10 = true;
+      }
+
+      // Send email
+      await sendRetargetingEmail({
+        customerEmail: task.email,
+        firstName: task.firstName,
+        lastName: task.lastName,
+        orderNumber: task.orderNumber,
+        coupon20Code: coupon20.code,
+        coupon10Code: coupon10.code,
+        discount20Percentage: 20,
+        discount10Percentage: 10,
+        items: task.items,
+        originalTotal: originalTotal,
+        discountedTotal20: discountedTotal20,
+        discountedTotal10: discountedTotal10,
+        minFeeApplied20: minFeeApplied20,
+        minFeeApplied10: minFeeApplied10,
+        expirationHours20: 24,
+        expirationHours10: 72,
+        expiresAt20: expiresAt20Percent,
+        expiresAt10: expiresAt10Percent
+      });
+
+      // Track that email was sent
+      task.retargetingEmailSent = true;
+      task.retargetingEmailSentAt = new Date();
+      task.retargetingCoupon20Id = coupon20._id;
+      task.retargetingCoupon10Id = coupon10._id;
+      await task.save();
+
+      // Log the action
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'SEND_RETARGETING_EMAIL',
+          entityType: 'TASK',
+          entityId: task._id,
+          changes: {
+            retargetingEmailSent: true,
+            coupon20Code: coupon20.code,
+            coupon10Code: coupon10.code
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent']
+        });
+      }
+
+      res.status(200).json({
+        message: 'Retargeting email sent successfully',
+        coupon20: {
+          code: coupon20.code,
+          percentage: 20,
+          expirationHours: 24
+        },
+        coupon10: {
+          code: coupon10.code,
+          percentage: 10,
+          expirationHours: 72
+        }
+      });
+
+    } catch (error) {
+      console.error('Error sending retargeting email:', error);
+      console.error('Error stack:', error.stack);
+      res.status(500).json({
+        message: 'Failed to send retargeting email',
+        error: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       });
     }
   },

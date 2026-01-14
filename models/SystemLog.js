@@ -13,7 +13,7 @@ const systemLogSchema = new mongoose.Schema({
   action: {
     type: String,
     required: true,
-    enum: ['CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT', 'OTHER']
+    enum: ['CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT', 'SEND_RETARGETING_EMAIL', 'OTHER']
   },
   entityType: {
     type: String,
@@ -33,6 +33,7 @@ const systemLogSchema = new mongoose.Schema({
       'SERVICE_CATEGORY',
       'TIPPING_PLACE',
       'BLOCKING_DAY',
+      'COUPON',
       'OTHER'
     ]
   },

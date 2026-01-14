@@ -234,6 +234,7 @@ router.post('/webhooks/paypal', express.json(), taskCtrl.handlePayPalWebhook);
 router.post('/task/:taskId/send-booking-confirmation', taskCtrl.sendBookingConfirmation);
 router.post('/task/:taskId/send-invoice', taskCtrl.sendInvoice);
 router.post('/task/:taskId/send-waste-transfer-note', taskCtrl.sendWasteTransferNote);
+router.post('/task/send-retargeting-email', isAuth, checkRole('Admin'), taskCtrl.sendRetargetingEmailWithCoupon);
 router.put('/task/:taskId/prevent-review-email', isAuth, taskCtrl.togglePreventReviewEmail);
 router.put('/tasks/update-status', isAuth, checkRole('Admin'), taskCtrl.updateMultipleTasksStatus);
 module.exports = router;
