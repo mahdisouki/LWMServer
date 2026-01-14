@@ -64,7 +64,7 @@ async function sendEmail({ to, subject, html, attachments = [] }) {
     // Add staging indicators
     const finalSubject = addStagingToSubject(subject);
     const finalHtml = addStagingBanner(html);
-    
+
     return await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to,
@@ -331,6 +331,26 @@ module.exports = {
       console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice PDF');
       automaticDiscount10Percent = subtotal * 0.1;
       subtotal *= 0.9;
+    }
+
+    // Handle coupon discount if exists
+    let couponDiscount = 0;
+    let couponCode = null;
+    let couponPercentage = 0;
+    if (task.couponCode) {
+      try {
+        const Coupon = require('../models/Coupon');
+        const coupon = await Coupon.findOne({ code: task.couponCode });
+        if (coupon) {
+          couponCode = coupon.code;
+          couponPercentage = coupon.percentage;
+          // Calculate coupon discount on subtotal after other discounts
+          couponDiscount = (subtotal * couponPercentage) / 100;
+          subtotal -= couponDiscount;
+        }
+      } catch (error) {
+        console.error('Error fetching coupon for PDF invoice:', error);
+      }
     }
 
     // Check createdByType condition for minimum price enforcement
@@ -1102,6 +1122,26 @@ module.exports = {
         subtotal -= percentageDiscount;
       }
 
+      // Handle coupon discount if exists
+      let couponDiscount = 0;
+      let couponCode = null;
+      let couponPercentage = 0;
+      if (task.couponCode) {
+        try {
+          const Coupon = require('../models/Coupon');
+          const coupon = await Coupon.findOne({ code: task.couponCode });
+          if (coupon) {
+            couponCode = coupon.code;
+            couponPercentage = coupon.percentage;
+            // Calculate coupon discount on subtotal after other discounts
+            couponDiscount = (subtotal * couponPercentage) / 100;
+            subtotal -= couponDiscount;
+          }
+        } catch (error) {
+          console.error('Error fetching coupon for payment confirmation email:', error);
+        }
+      }
+
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
       const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
       if (enforceMinimumPrice && subtotal < 37.5) {
@@ -1307,6 +1347,10 @@ module.exports = {
           depositAmount: depositAmount.toFixed(2),
           remainingAmount: remainingAmount.toFixed(2),
           totalPrice: fullTotalPrice.toFixed(2),
+          hasCoupon: couponCode !== null,
+          couponCode: couponCode || '',
+          couponPercentage: couponPercentage,
+          couponDiscount: couponDiscount.toFixed(2),
         };
 
         // Log template data for debugging

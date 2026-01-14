@@ -1879,6 +1879,35 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
 
+      // Retrieve coupon code from task if exists
+      let coupon = null;
+      let couponDiscount = 0;
+
+      if (task.couponCode) {
+        try {
+          const couponCodeStr = String(task.couponCode).trim().toUpperCase();
+          coupon = await Coupon.findOne({ code: couponCodeStr });
+
+          if (!coupon) {
+            // Coupon not found, remove from task
+            task.couponCode = null;
+            task.couponId = null;
+            await task.save();
+          } else {
+            const validation = coupon.validateCoupon(); // Checks expiration, usage, active status
+            if (!validation.valid) {
+              // Coupon invalid or expired, remove from task
+              task.couponCode = null;
+              task.couponId = null;
+              await task.save();
+            }
+          }
+        } catch (error) {
+          console.error('Error validating coupon:', error);
+          // Continue without coupon if validation fails
+        }
+      }
+
       // Build breakdown array - ONLY standard items with position fees
       const breakdown = task.items
         .filter((item) => item.standardItemId) // Only process standard items
@@ -1921,6 +1950,35 @@ const taskCtrl = {
           };
         });
 
+      // Use calculateTotalPrice to get accurate price with all discounts including coupon
+      const itemsForCalculation = task.items.map(item => ({
+        standardItemId: item.standardItemId?._id || item.standardItemId,
+        quantity: item.quantity || 1,
+        Objectsposition: item.Objectsposition || 'Outside',
+        price: item.price,
+        customPrice: item.customPrice
+      }));
+
+      const objectsForCalculation = task.items
+        .filter(item => !item.standardItemId)
+        .map(item => ({
+          object: item.object,
+          quantity: item.quantity || 1,
+          price: item.price
+        }));
+
+      const { totalPrice: calculatedTotalPrice, vat: calculatedVat, couponDiscount: calculatedCouponDiscount } = await calculateTotalPrice({
+        items: itemsForCalculation,
+        objects: objectsForCalculation,
+        customDiscountPercent: task.customDiscountPercent,
+        discountType: task.discountType,
+        hasDiscount: task.hasDiscount,
+        createdByType: task.createdByType,
+        available: task.available,
+        applyMinFee: task.applyMinFee,
+        couponCode: task.couponCode
+      });
+
       let basePrice = breakdown.reduce(
         (sum, item) => sum + item.totalPrice,
         0,
@@ -1932,6 +1990,12 @@ const taskCtrl = {
         task.items.every((i) => i.Objectsposition === 'Outside')
       ) {
         finalPrice *= 0.9;
+      }
+
+      // Apply coupon discount if exists
+      if (coupon && calculatedCouponDiscount > 0) {
+        couponDiscount = calculatedCouponDiscount;
+        finalPrice = finalPrice - couponDiscount;
       }
 
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
@@ -1947,9 +2011,20 @@ const taskCtrl = {
       // Prepare fullBreakdown for PayPal
       const fullBreakdown = [
         ...breakdown,
-        { description: 'VAT (20%)', amount: vat.toFixed(2) },
-        { description: 'Final Total Price', amount: finalPrice.toFixed(2) },
       ];
+
+      // Add coupon discount to breakdown if exists
+      if (coupon && couponDiscount > 0) {
+        fullBreakdown.push({
+          description: `Coupon Discount (${coupon.percentage}% - ${coupon.code})`,
+          amount: -couponDiscount.toFixed(2)
+        });
+      }
+
+      fullBreakdown.push(
+        { description: 'VAT (20%)', amount: vat.toFixed(2) },
+        { description: 'Final Total Price', amount: finalPrice.toFixed(2) }
+      );
 
       // ✅ Mettre à jour les montants pour les paiements partiels
       let amountToPay;
@@ -2109,8 +2184,63 @@ const taskCtrl = {
         );
         if (!task) return res.status(404).json({ message: 'Task not found' });
 
+        // Retrieve coupon code from task if exists and validate it
+        if (task.couponCode) {
+          try {
+            const couponCodeStr = String(task.couponCode).trim().toUpperCase();
+            const coupon = await Coupon.findOne({ code: couponCodeStr });
+
+            if (!coupon) {
+              // Coupon not found, remove from task
+              task.couponCode = null;
+              task.couponId = null;
+              await task.save();
+            } else {
+              const validation = coupon.validateCoupon();
+              if (!validation.valid) {
+                // Coupon invalid or expired, remove from task
+                task.couponCode = null;
+                task.couponId = null;
+                await task.save();
+              }
+            }
+          } catch (error) {
+            console.error('Error validating coupon in payment confirmation:', error);
+            // Continue without coupon if validation fails
+          }
+        }
+
         const amountInCents = paymentIntent.amount;
         const amountInGBP = Number((amountInCents / 100).toFixed(2));
+
+        // Use calculateTotalPrice to get accurate price with coupon if exists
+        const itemsForCalculation = task.items.map(item => ({
+          standardItemId: item.standardItemId?._id || item.standardItemId,
+          quantity: item.quantity || 1,
+          Objectsposition: item.Objectsposition || 'Outside',
+          price: item.price,
+          customPrice: item.customPrice
+        }));
+
+        const objectsForCalculation = task.items
+          .filter(item => !item.standardItemId)
+          .map(item => ({
+            object: item.object,
+            quantity: item.quantity || 1,
+            price: item.price
+          }));
+
+        const { totalPrice: calculatedTotalPrice } = await calculateTotalPrice({
+          items: itemsForCalculation,
+          objects: objectsForCalculation,
+          customDiscountPercent: task.customDiscountPercent,
+          discountType: task.discountType,
+          hasDiscount: task.hasDiscount,
+          createdByType: task.createdByType,
+          available: task.available,
+          applyMinFee: task.applyMinFee,
+          couponCode: task.couponCode
+        });
 
         // Recalculer le prix final pour le remainingAmount - ONLY standard items with position fees
         let basePrice = 0;
@@ -2142,23 +2272,8 @@ const taskCtrl = {
             basePrice += (itemPrice * quantity) + (positionFee * quantity);
           });
 
-        let finalPrice = basePrice;
-        if (
-          task.available === 'AnyTime' &&
-          task.createdByType === 'public' &&
-          task.items.every((i) => i.Objectsposition === 'Outside')
-        ) {
-          finalPrice *= 0.9;
-        }
-
-        // Apply minimum price if needed
-        const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
-        if (enforceMinimumPrice && finalPrice < 37.5) {
-          finalPrice = 37.5;
-        }
-
-        const vat = finalPrice * 0.2;
-        finalPrice += vat;
+        // Use calculated price which includes coupon discount
+        let finalPrice = calculatedTotalPrice;
 
         // ✅ Mettre à jour le statut de paiement SEULEMENT après confirmation
         // ❌ NE PAS modifier taskStatus - il reste inchangé
@@ -2316,6 +2431,32 @@ const taskCtrl = {
       const task = await Task.findById(taskId).populate('items.standardItemId');
       if (!task) return res.status(404).json({ message: 'Task not found' });
 
+      // Retrieve coupon code from task if exists and validate it
+      if (task.couponCode) {
+        try {
+          const couponCodeStr = String(task.couponCode).trim().toUpperCase();
+          const coupon = await Coupon.findOne({ code: couponCodeStr });
+
+          if (!coupon) {
+            // Coupon not found, remove from task
+            task.couponCode = null;
+            task.couponId = null;
+            await task.save();
+          } else {
+            const validation = coupon.validateCoupon();
+            if (!validation.valid) {
+              // Coupon invalid or expired, remove from task
+              task.couponCode = null;
+              task.couponId = null;
+              await task.save();
+            }
+          }
+        } catch (error) {
+          console.error('Error validating coupon in PayPal payment capture:', error);
+          // Continue without coupon if validation fails
+        }
+      }
+
       const request = new paypal.orders.OrdersCaptureRequest(orderID);
       request.requestBody({});
 
@@ -2326,53 +2467,37 @@ const taskCtrl = {
           capture.result.purchase_units[0].payments.captures[0].amount.value,
         );
 
-        // Recalculer le prix final pour le remainingAmount - ONLY standard items with position fees
-        let basePrice = 0;
-        task.items
-          .filter((item) => item.standardItemId) // Only process standard items
-          .forEach((item) => {
-            const quantity = item.quantity || 1;
-            let itemPrice = 0;
+        // Use calculateTotalPrice to get accurate price with coupon if exists
+        const itemsForCalculation = task.items.map(item => ({
+          standardItemId: item.standardItemId?._id || item.standardItemId,
+          quantity: item.quantity || 1,
+          Objectsposition: item.Objectsposition || 'Outside',
+          price: item.price,
+          customPrice: item.customPrice
+        }));
 
-            // Calculate base item price (without position fees) multiplied by quantity
-            if (item.price && !isNaN(Number(item.price))) {
-              // If item has a custom price, we need to extract the base price
-              // For now, we'll use the base price from StandardItem and add position fee separately
-              itemPrice = Number(item.standardItemId.price); // Use base price from StandardItem
-            } else {
-              // Use base price from StandardItem
-              itemPrice = Number(item.standardItemId.price);
-            }
+        const objectsForCalculation = task.items
+          .filter(item => !item.standardItemId)
+          .map(item => ({
+            object: item.object,
+            quantity: item.quantity || 1,
+            price: item.price
+          }));
 
-            // Calculate position fee (multiplied by quantity)
-            let positionFee = 0;
-            if (item.Objectsposition === 'InsideWithDismantling') {
-              positionFee = item.standardItemId.insideWithDismantlingPrice;
-            } else if (item.Objectsposition === 'Inside') {
-              positionFee = item.standardItemId.insidePrice;
-            }
-            // Outside position has no additional fee
+        const { totalPrice: calculatedTotalPrice } = await calculateTotalPrice({
+          items: itemsForCalculation,
+          objects: objectsForCalculation,
+          customDiscountPercent: task.customDiscountPercent,
+          discountType: task.discountType,
+          hasDiscount: task.hasDiscount,
+          createdByType: task.createdByType,
+          available: task.available,
+          applyMinFee: task.applyMinFee,
+          couponCode: task.couponCode
+        });
 
-            basePrice += (itemPrice * quantity) + (positionFee * quantity);
-          });
-
-        let finalPrice = basePrice;
-        if (
-          task.available === 'AnyTime' &&
-          task.createdByType === 'public' &&
-          task.items.every((i) => i.Objectsposition === 'Outside')
-        ) {
-          finalPrice *= 0.9;
-        }
-
-        // Apply minimum price if needed
-        const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
-        if (enforceMinimumPrice && finalPrice < 37.5) {
-          finalPrice = 37.5;
-        }
-
-        const vat = finalPrice * 0.2;
-        finalPrice += vat;
+        // Use calculated price which includes coupon discount
+        let finalPrice = calculatedTotalPrice;
 
         // ✅ Mettre à jour le statut de paiement SEULEMENT après confirmation
         // ❌ NE PAS modifier taskStatus - il reste inchangé
@@ -2522,48 +2647,36 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
 
-      let amountToPay;
-      if (paymentType === 'deposit') {
-        let requestedDeposit = task.paidAmount?.amount || 0;
+      // Retrieve coupon code from task if exists
+      let coupon = null;
 
-        amountToPay = requestedDeposit;
+      if (task.couponCode) {
+        try {
+          const couponCodeStr = String(task.couponCode).trim().toUpperCase();
+          coupon = await Coupon.findOne({ code: couponCodeStr });
 
-        task.paidAmount = {
-          amount: amountToPay,
-          method: 'payment_link',
-          status: 'Not_Paid',
-        };
-        task.remainingAmount = {
-          amount: task.totalPrice - amountToPay,
-          status: 'Not_Paid',
-          method: 'cash',
-        };
-        // Reflect partial payment intent on the task
-        task.paymentStatus = 'partial_Paid';
-        await task.save();
-
-      } else if (paymentType === 'remaining') {
-        amountToPay = task.remainingAmount?.amount;
-
-        task.remainingAmount = {
-          amount: amountToPay,
-          status: 'Not_Paid',
-          method: 'payment_link'
+          if (!coupon) {
+            // Coupon not found, remove from task
+            task.couponCode = null;
+            task.couponId = null;
+            await task.save();
+          } else {
+            const validation = coupon.validateCoupon(); // Checks expiration, usage, active status
+            if (!validation.valid) {
+              // Coupon expired or invalid, remove from task
+              task.couponCode = null;
+              task.couponId = null;
+              await task.save();
+            }
+          }
+        } catch (error) {
+          console.error('Error validating coupon:', error);
+          // Continue without coupon if validation fails
         }
-        task.paymentMethod = 'payment_link';
-
-        await task.save();
-      } else {
-        amountToPay = task.totalPrice;
-        await task.save();
-      }
-      if (!amountToPay || amountToPay <= 0) {
-        return res
-          .status(400)
-          .json({ message: 'No amount to pay for this payment type.' });
       }
 
-      // Calculate total price and breakdown as before
+      // Calculate total price and breakdown first (will include coupon discount)
+      // amountToPay will be calculated after we know the final totalPrice
       let subtotal = 0;
       const breakdown = [];
 
@@ -2659,6 +2772,48 @@ const taskCtrl = {
         subtotal *= 0.9;
       }
 
+      // Apply coupon discount if exists
+      let couponDiscount = 0;
+      if (coupon) {
+        // Use calculateTotalPrice to get accurate coupon discount
+        const itemsForCalculation = task.items.map(item => ({
+          standardItemId: item.standardItemId?._id || item.standardItemId,
+          quantity: item.quantity || 1,
+          Objectsposition: item.Objectsposition || 'Outside',
+          price: item.price,
+          customPrice: item.customPrice
+        }));
+
+        const objectsForCalculation = task.items
+          .filter(item => !item.standardItemId)
+          .map(item => ({
+            object: item.object,
+            quantity: item.quantity || 1,
+            price: item.price
+          }));
+
+        const { couponDiscount: calculatedCouponDiscount } = await calculateTotalPrice({
+          items: itemsForCalculation,
+          objects: objectsForCalculation,
+          customDiscountPercent: task.customDiscountPercent,
+          discountType: task.discountType,
+          hasDiscount: task.hasDiscount,
+          createdByType: task.createdByType,
+          available: task.available,
+          applyMinFee: task.applyMinFee,
+          couponCode: task.couponCode
+        });
+
+        couponDiscount = calculatedCouponDiscount;
+        if (couponDiscount > 0) {
+          subtotal -= couponDiscount;
+          breakdown.push({
+            description: `Coupon Discount (${coupon.percentage}% - ${coupon.code})`,
+            amount: -couponDiscount,
+          });
+        }
+      }
+
       // Enforce minimum price (before VAT) if needed
       const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
       if (enforceMinimumPrice && subtotal < 37.5) {
@@ -2681,12 +2836,56 @@ const taskCtrl = {
 
       validateBreakdown(breakdown);
 
+      // Now calculate amountToPay based on paymentType and totalPrice (which includes coupon discount)
+      let amountToPay;
+      if (paymentType === 'deposit') {
+        let requestedDeposit = task.paidAmount?.amount || 0;
+        amountToPay = requestedDeposit;
+
+        task.paidAmount = {
+          amount: amountToPay,
+          method: 'payment_link',
+          status: 'Not_Paid',
+        };
+        task.remainingAmount = {
+          amount: totalPrice - amountToPay,
+          status: 'Not_Paid',
+          method: 'cash',
+        };
+        // Reflect partial payment intent on the task
+        task.paymentStatus = 'partial_Paid';
+        await task.save();
+
+      } else if (paymentType === 'remaining') {
+        amountToPay = task.remainingAmount?.amount || (totalPrice - (task.paidAmount?.amount || 0));
+
+        task.remainingAmount = {
+          amount: amountToPay,
+          status: 'Not_Paid',
+          method: 'payment_link'
+        }
+        task.paymentMethod = 'payment_link';
+
+        await task.save();
+      } else {
+        amountToPay = totalPrice;
+        await task.save();
+      }
+
+      if (!amountToPay || amountToPay <= 0) {
+        return res
+          .status(400)
+          .json({ message: 'No amount to pay for this payment type.' });
+      }
+
       // Debug log to confirm amountToPay and paymentType
       console.log(
         'amountToPay for payment link:',
         amountToPay,
         'paymentType:',
         paymentType,
+        'totalPrice (with coupon):',
+        totalPrice,
       );
       const orderNumber = task.orderNumber;
       // Generate payment links for the specified amount
@@ -3353,6 +3552,25 @@ const taskCtrl = {
         percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
       }
 
+      // Handle coupon discount if exists
+      let couponDiscount = 0;
+      let couponCode = null;
+      let couponPercentage = 0;
+      if (task.couponCode) {
+        try {
+          const coupon = await Coupon.findOne({ code: task.couponCode });
+          if (coupon) {
+            couponCode = coupon.code;
+            couponPercentage = coupon.percentage;
+            // Calculate coupon discount on subtotal after other discounts
+            couponDiscount = (subtotal * couponPercentage) / 100;
+            subtotal -= couponDiscount;
+          }
+        } catch (error) {
+          console.error('Error fetching coupon for invoice:', error);
+        }
+      }
+
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
       // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
       // Skip minimum price enforcement if created by Admin, UNLESS applyMinFee is true
@@ -3452,6 +3670,10 @@ const taskCtrl = {
         customDiscountPercent: task.customDiscountPercent,
         discountAmount: percentageDiscount.toFixed(2),
         itemDiscountAmount: itemDiscountTotal.toFixed(2),
+        hasCoupon: couponCode !== null,
+        couponCode: couponCode,
+        couponPercentage: couponPercentage,
+        couponDiscount: couponDiscount.toFixed(2),
         subtotal: subtotalBeforeDiscounts.toFixed(2),
         vat: vat.toFixed(2),
         total: total.toFixed(2),
