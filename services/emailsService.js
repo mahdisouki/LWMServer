@@ -1130,13 +1130,17 @@ module.exports = {
       if (task.couponCode) {
         try {
           const Coupon = require('../models/Coupon');
-          const coupon = await Coupon.findOne({ code: task.couponCode });
+          // Normalize coupon code to uppercase to match Coupon model storage
+          const normalizedCouponCode = String(task.couponCode).trim().toUpperCase();
+          const coupon = await Coupon.findOne({ code: normalizedCouponCode });
           if (coupon) {
             couponCode = coupon.code;
             couponPercentage = coupon.percentage;
             // Calculate coupon discount on subtotal after other discounts
             couponDiscount = (subtotal * couponPercentage) / 100;
             subtotal -= couponDiscount;
+          } else {
+            console.warn(`Coupon code "${normalizedCouponCode}" not found in database for task ${task.orderNumber}`);
           }
         } catch (error) {
           console.error('Error fetching coupon for payment confirmation email:', error);
@@ -1345,9 +1349,9 @@ module.exports = {
           depositAmount: depositAmount.toFixed(2),
           remainingAmount: remainingAmount.toFixed(2),
           totalPrice: fullTotalPrice.toFixed(2),
-          hasCoupon: couponCode !== null,
+          hasCoupon: couponCode && couponDiscount > 0,
           couponCode: couponCode || '',
-          couponPercentage: couponPercentage,
+          couponPercentage: couponPercentage || 0,
           couponDiscount: couponDiscount.toFixed(2),
         };
 
