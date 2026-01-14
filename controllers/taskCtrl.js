@@ -2706,6 +2706,10 @@ const taskCtrl = {
               task.couponCode = null;
               task.couponId = null;
               await task.save();
+            } else {
+              // Coupon is valid, ensure couponId is set
+              task.couponId = coupon._id;
+              await task.save();
             }
           }
         } catch (error) {
@@ -3025,16 +3029,33 @@ const taskCtrl = {
         }
 
         // Increment coupon usage ONCE after successful Stripe webhook payment
-        if (task.couponId && task.couponCode && task.couponUsageIncremented !== true) {
+        if (task.couponCode && task.couponUsageIncremented !== true) {
           try {
-            const coupon = await Coupon.findById(task.couponId);
+            // Try to find coupon by ID first, then by code if ID is missing
+            let coupon = null;
+            if (task.couponId) {
+              coupon = await Coupon.findById(task.couponId);
+            }
+
+            // If coupon not found by ID, try to find by code
+            if (!coupon && task.couponCode) {
+              const couponCodeStr = String(task.couponCode).trim().toUpperCase();
+              coupon = await Coupon.findOne({ code: couponCodeStr });
+              // Update task with couponId if found
+              if (coupon) {
+                task.couponId = coupon._id;
+              }
+            }
+
             if (coupon) {
               const usageBefore = coupon.usageCount;
               await coupon.incrementUsage();
               // Refetch coupon to get updated usageCount
-              const updatedCoupon = await Coupon.findById(task.couponId);
+              const updatedCoupon = await Coupon.findById(coupon._id);
               task.couponUsageIncremented = true;
               console.log(`✅ Coupon "${task.couponCode}" usage incremented after Stripe webhook payment: ${usageBefore} → ${updatedCoupon.usageCount}`);
+            } else {
+              console.warn(`⚠️ Coupon not found for code "${task.couponCode}" in Stripe webhook`);
             }
           } catch (error) {
             console.error('Error incrementing coupon usage after Stripe webhook payment:', error);
@@ -3335,16 +3356,33 @@ const taskCtrl = {
           }
 
           // Increment coupon usage ONCE after successful PayPal webhook payment (PAYMENT.CAPTURE.COMPLETED)
-          if (task.couponId && task.couponCode && task.couponUsageIncremented !== true) {
+          if (task.couponCode && task.couponUsageIncremented !== true) {
             try {
-              const coupon = await Coupon.findById(task.couponId);
+              // Try to find coupon by ID first, then by code if ID is missing
+              let coupon = null;
+              if (task.couponId) {
+                coupon = await Coupon.findById(task.couponId);
+              }
+
+              // If coupon not found by ID, try to find by code
+              if (!coupon && task.couponCode) {
+                const couponCodeStr = String(task.couponCode).trim().toUpperCase();
+                coupon = await Coupon.findOne({ code: couponCodeStr });
+                // Update task with couponId if found
+                if (coupon) {
+                  task.couponId = coupon._id;
+                }
+              }
+
               if (coupon) {
                 const usageBefore = coupon.usageCount;
                 await coupon.incrementUsage();
                 // Refetch coupon to get updated usageCount
-                const updatedCoupon = await Coupon.findById(task.couponId);
+                const updatedCoupon = await Coupon.findById(coupon._id);
                 task.couponUsageIncremented = true;
                 console.log(`✅ Coupon "${task.couponCode}" usage incremented after PayPal webhook payment (CAPTURE.COMPLETED): ${usageBefore} → ${updatedCoupon.usageCount}`);
+              } else {
+                console.warn(`⚠️ Coupon not found for code "${task.couponCode}" in PayPal webhook`);
               }
             } catch (error) {
               console.error('Error incrementing coupon usage after PayPal webhook payment:', error);
