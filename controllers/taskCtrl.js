@@ -2177,6 +2177,10 @@ const taskCtrl = {
         );
         if (!task) return res.status(404).json({ message: 'Task not found' });
 
+        // Store coupon info BEFORE validation (in case validation clears it)
+        const storedCouponId = task.couponId;
+        const storedCouponCode = task.couponCode;
+
         // Retrieve coupon code from task if exists and validate it
         if (task.couponCode) {
           try {
@@ -2299,16 +2303,17 @@ const taskCtrl = {
         }
 
         // Increment coupon usage ONCE after successful Stripe payment confirmation
-        if (task.couponId && task.couponCode && task.couponUsageIncremented !== true) {
+        // Use stored coupon values (before validation might have cleared them)
+        if (storedCouponId && storedCouponCode && task.couponUsageIncremented !== true) {
           try {
-            const coupon = await Coupon.findById(task.couponId);
+            const coupon = await Coupon.findById(storedCouponId);
             if (coupon) {
               const usageBefore = coupon.usageCount;
               await coupon.incrementUsage();
               // Refetch coupon to get updated usageCount
-              const updatedCoupon = await Coupon.findById(task.couponId);
+              const updatedCoupon = await Coupon.findById(storedCouponId);
               task.couponUsageIncremented = true;
-              console.log(`✅ Coupon "${task.couponCode}" usage incremented after Stripe payment: ${usageBefore} → ${updatedCoupon.usageCount}`);
+              console.log(`✅ Coupon "${storedCouponCode}" usage incremented after Stripe payment: ${usageBefore} → ${updatedCoupon.usageCount}`);
             }
           } catch (error) {
             console.error('Error incrementing coupon usage after Stripe payment:', error);
@@ -2442,6 +2447,10 @@ const taskCtrl = {
       const task = await Task.findById(taskId).populate('items.standardItemId');
       if (!task) return res.status(404).json({ message: 'Task not found' });
 
+      // Store coupon info BEFORE validation (in case validation clears it)
+      const storedCouponId = task.couponId;
+      const storedCouponCode = task.couponCode;
+
       // Retrieve coupon code from task if exists and validate it
       if (task.couponCode) {
         try {
@@ -2541,16 +2550,17 @@ const taskCtrl = {
         }
 
         // Increment coupon usage ONCE after successful PayPal payment capture
-        if (task.couponId && task.couponCode && task.couponUsageIncremented !== true) {
+        // Use stored coupon values (before validation might have cleared them)
+        if (storedCouponId && storedCouponCode && task.couponUsageIncremented !== true) {
           try {
-            const coupon = await Coupon.findById(task.couponId);
+            const coupon = await Coupon.findById(storedCouponId);
             if (coupon) {
               const usageBefore = coupon.usageCount;
               await coupon.incrementUsage();
               // Refetch coupon to get updated usageCount
-              const updatedCoupon = await Coupon.findById(task.couponId);
+              const updatedCoupon = await Coupon.findById(storedCouponId);
               task.couponUsageIncremented = true;
-              console.log(`✅ Coupon "${task.couponCode}" usage incremented after PayPal payment: ${usageBefore} → ${updatedCoupon.usageCount}`);
+              console.log(`✅ Coupon "${storedCouponCode}" usage incremented after PayPal payment: ${usageBefore} → ${updatedCoupon.usageCount}`);
             }
           } catch (error) {
             console.error('Error incrementing coupon usage after PayPal payment:', error);
@@ -3013,6 +3023,25 @@ const taskCtrl = {
           task.paymentStatus = 'Paid';
           // ❌ NE PAS modifier taskStatus - il reste inchangé
         }
+
+        // Increment coupon usage ONCE after successful Stripe webhook payment
+        if (task.couponId && task.couponCode && task.couponUsageIncremented !== true) {
+          try {
+            const coupon = await Coupon.findById(task.couponId);
+            if (coupon) {
+              const usageBefore = coupon.usageCount;
+              await coupon.incrementUsage();
+              // Refetch coupon to get updated usageCount
+              const updatedCoupon = await Coupon.findById(task.couponId);
+              task.couponUsageIncremented = true;
+              console.log(`✅ Coupon "${task.couponCode}" usage incremented after Stripe webhook payment: ${usageBefore} → ${updatedCoupon.usageCount}`);
+            }
+          } catch (error) {
+            console.error('Error incrementing coupon usage after Stripe webhook payment:', error);
+            // Don't fail webhook if increment fails
+          }
+        }
+
         const amountInCents = session.amount_total;
         const amountInGBP = amountInCents / 100;
         const paymentIntentId = session.payment_intent || session.id;
@@ -3221,6 +3250,25 @@ const taskCtrl = {
             task.paidAmount.status = 'Paid';
             task.remainingAmount.status = 'Paid';
           }
+
+          // Increment coupon usage ONCE after successful PayPal webhook payment
+          if (task.couponId && task.couponCode && task.couponUsageIncremented !== true) {
+            try {
+              const coupon = await Coupon.findById(task.couponId);
+              if (coupon) {
+                const usageBefore = coupon.usageCount;
+                await coupon.incrementUsage();
+                // Refetch coupon to get updated usageCount
+                const updatedCoupon = await Coupon.findById(task.couponId);
+                task.couponUsageIncremented = true;
+                console.log(`✅ Coupon "${task.couponCode}" usage incremented after PayPal webhook payment: ${usageBefore} → ${updatedCoupon.usageCount}`);
+              }
+            } catch (error) {
+              console.error('Error incrementing coupon usage after PayPal webhook payment:', error);
+              // Don't fail webhook if increment fails
+            }
+          }
+
           await task.save();
 
           const cap = capRes.result.purchase_units[0].payments.captures[0];
@@ -3285,6 +3333,25 @@ const taskCtrl = {
             task.paidAmount.status = 'Paid';
             task.remainingAmount.status = 'Paid';
           }
+
+          // Increment coupon usage ONCE after successful PayPal webhook payment (PAYMENT.CAPTURE.COMPLETED)
+          if (task.couponId && task.couponCode && task.couponUsageIncremented !== true) {
+            try {
+              const coupon = await Coupon.findById(task.couponId);
+              if (coupon) {
+                const usageBefore = coupon.usageCount;
+                await coupon.incrementUsage();
+                // Refetch coupon to get updated usageCount
+                const updatedCoupon = await Coupon.findById(task.couponId);
+                task.couponUsageIncremented = true;
+                console.log(`✅ Coupon "${task.couponCode}" usage incremented after PayPal webhook payment (CAPTURE.COMPLETED): ${usageBefore} → ${updatedCoupon.usageCount}`);
+              }
+            } catch (error) {
+              console.error('Error incrementing coupon usage after PayPal webhook payment:', error);
+              // Don't fail webhook if increment fails
+            }
+          }
+
           await task.save();
 
           const payerAccount =
