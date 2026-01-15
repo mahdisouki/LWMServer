@@ -213,6 +213,7 @@ router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.crea
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
 router.get('/tasks', taskCtrl.getAllTasks);
 router.get('/task/:taskId', isAuth, taskCtrl.getTaskById);
+router.get('/task/order-number/:orderNumber', taskCtrl.getTaskByOrderNumber);
 router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
 router.put('/task/:taskId', multer.array('clientObjectPhotos'), isAuth, taskCtrl.updateTask);

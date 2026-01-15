@@ -634,6 +634,24 @@ const taskCtrl = {
         .json({ message: 'Failed to retrieve task', error: error.message });
     }
   },
+  getTaskByOrderNumber: async (req, res) => {
+    const { orderNumber } = req.params;
+
+    try {
+      const task = await Task.findOne({ orderNumber }).populate(
+        'createdBy',
+        'email name',
+      ).populate('couponId', 'code percentage discountType validFrom validTo maxUses currentUses');; // optional fields;
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+      res.status(200).json({ message: 'Task retrieved successfully', task });
+    } catch (error) {
+      res
+        .status(500)
+        .json({ message: 'Failed to retrieve task', error: error.message });
+    }
+  },
 
   getAllTasks: async (req, res) => {
     try {
