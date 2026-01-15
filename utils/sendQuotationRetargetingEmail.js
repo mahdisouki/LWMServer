@@ -122,7 +122,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Second Intro Text -->
           <tr>
-            <td style="padding: 16px 50px 16px; text-align: center;">
+            <td style="padding: 16px 70px 16px; text-align: center;">
               <p style="margin: 0; font-size: 11px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
@@ -151,27 +151,12 @@ const sendQuotationRetargetingEmail = async ({
                           <p style="margin: 0; font-size: 15px; font-weight: 700; color: #111827;">
                             20% OFF – use code
                           </p>
-                          <p style="margin: 3px 0 0; font-size: 12px; color: #6b7280;">
-                            ${countdownTimerUrl ? 'Ends soon' : `Ends in ⏳ ${countdown20}`}
+                          <p style="margin: 3px 0 0; font-size: 12px; color: #6b7280; display: flex; align-items: center;">
+                            ${countdownTimerUrl ? `Ends soon <img src="${countdownTimerUrl}" alt="Timer" width="120" style="display:inline-block; vertical-align:middle; margin-left:8px; height:auto; max-width:120px;" />` : `Ends in ⏳ ${countdown20}`}
                           </p>
                         </td>
                       </tr>
                     </table>
-                    ${countdownTimerUrl ? `
-                    <!-- Countdown Timer GIF -->
-                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 10px;">
-                      <tr>
-                        <td style="padding: 10px 0; text-align:center;">
-                          <img 
-                            src="${countdownTimerUrl}" 
-                            alt="Countdown Timer"
-                            width="240"
-                            style="display:block; margin:0 auto; max-width:240px; height:auto;"
-                          />
-                        </td>
-                      </tr>
-                    </table>
-                    ` : ''}
                     <!-- Copy Coupon Button -->
                     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 14px;">
                       <tr>
@@ -248,7 +233,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 50px 70px 24px; border-top: 1px solid #e5e7eb;">
+            <td style="padding: 80px 70px 24px; border-top: 1px solid #e5e7eb;">
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Left: Logo + Company Info -->
