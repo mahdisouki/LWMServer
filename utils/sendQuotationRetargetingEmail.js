@@ -69,7 +69,21 @@ const sendQuotationRetargetingEmail = async ({
   <style>
     @media only screen and (max-width: 620px) {
       .main-table { width: 100% !important; }
-      .inner { padding: 0 12px !important; }
+      .header-padding { padding-left: 20px !important; padding-right: 20px !important; }
+      .headline-padding { padding-left: 20px !important; padding-right: 20px !important; }
+      .intro-padding { padding-left: 24px !important; padding-right: 24px !important; }
+      .coupon-20-padding { padding-left: 16px !important; padding-right: 16px !important; }
+      .coupon-10-padding { padding-left: 24px !important; padding-right: 24px !important; }
+      .offer-padding { padding-left: 20px !important; padding-right: 20px !important; }
+      .footer-padding { padding-left: 20px !important; padding-right: 20px !important; }
+      .footer-table { display: block !important; width: 100% !important; }
+      .footer-left { display: block !important; width: 100% !important; text-align: center !important; padding-bottom: 16px !important; }
+      .footer-right { display: block !important; width: 100% !important; text-align: center !important; }
+      .footer-logo-table { margin: 0 auto !important; }
+      .footer-social-table { margin: 0 auto !important; }
+      .headline-main { font-size: 24px !important; }
+      .headline-percent { font-size: 42px !important; }
+      .headline-sub { font-size: 13px !important; }
     }
   </style>
 </head>
@@ -89,7 +103,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Header Content (on top of background) -->
           <tr>
-            <td style="padding: 20px 50px 10px; text-align: center;">
+            <td class="header-padding" style="padding: 20px 50px 10px; text-align: center;">
               <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768384829/uploads/LondonWasteManagementLogo-Landscape-White_1_icxlkf.png"
                    alt="London Waste Management"
                    style="width: 100%; max-width: 130px; height: auto;" />
@@ -98,14 +112,14 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Main Headline -->
           <tr>
-            <td style="padding: 8px 50px 12px; text-align: center;">
-              <h1 style="margin: 0; font-size: 28px; font-weight: 800; color: #ffffff; line-height: 1.1; text-transform: uppercase;">
+            <td class="headline-padding" style="padding: 8px 50px 12px; text-align: center;">
+              <h1 class="headline-main" style="margin: 0; font-size: 28px; font-weight: 800; color: #ffffff; line-height: 1.1; text-transform: uppercase;">
                 SAVE UP TO
               </h1>
-              <h1 style="margin: 2px 0 8px; font-size: 48px; font-weight: 900; color: #ffffff; line-height: 1; text-transform: uppercase;">
+              <h1 class="headline-percent" style="margin: 2px 0 8px; font-size: 48px; font-weight: 900; color: #ffffff; line-height: 1; text-transform: uppercase;">
                 20%
               </h1>
-              <h2 style="margin: 0; font-size: 14px; font-weight: 600; color: #ffffff; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.5px;">
+              <h2 class="headline-sub" style="margin: 0; font-size: 14px; font-weight: 600; color: #ffffff; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.5px;">
                 ON YOUR WASTE<br/>REMOVAL QUOTE
               </h2>
             </td>
@@ -113,7 +127,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Intro Text -->
           <tr>
-            <td style="padding: 14px 70px 10px; text-align: center;">
+            <td style="padding: 14px 50px 10px; text-align: center;">
               <p style="margin: 0; font-size: 14px; color: #ffffff; line-height: 1.5; font-style: bold;">
                 We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
               </p>
@@ -122,7 +136,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Second Intro Text -->
           <tr>
-            <td style="padding: 16px 70px 16px; text-align: center;">
+            <td style="padding: 16px 50px 16px; text-align: center;">
               <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
@@ -131,8 +145,8 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- 20% OFF Coupon Box -->
           <tr>
-            <td style="padding: 0 100px 8px;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
+            <td align="center" style="padding: 0 20px 8px;">
+              <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 400px; background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 16px 20px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -161,7 +175,7 @@ const sendQuotationRetargetingEmail = async ({
                     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 14px;">
                       <tr>
                         <td align="center">
-                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=I want to use my 20%25 discount code: ${coupon20Code}&body=Hi,%0A%0AI would like to use my 20%25 discount coupon code: ${coupon20Code}%0A%0APlease help me proceed with my waste removal quote.%0A%0AThank you!" 
+                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=I%20want%20to%20use%20my%2020%25%20discount%20code:%20${coupon20Code}&body=Hi,%0A%0AI%20would%20like%20to%20use%20my%2020%25%20discount%20coupon%20code:%20${coupon20Code}%0A%0APlease%20help%20me%20proceed%20with%20my%20waste%20removal%20quote.%0A%0AThank%20you!" 
                              style="display: inline-block; background: #28c152; color: #ffffff; border-radius: 20px; padding: 10px 24px; font-size: 13px; font-weight: 600; text-decoration: none;">
                             Copy Coupon 
                           </a>
@@ -176,8 +190,8 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- 10% OFF Coupon Box (Smaller/More Compact) -->
           <tr>
-            <td style="padding: 0 120px 20px;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
+            <td align="center" style="padding: 0 20px 20px;">
+              <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 340px; background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 12px 16px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -206,9 +220,9 @@ const sendQuotationRetargetingEmail = async ({
                     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 10px;">
                       <tr>
                         <td align="center">
-                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=I want to use my 10%25 discount code: ${coupon10Code}&body=Hi,%0A%0AI would like to use my 10%25 discount coupon code: ${coupon10Code}%0A%0APlease help me proceed with my waste removal quote.%0A%0AThank you!" 
+                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=I%20want%20to%20use%20my%2010%25%20discount%20code:%20${coupon10Code}&body=Hi,%0A%0AI%20would%20like%20to%20use%20my%2010%25%20discount%20coupon%20code:%20${coupon10Code}%0A%0APlease%20help%20me%20proceed%20with%20my%20waste%20removal%20quote.%0A%0AThank%20you!" 
                              style="display: inline-block; background: #4EB5C0; color: #ffffff; border-radius: 16px; padding: 8px 20px; font-size: 12px; font-weight: 600; text-decoration: none;">
-                            Copy Coupon 
+                            Copy Coupon
                           </a>
                         </td>
                       </tr>
@@ -221,7 +235,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- This Offer Is Limited Section -->
           <tr>
-            <td style="padding: 20px 50px 24px; text-align: center;">
+            <td class="offer-padding" style="padding: 20px 50px 24px; text-align: center;">
               <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #111827;">
                 This Offer Is Limited
               </h2>
@@ -233,7 +247,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 72px 70px 24px; border-top: 1px solid #e5e7eb;">
+            <td style="padding: 32px 70px 24px 60px; border-top: 1px solid #e5e7eb;">
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Left: Logo + Company Info -->
@@ -257,8 +271,8 @@ const sendQuotationRetargetingEmail = async ({
                     </table>
                   </td>
                   <!-- Right: Social Icons -->
-                  <td style="vertical-align: middle;" align="right">
-                    <table cellpadding="0" cellspacing="0" border="0">
+                  <td class="footer-right" style="vertical-align: middle;" align="right">
+                    <table class="footer-social-table" cellpadding="0" cellspacing="0" border="0">
                       <tr>
                         <td style="padding-left: 6px;">
                           <a href="https://www.facebook.com/rubbishlovers" style="text-decoration: none;">
