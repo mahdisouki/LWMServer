@@ -76,6 +76,31 @@ const sendRetargetingEmail = async ({
         console.error('⚠️ Failed to create CountdownMail timer, using fallback:', error.message);
     }
 
+    // Recalculate correct total from items (item.price already includes quantity)
+    const MINIMUM_TOTAL = 45;
+    const calculatedOriginalTotal = items.reduce((sum, item) => {
+        const price = item.price || item.standardItemId?.price || 0;
+        return sum + price;
+    }, 0);
+
+    // Use calculated total instead of passed originalTotal
+    const correctOriginalTotal = calculatedOriginalTotal;
+
+    // Recalculate discounted totals
+    let correctDiscountedTotal20 = correctOriginalTotal - (correctOriginalTotal * discount20Percentage / 100);
+    let correctMinFeeApplied20 = false;
+    if (correctDiscountedTotal20 < MINIMUM_TOTAL) {
+        correctDiscountedTotal20 = MINIMUM_TOTAL;
+        correctMinFeeApplied20 = true;
+    }
+
+    let correctDiscountedTotal10 = correctOriginalTotal - (correctOriginalTotal * discount10Percentage / 100);
+    let correctMinFeeApplied10 = false;
+    if (correctDiscountedTotal10 < MINIMUM_TOTAL) {
+        correctDiscountedTotal10 = MINIMUM_TOTAL;
+        correctMinFeeApplied10 = true;
+    }
+
     // Build items list HTML with new design
     const itemsList = items.map(item => {
         const itemName = item.standardItemId?.itemName || item.object || 'Item';
@@ -165,6 +190,12 @@ const sendRetargetingEmail = async ({
                     padding-left: 20px !important;
                     padding-right: 20px !important;
                 }
+                .social-icons {
+                    display: inline-table !important;
+                }
+                .social-icons td {
+                    display: table-cell !important;
+                }
             }
         </style>
     </head>
@@ -210,7 +241,7 @@ const sendRetargetingEmail = async ({
 
                         <!-- SPACER to push booking card down -->
                         <tr>
-                            <td style="height: 160px;"></td>
+                            <td style="height: 30px;"></td>
                         </tr>
 
                         <!-- 2. CONTENT SECTION -->
@@ -245,7 +276,7 @@ const sendRetargetingEmail = async ({
                                                                     </td>
                                                                     <td align="right">
                                                                         <p style="margin:0; font-weight:bold; color:#2E7D32; font-size: 15px;">
-                                                                            £${discountedTotal20.toFixed(2)} <span style="text-decoration: line-through; color: #aaa; font-size: 12px; margin-left: 5px;">£${originalTotal.toFixed(2)}</span>
+                                                                            £${correctDiscountedTotal20.toFixed(2)} <span style="text-decoration: line-through; color: #aaa; font-size: 12px; margin-left: 5px;">£${correctOriginalTotal.toFixed(2)}</span>
                                                                         </p>
                                                                     </td>
                                                                 </tr>
@@ -272,7 +303,7 @@ const sendRetargetingEmail = async ({
                                                                             ${countdownTimerUrl ? `Ends soon <img src="${countdownTimerUrl}" alt="Timer" width="100" style="display:inline-block; vertical-align:middle; margin-left:8px; height:auto; max-width:100px;" />` : `Ends in ⏳ ${countdown20}`}
                                                                         </p>
                                                                         <p style="font-size: 11px; color: #666; margin: 5px 0 12px 0;">
-                                                                            Save <b>£${(originalTotal - discountedTotal20).toFixed(2)}</b> on this Order${minFeeApplied20 ? ` <span style="font-size: 10px; color: #f59e0b;">*Min fee £45 applies</span>` : ''}<br /><a href="https://www.londonwastemanagement.com/terms-conditions/" style="font-size: 9px; color: #666; text-decoration: underline;">*Terms & conditions</a></p>
+                                                                            Save <b>£${(correctOriginalTotal - correctDiscountedTotal20).toFixed(2)}</b> on this Order${correctMinFeeApplied20 ? ` <span style="font-size: 10px; color: #f59e0b;">*Min fee £45 applies</span>` : ''}<br /><a href="https://www.londonwastemanagement.com/terms-conditions/" style="font-size: 9px; color: #666; text-decoration: underline;">*Terms & conditions</a></p>
                                                                         <table width="100%">
                                                                             <tr>
                                                                                 <td align="center" style="border: 1px solid #4CAF50; border-radius: 20px; padding: 8px;">
@@ -291,7 +322,7 @@ const sendRetargetingEmail = async ({
 
                                         <!-- Curved Wave Shape -->
                                         <tr>
-                                            <td align="center" style="background-color: transparent; line-height: 0; font-size: 0; margin: 0; padding: 0; padding-top: 15px; width: 100%;">
+                                            <td align="center" style="background-color: transparent; line-height: 0; font-size: 0; margin: 0; padding: 0; width: 100%;">
                                                 <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 80' preserveAspectRatio='none'%3E%3Cpath d='M0,0 Q300,80 600,0 L600,80 L0,80 Z' fill='%23ffffff'/%3E%3C/svg%3E" alt="" width="100%" height="80" style="display: block; width: 100%; height: auto; margin: 0; padding: 0;" />
                                             </td>
                                         </tr>
@@ -338,7 +369,7 @@ const sendRetargetingEmail = async ({
                                                         <td>
                                                             <table>
                                                                 <tr>
-                                                                    <td><img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768385074/Profile_Picture_3_rjvnzp.png" width="30" style="border-radius: 30%;"></td>
+                                                                    <td><img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768385074/Profile_Picture_3_rjvnzp.png" width="40" style="border-radius: 30%;"></td>
                                                                     <td style="padding-left: 10px;">
                                                                         <p style="margin: 0; font-size: 12px; font-weight: bold; color: #333;">
                                                                             London Waste Management</p>
@@ -348,17 +379,27 @@ const sendRetargetingEmail = async ({
                                                                 </tr>
                                                             </table>
                                                         </td>
-                                                        <td align="right">
+                                                        <td align="right" valign="middle">
                                                             <!-- Socials -->
-                                                            <a href="https://www.facebook.com/rubbishlovers" style="margin-left: 8px; text-decoration: none; display: inline-block;">
-                                                                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_5_r8avxw.png" alt="Facebook" width="24" height="24" style="display: block; border: 0;" />
-                                                            </a>
-                                                            <a href="https://www.instagram.com/londonwastemanagementuk/" style="margin-left: 8px; text-decoration: none; display: inline-block;">
-                                                                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_6_zilxrc.png" alt="Instagram" width="24" height="24" style="display: block; border: 0;" />
-                                                            </a>
-                                                            <a href="https://www.linkedin.com/company/londonwastemanagement" style="margin-left: 8px; text-decoration: none; display: inline-block;">
-                                                                <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_7_ksbcqr.png" alt="LinkedIn" width="24" height="24" style="display: block; border: 0;" />
-                                                            </a>
+                                                            <table border="0" cellpadding="0" cellspacing="0" class="social-icons" style="display: inline-table;">
+                                                                <tr>
+                                                                    <td style="padding: 0 4px;">
+                                                                        <a href="https://www.facebook.com/rubbishlovers" style="text-decoration: none; display: block;">
+                                                                            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_5_r8avxw.png" alt="Facebook" width="28" height="28" style="display: block; border: 0;" />
+                                                                        </a>
+                                                                    </td>
+                                                                    <td style="padding: 0 4px;">
+                                                                        <a href="https://www.instagram.com/londonwastemanagementuk/" style="text-decoration: none; display: block;">
+                                                                            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_6_zilxrc.png" alt="Instagram" width="28" height="28" style="display: block; border: 0;" />
+                                                                        </a>
+                                                                    </td>
+                                                                    <td style="padding: 0 4px;">
+                                                                        <a href="https://www.linkedin.com/company/londonwastemanagement" style="text-decoration: none; display: block;">
+                                                                            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_7_ksbcqr.png" alt="LinkedIn" width="28" height="28" style="display: block; border: 0;" />
+                                                                        </a>
+                                                                    </td>
+                                                                </tr>
+                                                            </table>
                                                         </td>
                                                     </tr>
                                                 </table>
