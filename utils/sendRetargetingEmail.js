@@ -3,89 +3,89 @@ const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 const { createCountdownTimer } = require('./countdownMail');
 
 const sendRetargetingEmail = async ({
-  customerEmail,
-  firstName,
-  lastName,
-  orderNumber,
-  coupon20Code,
-  coupon10Code,
-  discount20Percentage,
-  discount10Percentage,
-  items,
-  originalTotal,
-  discountedTotal20,
-  discountedTotal10,
-  minFeeApplied20,
-  minFeeApplied10,
-  expirationHours20,
-  expirationHours10,
-  expiresAt20,
-  expiresAt10
+    customerEmail,
+    firstName,
+    lastName,
+    orderNumber,
+    coupon20Code,
+    coupon10Code,
+    discount20Percentage,
+    discount10Percentage,
+    items,
+    originalTotal,
+    discountedTotal20,
+    discountedTotal10,
+    minFeeApplied20,
+    minFeeApplied10,
+    expirationHours20,
+    expirationHours10,
+    expiresAt20,
+    expiresAt10
 }) => {
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD,
-    },
-  });
-
-  // Format expiration dates for display
-  const formatExpirationDate = (date) => {
-    const d = new Date(date);
-    const options = {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    };
-    return d.toLocaleDateString('en-GB', options);
-  };
-
-  const expirationDate20 = expiresAt20 ? formatExpirationDate(expiresAt20) : '24 hours';
-  const expirationDate10 = expiresAt10 ? formatExpirationDate(expiresAt10) : '72 hours';
-
-  // Calculate hours remaining for display
-  const now = new Date();
-  const expires20 = expiresAt20 ? new Date(expiresAt20) : new Date(now.getTime() + (24 * 60 * 60 * 1000));
-  const expires10 = expiresAt10 ? new Date(expiresAt10) : new Date(now.getTime() + (72 * 60 * 60 * 1000));
-
-  const hoursRemaining20 = Math.max(0, Math.floor((expires20 - now) / (1000 * 60 * 60)));
-  const hoursRemaining10 = Math.max(0, Math.floor((expires10 - now) / (1000 * 60 * 60)));
-
-  // Generate countdown timer for 20% coupon
-  const timeRemaining20 = Math.max(0, expires20 - now);
-  const hours20 = Math.floor(timeRemaining20 / (1000 * 60 * 60));
-  const minutes20 = Math.floor((timeRemaining20 % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds20 = Math.floor((timeRemaining20 % (1000 * 60)) / 1000);
-  const countdown20 = `${String(hours20).padStart(2, '0')}:${String(minutes20).padStart(2, '0')}:${String(seconds20).padStart(2, '0')}`;
-
-  // Create real CountdownMail timer via API
-  let countdownTimerUrl = null;
-  try {
-    const countdownTimer = await createCountdownTimer({
-      name: `20% Discount - ${customerEmail}`,
-      expiresAt: expires20.toISOString().replace("T", " ").slice(0, 19),
-      timezone: "Europe/London"
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASSWORD,
+        },
     });
-    countdownTimerUrl = countdownTimer.src;
-    console.log(`✅ CountdownMail timer created for retargeting: ${countdownTimer.code}`);
-  } catch (error) {
-    console.error('⚠️ Failed to create CountdownMail timer, using fallback:', error.message);
-  }
 
-  // Build items list HTML with new design
-  const itemsList = items.map(item => {
-    const itemName = item.standardItemId?.itemName || item.object || 'Item';
-    const position = item.Objectsposition || 'Outside the property';
-    const quantity = item.quantity || 1;
-    const price = item.price || item.standardItemId?.price || 0;
-    const totalItemPrice = (price * quantity).toFixed(2);
-    const itemImage = item.standardItemId?.image || 'https://placehold.co/40x40/f5f5f5/333?text=' + encodeURIComponent(itemName.charAt(0));
+    // Format expiration dates for display
+    const formatExpirationDate = (date) => {
+        const d = new Date(date);
+        const options = {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        };
+        return d.toLocaleDateString('en-GB', options);
+    };
 
-    return `
+    const expirationDate20 = expiresAt20 ? formatExpirationDate(expiresAt20) : '24 hours';
+    const expirationDate10 = expiresAt10 ? formatExpirationDate(expiresAt10) : '72 hours';
+
+    // Calculate hours remaining for display
+    const now = new Date();
+    const expires20 = expiresAt20 ? new Date(expiresAt20) : new Date(now.getTime() + (24 * 60 * 60 * 1000));
+    const expires10 = expiresAt10 ? new Date(expiresAt10) : new Date(now.getTime() + (72 * 60 * 60 * 1000));
+
+    const hoursRemaining20 = Math.max(0, Math.floor((expires20 - now) / (1000 * 60 * 60)));
+    const hoursRemaining10 = Math.max(0, Math.floor((expires10 - now) / (1000 * 60 * 60)));
+
+    // Generate countdown timer for 20% coupon
+    const timeRemaining20 = Math.max(0, expires20 - now);
+    const hours20 = Math.floor(timeRemaining20 / (1000 * 60 * 60));
+    const minutes20 = Math.floor((timeRemaining20 % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds20 = Math.floor((timeRemaining20 % (1000 * 60)) / 1000);
+    const countdown20 = `${String(hours20).padStart(2, '0')}:${String(minutes20).padStart(2, '0')}:${String(seconds20).padStart(2, '0')}`;
+
+    // Create real CountdownMail timer via API
+    let countdownTimerUrl = null;
+    try {
+        const countdownTimer = await createCountdownTimer({
+            name: `20% Discount - ${customerEmail}`,
+            expiresAt: expires20.toISOString().replace("T", " ").slice(0, 19),
+            timezone: "Europe/London"
+        });
+        countdownTimerUrl = countdownTimer.src;
+        console.log(`✅ CountdownMail timer created for retargeting: ${countdownTimer.code}`);
+    } catch (error) {
+        console.error('⚠️ Failed to create CountdownMail timer, using fallback:', error.message);
+    }
+
+    // Build items list HTML with new design
+    const itemsList = items.map(item => {
+        const itemName = item.standardItemId?.itemName || item.object || 'Item';
+        const position = item.Objectsposition || 'Outside the property';
+        const quantity = item.quantity || 1;
+        const price = item.price || item.standardItemId?.price || 0;
+        const totalItemPrice = (price * quantity).toFixed(2);
+        const itemImage = item.standardItemId?.image || 'https://placehold.co/40x40/f5f5f5/333?text=' + encodeURIComponent(itemName.charAt(0));
+
+        return `
       <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 15px;">
         <tr>
           <td width="60" valign="top">
@@ -103,13 +103,13 @@ const sendRetargetingEmail = async ({
         </tr>
       </table>
     `;
-  }).join('');
+    }).join('');
 
-  const baseUrl = 'https://londonwastemanagement.uk/';
-  const applyCodeUrl20 = `${baseUrl}`
-  const applyCodeUrl10 = `${baseUrl}`;
+    const baseUrl = 'https://londonwastemanagement.uk/';
+    const applyCodeUrl20 = `${baseUrl}`
+    const applyCodeUrl10 = `${baseUrl}`;
 
-  const html = `
+    const html = `
     <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
     <html xmlns="http://www.w3.org/1999/xhtml">
     <head>
@@ -121,7 +121,6 @@ const sendRetargetingEmail = async ({
                 margin: 0;
                 padding: 0;
                 min-width: 100%;
-                background-color: #ffffff;
                 font-family: 'Helvetica', 'Arial', sans-serif;
             }
             table {
@@ -142,48 +141,43 @@ const sendRetargetingEmail = async ({
             .gradient-bg {
                 background: linear-gradient(180deg, #2fb344 0%, #7fcf8a 45%, #c8edd0 75%, #e4fce4 100%);
             }
-            .white-curve-container {
-                margin-top: -50px;
-                background-color: #ffffff;
-                position: relative;
-                padding-top: 60px;
-            }
             .booking-card {
                 box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
                 border-radius: 16px;
                 overflow: hidden;
-                background-color: #ffffff;
-                position: relative;
-                top: -120px;
-                margin-bottom: -100px;
             }
             @media screen and (max-width: 600px) {
                 .container {
                     width: 100% !important;
                 }
-                .white-curve-container {
-                    border-radius: 25px 25px 0 0;
-                }
                 .booking-card {
-                    margin-bottom: -60px;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                }
+                .small-coupon {
                     width: 90% !important;
+                    max-width: 220px !important;
                 }
                 .h1-mobile {
                     font-size: 28px !important;
                 }
+                .content-cell {
+                    padding-left: 20px !important;
+                    padding-right: 20px !important;
+                }
             }
         </style>
     </head>
-    <body style="margin: 0; padding: 0; background-color: #f4f4f4;">
+    <body style="margin: 0; padding: 0;">
         <!-- Outer Wrapper -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f4f4;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%">
             <tr>
                 <td align="center">
-                    <!-- Main Container (Max 600px) -->
-                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px;">
-                        <!-- 1. HEADER SECTION (Green Gradient) -->
+                    <!-- Main Container (Max 600px) with full gradient background -->
+                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-color: #2fb344; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768503276/samples/Group_1000008589_1_ryjrnz.png'); background-size: 100% auto; background-position: top center; background-repeat: no-repeat;">
+                        <!-- 1. HEADER SECTION -->
                         <tr>
-                            <td align="center" class="gradient-bg" style="height: 550px;border-radius: 0px 0px 5pc 5pc;position: relative;z-index:1;">
+                            <td align="center" style="height: 350px;">
                                 <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                     <!-- Logo -->
                                     <tr>
@@ -214,15 +208,19 @@ const sendRetargetingEmail = async ({
                             </td>
                         </tr>
 
-                        <!-- 2. WHITE CURVED CONTENT SECTION -->
+                        <!-- SPACER to push booking card down -->
+                        <tr>
+                            <td style="height: 160px;"></td>
+                        </tr>
+
+                        <!-- 2. CONTENT SECTION -->
                         <tr>
                             <td align="center" valign="top">
-                                <div class="white-curve-container">
                                     <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                         <tr>
-                                            <td align="center" style="padding: 0 20px;">
-                                                <!-- OVERLAPPING CARD -->
-                                                <table border="0" cellpadding="0" cellspacing="0" width="480" class="booking-card" style="width: 100%; max-width: 480px;  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);z-index:999">
+                                            <td align="center" class="content-cell" style="padding: 0 50px;">
+                                                <!-- BOOKING CARD -->
+                                                <table border="0" cellpadding="0" cellspacing="0" width="320" class="booking-card" style="width: 320px; max-width: 320px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); background-color: #ffffff; margin-bottom: -100px; position: relative; z-index: 10;">
                                                     <!-- Card Header -->
                                                     <tr>
                                                         <td style="background-color: #5bb35f; padding: 12px 20px;">
@@ -285,7 +283,7 @@ const sendRetargetingEmail = async ({
                                                                             Save <b>£${(originalTotal - discountedTotal20).toFixed(2)}</b> on this Order${minFeeApplied20 ? ` <span style="font-size: 10px; color: #f59e0b;">*Min fee £45 applies</span>` : ''}<br /><a href="https://www.londonwastemanagement.com/terms-conditions/" style="font-size: 9px; color: #666; text-decoration: underline;">*Terms & conditions</a></p>
                                                                         <table width="100%">
                                                                             <tr>
-                                                                                <td align="center" style="border: 1px solid #4CAF50; border-radius: 20px; padding: 8px; background-color: #fff;">
+                                                                                <td align="center" style="border: 1px solid #4CAF50; border-radius: 20px; padding: 8px;">
                                                                                     <a href="${applyCodeUrl20}" style="text-decoration: none; color: #4CAF50; font-weight: bold; font-size: 12px; display: block;">Apply Code</a>
                                                                                 </td>
                                                                             </tr>
@@ -296,9 +294,20 @@ const sendRetargetingEmail = async ({
                                                         </td>
                                                     </tr>
                                                 </table>
+                                            </td>
+                                        </tr>
 
-                                                <!-- Smaller Coupon Below Card -->
-                                                <table border="0" cellpadding="0" cellspacing="0" width="300" style="border: 1px solid #eee; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; margin-top: -80px; position: relative; z-index: 1; background: #fff;">
+                                        <!-- Curved Wave Shape -->
+                                        <tr>
+                                            <td align="center" style="background-color: transparent; line-height: 0; font-size: 0; margin: 0; padding: 0; padding-top: 15px; width: 100%;">
+                                                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 80' preserveAspectRatio='none'%3E%3Cpath d='M0,0 Q300,80 600,0 L600,80 L0,80 Z' fill='%23ffffff'/%3E%3C/svg%3E" alt="" width="100%" height="80" style="display: block; width: 100%; height: auto; margin: 0; padding: 0;" />
+                                            </td>
+                                        </tr>
+
+                                        <!-- 10% Coupon - in white section -->
+                                        <tr>
+                                            <td align="center" style="background-color: #ffffff; padding: 0 40px;">
+                                                <table border="0" cellpadding="0" cellspacing="0" width="240" class="small-coupon" style="max-width: 240px; border: 1px solid #eee; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); background-color: #ffffff; margin-top: -65px; position: relative; z-index: 10;">
                                                     <tr>
                                                         <td width="30" align="center" style="border-right: 1px dashed #ddd; vertical-align: middle;">
                                                             <p style="font-size: 9px; color: #aaa; margin: 0; padding: 5px; writing-mode: vertical-rl; transform: rotate(180deg);">
@@ -314,9 +323,9 @@ const sendRetargetingEmail = async ({
                                             </td>
                                         </tr>
 
-                                        <!-- Footer Text Area -->
+                                        <!-- White Content Section -->
                                         <tr>
-                                            <td align="center" style="padding: 20px 40px 40px 40px;">
+                                            <td align="center" style="padding: 20px 40px 20px 40px; background-color: #ffffff;">
                                                 <h2 style="font-size: 22px; margin: 0 0 10px 0;">This Offer Is Limited</h2>
                                                 <p style="font-size: 14px; color: #777; line-height: 1.5; margin: 0 0 20px 0;">
                                                     Don't miss out. If you have any questions,<br />
@@ -331,7 +340,7 @@ const sendRetargetingEmail = async ({
 
                                         <!-- Footer Bar -->
                                         <tr>
-                                            <td style="background-color: #fafafa; padding: 20px 30px; border-top: 1px solid #eee;">
+                                            <td style="padding: 20px 30px; border-top: 1px solid #eee; background-color: #ffffff;">
                                                 <table width="100%">
                                                     <tr>
                                                         <td>
@@ -364,7 +373,6 @@ const sendRetargetingEmail = async ({
                                             </td>
                                         </tr>
                                     </table>
-                                </div>
                             </td>
                         </tr>
                     </table>
@@ -375,40 +383,40 @@ const sendRetargetingEmail = async ({
     </html>
   `;
 
-  const mailOptions = {
-    from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
-    to: customerEmail,
-    replyTo: process.env.EMAIL_USER, // Allow replies to go to the responsible email
-    subject: addStagingToSubject(`Complete Your Booking - ${discount20Percentage}% Discount Available`),
-    html: addStagingBanner(html),
-  };
+    const mailOptions = {
+        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+        to: customerEmail,
+        replyTo: process.env.EMAIL_USER, // Allow replies to go to the responsible email
+        subject: addStagingToSubject(`Complete Your Booking - ${discount20Percentage}% Discount Available`),
+        html: addStagingBanner(html),
+    };
 
-  try {
-    console.log('Sending retargeting email to customer:', customerEmail);
-    console.log('Email configuration:', {
-      from: mailOptions.from,
-      to: mailOptions.to,
-      subject: mailOptions.subject
-    });
-    const result = await transporter.sendMail(mailOptions);
-    console.log('Retargeting email sent successfully!', {
-      to: customerEmail,
-      messageId: result.messageId,
-      accepted: result.accepted,
-      rejected: result.rejected,
-      response: result.response
-    });
+    try {
+        console.log('Sending retargeting email to customer:', customerEmail);
+        console.log('Email configuration:', {
+            from: mailOptions.from,
+            to: mailOptions.to,
+            subject: mailOptions.subject
+        });
+        const result = await transporter.sendMail(mailOptions);
+        console.log('Retargeting email sent successfully!', {
+            to: customerEmail,
+            messageId: result.messageId,
+            accepted: result.accepted,
+            rejected: result.rejected,
+            response: result.response
+        });
 
-    // Check if email was rejected
-    if (result.rejected && result.rejected.length > 0) {
-      console.error('Email was rejected:', result.rejected);
+        // Check if email was rejected
+        if (result.rejected && result.rejected.length > 0) {
+            console.error('Email was rejected:', result.rejected);
+        }
+
+        return result;
+    } catch (error) {
+        console.error('Error sending retargeting email:', error);
+        throw error;
     }
-
-    return result;
-  } catch (error) {
-    console.error('Error sending retargeting email:', error);
-    throw error;
-  }
 };
 
 module.exports = { sendRetargetingEmail };
