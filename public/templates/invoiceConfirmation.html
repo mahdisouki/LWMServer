@@ -451,6 +451,28 @@
                                 </td>
                               </tr>
                               {{/if}} {{/if}} {{/if}}
+                              <!-- Coupon Discount (if applicable) -->
+                              {{#if hasCoupon}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Coupon Discount: ({{couponCode}} - {{couponPercentage}}%)
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  -£{{couponDiscount}}
+                                </td>
+                              </tr>
+                              {{/if}}
                               <tr>
                                 <td
                                   style="
@@ -612,6 +634,28 @@
                                 </td>
                               </tr>
                               {{/if}} {{/if}} {{/if}}
+                              <!-- Coupon Discount (if applicable) -->
+                              {{#if hasCoupon}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Coupon Discount: ({{couponCode}} - {{couponPercentage}}%)
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  -£{{couponDiscount}}
+                                </td>
+                              </tr>
+                              {{/if}}
                               <tr>
                                 <td
                                   style="

@@ -137,6 +137,7 @@ const taskSchema = new Schema(
     customDiscountPercent: { type: Number, default: 0 },
     couponCode: { type: String, default: null }, // Coupon code applied to this task
     couponId: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to coupon used
+    couponUsageIncremented: { type: Boolean, default: false }, // Prevent double increment of coupon usage (idempotency)
     email: { type: String },
     additionalNotes: { type: String, required: false },
     privateNotes: { type: String },
@@ -154,6 +155,10 @@ const taskSchema = new Schema(
     reviewRequestSent: { type: Boolean, default: false },
     preventReviewEmail: { type: Boolean, default: false }, // Prevent sending review email for this task
     wasteTransferNoteSent: { type: Boolean, default: false },
+    retargetingEmailSent: { type: Boolean, default: false }, // Track if retargeting email was sent
+    retargetingEmailSentAt: { type: Date }, // When retargeting email was sent
+    retargetingCoupon20Id: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to 20% coupon
+    retargetingCoupon10Id: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to 10% coupon
     reasonForCancellation: { type: String },
     applyMinFee: { type: Boolean, default: false }, // Admin option to apply minimum fee
     quotationId: {

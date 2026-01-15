@@ -23,6 +23,24 @@ const quotationRequestSchema = new Schema({
     type: String,
     required: false
   },
+  retargetingEmailSent: {
+    type: Boolean,
+    default: false
+  },
+  retargetingEmailSentAt: {
+    type: Date,
+    default: null
+  },
+  retargetingCoupon20Id: {
+    type: Schema.Types.ObjectId,
+    ref: 'Coupon',
+    default: null
+  },
+  retargetingCoupon10Id: {
+    type: Schema.Types.ObjectId,
+    ref: 'Coupon',
+    default: null
+  },
 
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true }); // Enable timestamps to get updatedAt

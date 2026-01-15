@@ -202,6 +202,23 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     discountRowHtml = automaticDiscountHtml + discountRowHtml;
   }
 
+  // Display coupon discount if exists
+  let couponDiscountHtml = '';
+  if (taskDetails.couponCode) {
+    try {
+      const Coupon = require('../models/Coupon');
+      const coupon = await Coupon.findOne({ code: taskDetails.couponCode });
+      if (coupon) {
+        // Calculate coupon discount from subtotal after other discounts
+        const subtotalAfterDiscounts = subtotalBeforeDiscounts - automaticDiscount10Percent - calculatedDiscountAmount;
+        const couponDiscount = (subtotalAfterDiscounts * coupon.percentage) / 100;
+        couponDiscountHtml = `<p style="margin:0 0 8px; font-size:13px;">Coupon Discount (${coupon.code} - ${coupon.percentage}%)<span style="float:right; font-weight:bold;">-£${couponDiscount.toFixed(2)}</span></p>`;
+      }
+    } catch (error) {
+      console.error('Error fetching coupon for payment email:', error);
+    }
+  }
+
   // Use subtotal BEFORE discounts for display
   const subtotalForDisplay = subtotalBeforeDiscounts;
 
@@ -213,6 +230,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
           <span style="float:right; font-weight:bold;">£${subtotalForDisplay.toFixed(2)}</span>
         </p>
         ${discountRowHtml}
+        ${couponDiscountHtml}
         <p style="margin:0 0 8px; font-size:13px;">
           VAT
           <span style="float:right; font-weight:bold;">£${vatAmount.toFixed(2)}</span>

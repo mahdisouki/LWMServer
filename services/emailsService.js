@@ -64,7 +64,7 @@ async function sendEmail({ to, subject, html, attachments = [] }) {
     // Add staging indicators
     const finalSubject = addStagingToSubject(subject);
     const finalHtml = addStagingBanner(html);
-    
+
     return await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to,
@@ -333,6 +333,26 @@ module.exports = {
       subtotal *= 0.9;
     }
 
+    // Handle coupon discount if exists
+    let couponDiscount = 0;
+    let couponCode = null;
+    let couponPercentage = 0;
+    if (task.couponCode) {
+      try {
+        const Coupon = require('../models/Coupon');
+        const coupon = await Coupon.findOne({ code: task.couponCode });
+        if (coupon) {
+          couponCode = coupon.code;
+          couponPercentage = coupon.percentage;
+          // Calculate coupon discount on subtotal after other discounts
+          couponDiscount = (subtotal * couponPercentage) / 100;
+          subtotal -= couponDiscount;
+        }
+      } catch (error) {
+        console.error('Error fetching coupon for PDF invoice:', error);
+      }
+    }
+
     // Check createdByType condition for minimum price enforcement
     // Only skip minimum price if explicitly 'Admin' AND applyMinFee is false
     const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
@@ -466,11 +486,8 @@ module.exports = {
         task.available === '7am-12pm' ? 'Morning (7am to 12pm)' :
           task.available === '12pm-5pm' ? 'Afternoon (12pm to 5pm)' : task.available,
       itemRows,
-      // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
-      // For no discounts, show subtotal after any automatic 10% discount
-      subtotal: (task.hasDiscount && (task.discountType === "perItem" || task.discountType === "percentage"))
-        ? (subtotalBeforeDiscounts || 0).toFixed(2)
-        : (subtotal || 0).toFixed(2),
+      // Always show subtotal with original prices (before all discounts)
+      subtotal: (subtotalBeforeDiscounts || 0).toFixed(2),
       vat: (vat || 0).toFixed(2),
       totalPrice: (total || 0).toFixed(2),
       hasDiscount: task.hasDiscount,
@@ -547,6 +564,10 @@ module.exports = {
     // Show other discounts (percentage or per-item) if applicable
     if (vars.hasDiscount && ((task.discountType === "percentage" && task.customDiscountPercent > 0) || task.discountType === "perItem")) {
       discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">${vars.discountLabel}</span>\n                <span class="summary-value">-£${vars.discountAmount}</span>\n              </div>`;
+    }
+    // Show coupon discount if applicable
+    if (couponCode && couponDiscount > 0) {
+      discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">Coupon Discount (${couponCode} - ${couponPercentage}%)</span>\n                <span class="summary-value">-£${couponDiscount.toFixed(2)}</span>\n              </div>`;
     }
     template = template.replace('{{discountRow}}', discountRow);
 
@@ -1102,6 +1123,30 @@ module.exports = {
         subtotal -= percentageDiscount;
       }
 
+      // Handle coupon discount if exists
+      let couponDiscount = 0;
+      let couponCode = null;
+      let couponPercentage = 0;
+      if (task.couponCode) {
+        try {
+          const Coupon = require('../models/Coupon');
+          // Normalize coupon code to uppercase to match Coupon model storage
+          const normalizedCouponCode = String(task.couponCode).trim().toUpperCase();
+          const coupon = await Coupon.findOne({ code: normalizedCouponCode });
+          if (coupon) {
+            couponCode = coupon.code;
+            couponPercentage = coupon.percentage;
+            // Calculate coupon discount on subtotal after other discounts
+            couponDiscount = (subtotal * couponPercentage) / 100;
+            subtotal -= couponDiscount;
+          } else {
+            console.warn(`Coupon code "${normalizedCouponCode}" not found in database for task ${task.orderNumber}`);
+          }
+        } catch (error) {
+          console.error('Error fetching coupon for payment confirmation email:', error);
+        }
+      }
+
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
       const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
       if (enforceMinimumPrice && subtotal < 37.5) {
@@ -1275,11 +1320,8 @@ module.exports = {
       // isPartialPaid is true if paymentStatus is 'partial_Paid'
       const isPartialPaid = task.paymentStatus === 'partial_Paid';
 
-      // For discounts (per-item or percentage), show subtotal with original prices (before discounts)
-      // For no discounts, show subtotal after any automatic 10% discount
-      const subtotalForDisplay = (task.hasDiscount && (task.discountType === "perItem" || task.discountType === "percentage"))
-        ? subtotalBeforeDiscounts
-        : subtotal;
+      // Always show subtotal with original prices (before all discounts)
+      const subtotalForDisplay = subtotalBeforeDiscounts;
 
       // Compile template with Handlebars
       let html;
@@ -1307,6 +1349,10 @@ module.exports = {
           depositAmount: depositAmount.toFixed(2),
           remainingAmount: remainingAmount.toFixed(2),
           totalPrice: fullTotalPrice.toFixed(2),
+          hasCoupon: couponCode && couponDiscount > 0,
+          couponCode: couponCode || '',
+          couponPercentage: couponPercentage || 0,
+          couponDiscount: couponDiscount.toFixed(2),
         };
 
         // Log template data for debugging
