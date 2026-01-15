@@ -2,231 +2,313 @@ const nodemailer = require('nodemailer');
 const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 
 const sendQuotationRetargetingEmail = async ({
-    customerEmail,
-    customerName,
-    coupon20Code,
-    coupon10Code,
-    expiresAt20,
-    expiresAt10
+  customerEmail,
+  customerName,
+  coupon20Code,
+  coupon10Code,
+  expiresAt20,
+  expiresAt10
 }) => {
-    const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASSWORD,
-        },
-    });
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD,
+    },
+  });
 
-    // Calculate time remaining for countdown display
-    const now = new Date();
-    const expires20 = expiresAt20 ? new Date(expiresAt20) : new Date(now.getTime() + (24 * 60 * 60 * 1000));
-    const expires10 = expiresAt10 ? new Date(expiresAt10) : new Date(now.getTime() + (72 * 60 * 60 * 1000));
+  // Calculate time remaining for countdown display
+  const now = new Date();
+  const expires20 = expiresAt20 ? new Date(expiresAt20) : new Date(now.getTime() + (24 * 60 * 60 * 1000));
+  const expires10 = expiresAt10 ? new Date(expiresAt10) : new Date(now.getTime() + (72 * 60 * 60 * 1000));
 
-    // Calculate hours, minutes, seconds remaining for 20% coupon (static display)
-    const timeRemaining20 = Math.max(0, expires20 - now);
-    const hours20 = Math.floor(timeRemaining20 / (1000 * 60 * 60));
-    const minutes20 = Math.floor((timeRemaining20 % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds20 = Math.floor((timeRemaining20 % (1000 * 60)) / 1000);
-    const countdown20 = `${String(hours20).padStart(2, '0')}:${String(minutes20).padStart(2, '0')}:${String(seconds20).padStart(2, '0')}`;
+  // Generate dynamic countdown timer URL using countdownmail.com (free email countdown timer service)
+  // This creates an animated GIF that counts down in real-time
+  const countdownTimerUrl = `https://i.countdownmail.com/2/hashCode.gif?${expires20.toISOString()}&timezone=Europe%2FLondon&font=cursive&width=200&height=50&fntclr=28c152&kn498g98=60`;
 
-    // Base URL for any links
-    const baseUrl = process.env.CLIENT_URL || 'https://client.londonwastemanagement.uk';
+  // Fallback static countdown for email clients that don't support external images
+  const timeRemaining20 = Math.max(0, expires20 - now);
+  const hours20 = Math.floor(timeRemaining20 / (1000 * 60 * 60));
+  const minutes20 = Math.floor((timeRemaining20 % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds20 = Math.floor((timeRemaining20 % (1000 * 60)) / 1000);
+  const countdown20 = `${String(hours20).padStart(2, '0')}:${String(minutes20).padStart(2, '0')}:${String(seconds20).padStart(2, '0')}`;
 
-    // Format customer name
-    const displayName = customerName || 'Customer';
+  // Base URL for any links
+  const baseUrl = process.env.CLIENT_URL || 'https://client.londonwastemanagement.uk';
 
-    const html = `
+  // Format customer name
+  const displayName = customerName || 'Customer';
+
+  const html = `
     <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <style>
-        @media only screen and (max-width: 620px) {
-          .main-table { width: 100% !important; }
-          .inner { padding: 0 12px !important; }
-          .coupon-box { flex-direction: column !important; }
-        }
-      </style>
-    </head>
-    <body style="margin:0; padding:0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; background-color: #f5f5f5;">
-        <tr>
-          <td align="center" style="padding:24px 12px 32px;">
-            <table width="600" cellpadding="0" cellspacing="0" border="0" class="main-table"
-              style="border-collapse:collapse; max-width:600px; background:#ffffff; border-radius: 8px; overflow: hidden;">
-              
-              <!-- Header with Logo -->
-              <tr>
-                <td style="padding:32px 24px; text-align: center; background: #ffffff;">
-                  <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1766528514/Group_1261156245_ngvccs.png" 
-                       alt="London Waste Management" 
-                       style="max-width: 200px; height: auto; margin-bottom: 16px;" />
-                  <h1 style="margin: 0; font-size: 28px; font-weight: bold; color: #111827; line-height: 1.3;">
-                    SAVE UP TO <strong style="color: #28c152;">20%</strong> ON YOUR WASTE REMOVAL QUOTE
-                  </h1>
-                  <p style="margin: 16px 0 0; font-size: 14px; color: #6b7280; line-height: 1.6;">
-                    We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
-                  </p>
-                  <p style="margin: 12px 0 0; font-size: 14px; color: #374151; line-height: 1.6;">
-                    We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
-                  </p>
-                </td>
-              </tr>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!--[if gte mso 9]>
+  <xml>
+    <o:OfficeDocumentSettings>
+      <o:AllowPNG/>
+      <o:PixelsPerInch>96</o:PixelsPerInch>
+    </o:OfficeDocumentSettings>
+  </xml>
+  <![endif]-->
+  <style>
+    @media only screen and (max-width: 620px) {
+      .main-table { width: 100% !important; }
+      .inner { padding: 0 12px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0; padding:0; font-family: Arial, sans-serif; background-color: #ffffff;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; background-color: #ffffff;">
+    <tr>
+      <td align="center" style="padding:0;">
 
-              <!-- Main Offer Section with Gradient Background -->
-              <tr>
-                <td style="padding:0; background: linear-gradient(135deg, #e8f5e9 0%, #ffffff 100%); position: relative;">
-                  <!-- Subtle grid pattern overlay -->
-                  <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: repeating-linear-gradient(0deg, transparent, transparent 20px, rgba(40, 193, 82, 0.03) 20px, rgba(40, 193, 82, 0.03) 21px); pointer-events: none;"></div>
-                  
-                  <!-- Discount Offers -->
-                  <div style="position: relative; padding: 32px 24px;">
-                    
-                    <!-- 20% OFF Discount Box -->
-                    <div style="background: #ffffff; border-radius: 12px; border-left: 4px solid #28c152; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                      <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
-                        <div style="width: 60px; height: 60px; background: #28c152; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                          <span style="color: #ffffff; font-size: 20px; font-weight: bold;">20%</span>
-                        </div>
-                        <div style="flex: 1;">
-                          <p style="margin: 0; font-size: 18px; font-weight: bold; color: #111827;">
-                            <strong>20% OFF</strong> – use code
+        <!--[if gte mso 9]>
+        <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;">
+          <v:fill type="frame" src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png" />
+          <v:textbox style="mso-fit-shape-to-text:true" inset="0,0,0,0">
+        <![endif]-->
+
+        <table width="600" cellpadding="0" cellspacing="0" border="0" class="main-table"
+          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png'); background-size: 100% auto; background-repeat: no-repeat; background-position: top center;">
+
+          <!-- Header Content (on top of background) -->
+          <tr>
+            <td style="padding: 20px 50px 10px; text-align: center;">
+              <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768384829/uploads/LondonWasteManagementLogo-Landscape-White_1_icxlkf.png"
+                   alt="London Waste Management"
+                   style="width: 100%; max-width: 130px; height: auto;" />
+            </td>
+          </tr>
+
+          <!-- Main Headline -->
+          <tr>
+            <td style="padding: 8px 50px 12px; text-align: center;">
+              <h1 style="margin: 0; font-size: 28px; font-weight: 800; color: #ffffff; line-height: 1.1; text-transform: uppercase;">
+                SAVE UP TO
+              </h1>
+              <h1 style="margin: 2px 0 8px; font-size: 48px; font-weight: 900; color: #ffffff; line-height: 1; text-transform: uppercase;">
+                20%
+              </h1>
+              <h2 style="margin: 0; font-size: 14px; font-weight: 600; color: #ffffff; line-height: 1.4; text-transform: uppercase; letter-spacing: 0.5px;">
+                ON YOUR WASTE<br/>REMOVAL QUOTE
+              </h2>
+            </td>
+          </tr>
+
+          <!-- Intro Text -->
+          <tr>
+            <td style="padding: 14px 70px 10px; text-align: center;">
+              <p style="margin: 0; font-size: 12px; color: #ffffff; line-height: 1.5; font-style: italic;">
+                We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Second Intro Text -->
+          <tr>
+            <td style="padding: 16px 50px 16px; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #374151; line-height: 1.5;">
+                We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
+              </p>
+            </td>
+          </tr>
+
+          <!-- 20% OFF Coupon Box -->
+          <tr>
+            <td style="padding: 0 100px 8px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
+                <tr>
+                  <td style="padding: 16px 20px;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td width="50" style="vertical-align: middle;">
+                          <!-- Green Circle Badge -->
+                          <table cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td style="width: 46px; height: 46px; background: #28c152; border-radius: 50%; text-align: center; vertical-align: middle;">
+                                <span style="color: #ffffff; font-size: 12px; font-weight: 700;">20%</span>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                        <td style="padding-left: 14px; vertical-align: middle;">
+                          <p style="margin: 0; font-size: 15px; font-weight: 700; color: #111827;">
+                            20% OFF – use code
                           </p>
-                          <p style="margin: 4px 0 0; font-size: 12px; color: #6b7280;">
+                          <p style="margin: 3px 0 0; font-size: 12px; color: #6b7280;">
                             Ends in ⏳ ${countdown20}
                           </p>
-                        </div>
-                      </div>
-                      <div style="text-align: center;">
-                        <p style="margin: 0 0 12px; font-size: 20px; font-weight: bold; color: #111827; letter-spacing: 3px; font-family: monospace;">
-                          ${coupon20Code}
-                        </p>
-                        <a href="mailto:?subject=Coupon Code ${coupon20Code}&body=Coupon Code: ${coupon20Code}%0A%0AUse this code to get 20% off your waste removal quote!" 
-                           style="display: inline-block; background: #28c152; color: #ffffff; border: none; border-radius: 8px; padding: 12px 32px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M13.3333 6H7.33333C6.59695 6 6 6.59695 6 7.33333V13.3333C6 14.0697 6.59695 14.6667 7.33333 14.6667H13.3333C14.0697 14.6667 14.6667 14.0697 14.6667 13.3333V7.33333C14.6667 6.59695 14.0697 6 13.3333 6Z" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M3.33333 10H2.66667C2.31305 10 2 9.68695 2 9.33333V3.33333C2 2.97971 2.31305 2.66667 2.66667 2.66667H8.66667C9.02029 2.66667 9.33333 2.97971 9.33333 3.33333V4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          Copy Coupon
-                        </a>
-                      </div>
-                    </div>
+                        </td>
+                      </tr>
+                    </table>
+                    <!-- Copy Coupon Button -->
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 14px;">
+                      <tr>
+                        <td align="center">
+                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=I want to use my 20%25 discount code: ${coupon20Code}&body=Hi,%0A%0AI would like to use my 20%25 discount coupon code: ${coupon20Code}%0A%0APlease help me proceed with my waste removal quote.%0A%0AThank you!" 
+                             style="display: inline-block; background: #28c152; color: #ffffff; border-radius: 20px; padding: 10px 24px; font-size: 13px; font-weight: 600; text-decoration: none;">
+                            Copy Coupon 📋
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-                    <!-- 10% OFF Discount Box -->
-                    <div style="background: #ffffff; border-radius: 12px; border-left: 4px solid #3b82f6; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                      <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
-                        <div style="width: 60px; height: 60px; background: #3b82f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                          <span style="color: #ffffff; font-size: 20px; font-weight: bold;">10%</span>
-                        </div>
-                        <div style="flex: 1;">
-                          <p style="margin: 0; font-size: 18px; font-weight: bold; color: #111827;">
-                            <strong>10% OFF</strong> – use code
+          <!-- 10% OFF Coupon Box (Smaller/More Compact) -->
+          <tr>
+            <td style="padding: 0 120px 20px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
+                <tr>
+                  <td style="padding: 12px 16px;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td width="40" style="vertical-align: middle;">
+                          <!-- Teal Circle Badge (Smaller) -->
+                          <table cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td style="width: 36px; height: 36px; background: #4EB5C0; border-radius: 50%; text-align: center; vertical-align: middle;">
+                                <span style="color: #ffffff; font-size: 10px; font-weight: 700;">10%</span>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                        <td style="padding-left: 10px; vertical-align: middle;">
+                          <p style="margin: 0; font-size: 13px; font-weight: 700; color: #111827;">
+                            10% OFF – use code
                           </p>
-                          <p style="margin: 4px 0 0; font-size: 12px; color: #6b7280;">
+                          <p style="margin: 2px 0 0; font-size: 11px; color: #6b7280;">
                             Valid for 72 hours
                           </p>
-                        </div>
-                      </div>
-                      <div style="text-align: center;">
-                        <p style="margin: 0 0 12px; font-size: 20px; font-weight: bold; color: #111827; letter-spacing: 3px; font-family: monospace;">
-                          ${coupon10Code}
-                        </p>
-                        <a href="mailto:?subject=Coupon Code ${coupon10Code}&body=Coupon Code: ${coupon10Code}%0A%0AUse this code to get 10% off your waste removal quote!" 
-                           style="display: inline-block; background: #3b82f6; color: #ffffff; border: none; border-radius: 8px; padding: 12px 32px; font-size: 16px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M13.3333 6H7.33333C6.59695 6 6 6.59695 6 7.33333V13.3333C6 14.0697 6.59695 14.6667 7.33333 14.6667H13.3333C14.0697 14.6667 14.6667 14.0697 14.6667 13.3333V7.33333C14.6667 6.59695 14.0697 6 13.3333 6Z" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M3.33333 10H2.66667C2.31305 10 2 9.68695 2 9.33333V3.33333C2 2.97971 2.31305 2.66667 2.66667 2.66667H8.66667C9.02029 2.66667 9.33333 2.97971 9.33333 3.33333V4" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                          </svg>
-                          Copy Coupon
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
+                        </td>
+                      </tr>
+                    </table>
+                    <!-- Copy Coupon Button (Smaller) -->
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 10px;">
+                      <tr>
+                        <td align="center">
+                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=I want to use my 10%25 discount code: ${coupon10Code}&body=Hi,%0A%0AI would like to use my 10%25 discount coupon code: ${coupon10Code}%0A%0APlease help me proceed with my waste removal quote.%0A%0AThank you!" 
+                             style="display: inline-block; background: #4EB5C0; color: #ffffff; border-radius: 16px; padding: 8px 20px; font-size: 12px; font-weight: 600; text-decoration: none;">
+                            Copy Coupon 📋
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-              <!-- Call to Action Section -->
-              <tr>
-                <td style="padding:32px 24px; text-align: center; background: #ffffff;">
-                  <h2 style="margin: 0 0 16px; font-size: 24px; font-weight: bold; color: #111827;">
-                    <strong>This Offer Is Limited</strong>
-                  </h2>
-                  <p style="margin: 0; font-size: 16px; color: #374151; line-height: 1.6;">
-                    Don't miss out, <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}" style="color: #28c152; text-decoration: none; font-weight: 600;">reply to this email</a> to confirm the quotation and let our team create your order!
-                  </p>
-                </td>
-              </tr>
+          <!-- This Offer Is Limited Section -->
+          <tr>
+            <td style="padding: 20px 50px 24px; text-align: center;">
+              <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #111827;">
+                This Offer Is Limited
+              </h2>
+              <p style="margin: 0; font-size: 13px; color: #374151; line-height: 1.6;">
+                Don't miss out, <strong>reply to this email</strong> to confirm the quotation and let our team create your order!
+              </p>
+            </td>
+          </tr>
 
-              <!-- Footer -->
-              <tr>
-                <td style="padding:24px; background: #ffffff; border-top: 1px solid #e5e7eb;">
-                  <table width="100%" cellpadding="0" cellspacing="0" border="0">
-                    <tr>
-                      <td style="vertical-align: middle;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                          <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1766528514/Group_1261156245_ngvccs.png" 
-                               alt="London Waste Management" 
-                               style="max-width: 120px; height: auto;" />
-                          <span style="font-size: 14px; color: #374151; font-weight: 600;">London Waste Management</span>
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M8 0L9.79772 5.52786L15.6085 5.52786L10.9054 8.94427L12.7031 14.4721L8 11.0557L3.29686 14.4721L5.09458 8.94427L0.391441 5.52786L6.20228 5.52786L8 0Z" fill="#28c152"/>
-                          </svg>
-                        </div>
-                        <p style="margin: 8px 0 0; font-size: 12px; color: #6b7280;">
-                          Remove, Recycle & Upcycle
-                        </p>
-                      </td>
-                      <td align="right" style="vertical-align: middle;">
-                        <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                          <a href="https://www.facebook.com" style="display: inline-block; width: 32px; height: 32px; background: #1877f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none;">
-                            <span style="color: #ffffff; font-weight: bold; font-size: 14px;">f</span>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 50px 70px 24px; border-top: 1px solid #e5e7eb;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <!-- Left: Logo + Company Info -->
+                  <td style="vertical-align: middle;" align="left">
+                    <table cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="vertical-align: middle; padding-right: 8px;">
+                          <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768385074/Profile_Picture_3_rjvnzp.png" 
+                               alt="LWM" 
+                               style="width: 26px; height: 26px; border-radius: 50%;" />
+                        </td>
+                        <td style="vertical-align: middle;">
+                          <p style="margin: 0; font-size: 11px; color: #111827; font-weight: 700; line-height: 1.3;">
+                            London Waste Management <span style="color: #28c152;">✓</span>
+                          </p>
+                          <p style="margin: 1px 0 0 0; font-size: 8px; color: #28c152; line-height: 1;">
+                            Remove, Recycle & Upcycle
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <!-- Right: Social Icons -->
+                  <td style="vertical-align: middle;" align="right">
+                    <table cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="padding-left: 6px;">
+                          <a href="https://www.facebook.com/rubbishlovers" style="text-decoration: none;">
+                            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_5_r8avxw.png" 
+                                 alt="Facebook" 
+                                 style="width: 24px; height: 24px;" />
                           </a>
-                          <a href="https://www.instagram.com" style="display: inline-block; width: 32px; height: 32px; background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-                              <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
-                            </svg>
+                        </td>
+                        <td style="padding-left: 6px;">
+                          <a href="https://www.instagram.com/londonwastemanagementuk/" style="text-decoration: none;">
+                            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_6_zilxrc.png" 
+                                 alt="Instagram" 
+                                 style="width: 24px; height: 24px;" />
                           </a>
-                          <a href="https://www.linkedin.com" style="display: inline-block; width: 32px; height: 32px; background: #0077b5; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none;">
-                            <span style="color: #ffffff; font-weight: bold; font-size: 12px;">in</span>
+                        </td>
+                        <td style="padding-left: 6px;">
+                          <a href="https://www.linkedin.com/company/londonwastemanagement" style="text-decoration: none;">
+                            <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768468200/samples/Group_7_ksbcqr.png" 
+                                 alt="LinkedIn" 
+                                 style="width: 24px; height: 24px;" />
                           </a>
-                          <a href="https://www.twitter.com" style="display: inline-block; width: 32px; height: 32px; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none;">
-                            <span style="color: #000000; font-weight: bold; font-size: 14px;">X</span>
-                          </a>
-                        </div>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-    </body>
-    </html>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+        
+        <!--[if gte mso 9]>
+          </v:textbox>
+        </v:rect>
+        <![endif]-->
+        
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
   `;
 
-    const mailOptions = {
-        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
-        to: customerEmail,
-        replyTo: process.env.EMAIL_USER,
-        subject: addStagingToSubject('Save Up To 20% On Your Waste Removal Quote'),
-        html: addStagingBanner(html),
-    };
+  const mailOptions = {
+    from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+    to: customerEmail,
+    replyTo: process.env.EMAIL_USER,
+    subject: addStagingToSubject('Save Up To 20% On Your Waste Removal Quote'),
+    html: addStagingBanner(html),
+  };
 
-    try {
-        console.log('Sending quotation retargeting email to customer:', customerEmail);
-        const result = await transporter.sendMail(mailOptions);
-        console.log('Quotation retargeting email sent successfully!', {
-            to: customerEmail,
-            messageId: result.messageId,
-        });
-        return result;
-    } catch (error) {
-        console.error('Error sending quotation retargeting email:', error);
-        throw error;
-    }
+  try {
+    console.log('Sending quotation retargeting email to customer:', customerEmail);
+    const result = await transporter.sendMail(mailOptions);
+    console.log('Quotation retargeting email sent successfully!', {
+      to: customerEmail,
+      messageId: result.messageId,
+    });
+    return result;
+  } catch (error) {
+    console.error('Error sending quotation retargeting email:', error);
+    throw error;
+  }
 };
 
 module.exports = { sendQuotationRetargetingEmail };
