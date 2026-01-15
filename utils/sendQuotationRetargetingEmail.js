@@ -127,7 +127,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Intro Text -->
           <tr>
-            <td class="intro-padding" style="padding: 14px 70px 10px; text-align: center;">
+            <td class="intro-padding" style="padding: 14px 24px 10px; text-align: center;">
               <p style="margin: 0; font-size: 14px; color: #ffffff; line-height: 1.5; font-style: bold;">
                 We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
               </p>
@@ -136,7 +136,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Second Intro Text -->
           <tr>
-            <td class="intro-padding" style="padding: 16px 70px 16px; text-align: center;">
+            <td class="intro-padding" style="padding: 16px 24px 16px; text-align: center;">
               <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
@@ -145,7 +145,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- 20% OFF Coupon Box -->
           <tr>
-            <td class="coupon-20-padding" style="padding: 0 100px 8px;">
+            <td class="coupon-20-padding" style="padding: 0 20px 8px;">
               <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 16px 20px;">
@@ -175,7 +175,7 @@ const sendQuotationRetargetingEmail = async ({
                     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 14px;">
                       <tr>
                         <td align="center">
-                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=20%25 OFF Coupon: ${coupon20Code} - Please help me proceed with my waste removal quote&body=Hi,%0A%0AMy 20%25 discount coupon code is: ${coupon20Code}%0A%0AThank you!" 
+                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=I%20want%20to%20use%20my%2020%25%20discount%20code:%20${coupon20Code}&body=Hi,%0A%0AI%20would%20like%20to%20use%20my%2020%25%20discount%20coupon%20code:%20${coupon20Code}%0A%0APlease%20help%20me%20proceed%20with%20my%20waste%20removal%20quote.%0A%0AThank%20you!" 
                              style="display: inline-block; background: #28c152; color: #ffffff; border-radius: 20px; padding: 10px 24px; font-size: 13px; font-weight: 600; text-decoration: none;">
                             Copy Coupon 
                           </a>
@@ -190,7 +190,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- 10% OFF Coupon Box (Smaller/More Compact) -->
           <tr>
-            <td class="coupon-10-padding" style="padding: 0 120px 20px;">
+            <td class="coupon-10-padding" style="padding: 0 40px 20px;">
               <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 12px 16px;">
@@ -220,7 +220,7 @@ const sendQuotationRetargetingEmail = async ({
                     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 10px;">
                       <tr>
                         <td align="center">
-                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=10%25 OFF Coupon: ${coupon10Code} - Please help me proceed with my waste removal quote&body=Hi,%0A%0AMy 10%25 discount coupon code is: ${coupon10Code}%0A%0AThank you!" 
+                          <a href="mailto:${process.env.EMAIL_USER || 'hello@londonwastemanagement.com'}?subject=I%20want%20to%20use%20my%2010%25%20discount%20code:%20${coupon10Code}&body=Hi,%0A%0AI%20would%20like%20to%20use%20my%2010%25%20discount%20coupon%20code:%20${coupon10Code}%0A%0APlease%20help%20me%20proceed%20with%20my%20waste%20removal%20quote.%0A%0AThank%20you!" 
                              style="display: inline-block; background: #4EB5C0; color: #ffffff; border-radius: 16px; padding: 8px 20px; font-size: 12px; font-weight: 600; text-decoration: none;">
                             Copy Coupon
                           </a>
@@ -247,7 +247,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Footer -->
           <tr>
-            <td class="footer-padding" style="padding: 72px 70px 24px; border-top: 1px solid #e5e7eb;">
+            <td class="footer-padding" style="padding: 32px 20px 24px; border-top: 1px solid #e5e7eb;">
               <table class="footer-table" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Left: Logo + Company Info -->
