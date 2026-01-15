@@ -127,7 +127,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Intro Text -->
           <tr>
-            <td class="intro-padding" style="padding: 14px 24px 10px; text-align: center;">
+            <td style="padding: 14px 50px 10px; text-align: center;">
               <p style="margin: 0; font-size: 14px; color: #ffffff; line-height: 1.5; font-style: bold;">
                 We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
               </p>
@@ -136,7 +136,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Second Intro Text -->
           <tr>
-            <td class="intro-padding" style="padding: 16px 24px 16px; text-align: center;">
+            <td style="padding: 16px 50px 16px; text-align: center;">
               <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
@@ -145,8 +145,8 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- 20% OFF Coupon Box -->
           <tr>
-            <td class="coupon-20-padding" style="padding: 0 20px 8px;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
+            <td align="center" style="padding: 0 20px 8px;">
+              <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 400px; background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 16px 20px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -190,8 +190,8 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- 10% OFF Coupon Box (Smaller/More Compact) -->
           <tr>
-            <td class="coupon-10-padding" style="padding: 0 40px 20px;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
+            <td align="center" style="padding: 0 20px 20px;">
+              <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 340px; background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 12px 16px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -247,12 +247,12 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Footer -->
           <tr>
-            <td class="footer-padding" style="padding: 32px 20px 24px; border-top: 1px solid #e5e7eb;">
-              <table class="footer-table" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <td style="padding: 32px 70px 24px 60px; border-top: 1px solid #e5e7eb;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Left: Logo + Company Info -->
-                  <td class="footer-left" style="vertical-align: middle;" align="left">
-                    <table class="footer-logo-table" cellpadding="0" cellspacing="0" border="0">
+                  <td style="vertical-align: middle;" align="left">
+                    <table cellpadding="0" cellspacing="0" border="0">
                       <tr>
                         <td style="vertical-align: middle; padding-right: 10px;">
                           <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768385074/Profile_Picture_3_rjvnzp.png" 
