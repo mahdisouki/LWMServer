@@ -251,7 +251,7 @@ const sendRetargetingEmail = async ({
                                         <tr>
                                             <td align="center" class="content-cell" style="padding: 0 50px;">
                                                 <!-- BOOKING CARD -->
-                                                <table border="0" cellpadding="0" cellspacing="0" width="380" class="booking-card" style="width: 380px; max-width: 380px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); background-color: #ffffff; margin-bottom: -100px; position: relative; z-index: 10;">
+                                                <table border="0" cellpadding="0" cellspacing="0" width="380" class="booking-card" style="width: 380px; max-width: 380px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); background-color: #ffffff; position: relative; z-index: 10;">
                                                     <!-- Card Header -->
                                                     <tr>
                                                         <td style="background-color: #5bb35f; padding: 12px 20px;">
@@ -316,30 +316,23 @@ const sendRetargetingEmail = async ({
                                                             </table>
                                                         </td>
                                                     </tr>
-                                                </table>
-                                            </td>
-                                        </tr>
 
-                                        <!-- Curved Wave Shape -->
-                                        <tr>
-                                            <td align="center" style="background-color: transparent; line-height: 0; font-size: 0; margin: 0; padding: 0; width: 100%;">
-                                                <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 80' preserveAspectRatio='none'%3E%3Cpath d='M0,0 Q300,80 600,0 L600,80 L0,80 Z' fill='%23ffffff'/%3E%3C/svg%3E" alt="" width="100%" height="80" style="display: block; width: 100%; height: auto; margin: 0; padding: 0;" />
-                                            </td>
-                                        </tr>
-
-                                        <!-- 10% Coupon - in white section -->
-                                        <tr>
-                                            <td align="center" style="background-color: #ffffff; padding: 0 40px;">
-                                                <table border="0" cellpadding="0" cellspacing="0" width="240" class="small-coupon" style="max-width: 240px; border: 1px solid #eee; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); background-color: #ffffff; margin-top: -65px; position: relative; z-index: 10;">
+                                                    <!-- 10% Coupon - inside booking card -->
                                                     <tr>
-                                                        <td width="30" align="center" style="border-right: 1px dashed #ddd; vertical-align: middle;">
-                                                            <p style="font-size: 9px; color: #aaa; margin: 0; padding: 5px; writing-mode: vertical-rl; transform: rotate(180deg);">
-                                                                ${discount10Percentage}%</p>
-                                                        </td>
-                                                        <td style="padding: 10px;">
-                                                            <p style="font-weight: bold; font-size: 13px; margin: 0 0 5px 0;">
-                                                                ${coupon10Code}</p>
-                                                            <a href="${applyCodeUrl10}" style="border: 1px solid #4CAF50; padding: 4px 12px; border-radius: 12px; color: #4CAF50; text-decoration: none; font-size: 10px; font-weight: bold; display: inline-block;">Apply Code</a>
+                                                        <td style="padding: 0 15px 15px 15px;">
+                                                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #eee; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); background-color: #ffffff;">
+                                                                <tr>
+                                                                    <td width="30" align="center" style="border-right: 1px dashed #ddd; vertical-align: middle;">
+                                                                        <p style="font-size: 9px; color: #aaa; margin: 0; padding: 5px; writing-mode: vertical-rl; transform: rotate(180deg);">
+                                                                            ${discount10Percentage}%</p>
+                                                                    </td>
+                                                                    <td style="padding: 10px;">
+                                                                        <p style="font-weight: bold; font-size: 13px; margin: 0 0 5px 0;">
+                                                                            ${coupon10Code}</p>
+                                                                        <a href="${applyCodeUrl10}" style="border: 1px solid #4CAF50; padding: 4px 12px; border-radius: 12px; color: #4CAF50; text-decoration: none; font-size: 10px; font-weight: bold; display: inline-block;">Apply Code</a>
+                                                                    </td>
+                                                                </tr>
+                                                            </table>
                                                         </td>
                                                     </tr>
                                                 </table>
