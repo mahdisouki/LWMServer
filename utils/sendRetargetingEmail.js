@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
+const { createCountdownTimer } = require('./countdownMail');
 
 const sendRetargetingEmail = async ({
   customerEmail,
@@ -60,6 +61,20 @@ const sendRetargetingEmail = async ({
   const minutes20 = Math.floor((timeRemaining20 % (1000 * 60 * 60)) / (1000 * 60));
   const seconds20 = Math.floor((timeRemaining20 % (1000 * 60)) / 1000);
   const countdown20 = `${String(hours20).padStart(2, '0')}:${String(minutes20).padStart(2, '0')}:${String(seconds20).padStart(2, '0')}`;
+
+  // Create real CountdownMail timer via API
+  let countdownTimerUrl = null;
+  try {
+    const countdownTimer = await createCountdownTimer({
+      name: `20% Discount - ${customerEmail}`,
+      expiresAt: expires20.toISOString().replace("T", " ").slice(0, 19),
+      timezone: "Europe/London"
+    });
+    countdownTimerUrl = countdownTimer.src;
+    console.log(`✅ CountdownMail timer created for retargeting: ${countdownTimer.code}`);
+  } catch (error) {
+    console.error('⚠️ Failed to create CountdownMail timer, using fallback:', error.message);
+  }
 
   // Build items list HTML with new design
   const itemsList = items.map(item => {
@@ -207,7 +222,7 @@ const sendRetargetingEmail = async ({
                                         <tr>
                                             <td align="center" style="padding: 0 20px;">
                                                 <!-- OVERLAPPING CARD -->
-                                                <table border="0" cellpadding="0" cellspacing="0" width="480" class="booking-card" style="width: 100%; max-width: 480px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);z-index:999">
+                                                <table border="0" cellpadding="0" cellspacing="0" width="480" class="booking-card" style="width: 100%; max-width: 480px;  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15);z-index:999">
                                                     <!-- Card Header -->
                                                     <tr>
                                                         <td style="background-color: #5bb35f; padding: 12px 20px;">
@@ -260,8 +275,9 @@ const sendRetargetingEmail = async ({
                                                                                         ${coupon20Code}</p>
                                                                                 </td>
                                                                                 <td align="right">
-                                                                                    <p style="font-size: 11px; color: #555; margin: 0;">
-                                                                                        ⏱ ${countdown20}</p>
+                                                                                    <p style="font-size: 12px; color: #6b7280; margin: 0; display: flex; align-items: center; justify-content: flex-end;">
+                                                                                        ${countdownTimerUrl ? `Ends soon <img src="${countdownTimerUrl}" alt="Timer" width="120" style="display:inline-block; vertical-align:middle; margin-left:8px; height:auto; max-width:120px;" />` : `Ends in ⏳ ${countdown20}`}
+                                                                                    </p>
                                                                                 </td>
                                                                             </tr>
                                                                         </table>
@@ -307,8 +323,8 @@ const sendRetargetingEmail = async ({
                                                     just reply, we're here to help.
                                                 </p>
                                                 <p style="font-size: 13px; color: #4CAF50; line-height: 1.4; margin: 0;">
-                                                    Take advantage of your ${discount10Percentage}% discount, you have<br />
-                                                    ${hoursRemaining10} hours to use your coupon
+                                                    Take advantage of your ${discount10Percentage}% discount<br />
+                                                 
                                                 </p>
                                             </td>
                                         </tr>
