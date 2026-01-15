@@ -105,7 +105,7 @@ const sendRetargetingEmail = async ({
     `;
     }).join('');
 
-    const baseUrl = 'https://londonwastemanagement.uk/';
+    const baseUrl = 'https://client.londonwastemanagement.uk/';
     const applyCodeUrl20 = `${baseUrl}`
     const applyCodeUrl10 = `${baseUrl}`;
 
@@ -174,7 +174,7 @@ const sendRetargetingEmail = async ({
             <tr>
                 <td align="center">
                     <!-- Main Container (Max 600px) with full gradient background -->
-                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-color: #2fb344; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768503276/samples/Group_1000008589_1_ryjrnz.png'); background-size: 100% auto; background-position: top center; background-repeat: no-repeat;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768503276/samples/Group_1000008589_1_ryjrnz.png'); background-size: 100% auto; background-position: top center; background-repeat: no-repeat;">
                         <!-- 1. HEADER SECTION -->
                         <tr>
                             <td align="center" style="height: 350px;">
@@ -220,7 +220,7 @@ const sendRetargetingEmail = async ({
                                         <tr>
                                             <td align="center" class="content-cell" style="padding: 0 50px;">
                                                 <!-- BOOKING CARD -->
-                                                <table border="0" cellpadding="0" cellspacing="0" width="320" class="booking-card" style="width: 320px; max-width: 320px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); background-color: #ffffff; margin-bottom: -100px; position: relative; z-index: 10;">
+                                                <table border="0" cellpadding="0" cellspacing="0" width="380" class="booking-card" style="width: 380px; max-width: 380px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); background-color: #ffffff; margin-bottom: -100px; position: relative; z-index: 10;">
                                                     <!-- Card Header -->
                                                     <tr>
                                                         <td style="background-color: #5bb35f; padding: 12px 20px;">
@@ -266,19 +266,11 @@ const sendRetargetingEmail = async ({
                                                                     <td style="padding: 15px;">
                                                                         <p style="font-size: 13px; font-weight: bold; color: #333; margin: 0 0 5px 0;">
                                                                             ${discount20Percentage} % Offered Discount!</p>
-                                                                        <table width="100%">
-                                                                            <tr>
-                                                                                <td>
-                                                                                    <p style="font-family: monospace; font-size: 16px; font-weight: bold; color: #000; margin: 0; letter-spacing: 1px;">
-                                                                                        ${coupon20Code}</p>
-                                                                                </td>
-                                                                                <td align="right">
-                                                                                    <p style="font-size: 12px; color: #6b7280; margin: 0; display: flex; align-items: center; justify-content: flex-end;">
-                                                                                        ${countdownTimerUrl ? `Ends soon <img src="${countdownTimerUrl}" alt="Timer" width="120" style="display:inline-block; vertical-align:middle; margin-left:8px; height:auto; max-width:120px;" />` : `Ends in ⏳ ${countdown20}`}
-                                                                                    </p>
-                                                                                </td>
-                                                                            </tr>
-                                                                        </table>
+                                                                        <p style="font-family: monospace; font-size: 16px; font-weight: bold; color: #000; margin: 0 0 8px 0; letter-spacing: 1px;">
+                                                                            ${coupon20Code}</p>
+                                                                        <p style="font-size: 12px; color: #6b7280; margin: 0 0 5px 0;">
+                                                                            ${countdownTimerUrl ? `Ends soon <img src="${countdownTimerUrl}" alt="Timer" width="100" style="display:inline-block; vertical-align:middle; margin-left:8px; height:auto; max-width:100px;" />` : `Ends in ⏳ ${countdown20}`}
+                                                                        </p>
                                                                         <p style="font-size: 11px; color: #666; margin: 5px 0 12px 0;">
                                                                             Save <b>£${(originalTotal - discountedTotal20).toFixed(2)}</b> on this Order${minFeeApplied20 ? ` <span style="font-size: 10px; color: #f59e0b;">*Min fee £45 applies</span>` : ''}<br /><a href="https://www.londonwastemanagement.com/terms-conditions/" style="font-size: 9px; color: #666; text-decoration: underline;">*Terms & conditions</a></p>
                                                                         <table width="100%">

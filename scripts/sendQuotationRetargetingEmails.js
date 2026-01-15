@@ -18,16 +18,15 @@ const connectDB = async () => {
   }
 };
 
-// Generate unique coupon code
-const generateCouponCode = async (prefix = 'QUOTE') => {
+// Generate unique 8-character coupon code
+const generateCouponCode = async () => {
   let code;
   let isUnique = false;
   let attempts = 0;
   const maxAttempts = 10;
 
   while (!isUnique && attempts < maxAttempts) {
-    const randomSuffix = Math.random().toString(36).substring(2, 12).toUpperCase();
-    code = `${prefix}${Date.now().toString().substring(6)}${randomSuffix}`;
+    code = Math.random().toString(36).substring(2, 10).toUpperCase();
     
     const existing = await Coupon.findOne({ code });
     if (!existing) {

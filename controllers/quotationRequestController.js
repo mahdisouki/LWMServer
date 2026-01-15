@@ -565,10 +565,10 @@ const quotationRequestController = {
 
             if (shouldSendEmail) {
                 try {
-                    // Generate unique coupon codes
-                    const timestamp = Date.now().toString().slice(-8);
-                    const coupon20Code = `QUOTE20${timestamp}${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
-                    const coupon10Code = `QUOTE10${timestamp}${Math.random().toString(36).substring(2, 5).toUpperCase()}`;
+                    // Generate unique 8-character coupon codes
+                    const generateShortCode = () => Math.random().toString(36).substring(2, 10).toUpperCase();
+                    const coupon20Code = generateShortCode();
+                    const coupon10Code = generateShortCode();
 
                     // Calculate expiration dates
                     const emailSentAt = new Date();
