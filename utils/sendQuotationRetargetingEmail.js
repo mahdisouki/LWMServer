@@ -99,7 +99,7 @@ const sendQuotationRetargetingEmail = async ({
         <![endif]-->
 
         <table width="600" cellpadding="0" cellspacing="0" border="0" class="main-table"
-          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png'); background-size: 100% auto; background-repeat: no-repeat; background-position: top center;">
+          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png'); background-size: 600px auto; background-repeat: no-repeat; background-position: top center;">
 
           <!-- Header Content (on top of background) -->
           <tr>
@@ -235,7 +235,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- This Offer Is Limited Section -->
           <tr>
-            <td class="offer-padding" style="padding: 20px 50px 24px; text-align: center;">
+            <td class="offer-padding" style="padding: 20px 70px 24px; text-align: center;">
               <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #111827;">
                 This Offer Is Limited
               </h2>
@@ -247,12 +247,12 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 32px 70px 24px 60px; border-top: 1px solid #e5e7eb;">
-              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <td class="footer-padding" style="padding: 48px 70px 24px 60px; border-top: 1px solid #e5e7eb;">
+              <table class="footer-table" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Left: Logo + Company Info -->
-                  <td style="vertical-align: middle;" align="left">
-                    <table cellpadding="0" cellspacing="0" border="0">
+                  <td class="footer-left" style="vertical-align: middle;" align="left">
+                    <table class="footer-logo-table" cellpadding="0" cellspacing="0" border="0">
                       <tr>
                         <td style="vertical-align: middle; padding-right: 10px;">
                           <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768385074/Profile_Picture_3_rjvnzp.png" 
