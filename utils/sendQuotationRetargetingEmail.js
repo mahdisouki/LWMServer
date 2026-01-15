@@ -114,7 +114,7 @@ const sendQuotationRetargetingEmail = async ({
           <!-- Intro Text -->
           <tr>
             <td style="padding: 14px 70px 10px; text-align: center;">
-              <p style="margin: 0; font-size: 12px; color: #ffffff; line-height: 1.5; font-style: italic;">
+              <p style="margin: 0; font-size: 14px; color: #ffffff; line-height: 1.5; font-style: bold;">
                 We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
               </p>
             </td>
@@ -123,7 +123,7 @@ const sendQuotationRetargetingEmail = async ({
           <!-- Second Intro Text -->
           <tr>
             <td style="padding: 16px 70px 16px; text-align: center;">
-              <p style="margin: 0; font-size: 11px; color: #374151; line-height: 1.5;">
+              <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
             </td>
@@ -240,16 +240,16 @@ const sendQuotationRetargetingEmail = async ({
                   <td style="vertical-align: middle;" align="left">
                     <table cellpadding="0" cellspacing="0" border="0">
                       <tr>
-                        <td style="vertical-align: middle; padding-right: 8px;">
+                        <td style="vertical-align: middle; padding-right: 10px;">
                           <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768385074/Profile_Picture_3_rjvnzp.png" 
                                alt="LWM" 
-                               style="width: 32px; height: 32px; border-radius: 50%;" />
+                               style="width: 48px; height: 48px; border-radius: 50%;" />
                         </td>
                         <td style="vertical-align: middle;">
-                          <p style="margin: 0; font-size: 11px; color: #111827; font-weight: 700; line-height: 1.3;">
+                          <p style="margin: 0; font-size: 14px; color: #111827; font-weight: 700; line-height: 1.3;">
                             London Waste Management 
                           </p>
-                          <p style="margin: 1px 0 0 0; font-size: 8px; color: #28c152; line-height: 1;">
+                          <p style="margin: 2px 0 0 0; font-size: 11px; color: #28c152; line-height: 1;">
                             Remove, Recycle & Upcycle
                           </p>
                         </td>

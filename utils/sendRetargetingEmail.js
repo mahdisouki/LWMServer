@@ -205,7 +205,7 @@ const sendRetargetingEmail = async ({
                                     <tr>
                                         <td align="center" style="padding: 0 50px;">
                                             <p style="color: #030202; font-size: 14px; margin: 0; line-height: 1.5; font-weight: 500; opacity: 0.9;">
-                                                Complete your booking in the next ${hoursRemaining20} hours and enjoy premium<br />
+                                                Complete your booking in the next 24 hours and enjoy premium<br />
                                                 waste management at a better price
                                             </p>
                                         </td>
