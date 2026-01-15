@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
+const { createCountdownTimer } = require('./countdownMail');
 
 const sendQuotationRetargetingEmail = async ({
   customerEmail,
@@ -22,9 +23,21 @@ const sendQuotationRetargetingEmail = async ({
   const expires20 = expiresAt20 ? new Date(expiresAt20) : new Date(now.getTime() + (24 * 60 * 60 * 1000));
   const expires10 = expiresAt10 ? new Date(expiresAt10) : new Date(now.getTime() + (72 * 60 * 60 * 1000));
 
-  // Generate dynamic countdown timer URL using countdownmail.com (free email countdown timer service)
-  // This creates an animated GIF that counts down in real-time
-  const countdownTimerUrl = `https://i.countdownmail.com/2/hashCode.gif?${expires20.toISOString()}&timezone=Europe%2FLondon&font=cursive&width=200&height=50&fntclr=28c152&kn498g98=60`;
+  // Create real CountdownMail timer via API
+  let countdownTimerUrl = null;
+  let countdownTimerCode = null;
+  try {
+    const countdownTimer = await createCountdownTimer({
+      name: `20% Discount - ${customerEmail}`,
+      expiresAt: expires20.toISOString().replace("T", " ").slice(0, 19),
+      timezone: "Europe/London"
+    });
+    countdownTimerUrl = countdownTimer.src;
+    countdownTimerCode = countdownTimer.code;
+    console.log(`✅ CountdownMail timer created: ${countdownTimerCode}`);
+  } catch (error) {
+    console.error('⚠️ Failed to create CountdownMail timer, using fallback:', error.message);
+  }
 
   // Fallback static countdown for email clients that don't support external images
   const timeRemaining20 = Math.max(0, expires20 - now);
@@ -139,11 +152,26 @@ const sendQuotationRetargetingEmail = async ({
                             20% OFF – use code
                           </p>
                           <p style="margin: 3px 0 0; font-size: 12px; color: #6b7280;">
-                            Ends in ⏳ ${countdown20}
+                            ${countdownTimerUrl ? 'Ends soon' : `Ends in ⏳ ${countdown20}`}
                           </p>
                         </td>
                       </tr>
                     </table>
+                    ${countdownTimerUrl ? `
+                    <!-- Countdown Timer GIF -->
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 10px;">
+                      <tr>
+                        <td style="padding: 10px 0; text-align:center;">
+                          <img 
+                            src="${countdownTimerUrl}" 
+                            alt="Countdown Timer"
+                            width="240"
+                            style="display:block; margin:0 auto; max-width:240px; height:auto;"
+                          />
+                        </td>
+                      </tr>
+                    </table>
+                    ` : ''}
                     <!-- Copy Coupon Button -->
                     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 14px;">
                       <tr>
