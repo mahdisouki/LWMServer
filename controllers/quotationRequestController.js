@@ -167,16 +167,16 @@ const quotationRequestController = {
                 startDate,
                 endDate,
                 reason,
-                status, // 'accepted', 'rejected', 'pending'
-                statusDateStart, // Filter by status date (Task createdAt for accepted, QuotationRequest updatedAt for rejected)
+                status,
+                statusDateStart,
                 statusDateEnd,
                 sortBy = 'createdAt',
                 sortOrder = 'desc'
             } = req.query;
-
+    
             // Build the query
             let query = {};
-
+    
             // Add search condition if keyword exists
             if (keyword) {
                 query = {
@@ -189,7 +189,7 @@ const quotationRequestController = {
                     ]
                 };
             }
-
+    
             // Add date range if provided (for quotation creation date)
             if (startDate || endDate) {
                 query.createdAt = {};
@@ -200,32 +200,34 @@ const quotationRequestController = {
                     query.createdAt.$lte = new Date(endDate);
                 }
             }
-
+    
             // Add reason filter if provided
             if (reason) {
                 if (reason === 'other') {
-                    // When filtering by "other", filter by customReason field
                     query.reason = 'other';
                     query.customReason = { $exists: true, $ne: null, $ne: '' };
                 } else {
-                    // For predefined reasons, filter by reason field
                     query.reason = reason;
                 }
             }
-
+    
             // Build sort object
             const sort = {};
             sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
-
-            // If status or statusDate filtering is needed, fetch all matching quotations first
-            // Otherwise, apply pagination at database level for better performance
+    
+            // Check if status or statusDate filtering is needed
             const needsStatusFiltering = status || statusDateStart || statusDateEnd;
-
+    
             let quotations;
+            let total;
+    
             if (needsStatusFiltering) {
                 // Fetch all quotations matching the base query (no pagination yet)
                 quotations = await QuotationRequest.find(query).sort(sort);
             } else {
+                // Calculate total count BEFORE pagination
+                total = await QuotationRequest.countDocuments(query);
+                
                 // Apply pagination at database level for better performance
                 const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
                 quotations = await QuotationRequest
@@ -234,77 +236,77 @@ const quotationRequestController = {
                     .skip(skip)
                     .limit(parseInt(limit, 10));
             }
-
+    
             // Get all quotation IDs to check for associated orders
             const quotationIds = quotations.map(q => q._id);
-
+    
             // Find all tasks that have these quotationIds with createdAt dates
             const tasksWithQuotations = await Task.find({
                 quotationId: { $in: quotationIds }
             }).select('quotationId createdAt');
-
+    
             // Create a Map of quotationId -> Task createdAt for quick lookup
             const quotationsWithOrders = new Map();
             tasksWithQuotations.forEach(task => {
                 if (task.quotationId) {
                     const quotationIdStr = task.quotationId.toString();
-                    // If multiple tasks exist, keep the earliest one (first order)
                     if (!quotationsWithOrders.has(quotationIdStr) ||
                         task.createdAt < quotationsWithOrders.get(quotationIdStr)) {
                         quotationsWithOrders.set(quotationIdStr, task.createdAt);
                     }
                 }
             });
-
+    
             // Add status and statusDate fields to each quotation using model method
             let quotationsWithStatus = quotations.map(quotation => {
                 const quotationObj = quotation.toObject();
                 const quotationIdStr = quotation._id.toString();
                 const taskCreatedAt = quotationsWithOrders.get(quotationIdStr) || null;
-
-                // Use the model's instance method to compute status
+    
                 const statusInfo = quotation.getStatusSync(taskCreatedAt);
                 quotationObj.status = statusInfo.status;
                 quotationObj.statusDate = statusInfo.statusDate;
                 quotationObj.hasOrder = statusInfo.hasOrder;
-
+    
                 return quotationObj;
             });
-
+    
             // Filter by status if provided
             if (status) {
                 quotationsWithStatus = quotationsWithStatus.filter(q => q.status === status);
             }
-
+    
             // Filter by status date range if provided
             if (statusDateStart || statusDateEnd) {
                 quotationsWithStatus = quotationsWithStatus.filter(q => {
-                    if (!q.statusDate) return false; // Skip pending quotes without statusDate
-
+                    if (!q.statusDate) return false;
                     const statusDate = new Date(q.statusDate);
                     if (statusDateStart && statusDate < new Date(statusDateStart)) return false;
                     if (statusDateEnd && statusDate > new Date(statusDateEnd)) return false;
                     return true;
                 });
             }
-
-            // Get total count before pagination (for accurate pagination metadata)
-            const total = quotationsWithStatus.length;
-
-            // Apply pagination if status filtering was applied
+    
+            // Calculate total count AFTER status filtering (if status filtering was applied)
             if (needsStatusFiltering) {
+                total = quotationsWithStatus.length;
+                
+                // Apply pagination AFTER status filtering
                 const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
                 quotationsWithStatus = quotationsWithStatus.slice(skip, skip + parseInt(limit, 10));
             }
-
+    
+            // Calculate the number of pages (count)
+            const pageCount = Math.ceil(total / parseInt(limit, 10));
+    
             res.status(200).json({
                 message: "All quotations retrieved successfully",
                 quotations: quotationsWithStatus,
                 meta: {
                     currentPage: parseInt(page, 10),
                     limit: parseInt(limit, 10),
-                    total,
-                    count: quotationsWithStatus.length,
+                    total: total,
+                    count: pageCount, // Fixed: Calculate total pages, not items on current page
                 },
             });
         } catch (error) {
