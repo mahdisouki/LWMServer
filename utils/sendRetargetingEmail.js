@@ -22,6 +22,36 @@ const sendRetargetingEmail = async ({
     expiresAt20,
     expiresAt10
 }) => {
+    console.log('========== RETARGETING EMAIL DEBUG START ==========');
+    console.log('📧 sendRetargetingEmail called with params:');
+    console.log('  - customerEmail:', customerEmail);
+    console.log('  - firstName:', firstName);
+    console.log('  - lastName:', lastName);
+    console.log('  - orderNumber:', orderNumber);
+    console.log('  - coupon20Code:', coupon20Code);
+    console.log('  - coupon10Code:', coupon10Code);
+    console.log('  - discount20Percentage:', discount20Percentage);
+    console.log('  - discount10Percentage:', discount10Percentage);
+    console.log('  - items count:', items?.length || 0);
+    console.log('  - originalTotal:', originalTotal);
+    console.log('  - expiresAt20:', expiresAt20);
+    console.log('  - expiresAt10:', expiresAt10);
+
+    // Validate customerEmail
+    if (!customerEmail) {
+        console.error('❌ ERROR: customerEmail is missing or undefined!');
+        throw new Error('customerEmail is required to send retargeting email');
+    }
+
+    if (!customerEmail.includes('@')) {
+        console.error('❌ ERROR: customerEmail is invalid:', customerEmail);
+        throw new Error('Invalid customerEmail format');
+    }
+
+    console.log('📨 Creating email transporter...');
+    console.log('  - EMAIL_USER configured:', !!process.env.EMAIL_USER);
+    console.log('  - EMAIL_PASSWORD configured:', !!process.env.EMAIL_PASSWORD);
+
     const transporter = nodemailer.createTransport({
         service: 'gmail',
         auth: {
@@ -29,6 +59,17 @@ const sendRetargetingEmail = async ({
             pass: process.env.EMAIL_PASSWORD,
         },
     });
+
+    console.log('✅ Email transporter created successfully');
+
+    // Verify transporter connection
+    try {
+        await transporter.verify();
+        console.log('✅ Email transporter verified - connection is valid');
+    } catch (verifyError) {
+        console.error('❌ Email transporter verification FAILED:', verifyError.message);
+        console.error('  - This means email credentials may be invalid or Gmail access is blocked');
+    }
 
     // Format expiration dates for display
     const formatExpirationDate = (date) => {
@@ -243,7 +284,7 @@ const sendRetargetingEmail = async ({
             <tr>
                 <td align="center">
                     <!-- Main Container (Max 600px) with full gradient background -->
-                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768561253/omar%27s%20new/Group_1000008590_1_fnrucn.png'); background-size: 100% auto; background-position: top center; background-repeat: no-repeat;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768563688/omar%27s%20new/Ignored_Quote_Email_4_rrsgae.png'); background-size: 100% 100%; background-position: top center; background-repeat: no-repeat;">
                         <!-- 1. HEADER SECTION -->
                         <tr>
                             <td align="center" class="header-section" style="height: 350px;">
@@ -372,7 +413,7 @@ const sendRetargetingEmail = async ({
 
                                         <!-- White Background Section - starts at bottom of booking card -->
                                         <tr>
-                                            <td align="center" style="background-color: #ffffff; padding-top: 0;">
+                                            <td align="center" style="padding-top: 0;">
                                                 <!-- 10% Coupon - positioned at top of white section, overlapping card edge -->
                                                 <table border="0" cellpadding="0" cellspacing="0" width="220" align="center" class="small-coupon" style="margin-top: -25px; border: 1px dashed #a5d6a7; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); background-color: #ffffff; overflow: hidden; position: relative; z-index: 5;">
                                                     <tr>
@@ -406,7 +447,7 @@ const sendRetargetingEmail = async ({
 
                                         <!-- Footer Bar -->
                                         <tr>
-                                            <td class="footer-section" style="padding: 20px 30px; border-top: 1px solid #eee; background-color: #ffffff;">
+                                            <td class="footer-section" style="padding: 20px 30px; border-top: 1px solid #eee;">
                                                 <table width="100%">
                                                     <tr>
                                                         <td>
@@ -467,30 +508,47 @@ const sendRetargetingEmail = async ({
         html: addStagingBanner(html),
     };
 
+    console.log('📋 Mail options prepared:');
+    console.log('  - from:', mailOptions.from);
+    console.log('  - to:', mailOptions.to);
+    console.log('  - replyTo:', mailOptions.replyTo);
+    console.log('  - subject:', mailOptions.subject);
+    console.log('  - html length:', mailOptions.html?.length || 0, 'characters');
+
     try {
-        console.log('Sending retargeting email to customer:', customerEmail);
-        console.log('Email configuration:', {
-            from: mailOptions.from,
-            to: mailOptions.to,
-            subject: mailOptions.subject
-        });
+        console.log('🚀 Attempting to send retargeting email...');
+        console.log('  - Timestamp:', new Date().toISOString());
+
         const result = await transporter.sendMail(mailOptions);
-        console.log('Retargeting email sent successfully!', {
-            to: customerEmail,
-            messageId: result.messageId,
-            accepted: result.accepted,
-            rejected: result.rejected,
-            response: result.response
-        });
+
+        console.log('✅ Retargeting email sent successfully!');
+        console.log('  - to:', customerEmail);
+        console.log('  - messageId:', result.messageId);
+        console.log('  - accepted:', JSON.stringify(result.accepted));
+        console.log('  - rejected:', JSON.stringify(result.rejected));
+        console.log('  - response:', result.response);
+        console.log('  - envelope:', JSON.stringify(result.envelope));
 
         // Check if email was rejected
         if (result.rejected && result.rejected.length > 0) {
-            console.error('Email was rejected:', result.rejected);
+            console.error('⚠️ WARNING: Email was rejected by server:', result.rejected);
         }
 
+        // Check if email was accepted
+        if (!result.accepted || result.accepted.length === 0) {
+            console.error('⚠️ WARNING: No accepted recipients! Email may not have been delivered.');
+        }
+
+        console.log('========== RETARGETING EMAIL DEBUG END ==========');
         return result;
     } catch (error) {
-        console.error('Error sending retargeting email:', error);
+        console.error('❌ ERROR sending retargeting email:');
+        console.error('  - Error name:', error.name);
+        console.error('  - Error message:', error.message);
+        console.error('  - Error code:', error.code);
+        console.error('  - Error response:', error.response);
+        console.error('  - Full error:', error);
+        console.log('========== RETARGETING EMAIL DEBUG END (WITH ERROR) ==========');
         throw error;
     }
 };
