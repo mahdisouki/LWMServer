@@ -176,25 +176,63 @@ const sendRetargetingEmail = async ({
                     width: 100% !important;
                 }
                 .booking-card {
-                    width: 100% !important;
-                    max-width: 100% !important;
+                    width: 90% !important;
+                    max-width: 340px !important;
+                    margin: 0 auto !important;
                 }
                 .small-coupon {
-                    width: 90% !important;
-                    max-width: 220px !important;
+                    width: 70% !important;
+                    max-width: 200px !important;
                 }
                 .h1-mobile {
-                    font-size: 28px !important;
+                    font-size: 24px !important;
+                    line-height: 1.2 !important;
                 }
                 .content-cell {
-                    padding-left: 20px !important;
-                    padding-right: 20px !important;
+                    padding-left: 15px !important;
+                    padding-right: 15px !important;
+                }
+                .header-section {
+                    height: auto !important;
+                    min-height: 280px !important;
+                }
+                .header-subtitle {
+                    font-size: 12px !important;
+                    padding: 0 20px !important;
+                }
+                .coupon-code {
+                    font-size: 14px !important;
+                }
+                .footer-section {
+                    padding: 15px 20px !important;
+                }
+                .footer-logo {
+                    width: 40px !important;
+                }
+                .footer-title {
+                    font-size: 13px !important;
+                }
+                .footer-subtitle {
+                    font-size: 11px !important;
                 }
                 .social-icons {
                     display: inline-table !important;
                 }
                 .social-icons td {
                     display: table-cell !important;
+                }
+                .social-icons img {
+                    width: 24px !important;
+                    height: 24px !important;
+                }
+                .white-content-section {
+                    padding: 15px 25px !important;
+                }
+                .white-content-section h2 {
+                    font-size: 18px !important;
+                }
+                .white-content-section p {
+                    font-size: 12px !important;
                 }
             }
         </style>
@@ -205,10 +243,10 @@ const sendRetargetingEmail = async ({
             <tr>
                 <td align="center">
                     <!-- Main Container (Max 600px) with full gradient background -->
-                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768503276/samples/Group_1000008589_1_ryjrnz.png'); background-size: 100% auto; background-position: top center; background-repeat: no-repeat;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768561253/omar%27s%20new/Group_1000008590_1_fnrucn.png'); background-size: 100% auto; background-position: top center; background-repeat: no-repeat;">
                         <!-- 1. HEADER SECTION -->
                         <tr>
-                            <td align="center" style="height: 350px;">
+                            <td align="center" class="header-section" style="height: 350px;">
                                 <table border="0" cellpadding="0" cellspacing="0" width="100%">
                                     <!-- Logo -->
                                     <tr>
@@ -228,8 +266,8 @@ const sendRetargetingEmail = async ({
                                     </tr>
                                     <!-- Subtitle -->
                                     <tr>
-                                        <td align="center" style="padding: 0 50px;">
-                                            <p style="color: #030202; font-size: 14px; margin: 0; line-height: 1.5; font-weight: 500; opacity: 0.9;">
+                                        <td align="center" class="header-subtitle" style="padding: 0 50px;">
+                                            <p class="header-subtitle" style="color: #030202; font-size: 16px; margin: 0; line-height: 1.5; font-weight: 500; opacity: 0.9;">
                                                 Complete your booking in the next 24 hours and enjoy premium<br />
                                                 waste management at a better price
                                             </p>
@@ -284,30 +322,41 @@ const sendRetargetingEmail = async ({
                                                         </td>
                                                     </tr>
 
-                                                    <!-- Green Coupon Section -->
+                                                    <!-- Green Coupon Section - 20% -->
                                                     <tr>
                                                         <td style="padding: 0 15px 15px 15px;">
-                                                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f8e9; border: 1px dashed #66BB6A; border-radius: 8px; overflow: hidden;">
+                                                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #e8f5e9; border: 2px dashed #4CAF50; border-radius: 10px; overflow: hidden;">
                                                                 <tr>
-                                                                    <td width="35" valign="middle" align="center" style="background-color: #4CAF50;">
-                                                                        <p style="font-size: 10px; font-weight: bold; color: #fff; margin:0; line-height: 12px; padding: 10px 5px; text-align: center; writing-mode: vertical-rl;transform: rotate(180deg);">
-                                                                            ${discount20Percentage}% Discount
+                                                                    <td width="40" valign="middle" align="center" style="background-color: #4CAF50; border-radius: 8px 0 0 8px;">
+                                                                        <p style="font-size: 11px; font-weight: bold; color: #fff; margin: 0; line-height: 14px; padding: 15px 8px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.5px;">
+                                                                            ${discount20Percentage}% DISCOUNT
                                                                         </p>
                                                                     </td>
-                                                                    <td style="padding: 15px;">
-                                                                        <p style="font-size: 13px; font-weight: bold; color: #333; margin: 0 0 5px 0;">
-                                                                            ${discount20Percentage} % Offered Discount!</p>
-                                                                        <p style="font-family: monospace; font-size: 16px; font-weight: bold; color: #000; margin: 0 0 8px 0; letter-spacing: 1px;">
-                                                                            ${coupon20Code}</p>
-                                                                        <p style="font-size: 12px; color: #6b7280; margin: 0 0 5px 0;">
-                                                                            ${countdownTimerUrl ? `Ends soon <img src="${countdownTimerUrl}" alt="Timer" width="100" style="display:inline-block; vertical-align:middle; margin-left:8px; height:auto; max-width:100px;" />` : `Ends in ⏳ ${countdown20}`}
+                                                                    <td style="padding: 18px 15px;">
+                                                                        <p style="font-size: 14px; font-weight: bold; color: #333; margin: 0 0 8px 0;">
+                                                                            ${discount20Percentage} % Offered Discount</p>
+                                                                        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 10px;">
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <p style="font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; color: #000; margin: 0; letter-spacing: 2px;">
+                                                                                        ${coupon20Code}</p>
+                                                                                </td>
+                                                                                <td align="right" valign="middle">
+                                                                                    <p style="font-size: 13px; color: #555; margin: 0;">
+                                                                                        ${countdownTimerUrl ? `<img src="${countdownTimerUrl}" alt="Timer" width="90" style="display:inline-block; vertical-align:middle; height:auto; max-width:90px;" />` : `<span style="background-color: #f5f5f5; padding: 4px 8px; border-radius: 4px;">⏱ ${countdown20}</span>`}
+                                                                                    </p>
+                                                                                </td>
+                                                                            </tr>
+                                                                        </table>
+                                                                        <p style="font-size: 12px; color: #555; margin: 0 0 3px 0;">
+                                                                            Save <b style="color: #333;">£${(correctOriginalTotal - correctDiscountedTotal20).toFixed(2)}</b> on this Order${correctMinFeeApplied20 ? ` <span style="font-size: 10px; color: #f59e0b;">*Min fee £45 applies</span>` : ''}</p>
+                                                                        <p style="margin: 0 0 12px 0;">
+                                                                            <a href="https://www.londonwastemanagement.com/terms-conditions/" style="font-size: 11px; color: #e65100; text-decoration: none;">*Terms & conditions</a>
                                                                         </p>
-                                                                        <p style="font-size: 11px; color: #666; margin: 5px 0 12px 0;">
-                                                                            Save <b>£${(correctOriginalTotal - correctDiscountedTotal20).toFixed(2)}</b> on this Order${correctMinFeeApplied20 ? ` <span style="font-size: 10px; color: #f59e0b;">*Min fee £45 applies</span>` : ''}<br /><a href="https://www.londonwastemanagement.com/terms-conditions/" style="font-size: 9px; color: #666; text-decoration: underline;">*Terms & conditions</a></p>
                                                                         <table width="100%">
                                                                             <tr>
-                                                                                <td align="center" style="border: 1px solid #4CAF50; border-radius: 20px; padding: 8px;">
-                                                                                    <a href="${applyCodeUrl20}" style="text-decoration: none; color: #4CAF50; font-weight: bold; font-size: 12px; display: block;">Apply Code</a>
+                                                                                <td align="center">
+                                                                                    <a href="${applyCodeUrl20}" style="display: inline-block; border: 2px solid #4CAF50; border-radius: 25px; padding: 10px 40px; text-decoration: none; color: #4CAF50; font-weight: bold; font-size: 13px;">Apply Code</a>
                                                                                 </td>
                                                                             </tr>
                                                                         </table>
@@ -316,57 +365,58 @@ const sendRetargetingEmail = async ({
                                                             </table>
                                                         </td>
                                                     </tr>
-
-                                                    <!-- 10% Coupon - inside booking card -->
-                                                    <tr>
-                                                        <td style="padding: 0 15px 15px 15px;">
-                                                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="border: 1px solid #eee; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); background-color: #ffffff;">
-                                                                <tr>
-                                                                    <td width="30" align="center" style="border-right: 1px dashed #ddd; vertical-align: middle;">
-                                                                        <p style="font-size: 9px; color: #aaa; margin: 0; padding: 5px; writing-mode: vertical-rl; transform: rotate(180deg);">
-                                                                            ${discount10Percentage}%</p>
-                                                                    </td>
-                                                                    <td style="padding: 10px;">
-                                                                        <p style="font-weight: bold; font-size: 13px; margin: 0 0 5px 0;">
-                                                                            ${coupon10Code}</p>
-                                                                        <a href="${applyCodeUrl10}" style="border: 1px solid #4CAF50; padding: 4px 12px; border-radius: 12px; color: #4CAF50; text-decoration: none; font-size: 10px; font-weight: bold; display: inline-block;">Apply Code</a>
-                                                                    </td>
-                                                                </tr>
-                                                            </table>
-                                                        </td>
-                                                    </tr>
                                                 </table>
+                                                <!-- END OF BOOKING CARD -->
                                             </td>
                                         </tr>
 
-                                        <!-- White Content Section -->
+                                        <!-- White Background Section - starts at bottom of booking card -->
                                         <tr>
-                                            <td align="center" style="padding: 20px 40px 20px 40px; background-color: #ffffff;">
-                                                <h2 style="font-size: 22px; margin: 0 0 10px 0;">This Offer Is Limited</h2>
-                                                <p style="font-size: 14px; color: #777; line-height: 1.5; margin: 0 0 20px 0;">
-                                                    Don't miss out. If you have any questions,<br />
-                                                    just reply, we're here to help.
-                                                </p>
-                                                <p style="font-size: 13px; color: #4CAF50; line-height: 1.4; margin: 0;">
-                                                    Take advantage of your ${discount10Percentage}% discount<br />
-                                                 
-                                                </p>
+                                            <td align="center" style="background-color: #ffffff; padding-top: 0;">
+                                                <!-- 10% Coupon - positioned at top of white section, overlapping card edge -->
+                                                <table border="0" cellpadding="0" cellspacing="0" width="220" align="center" class="small-coupon" style="margin-top: -25px; border: 1px dashed #a5d6a7; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); background-color: #ffffff; overflow: hidden; position: relative; z-index: 5;">
+                                                    <tr>
+                                                        <td width="28" align="center" valign="middle" style="background-color: #81C784;">
+                                                            <p style="font-size: 8px; font-weight: bold; color: #fff; margin: 0; padding: 12px 4px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.3px;">
+                                                                ${discount10Percentage}% DISCOUNT
+                                                            </p>
+                                                        </td>
+                                                        <td style="padding: 12px 15px;">
+                                                            <p style="font-family: 'Courier New', monospace; font-weight: bold; font-size: 15px; color: #000; margin: 0 0 8px 0; letter-spacing: 1px;">
+                                                                ${coupon10Code}</p>
+                                                            <a href="${applyCodeUrl10}" style="display: inline-block; border: 2px solid #4CAF50; background-color: #fff; padding: 5px 18px; border-radius: 15px; color: #4CAF50; text-decoration: none; font-size: 11px; font-weight: bold;">Apply Code</a>
+                                                        </td>
+                                                    </tr>
+                                                </table>
+
+                                                <!-- White Content Text -->
+                                                <div class="white-content-section" style="padding: 20px 40px 20px 40px;">
+                                                    <h2 style="font-size: 22px; margin: 0 0 10px 0;">This Offer Is Limited</h2>
+                                                    <p style="font-size: 14px; color: #777; line-height: 1.5; margin: 0 0 20px 0;">
+                                                        Don't miss out. If you have any questions,<br />
+                                                        just reply, we're here to help.
+                                                    </p>
+                                                    <p style="font-size: 13px; color: #4CAF50; line-height: 1.4; margin: 0;">
+                                                        Take advantage of your ${discount10Percentage}% discount,<br />
+                                                        you have 72 hours to use your coupon
+                                                    </p>
+                                                </div>
                                             </td>
                                         </tr>
 
                                         <!-- Footer Bar -->
                                         <tr>
-                                            <td style="padding: 20px 30px; border-top: 1px solid #eee; background-color: #ffffff;">
+                                            <td class="footer-section" style="padding: 20px 30px; border-top: 1px solid #eee; background-color: #ffffff;">
                                                 <table width="100%">
                                                     <tr>
                                                         <td>
                                                             <table>
                                                                 <tr>
-                                                                    <td><img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768385074/Profile_Picture_3_rjvnzp.png" width="40" style="border-radius: 30%;"></td>
-                                                                    <td style="padding-left: 10px;">
-                                                                        <p style="margin: 0; font-size: 12px; font-weight: bold; color: #333;">
+                                                                    <td><img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768385074/Profile_Picture_3_rjvnzp.png" width="50" class="footer-logo" style="border-radius: 30%;"></td>
+                                                                    <td style="padding-left: 12px;">
+                                                                        <p class="footer-title" style="margin: 0; font-size: 15px; font-weight: bold; color: #333;">
                                                                             London Waste Management</p>
-                                                                        <p style="margin: 0; font-size: 10px; color: #999;">
+                                                                        <p class="footer-subtitle" style="margin: 2px 0 0 0; font-size: 12px; color: #888;">
                                                                             Remove, Recycle & Upcycle</p>
                                                                     </td>
                                                                 </tr>

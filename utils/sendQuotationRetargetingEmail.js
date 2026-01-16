@@ -76,11 +76,9 @@ const sendQuotationRetargetingEmail = async ({
       .coupon-10-padding { padding-left: 24px !important; padding-right: 24px !important; }
       .offer-padding { padding-left: 20px !important; padding-right: 20px !important; }
       .footer-padding { padding-left: 20px !important; padding-right: 20px !important; }
-      .footer-table { display: block !important; width: 100% !important; }
-      .footer-left { display: block !important; width: 100% !important; text-align: center !important; padding-bottom: 16px !important; }
-      .footer-right { display: block !important; width: 100% !important; text-align: center !important; }
-      .footer-logo-table { margin: 0 auto !important; }
-      .footer-social-table { margin: 0 auto !important; }
+      .footer-table { width: 100% !important; }
+      .footer-left { text-align: left !important; }
+      .footer-right { text-align: right !important; }
       .headline-main { font-size: 24px !important; }
       .headline-percent { font-size: 42px !important; }
       .headline-sub { font-size: 13px !important; }
@@ -99,7 +97,7 @@ const sendQuotationRetargetingEmail = async ({
         <![endif]-->
 
         <table width="600" cellpadding="0" cellspacing="0" border="0" class="main-table"
-          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png'); background-size: 600px auto; background-repeat: no-repeat; background-position: top center;">
+          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png'); background-size: 130% auto; background-repeat: no-repeat; background-position: top center;">
 
           <!-- Header Content (on top of background) -->
           <tr>
@@ -128,7 +126,7 @@ const sendQuotationRetargetingEmail = async ({
           <!-- Intro Text -->
           <tr>
             <td style="padding: 14px 50px 10px; text-align: center;">
-              <p style="margin: 0; font-size: 14px; color: #ffffff; line-height: 1.5; font-style: bold;">
+              <p style="margin: 0; font-size: 16px; color: #ffffff; line-height: 1.5; font-style: bold;">
                 We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
               </p>
             </td>
@@ -136,8 +134,8 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Second Intro Text -->
           <tr>
-            <td style="padding: 16px 50px 16px; text-align: center;">
-              <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.5;">
+            <td style="padding: 16px 70px 16px; text-align: center;">
+              <p style="margin: 0; font-size: 16px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
             </td>
@@ -247,7 +245,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Footer -->
           <tr>
-            <td class="footer-padding" style="padding: 48px 70px 24px 60px; border-top: 1px solid #e5e7eb;">
+            <td class="footer-padding" style="padding: 48px 70px 24px 60px;">
               <table class="footer-table" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Left: Logo + Company Info -->
