@@ -15,6 +15,69 @@ const userSocketMap = {}; // Stores userId:socketId mapping
 const Helper = require('./models/Helper');
 const { sendOneSignalNotification } = require('./services/oneSignalService');
 
+// Helper function to find truck for a user (including extra drivers/helpers)
+async function findTruckForUser(userId) {
+  // Primary driver
+  let truck = await Truck.findOne({ driverId: userId });
+  if (truck) return truck;
+  
+  // Primary helper
+  truck = await Truck.findOne({ helperId: userId });
+  if (truck) return truck;
+  
+  // Extra driver
+  truck = await Truck.findOne({ 'extraDrivers.driverId': userId });
+  if (truck) return truck;
+  
+  // Extra helper
+  truck = await Truck.findOne({ 'extraHelpers.helperId': userId });
+  if (truck) return truck;
+  
+  return null;
+}
+
+// Helper function to get all user IDs for a truck (drivers + helpers, including extra)
+async function getAllTruckUserIds(truckId) {
+  const truck = await Truck.findById(truckId)
+    .populate('driverId')
+    .populate('helperId')
+    .populate('extraDrivers.driverId')
+    .populate('extraHelpers.helperId');
+  
+  if (!truck) return [];
+  
+  const userIds = [];
+  
+  // Primary driver
+  if (truck.driverId && truck.driverId._id) {
+    userIds.push(truck.driverId._id.toString());
+  }
+  
+  // Primary helper
+  if (truck.helperId && truck.helperId._id) {
+    userIds.push(truck.helperId._id.toString());
+  }
+  
+  // Extra drivers
+  if (truck.extraDrivers && truck.extraDrivers.length > 0) {
+    truck.extraDrivers.forEach(extra => {
+      if (extra.driverId && extra.driverId._id) {
+        userIds.push(extra.driverId._id.toString());
+      }
+    });
+  }
+  
+  // Extra helpers
+  if (truck.extraHelpers && truck.extraHelpers.length > 0) {
+    truck.extraHelpers.forEach(extra => {
+      if (extra.helperId && extra.helperId._id) {
+        userIds.push(extra.helperId._id.toString());
+      }
+    });
+  }
+  
+  return [...new Set(userIds)]; // Remove duplicates
+}
 
 // const sendNotification = async (title, textMessage, token) => {
 //   console.log('Sending notification to:', token);
@@ -221,14 +284,19 @@ const initSocket = (server) => {
         console.log(`Room ${roomId} now has ${roomSockets.length} sockets:`, roomSockets.map(s => s.id));
 
         // Get truck information for context
-        const truck = await Truck.findById(roomId).populate('driverId helperId', 'username picture');
+        const truck = await Truck.findById(roomId)
+          .populate('driverId helperId', 'username picture')
+          .populate('extraDrivers.driverId', 'username picture')
+          .populate('extraHelpers.helperId', 'username picture');
         if (truck) {
           socket.emit('roomInfo', {
             roomId,
             truck: {
               id: truck._id,
               driver: truck.driverId,
-              helper: truck.helperId
+              helper: truck.helperId,
+              extraDrivers: truck.extraDrivers,
+              extraHelpers: truck.extraHelpers
             }
           });
         }
@@ -261,14 +329,18 @@ const initSocket = (server) => {
         const trucks = await Truck.find()
           .populate('driverId', 'username picture')
           .populate('helperId', 'username picture')
-          .select('_id driverId helperId');
+          .populate('extraDrivers.driverId', 'username picture')
+          .populate('extraHelpers.helperId', 'username picture')
+          .select('_id driverId helperId extraDrivers extraHelpers');
 
         const rooms = trucks.map(truck => ({
           roomId: truck._id,
           truck: {
             id: truck._id,
             driver: truck.driverId,
-            helper: truck.helperId
+            helper: truck.helperId,
+            extraDrivers: truck.extraDrivers,
+            extraHelpers: truck.extraHelpers
           }
         }));
 
@@ -290,12 +362,8 @@ const initSocket = (server) => {
         if (isAdmin) {
           console.log("is admin");
           truck = await Truck.findById(roomId);
-        } else if (isDriver) {
-          console.log("is driver");
-          truck = await Truck.findOne({ driverId: senderId });
         } else {
-          console.log("is helper");
-          truck = await Truck.findById(roomId);
+          truck = await findTruckForUser(senderId); // Use helper function
         }
 
         // Determine if it's single or multiple files
@@ -398,10 +466,7 @@ const initSocket = (server) => {
         io.to(roomId).emit('newMessage', message);
 
         // Determine who should receive notifications
-        const allUserIds = [
-          truck.driverId?.toString(),
-          truck.helperId?.toString()
-        ];
+        const allUserIds = await getAllTruckUserIds(truck._id);
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
@@ -450,12 +515,8 @@ const initSocket = (server) => {
         if (isAdmin) {
           console.log("is admin");
           truck = await Truck.findById(roomId);
-        } else if (isDriver) {
-          console.log("is driver");
-          truck = await Truck.findOne({ driverId: senderId });
         } else {
-          console.log("is helper");
-          truck = await Truck.findById(roomId);
+          truck = await findTruckForUser(senderId); // Use helper function
         }
 
         // Determine if it's single or multiple videos
@@ -524,17 +585,14 @@ const initSocket = (server) => {
         io.to(roomId).emit('newMessage', message);
 
         // Send notifications
-        const allUserIds = [
-          truck.driverId?.toString(),
-          truck.helperId?.toString()
-        ];
+        const allUserIds = await getAllTruckUserIds(truck._id);
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
           const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
           adminUsers.forEach((admin) => {
             const id = admin._id?.toString();
-            if (id) allUserIds.push(id);
+            if (id && !allUserIds.includes(id)) allUserIds.push(id);
           });
         }
 
@@ -567,12 +625,8 @@ const initSocket = (server) => {
         if (isAdmin) {
           console.log("is admin");
           truck = await Truck.findById(roomId);
-        } else if (isDriver) {
-          console.log("is driver");
-          truck = await Truck.findOne({ driverId: senderId });
         } else {
-          console.log("is helper");
-          truck = await Truck.findById(roomId);
+          truck = await findTruckForUser(senderId); // Use helper function
         }
 
         if (!truck) {
@@ -654,12 +708,8 @@ const initSocket = (server) => {
         if (isAdmin) {
           console.log("is admin");
           truck = await Truck.findById(roomId);
-        } else if (isDriver) {
-          console.log("is driver");
-          truck = await Truck.findOne({ driverId: senderId });
         } else {
-          console.log("is helper");
-          truck = await Truck.findById(roomId);
+          truck = await findTruckForUser(senderId); // Use helper function
         }
 
         // Determine if it's single or multiple files
@@ -724,17 +774,14 @@ const initSocket = (server) => {
         io.to(roomId).emit('newMessage', message);
 
         // Send notifications
-        const allUserIds = [
-          truck.driverId?.toString(),
-          truck.helperId?.toString()
-        ];
+        const allUserIds = await getAllTruckUserIds(truck._id);
 
         // Only add admin to notifications if sender is not admin
         if (!isAdmin) {
           const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
           adminUsers.forEach((admin) => {
             const id = admin._id?.toString();
-            if (id) allUserIds.push(id);
+            if (id && !allUserIds.includes(id)) allUserIds.push(id);
           });
         }
 

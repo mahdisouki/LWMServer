@@ -12,6 +12,18 @@ const truckSchema = new Schema({
     startDate: { type: Date },
     endDate: { type: Date },
   },
+  extraDrivers: [{
+    driverId: { type: Schema.Types.ObjectId, ref: 'Driver', required: true },
+    startDate: { type: Date },
+    endDate: { type: Date },
+    assignedAt: { type: Date, default: Date.now },
+  }],
+  extraHelpers: [{
+    helperId: { type: Schema.Types.ObjectId, ref: 'Helper', required: true },
+    startDate: { type: Date },
+    endDate: { type: Date },
+    assignedAt: { type: Date, default: Date.now },
+  }],
   tasks: {
     type: Map,
     of: [{

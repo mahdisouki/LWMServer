@@ -116,6 +116,8 @@ const truckCtrl = {
         const trucks = await features.query
             .populate('driverId')
             .populate('helperId')
+            .populate('extraDrivers.driverId')
+            .populate('extraHelpers.helperId')
             .exec();
 
         // ... rest of your existing code for populating tasks ...
@@ -195,8 +197,10 @@ const truckCtrl = {
   getAllTrucksForChat: async (req, res) => {
     try {
       const trucks = await Truck.find()
-        .populate('driverId')
-        .populate('helperId');
+        .populate('driverId', 'username picture')
+        .populate('helperId', 'username picture')
+        .populate('extraDrivers.driverId', 'username picture')
+        .populate('extraHelpers.helperId', 'username picture');
 
       res.status(200).json({
         message: 'All trucks retrieved successfully',

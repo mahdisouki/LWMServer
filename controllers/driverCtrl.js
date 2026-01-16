@@ -40,14 +40,26 @@ async function getUserModel(userId) {
 
 // Helper function to get truck for user (driver or helper)
 async function getTruckForUser(userId) {
-  // First try to find truck by driverId
+  // First try to find truck by primary driverId
   let truck = await Truck.findOne({ driverId: userId });
   if (truck) {
     return truck;
   }
 
-  // If not found, try to find truck by helperId
+  // Try to find truck by primary helperId
   truck = await Truck.findOne({ helperId: userId });
+  if (truck) {
+    return truck;
+  }
+
+  // Try to find truck where user is an extra driver
+  truck = await Truck.findOne({ 'extraDrivers.driverId': userId });
+  if (truck) {
+    return truck;
+  }
+
+  // Try to find truck where user is an extra helper
+  truck = await Truck.findOne({ 'extraHelpers.helperId': userId });
   if (truck) {
     return truck;
   }

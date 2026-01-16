@@ -409,6 +409,10 @@ const staffManagement = {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
+      if (!driver) {
+        return res.status(404).json({ message: 'Driver not found' });
+      }
+
       // Check if the truck already has a driver assigned
       if (truck.driverId) {
         return res
@@ -526,6 +530,244 @@ const staffManagement = {
       res
         .status(500)
         .json({ message: 'Failed to assign helper', error: error.message });
+    }
+  },
+
+  assignExtraDriverToTruck: async (req, res) => {
+    const { driverId } = req.params;
+    const { truckName, startDate, endDate } = req.body;
+
+    try {
+      const truck = await Truck.findOne({ name: truckName });
+      const driver = await Driver.findById(driverId);
+
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
+
+      if (!driver) {
+        return res.status(404).json({ message: 'Driver not found' });
+      }
+
+      // Check if driver is already assigned as extra
+      const exists = truck.extraDrivers?.some(e => e.driverId && e.driverId.toString() === driverId);
+      if (exists) {
+        return res.status(400).json({ message: 'Driver already assigned as extra driver to this truck' });
+      }
+
+      // Check if driver is the primary driver
+      if (truck.driverId && truck.driverId.toString() === driverId) {
+        return res.status(400).json({ message: 'Driver is already the primary driver for this truck' });
+      }
+
+      truck.extraDrivers = truck.extraDrivers || [];
+      truck.extraDrivers.push({
+        driverId,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        assignedAt: new Date(),
+      });
+      await truck.save();
+
+      driver.truckId = truck._id;
+      await driver.save();
+
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: driverId,
+        changes: {
+          assignment: {
+            type: 'extra_driver_to_truck',
+            truckName,
+            startDate,
+            endDate,
+            driverId,
+            truckId: truck._id,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(200).json({ message: 'Extra driver assigned successfully', truck });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to assign extra driver', error: error.message });
+    }
+  },
+
+  assignExtraHelperToTruck: async (req, res) => {
+    const { helperId } = req.params;
+    const { truckName, startDate, endDate } = req.body;
+
+    try {
+      const truck = await Truck.findOne({ name: truckName });
+      const helper = await Helper.findById(helperId);
+
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
+
+      if (!helper) {
+        return res.status(404).json({ message: 'Helper not found' });
+      }
+
+      // Check if helper is already assigned as extra
+      const exists = truck.extraHelpers?.some(e => e.helperId && e.helperId.toString() === helperId);
+      if (exists) {
+        return res.status(400).json({ message: 'Helper already assigned as extra helper to this truck' });
+      }
+
+      // Check if helper is the primary helper
+      if (truck.helperId && truck.helperId.toString() === helperId) {
+        return res.status(400).json({ message: 'Helper is already the primary helper for this truck' });
+      }
+
+      truck.extraHelpers = truck.extraHelpers || [];
+      truck.extraHelpers.push({
+        helperId,
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : undefined,
+        assignedAt: new Date(),
+      });
+      await truck.save();
+
+      helper.truckId = truck._id;
+      await helper.save();
+
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: helperId,
+        changes: {
+          assignment: {
+            type: 'extra_helper_to_truck',
+            truckName,
+            startDate,
+            endDate,
+            helperId,
+            truckId: truck._id,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(200).json({ message: 'Extra helper assigned successfully', truck });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to assign extra helper', error: error.message });
+    }
+  },
+
+  removeExtraDriverFromTruck: async (req, res) => {
+    const { driverId } = req.params;
+    const { truckName } = req.body;
+
+    try {
+      const truck = await Truck.findOne({ name: truckName });
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
+
+      if (!truck.extraDrivers || truck.extraDrivers.length === 0) {
+        return res.status(400).json({ message: 'No extra drivers assigned to this truck' });
+      }
+
+      const initialLength = truck.extraDrivers.length;
+      truck.extraDrivers = truck.extraDrivers.filter(
+        e => e.driverId && e.driverId.toString() !== driverId
+      );
+
+      if (truck.extraDrivers.length === initialLength) {
+        return res.status(400).json({ message: 'Driver not found in extra drivers list' });
+      }
+
+      await truck.save();
+
+      const driver = await Driver.findById(driverId);
+      if (driver) {
+        driver.truckId = undefined;
+        await driver.save();
+      }
+
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: driverId,
+        changes: {
+          assignment: {
+            type: 'remove_extra_driver_from_truck',
+            truckName,
+            driverId,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(200).json({ message: 'Extra driver removed successfully', truck });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to remove extra driver', error: error.message });
+    }
+  },
+
+  removeExtraHelperFromTruck: async (req, res) => {
+    const { helperId } = req.params;
+    const { truckName } = req.body;
+
+    try {
+      const truck = await Truck.findOne({ name: truckName });
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
+
+      if (!truck.extraHelpers || truck.extraHelpers.length === 0) {
+        return res.status(400).json({ message: 'No extra helpers assigned to this truck' });
+      }
+
+      const initialLength = truck.extraHelpers.length;
+      truck.extraHelpers = truck.extraHelpers.filter(
+        e => e.helperId && e.helperId.toString() !== helperId
+      );
+
+      if (truck.extraHelpers.length === initialLength) {
+        return res.status(400).json({ message: 'Helper not found in extra helpers list' });
+      }
+
+      await truck.save();
+
+      const helper = await Helper.findById(helperId);
+      if (helper) {
+        helper.truckId = undefined;
+        await helper.save();
+      }
+
+      await loggingService.createLog({
+        userId: req.user._id,
+        username: req.user.username,
+        action: 'UPDATE',
+        entityType: 'STAFF',
+        entityId: helperId,
+        changes: {
+          assignment: {
+            type: 'remove_extra_helper_from_truck',
+            truckName,
+            helperId,
+          },
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      res.status(200).json({ message: 'Extra helper removed successfully', truck });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to remove extra helper', error: error.message });
     }
   },
 

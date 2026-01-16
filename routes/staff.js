@@ -33,10 +33,14 @@ router.put('/staff/:id', isAuth, checkRole('Admin'), multer.fields([
   { name: 'signedStarterForm', maxCount: 1 }
 ]), staffCtrl.updateStaff);
 router.post('/assignDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl.assignDriverToTruck);
+router.post('/assignExtraDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl.assignExtraDriverToTruck);
 router.put('/updateDriverLocation/:driverId', isAuth, checkRole('Admin'), staffCtrl.updateDriverLocation);
 router.post('/assignHelper/:helperId', isAuth, checkRole('Admin'), staffCtrl.assignHelperToTruck);
+router.post('/assignExtraHelper/:helperId', isAuth, checkRole('Admin'), staffCtrl.assignExtraHelperToTruck);
 router.delete('/deassignHelper/:helperId', isAuth, checkRole('Admin'), staffCtrl.deassignHelperFromTruck);
 router.delete('/deassignDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl.deassignDriverFromTruck);
+router.delete('/removeExtraDriver/:driverId', isAuth, checkRole('Admin'), staffCtrl.removeExtraDriverFromTruck);
+router.delete('/removeExtraHelper/:helperId', isAuth, checkRole('Admin'), staffCtrl.removeExtraHelperFromTruck);
 // Get Tasks for Driver
 router.get('/getTasks/:id', isAuth, staffCtrl.getTasksForDriver);
 // update admin profile
