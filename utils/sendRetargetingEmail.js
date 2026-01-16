@@ -131,8 +131,8 @@ const sendRetargetingEmail = async ({
     }).join('');
 
     const baseUrl = 'https://client.londonwastemanagement.uk/';
-    const applyCodeUrl20 = `${baseUrl}`
-    const applyCodeUrl10 = `${baseUrl}`;
+    const applyCodeUrl20 = `${baseUrl}checkout?order=${orderNumber}&coupon=${coupon20Code}`;
+    const applyCodeUrl10 = `${baseUrl}checkout?order=${orderNumber}&coupon=${coupon10Code}`;
 
     const html = `
     <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
