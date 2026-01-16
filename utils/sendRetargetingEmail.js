@@ -275,6 +275,13 @@ const sendRetargetingEmail = async ({
                 .white-content-section p {
                     font-size: 12px !important;
                 }
+                td[style*="background-color: #4CAF50"] p,
+                td[style*="background-color: #81C784"] p {
+                    writing-mode: vertical-rl !important;
+                    transform: rotate(180deg) !important;
+                    display: inline-block !important;
+                    white-space: nowrap !important;
+                }
             }
         </style>
     </head>
@@ -369,7 +376,7 @@ const sendRetargetingEmail = async ({
                                                             <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #e8f5e9; border: 2px dashed #4CAF50; border-radius: 10px; overflow: hidden;">
                                                                 <tr>
                                                                     <td width="40" valign="middle" align="center" style="background-color: #4CAF50; border-radius: 8px 0 0 8px;">
-                                                                        <p style="font-size: 11px; font-weight: bold; color: #fff; margin: 0; line-height: 14px; padding: 12px 8px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.5px;">
+                                                                        <p style="font-size: 11px; font-weight: bold; color: #fff; margin: 0; line-height: 14px; padding: 12px 8px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.5px; display: inline-block; white-space: nowrap;">
                                                                             ${discount20Percentage}% DISCOUNT
                                                                         </p>
                                                                     </td>
@@ -418,7 +425,7 @@ const sendRetargetingEmail = async ({
                                                 <table border="0" cellpadding="0" cellspacing="0" width="220" align="center" class="small-coupon" style="margin-top: -25px; border: 1px dashed #a5d6a7; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); background-color: #ffffff; overflow: hidden; position: relative; z-index: 5;">
                                                     <tr>
                                                         <td width="28" align="center" valign="middle" style="background-color: #81C784;">
-                                                            <p style="font-size: 8px; font-weight: bold; color: #fff; margin: 0; padding: 12px 4px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.3px;">
+                                                            <p style="font-size: 8px; font-weight: bold; color: #fff; margin: 0; padding: 12px 4px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.3px; display: inline-block; white-space: nowrap;">
                                                                 ${discount10Percentage}% DISCOUNT
                                                             </p>
                                                         </td>
