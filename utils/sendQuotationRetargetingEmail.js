@@ -67,22 +67,38 @@ const sendQuotationRetargetingEmail = async ({
   </xml>
   <![endif]-->
   <style>
+    /* Force background to scale with container */
+    .main-table {
+      -webkit-background-size: 100% auto !important;
+      -moz-background-size: 100% auto !important;
+      -o-background-size: 100% auto !important;
+      background-size: 100% auto !important;
+    }
     @media only screen and (max-width: 620px) {
-      .main-table { width: 100% !important; }
-      .header-padding { padding-left: 20px !important; padding-right: 20px !important; }
-      .headline-padding { padding-left: 20px !important; padding-right: 20px !important; }
-      .intro-padding { padding-left: 24px !important; padding-right: 24px !important; }
-      .coupon-20-padding { padding-left: 16px !important; padding-right: 16px !important; }
-      .coupon-10-padding { padding-left: 24px !important; padding-right: 24px !important; }
-      .offer-padding { padding-left: 20px !important; padding-right: 20px !important; }
-      .footer-padding { padding-left: 20px !important; padding-right: 20px !important; }
+      .main-table { 
+        width: 100% !important; 
+        max-width: 100% !important;
+      }
+      /* Scale everything proportionally for mobile */
+      .header-padding { padding: 12px 6% 6px 6% !important; }
+      .logo-img { max-width: 100px !important; }
+      .headline-padding { padding: 4px 6% 8px 6% !important; }
+      .headline-main { font-size: 18px !important; line-height: 1.1 !important; }
+      .headline-percent { font-size: 32px !important; line-height: 1 !important; margin: 2px 0 4px 0 !important; }
+      .headline-sub { font-size: 10px !important; line-height: 1.2 !important; }
+      .intro-text { padding: 8px 5% !important; }
+      .intro-text p { font-size: 11px !important; line-height: 1.4 !important; }
+      .coupon-20-padding { padding: 0 10px 6px 10px !important; }
+      .coupon-box { max-width: 300px !important; }
+      .coupon-10-padding { padding: 0 10px 12px 10px !important; }
+      .coupon-10-box { max-width: 240px !important; }
+      .offer-padding { padding: 10px 5% 14px 5% !important; }
+      .offer-title { font-size: 16px !important; margin-bottom: 6px !important; }
+      .offer-text { font-size: 11px !important; }
+      .footer-padding { padding: 20px 5% 16px 5% !important; }
       .footer-table { width: 100% !important; }
       .footer-left { text-align: left !important; }
       .footer-right { text-align: right !important; }
-      .headline-main { font-size: 24px !important; }
-      .headline-percent { font-size: 42px !important; }
-      .headline-sub { font-size: 13px !important; }
-      .coupon-10-box { max-width: 280px !important; }
     }
   </style>
 </head>
@@ -97,14 +113,15 @@ const sendQuotationRetargetingEmail = async ({
           <v:textbox style="mso-fit-shape-to-text:true" inset="0,0,0,0">
         <![endif]-->
 
-        <table width="600" cellpadding="0" cellspacing="0" border="0" class="main-table"
-          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768563688/omar%27s%20new/Ignored_Quote_Email_4_rrsgae.png'); background-size: 100% auto; background-repeat: no-repeat; background-position: top center;">
+        <table cellpadding="0" cellspacing="0" border="0" class="main-table"
+          style="border-collapse:collapse; width:100%; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768563688/omar%27s%20new/Ignored_Quote_Email_4_rrsgae.png'); -webkit-background-size: 100% auto; -moz-background-size: 100% auto; background-size: 100% auto; background-repeat: no-repeat; background-position: top center;">
 
           <!-- Header Content (on top of background) -->
           <tr>
             <td class="header-padding" style="padding: 20px 50px 10px; text-align: center;">
               <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768384829/uploads/LondonWasteManagementLogo-Landscape-White_1_icxlkf.png"
                    alt="London Waste Management"
+                   class="logo-img"
                    style="width: 100%; max-width: 130px; height: auto;" />
             </td>
           </tr>
@@ -126,8 +143,8 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Intro Text -->
           <tr>
-            <td style="padding: 14px 50px 10px; text-align: center;">
-              <p style="margin: 0; font-size: 16px; color: #ffffff; line-height: 1.5; font-style: bold;">
+            <td class="intro-text" style="padding: 14px 50px 10px; text-align: center;">
+              <p style="margin: 0; font-size: 16px; color: #ffffff; line-height: 1.5; font-weight: bold;">
                 We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
               </p>
             </td>
@@ -135,7 +152,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Second Intro Text -->
           <tr>
-            <td style="padding: 16px 70px 16px; text-align: center;">
+            <td class="intro-text" style="padding: 16px 70px 16px; text-align: center;">
               <p style="margin: 0; font-size: 16px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
@@ -144,8 +161,8 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- 20% OFF Coupon Box -->
           <tr>
-            <td align="center" style="padding: 0 20px 8px;">
-              <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 400px; background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
+            <td align="center" class="coupon-20-padding" style="padding: 0 20px 8px;">
+              <table cellpadding="0" cellspacing="0" border="0" class="coupon-box" style="width: 100%; max-width: 400px; background: #ffffff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 16px 20px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -189,7 +206,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- 10% OFF Coupon Box (Smaller/More Compact) -->
           <tr>
-            <td align="center" style="padding: 0 20px 20px;">
+            <td align="center" class="coupon-10-padding" style="padding: 0 20px 20px;">
               <table cellpadding="0" cellspacing="0" border="0" class="coupon-10-box" style="width: 100%; max-width: 340px; background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 12px 16px;">
@@ -235,10 +252,10 @@ const sendQuotationRetargetingEmail = async ({
           <!-- This Offer Is Limited Section -->
           <tr>
             <td class="offer-padding" style="padding: 20px 70px 24px; text-align: center;">
-              <h2 style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #111827;">
+              <h2 class="offer-title" style="margin: 0 0 10px; font-size: 20px; font-weight: 700; color: #111827;">
                 This Offer Is Limited
               </h2>
-              <p style="margin: 0; font-size: 13px; color: #374151; line-height: 1.6;">
+              <p class="offer-text" style="margin: 0; font-size: 13px; color: #374151; line-height: 1.6;">
                 Don't miss out, <strong>reply to this email</strong> to confirm the quotation and let our team create your order!
               </p>
             </td>
