@@ -82,6 +82,7 @@ const sendQuotationRetargetingEmail = async ({
       .headline-main { font-size: 24px !important; }
       .headline-percent { font-size: 42px !important; }
       .headline-sub { font-size: 13px !important; }
+      .coupon-10-box { max-width: 280px !important; }
     }
   </style>
 </head>
@@ -92,12 +93,12 @@ const sendQuotationRetargetingEmail = async ({
 
         <!--[if gte mso 9]>
         <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:600px;">
-          <v:fill type="frame" src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png" />
+          <v:fill type="frame" src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1768563688/omar%27s%20new/Ignored_Quote_Email_4_rrsgae.png" />
           <v:textbox style="mso-fit-shape-to-text:true" inset="0,0,0,0">
         <![endif]-->
 
         <table width="600" cellpadding="0" cellspacing="0" border="0" class="main-table"
-          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png'); background-size: 130% auto; background-repeat: no-repeat; background-position: top center;">
+          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768563688/omar%27s%20new/Ignored_Quote_Email_4_rrsgae.png'); background-size: 100% auto; background-repeat: no-repeat; background-position: top center;">
 
           <!-- Header Content (on top of background) -->
           <tr>
@@ -189,7 +190,7 @@ const sendQuotationRetargetingEmail = async ({
           <!-- 10% OFF Coupon Box (Smaller/More Compact) -->
           <tr>
             <td align="center" style="padding: 0 20px 20px;">
-              <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 340px; background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
+              <table cellpadding="0" cellspacing="0" border="0" class="coupon-10-box" style="width: 100%; max-width: 340px; background: #f8f9fa; border-radius: 14px; border: 1px solid #e5e7eb; overflow: hidden;">
                 <tr>
                   <td style="padding: 12px 16px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
