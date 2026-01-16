@@ -128,7 +128,7 @@ const sendQuotationRetargetingEmail = async ({
           <!-- Intro Text -->
           <tr>
             <td style="padding: 14px 50px 10px; text-align: center;">
-              <p style="margin: 0; font-size: 14px; color: #ffffff; line-height: 1.5; font-style: bold;">
+              <p style="margin: 0; font-size: 16px; color: #ffffff; line-height: 1.5; font-style: bold;">
                 We recently sent you a quote for your waste removal request and noticed you haven't moved forward yet.
               </p>
             </td>
@@ -137,7 +137,7 @@ const sendQuotationRetargetingEmail = async ({
           <!-- Second Intro Text -->
           <tr>
             <td style="padding: 16px 50px 16px; text-align: center;">
-              <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.5;">
+              <p style="margin: 0; font-size: 16px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
             </td>
