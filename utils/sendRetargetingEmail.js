@@ -243,7 +243,7 @@ const sendRetargetingEmail = async ({
             <tr>
                 <td align="center">
                     <!-- Main Container (Max 600px) with full gradient background -->
-                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768559795/omar%27s%20new/Group_1000008590_smy00x.png'); background-size: 100% auto; background-position: top center; background-repeat: no-repeat;">
+                    <table border="0" cellpadding="0" cellspacing="0" width="600" class="container" style="width: 600px; max-width: 600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768561253/omar%27s%20new/Group_1000008590_1_fnrucn.png'); background-size: 100% auto; background-position: top center; background-repeat: no-repeat;">
                         <!-- 1. HEADER SECTION -->
                         <tr>
                             <td align="center" class="header-section" style="height: 350px;">
