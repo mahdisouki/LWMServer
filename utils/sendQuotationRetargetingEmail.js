@@ -76,11 +76,9 @@ const sendQuotationRetargetingEmail = async ({
       .coupon-10-padding { padding-left: 24px !important; padding-right: 24px !important; }
       .offer-padding { padding-left: 20px !important; padding-right: 20px !important; }
       .footer-padding { padding-left: 20px !important; padding-right: 20px !important; }
-      .footer-table { display: block !important; width: 100% !important; }
-      .footer-left { display: block !important; width: 100% !important; text-align: center !important; padding-bottom: 16px !important; }
-      .footer-right { display: block !important; width: 100% !important; text-align: center !important; }
-      .footer-logo-table { margin: 0 auto !important; }
-      .footer-social-table { margin: 0 auto !important; }
+      .footer-table { width: 100% !important; }
+      .footer-left { text-align: left !important; }
+      .footer-right { text-align: right !important; }
       .headline-main { font-size: 24px !important; }
       .headline-percent { font-size: 42px !important; }
       .headline-sub { font-size: 13px !important; }
@@ -136,7 +134,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Second Intro Text -->
           <tr>
-            <td style="padding: 16px 50px 16px; text-align: center;">
+            <td style="padding: 16px 70px 16px; text-align: center;">
               <p style="margin: 0; font-size: 16px; color: #374151; line-height: 1.5;">
                 We understand that price matters, so to help you decide, we've added two limited time discount options you can choose from:
               </p>
