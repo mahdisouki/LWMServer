@@ -97,7 +97,7 @@ const sendQuotationRetargetingEmail = async ({
         <![endif]-->
 
         <table width="600" cellpadding="0" cellspacing="0" border="0" class="main-table"
-          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png'); background-size: 600px auto; background-repeat: no-repeat; background-position: top center;">
+          style="border-collapse:collapse; max-width:600px; background-image: url('https://res.cloudinary.com/dehzhd6xs/image/upload/v1768470220/samples/Ignored_Quote_Email_3_yphlbs.png'); background-size: 130% auto; background-repeat: no-repeat; background-position: top center;">
 
           <!-- Header Content (on top of background) -->
           <tr>
@@ -245,7 +245,7 @@ const sendQuotationRetargetingEmail = async ({
 
           <!-- Footer -->
           <tr>
-            <td class="footer-padding" style="padding: 48px 70px 24px 60px; border-top: 1px solid #e5e7eb;">
+            <td class="footer-padding" style="padding: 48px 70px 24px 60px;">
               <table class="footer-table" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Left: Logo + Company Info -->
