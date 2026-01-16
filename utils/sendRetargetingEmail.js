@@ -369,7 +369,7 @@ const sendRetargetingEmail = async ({
                                                             <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #e8f5e9; border: 2px dashed #4CAF50; border-radius: 10px; overflow: hidden;">
                                                                 <tr>
                                                                     <td width="40" valign="middle" align="center" style="background-color: #4CAF50; border-radius: 8px 0 0 8px;">
-                                                                        <p style="font-size: 11px; font-weight: bold; color: #fff; margin: 0; line-height: 14px; padding: 15px 8px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.5px;">
+                                                                        <p style="font-size: 11px; font-weight: bold; color: #fff; margin: 0; line-height: 14px; padding: 12px 8px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.5px;">
                                                                             ${discount20Percentage}% DISCOUNT
                                                                         </p>
                                                                     </td>
@@ -379,7 +379,7 @@ const sendRetargetingEmail = async ({
                                                                         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 10px;">
                                                                             <tr>
                                                                                 <td>
-                                                                                    <p style="font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; color: #000; margin: 0; letter-spacing: 2px;">
+                                                                                    <p style="font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; color: #000; margin: 0; letter-spacing: 1px;">
                                                                                         ${coupon20Code}</p>
                                                                                 </td>
                                                                                 <td align="right" valign="middle">
