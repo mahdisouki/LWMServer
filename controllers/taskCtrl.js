@@ -338,6 +338,31 @@ const taskCtrl = {
         quotationId,
         couponCode, // Coupon code to apply
       } = req.body;
+      if (createdByType === 'public') {
+        const dateObj = new Date(date);
+        const now = new Date();
+        // Set time to midnight for date-only comparison (ignore time component)
+        dateObj.setHours(0, 0, 0, 0);
+        now.setHours(0, 0, 0, 0);
+        
+        console.log('date', date);
+        console.log('dateObj', dateObj);
+        console.log('now', now);
+        
+        if(isNaN(dateObj.getTime())) {
+          return res.status(400).json({
+            message: 'Invalid date format',
+            error: 'INVALID_DATE'
+          });
+        }
+        
+        if(dateObj < now) {
+          return res.status(400).json({
+            message: 'Date cannot be in the past',
+            error: 'DATE_IN_PAST'
+          });
+        }
+      }
       console.log('req.body.location', req.body.location);
       // ✅ Convert FormData string to boolean
       // FormData sends boolean values as strings 'true' or 'false'
