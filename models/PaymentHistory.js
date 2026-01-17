@@ -12,6 +12,13 @@ const paymentHistorySchema = new Schema({
     paymentDate: { type: Date, default: Date.now },
     transactionId: { type: String, required: true },
     payerAccount: { type: String },
+    status: { 
+        type: String, 
+        enum: ['success', 'failed', 'pending', 'refunded'], 
+        default: 'pending' 
+    },
+    statusMessage: { type: String },
+    errorMessage: { type: String },
     breakdown: [
         {
             itemDescription: { type: String }, // Description du standard item ou objet personnalisé

@@ -2391,11 +2391,13 @@ const taskCtrl = {
           firstName: task.firstName,
           lastName: task.lastName,
           phoneNumber: task.phoneNumber,
-          amount: amountInCents,
+          amount: amountInGBP,
           paymentType: 'Stripe',
           paymentDate: new Date(),
           transactionId: paymentIntentId,
           payerAccount,
+          status: 'success',
+          statusMessage: `Payment successful via Stripe. Transaction ID: ${paymentIntentId}. Amount: £${amountInGBP.toFixed(2)}.`,
         });
 
         // Envoyer l'email de confirmation
@@ -2612,11 +2614,13 @@ const taskCtrl = {
           firstName: task.firstName,
           lastName: task.lastName,
           phoneNumber: task.phoneNumber,
-          amount: amountInGBP * 100,
+          amount: amountInGBP,
           paymentType: 'PayPal',
           paymentDate: new Date(),
           transactionId,
           payerAccount,
+          status: 'success',
+          statusMessage: `Payment successful via PayPal. Transaction ID: ${transactionId}. Amount: £${amountInGBP.toFixed(2)}.`,
         });
 
         // Envoyer l'email de confirmation
@@ -3083,8 +3087,39 @@ const taskCtrl = {
 
         const amountInCents = session.amount_total;
         const amountInGBP = amountInCents / 100;
-        const paymentIntentId = session.payment_intent || session.id;
-        const payerAccount = task.email;
+        
+        // Get the actual Payment Intent ID or Charge ID (not Checkout Session ID)
+        let transactionId = session.payment_intent; // Payment Intent ID (pi_xxx)
+        let payerAccount = task.email;
+
+        // If payment_intent exists, try to get the Charge ID (ch_xxx) which is the actual transaction ID
+        if (transactionId && transactionId.startsWith('pi_')) {
+          try {
+            const paymentIntent = await stripe.paymentIntents.retrieve(transactionId);
+            // Get the charge ID from the latest charge
+            if (paymentIntent.latest_charge) {
+              // latest_charge can be a string ID or a Charge object
+              const chargeId = typeof paymentIntent.latest_charge === 'string' 
+                ? paymentIntent.latest_charge 
+                : paymentIntent.latest_charge.id;
+              transactionId = chargeId; // Use Charge ID (ch_xxx) as the actual transaction ID
+              
+              // Also get the payer account from the charge if available
+              if (paymentIntent.charges?.data?.[0]?.billing_details?.email) {
+                payerAccount = paymentIntent.charges.data[0].billing_details.email;
+              }
+            }
+          } catch (error) {
+            console.error('Error retrieving Payment Intent:', error);
+            // Fall back to Payment Intent ID if we can't get the Charge ID
+            // transactionId already set to session.payment_intent
+          }
+        } else if (!transactionId) {
+          // Fallback: if no payment_intent, use session ID but log a warning
+          console.warn('No payment_intent found in checkout session, using session ID as fallback');
+          transactionId = session.id; // This would be cs_xxx, not ideal but better than nothing
+        }
+
         await task.save();
         console.log('Task payment status updated:', {
           taskId,
@@ -3101,10 +3136,10 @@ const taskCtrl = {
           amount: amountInGBP,
           paymentType: 'Stripe',
           paymentDate: new Date(),
-          transactionId: paymentIntentId,
+          transactionId: transactionId, // Now uses Charge ID (ch_xxx) when available
           payerAccount,
           status: 'success',
-          statusMessage: `Payment successful via Stripe. Transaction ID: ${paymentIntentId}. Amount: £${amountInGBP.toFixed(2)}. Payment type: ${paymentAmountType === 'deposit' ? 'Deposit' : paymentAmountType === 'remaining' ? 'Remaining' : 'Full payment'}.`,
+          statusMessage: `Payment successful via Stripe. Transaction ID: ${transactionId}. Amount: £${amountInGBP.toFixed(2)}. Payment type: ${paymentAmountType === 'deposit' ? 'Deposit' : paymentAmountType === 'remaining' ? 'Remaining' : 'Full payment'}.`,
         });
 
         // Construire le breakdown complet pour l'email
@@ -3164,7 +3199,12 @@ const taskCtrl = {
             taskId = session.metadata && session.metadata.taskId;
             amountInCents = session.amount_total || null;
             customerEmail = session.customer_details && session.customer_details.email;
-            paymentIntentId = session.payment_intent || session.id;
+            paymentIntentId = session.payment_intent; // Don't fallback to session.id for failed payments
+            // If payment_intent is missing, log a warning but still process the failure
+            if (!paymentIntentId) {
+              console.warn('No payment_intent in failed checkout session, using session ID');
+              paymentIntentId = session.id;
+            }
             if (event.type === 'checkout.session.async_payment_failed') {
               failureReason = session.last_payment_error
                 ? session.last_payment_error.message
