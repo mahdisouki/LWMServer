@@ -1211,6 +1211,7 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
+      const { couponCode } = req.body; // Extract couponCode from request
 
       console.log('=== UPDATE TASK START ===');
       console.log('Task ID:', taskId);
@@ -1219,6 +1220,53 @@ const taskCtrl = {
       const oldTask = await Task.findById(taskId);
       if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // Validate coupon code if provided (similar to createTask)
+      let coupon = null;
+      let couponId = null;
+      if (couponCode !== undefined) { // Allow clearing coupon if couponCode is explicitly null/empty
+        if (couponCode) {
+          try {
+            const couponCodeStr = String(couponCode).trim();
+            if (!couponCodeStr) {
+              return res.status(400).json({
+                message: 'Coupon code cannot be empty',
+                error: 'COUPON_INVALID'
+              });
+            }
+
+            coupon = await Coupon.findOne({ code: couponCodeStr.toUpperCase() });
+            if (coupon) {
+              const validation = coupon.validateCoupon();
+              if (!validation.valid) {
+                return res.status(400).json({
+                  message: `Invalid coupon code: ${validation.message}`,
+                  error: 'COUPON_INVALID'
+                });
+              }
+              couponId = coupon._id;
+              updates.couponCode = couponCodeStr.toUpperCase();
+              updates.couponId = couponId;
+              console.log(`✅ Coupon "${couponCodeStr}" validated for update: ${validation.percentage}% discount`);
+            } else {
+              return res.status(400).json({
+                message: 'Coupon code not found',
+                error: 'COUPON_NOT_FOUND'
+              });
+            }
+          } catch (error) {
+            console.error('Error validating coupon:', error);
+            return res.status(500).json({
+              message: 'Error validating coupon code',
+              error: error.message
+            });
+          }
+        } else {
+          // Clear coupon if empty string or null
+          updates.couponCode = null;
+          updates.couponId = null;
+        }
       }
 
       console.log('=== PHOTO HANDLING ===');
@@ -1560,7 +1608,70 @@ const taskCtrl = {
           console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
         }
 
-        // Add VAT
+        // Apply coupon discount (AFTER percentage discount, BEFORE VAT)
+        let couponDiscount = 0;
+        // Use new coupon if provided, otherwise use existing coupon from task when recalculating
+        // This ensures existing coupons are preserved when recalculating due to item updates
+        const couponCodeToUse = updates.couponCode !== undefined 
+          ? (updates.couponCode || null) // Allow clearing coupon with empty string/null
+          : populatedTask.couponCode; // Preserve existing coupon when recalculating
+
+        console.log('=== COUPON APPLICATION DEBUG (updateTask) ===');
+        console.log('updates.couponCode:', updates.couponCode);
+        console.log('populatedTask.couponCode:', populatedTask.couponCode);
+        console.log('couponCodeToUse:', couponCodeToUse);
+        console.log('coupon variable (from validation):', coupon ? coupon.code : 'null');
+
+        if (couponCodeToUse) {
+          try {
+            const couponCodeStr = String(couponCodeToUse).trim().toUpperCase();
+            console.log('Looking up coupon with code:', couponCodeStr);
+            
+            // Use already validated coupon from earlier if available, otherwise fetch it
+            let couponToApply = coupon;
+            if (!couponToApply) {
+              console.log('Coupon not validated earlier, fetching from database...');
+              couponToApply = await Coupon.findOne({ code: couponCodeStr });
+              console.log('Coupon found from DB:', couponToApply ? 'Yes' : 'No');
+            } else {
+              console.log('Using already validated coupon');
+            }
+            
+            if (couponToApply) {
+              const validation = couponToApply.validateCoupon();
+              console.log('Coupon validation result:', validation);
+              
+              if (validation.valid) {
+                const couponPercentage = validation.percentage;
+                const subtotalBeforeCoupon = subtotal;
+                couponDiscount = (subtotal * couponPercentage) / 100;
+                subtotal = Number((subtotal - couponDiscount).toFixed(2));
+                console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
+                console.log(`Coupon Code: "${couponCodeStr}"`);
+                console.log(`Coupon Source: ${updates.couponCode !== undefined ? 'New/Updated' : 'Existing (preserved)'}`);
+                console.log(`Coupon Percentage: ${couponPercentage}%`);
+                console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
+                console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
+                console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
+                console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
+                console.log(`✅ Coupon applied in updateTask: ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+              } else {
+                console.log(`⚠️ Coupon "${couponCodeStr}" is invalid in updateTask: ${validation.message}`);
+                console.log('⚠️ Coupon validation failed, discount NOT applied');
+              }
+            } else {
+              console.error(`❌ Coupon "${couponCodeStr}" not found in database!`);
+              console.error('❌ Discount NOT applied - coupon lookup failed');
+            }
+          } catch (error) {
+            console.error('❌ Error applying coupon in updateTask:', error);
+            console.error('Error details:', error.message, error.stack);
+          }
+        } else {
+          console.log('No coupon code to use (neither in update nor in existing task)');
+        }
+
+        // Add VAT (after coupon discount)
         let vat = subtotal * 0.2;
         let totalPrice = subtotal + vat;
 
