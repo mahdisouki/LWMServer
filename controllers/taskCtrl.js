@@ -1236,19 +1236,30 @@ const taskCtrl = {
               });
             }
 
-            coupon = await Coupon.findOne({ code: couponCodeStr.toUpperCase() });
+            const couponCodeUpper = couponCodeStr.toUpperCase();
+            const existingCouponCode = oldTask.couponCode ? String(oldTask.couponCode).trim().toUpperCase() : '';
+            
+            // Only validate if it's a NEW/different coupon code (skip validation if same as existing)
+            const isDifferentCoupon = couponCodeUpper !== existingCouponCode;
+            
+            coupon = await Coupon.findOne({ code: couponCodeUpper });
             if (coupon) {
-              const validation = coupon.validateCoupon();
-              if (!validation.valid) {
-                return res.status(400).json({
-                  message: `Invalid coupon code: ${validation.message}`,
-                  error: 'COUPON_INVALID'
-                });
+              // Only validate if it's a different coupon from what's already saved
+              if (isDifferentCoupon) {
+                const validation = coupon.validateCoupon();
+                if (!validation.valid) {
+                  return res.status(400).json({
+                    message: `Invalid coupon code: ${validation.message}`,
+                    error: 'COUPON_INVALID'
+                  });
+                }
+                console.log(`✅ New coupon "${couponCodeUpper}" validated for update: ${validation.percentage}% discount`);
+              } else {
+                console.log(`ℹ️ Coupon "${couponCodeUpper}" unchanged - skipping validation (already exists on task)`);
               }
               couponId = coupon._id;
-              updates.couponCode = couponCodeStr.toUpperCase();
+              updates.couponCode = couponCodeUpper;
               updates.couponId = couponId;
-              console.log(`✅ Coupon "${couponCodeStr}" validated for update: ${validation.percentage}% discount`);
             } else {
               return res.status(400).json({
                 message: 'Coupon code not found',
@@ -1616,10 +1627,21 @@ const taskCtrl = {
           ? (updates.couponCode || null) // Allow clearing coupon with empty string/null
           : populatedTask.couponCode; // Preserve existing coupon when recalculating
 
+        // Determine if this is a new coupon (needs validation) or existing coupon (skip validation)
+        // Skip validation if:
+        // 1. No couponCode provided in update (undefined), OR
+        // 2. The couponCode matches what's already saved in the database
+        // Only validate if a new/different coupon code is being provided
+        const isNewCoupon = updates.couponCode !== undefined && 
+          String(updates.couponCode || '').trim().toUpperCase() !== String(populatedTask.couponCode || '').trim().toUpperCase();
+        console.log('isNewCoupon:', isNewCoupon);
+        console.log('String(updates.couponCode || "").trim().toUpperCase():', String(updates.couponCode || "").trim().toUpperCase());
+        console.log('String(populatedTask.couponCode || "").trim().toUpperCase():', String(populatedTask.couponCode || "").trim().toUpperCase());
         console.log('=== COUPON APPLICATION DEBUG (updateTask) ===');
         console.log('updates.couponCode:', updates.couponCode);
         console.log('populatedTask.couponCode:', populatedTask.couponCode);
         console.log('couponCodeToUse:', couponCodeToUse);
+        console.log('isNewCoupon:', isNewCoupon);
         console.log('coupon variable (from validation):', coupon ? coupon.code : 'null');
 
         if (couponCodeToUse) {
@@ -1634,30 +1656,74 @@ const taskCtrl = {
               couponToApply = await Coupon.findOne({ code: couponCodeStr });
               console.log('Coupon found from DB:', couponToApply ? 'Yes' : 'No');
             } else {
-              console.log('Using already validated coupon');
+              console.log('Using already validated coupon from top section');
             }
             
             if (couponToApply) {
-              const validation = couponToApply.validateCoupon();
-              console.log('Coupon validation result:', validation);
+              // Only validate NEW coupons that haven't been validated yet in this request
+              // If coupon was already validated at the top (coupon variable exists), skip validation
+              const needsValidation = isNewCoupon && !coupon;
               
-              if (validation.valid) {
-                const couponPercentage = validation.percentage;
-                const subtotalBeforeCoupon = subtotal;
-                couponDiscount = (subtotal * couponPercentage) / 100;
-                subtotal = Number((subtotal - couponDiscount).toFixed(2));
-                console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
-                console.log(`Coupon Code: "${couponCodeStr}"`);
-                console.log(`Coupon Source: ${updates.couponCode !== undefined ? 'New/Updated' : 'Existing (preserved)'}`);
-                console.log(`Coupon Percentage: ${couponPercentage}%`);
-                console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
-                console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
-                console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
-                console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
-                console.log(`✅ Coupon applied in updateTask: ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+              if (needsValidation) {
+                const validation = couponToApply.validateCoupon();
+                console.log('Coupon validation result (NEW coupon, first validation):', validation);
+                
+                if (validation.valid) {
+                  const couponPercentage = validation.percentage;
+                  const subtotalBeforeCoupon = subtotal;
+                  couponDiscount = (subtotal * couponPercentage) / 100;
+                  subtotal = Number((subtotal - couponDiscount).toFixed(2));
+                  console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
+                  console.log(`Coupon Code: "${couponCodeStr}"`);
+                  console.log(`Coupon Source: New/Updated (validated in price calc)`);
+                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
+                  console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
+                  console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
+                  console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
+                  console.log(`✅ Coupon applied in updateTask: ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                } else {
+                  console.log(`⚠️ Coupon "${couponCodeStr}" is invalid in updateTask: ${validation.message}`);
+                  console.log('⚠️ Coupon validation failed, discount NOT applied');
+                }
+              } else if (coupon) {
+                // Coupon was already validated at the top section - use it without re-validation
+                const couponPercentage = couponToApply.percentage || 0;
+                if (couponPercentage > 0) {
+                  const subtotalBeforeCoupon = subtotal;
+                  couponDiscount = (subtotal * couponPercentage) / 100;
+                  subtotal = Number((subtotal - couponDiscount).toFixed(2));
+                  console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
+                  console.log(`Coupon Code: "${couponCodeStr}"`);
+                  console.log(`Coupon Source: New/Updated (already validated at top)`);
+                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
+                  console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
+                  console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
+                  console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
+                  console.log(`✅ Coupon applied (already validated): ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                } else {
+                  console.log(`⚠️ Coupon has invalid percentage: ${couponPercentage}%`);
+                }
               } else {
-                console.log(`⚠️ Coupon "${couponCodeStr}" is invalid in updateTask: ${validation.message}`);
-                console.log('⚠️ Coupon validation failed, discount NOT applied');
+                // Existing coupon: skip validation, use percentage directly from coupon document
+                const couponPercentage = couponToApply.percentage || 0;
+                if (couponPercentage > 0) {
+                  const subtotalBeforeCoupon = subtotal;
+                  couponDiscount = (subtotal * couponPercentage) / 100;
+                  subtotal = Number((subtotal - couponDiscount).toFixed(2));
+                  console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
+                  console.log(`Coupon Code: "${couponCodeStr}"`);
+                  console.log(`Coupon Source: Existing (no validation)`);
+                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
+                  console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
+                  console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
+                  console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
+                  console.log(`✅ Existing coupon applied (no validation): ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                } else {
+                  console.log(`⚠️ Existing coupon has invalid percentage: ${couponPercentage}%`);
+                }
               }
             } else {
               console.error(`❌ Coupon "${couponCodeStr}" not found in database!`);
