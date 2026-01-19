@@ -605,9 +605,36 @@ const taskCtrl = {
 
       const savedTask = await newTask.save();
 
-      // NOTE: Do NOT increment coupon usage here.
-      // Coupon usage should be incremented only after successful payment confirmation/capture
-      // (in confirmStripeTaskPayment or capturePayPalTaskPayment handlers).
+      // NOTE:
+      // - For online payments, coupon usage is incremented only after successful payment confirmation/capture.
+      // - For manual payments (cash/BankTransfer) where the task is CREATED already paid, increment coupon usage here once.
+      try {
+        const isPaidOnCreate =
+          String(savedTask.paymentStatus || '').toLowerCase() === 'paid' ||
+          String(savedTask.paidAmount?.status || '').toLowerCase() === 'paid' ||
+          String(savedTask.remainingAmount?.status || '').toLowerCase() === 'paid';
+
+        if (
+          isPaidOnCreate &&
+          savedTask.couponId &&
+          savedTask.couponCode &&
+          savedTask.couponUsageIncremented !== true
+        ) {
+          const couponDoc = await Coupon.findById(savedTask.couponId);
+          if (couponDoc) {
+            const usageBefore = couponDoc.usageCount;
+            await couponDoc.incrementUsage(savedTask.email || null);
+            savedTask.couponUsageIncremented = true;
+            await savedTask.save();
+            console.log(
+              `✅ Coupon "${savedTask.couponCode}" usage incremented on createTask (manual paid): ${usageBefore} → ${couponDoc.usageCount}`,
+            );
+          }
+        }
+      } catch (err) {
+        console.error('Error incrementing coupon usage on createTask (manual paid):', err);
+        // Do not fail task creation if coupon increment fails
+      }
 
       // Create a log of the task creation
       if (req.user) {
@@ -1924,6 +1951,43 @@ const taskCtrl = {
         { $set: updates },
         { new: true },
       );
+
+      // If payment was manually marked as paid (cash/BankTransfer/admin), increment coupon usage once.
+      // Online payments already do this in their confirmation/webhook handlers, guarded by couponUsageIncremented.
+      try {
+        const wasPaidBefore =
+          String(oldTask.paymentStatus || '').toLowerCase() === 'paid' ||
+          String(oldTask.paidAmount?.status || '').toLowerCase() === 'paid' ||
+          String(oldTask.remainingAmount?.status || '').toLowerCase() === 'paid';
+
+        const isPaidNow =
+          String(updatedTask.paymentStatus || '').toLowerCase() === 'paid' ||
+          String(updatedTask.paidAmount?.status || '').toLowerCase() === 'paid' ||
+          String(updatedTask.remainingAmount?.status || '').toLowerCase() === 'paid';
+
+        const becamePaid = !wasPaidBefore && isPaidNow;
+
+        if (
+          becamePaid &&
+          updatedTask.couponId &&
+          updatedTask.couponCode &&
+          updatedTask.couponUsageIncremented !== true
+        ) {
+          const couponDoc = await Coupon.findById(updatedTask.couponId);
+          if (couponDoc) {
+            const usageBefore = couponDoc.usageCount;
+            await couponDoc.incrementUsage(updatedTask.email || null);
+            updatedTask.couponUsageIncremented = true;
+            await updatedTask.save();
+            console.log(
+              `✅ Coupon "${updatedTask.couponCode}" usage incremented on updateTask (manual paid): ${usageBefore} → ${couponDoc.usageCount}`,
+            );
+          }
+        }
+      } catch (err) {
+        console.error('Error incrementing coupon usage on updateTask (manual paid):', err);
+        // Do not fail update if coupon increment fails
+      }
 
       console.log('Updated task:', JSON.stringify(updatedTask, null, 2));
 
