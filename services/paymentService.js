@@ -8,7 +8,7 @@ const VAT_RATE = 0.2; // VAT rate (20%)
 const MINIMUM_PRICE = 45; // Minimum price including VAT (£37.5 + £7.5 VAT)
 
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
-const CLIENT_URL = 'https://www.londonwastemanagement.com';
+const CLIENT_URL = 'https://www.client.londonwastemanagement.uk';
 
 // PayPal environment configuration
 const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox'; // 'sandbox' or 'live'
@@ -17,11 +17,11 @@ const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox'; // 'sandbox' or 'live'
 function createPayPalEnvironment() {
     const clientId = process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-    
+
     if (!clientId || !clientSecret) {
         throw new Error("PayPal credentials (PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET) are required in environment variables");
     }
-    
+
     if (PAYPAL_MODE === 'live') {
         console.log('🔴 Using PayPal LIVE environment');
         return new paypal.core.LiveEnvironment(clientId, clientSecret);
