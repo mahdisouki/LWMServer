@@ -4217,6 +4217,8 @@ const taskCtrl = {
       let couponDiscount = 0;
       let couponCode = null;
       let couponPercentage = 0;
+      let couponDiscountType = 'percentage';
+      let couponDiscountValue = 0;
       if (task.couponCode) {
         try {
           // Normalize coupon code to uppercase to match Coupon model storage
@@ -4339,6 +4341,16 @@ const taskCtrl = {
       const templateSource = fs.readFileSync(templatePath, 'utf8');
       const template = Handlebars.compile(templateSource);
 
+      // Create coupon label for display
+      let couponLabel = '';
+      if (couponCode && couponDiscount > 0) {
+        if (couponDiscountType === 'amount') {
+          couponLabel = `Coupon Discount: (${couponCode} - £${couponDiscountValue.toFixed(2)})`;
+        } else {
+          couponLabel = `Coupon Discount: (${couponCode} - ${couponPercentage}%)`;
+        }
+      }
+
       const emailContent = template({
         firstName: task.firstName,
         lastName: task.lastName,
@@ -4356,6 +4368,7 @@ const taskCtrl = {
         couponCode: couponCode || '',
         couponPercentage: couponPercentage || 0,
         couponDiscount: couponDiscount.toFixed(2),
+        couponLabel: couponLabel,
         subtotal: subtotalBeforeDiscounts.toFixed(2),
         vat: vat.toFixed(2),
         total: total.toFixed(2),
