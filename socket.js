@@ -1377,6 +1377,7 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
     'Emails': 'Email Update',
     'Quotations': 'Quotation Update',
     'Payment': 'Payment Update',
+    'Payment-failed': 'Payment Failed',
   };
   const title = titleMap[type] || 'Notification';
 
