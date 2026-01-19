@@ -3002,8 +3002,9 @@ const taskCtrl = {
 
         // ✅ Mettre à jour le statut de paiement SEULEMENT après confirmation
         // ❌ NE PAS modifier taskStatus - il reste inchangé
-        if (amountInGBP === 45) {
-          // Dépôt partiel
+        // Check if it's truly a partial payment (like Stripe does)
+        if (amountInGBP === 45 && finalPrice > 45) {
+          // True partial payment (deposit) - only if final price is greater than £45
           task.paymentStatus = 'partial_Paid';
           task.paidAmount = {
             amount: 45,
@@ -3016,7 +3017,7 @@ const taskCtrl = {
             status: 'Not_Paid', // ✅ Reste à payer
           };
         } else {
-          // Paiement complet
+          // Full payment (including when amountInGBP === 45 and finalPrice === 45)
           task.paymentStatus = 'Paid';
           task.paidAmount = {
             amount: amountInGBP,
@@ -3781,21 +3782,63 @@ const taskCtrl = {
 
           const task = await Task.findById(customId).populate('items.standardItemId');
           if (!task) return res.status(404).send('Task not found');
-          // Update based on payment type
-          if (paymentTypeMeta === 'deposit') {
+
+          // Calculate final price to verify if it's truly a partial payment
+          const itemsForCalculation = task.items.map(item => ({
+            standardItemId: item.standardItemId?._id || item.standardItemId,
+            quantity: item.quantity || 1,
+            Objectsposition: item.Objectsposition || 'Outside',
+            price: item.price,
+            customPrice: item.customPrice
+          }));
+
+          const objectsForCalculation = task.items
+            .filter(item => !item.standardItemId)
+            .map(item => ({
+              object: item.object,
+              quantity: item.quantity || 1,
+              price: item.price
+            }));
+
+          const { totalPrice: calculatedTotalPrice } = await calculateTotalPrice({
+            items: itemsForCalculation,
+            objects: objectsForCalculation,
+            customDiscountPercent: task.customDiscountPercent,
+            discountType: task.discountType,
+            hasDiscount: task.hasDiscount,
+            createdByType: task.createdByType,
+            available: task.available,
+            applyMinFee: task.applyMinFee,
+            couponCode: task.couponCode,
+            customerEmail: task.email || null
+          });
+
+          const cap = capRes.result.purchase_units[0].payments.captures[0];
+          const amountInGBP = Number(cap.amount.value);
+          const finalPrice = calculatedTotalPrice;
+
+          // Update based on payment type - verify it's truly a partial payment (like Stripe)
+          if (paymentTypeMeta === 'deposit' && amountInGBP === 45 && finalPrice > 45) {
+            // True partial payment (deposit)
             task.paidAmount = task.paidAmount || {};
             task.remainingAmount = task.remainingAmount || {};
+            task.paidAmount.amount = 45;
             task.paidAmount.status = 'Paid';
-            task.paidAmount.method = task.paidAmount.method || 'payment_link';
-            task.remainingAmount.status = task.remainingAmount.status || 'Not_Paid';
+            task.paidAmount.method = task.paidAmount.method || 'online';
+            task.remainingAmount.amount = finalPrice - 45;
+            task.remainingAmount.status = 'Not_Paid';
             task.paymentStatus = 'partial_Paid';
           } else {
+            // Full payment (including when amountInGBP === 45 and finalPrice === 45)
             if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
             task.paymentStatus = 'Paid';
             // ❌ NE PAS modifier taskStatus - il reste inchangé
             task.paidAmount = task.paidAmount || {};
             task.remainingAmount = task.remainingAmount || {};
+            task.paidAmount.amount = amountInGBP;
             task.paidAmount.status = 'Paid';
+            task.paidAmount.method = task.paidAmount.method || 'online';
+            task.remainingAmount.amount = 0;
             task.remainingAmount.status = 'Paid';
           }
 
@@ -3819,7 +3862,6 @@ const taskCtrl = {
 
           await task.save();
 
-          const cap = capRes.result.purchase_units[0].payments.captures[0];
           await PaymentHistory.create({
             taskId: task._id,
             firstName: task.firstName,
@@ -3867,18 +3909,62 @@ const taskCtrl = {
 
           const task = await Task.findById(customId).populate('items.standardItemId');
           if (!task) return res.status(404).send('Task not found');
-          if (paymentTypeMeta === 'deposit') {
+
+          // Calculate final price to verify if it's truly a partial payment
+          const itemsForCalculation = task.items.map(item => ({
+            standardItemId: item.standardItemId?._id || item.standardItemId,
+            quantity: item.quantity || 1,
+            Objectsposition: item.Objectsposition || 'Outside',
+            price: item.price,
+            customPrice: item.customPrice
+          }));
+
+          const objectsForCalculation = task.items
+            .filter(item => !item.standardItemId)
+            .map(item => ({
+              object: item.object,
+              quantity: item.quantity || 1,
+              price: item.price
+            }));
+
+          const { totalPrice: calculatedTotalPrice } = await calculateTotalPrice({
+            items: itemsForCalculation,
+            objects: objectsForCalculation,
+            customDiscountPercent: task.customDiscountPercent,
+            discountType: task.discountType,
+            hasDiscount: task.hasDiscount,
+            createdByType: task.createdByType,
+            available: task.available,
+            applyMinFee: task.applyMinFee,
+            couponCode: task.couponCode,
+            customerEmail: task.email || null
+          });
+
+          const amountInGBP = Number(capture.amount.value);
+          const finalPrice = calculatedTotalPrice;
+
+          // Update based on payment type - verify it's truly a partial payment (like Stripe)
+          if (paymentTypeMeta === 'deposit' && amountInGBP === 45 && finalPrice > 45) {
+            // True partial payment (deposit)
             task.paidAmount = task.paidAmount || {};
             task.remainingAmount = task.remainingAmount || {};
+            task.paidAmount.amount = 45;
             task.paidAmount.status = 'Paid';
-            task.paidAmount.method = task.paidAmount.method || 'payment_link';
-            task.remainingAmount.status = task.remainingAmount.status || 'Not_Paid';
+            task.paidAmount.method = task.paidAmount.method || 'online';
+            task.remainingAmount.amount = finalPrice - 45;
+            task.remainingAmount.status = 'Not_Paid';
             task.paymentStatus = 'partial_Paid';
           } else {
+            // Full payment (including when amountInGBP === 45 and finalPrice === 45)
             if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
             task.paymentStatus = 'Paid';
             // ❌ NE PAS modifier taskStatus - il reste inchangé
+            task.paidAmount = task.paidAmount || {};
+            task.remainingAmount = task.remainingAmount || {};
+            task.paidAmount.amount = amountInGBP;
             task.paidAmount.status = 'Paid';
+            task.paidAmount.method = task.paidAmount.method || 'online';
+            task.remainingAmount.amount = 0;
             task.remainingAmount.status = 'Paid';
           }
 
