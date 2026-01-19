@@ -338,6 +338,31 @@ const taskCtrl = {
         quotationId,
         couponCode, // Coupon code to apply
       } = req.body;
+      if (createdByType === 'public') {
+        const dateObj = new Date(date);
+        const now = new Date();
+        // Set time to midnight for date-only comparison (ignore time component)
+        dateObj.setHours(0, 0, 0, 0);
+        now.setHours(0, 0, 0, 0);
+        
+        console.log('date', date);
+        console.log('dateObj', dateObj);
+        console.log('now', now);
+        
+        if(isNaN(dateObj.getTime())) {
+          return res.status(400).json({
+            message: 'Invalid date format',
+            error: 'INVALID_DATE'
+          });
+        }
+        
+        if(dateObj < now) {
+          return res.status(400).json({
+            message: 'Date cannot be in the past',
+            error: 'DATE_IN_PAST'
+          });
+        }
+      }
       console.log('req.body.location', req.body.location);
       // ✅ Convert FormData string to boolean
       // FormData sends boolean values as strings 'true' or 'false'
@@ -1186,6 +1211,7 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
+      const { couponCode } = req.body; // Extract couponCode from request
 
       console.log('=== UPDATE TASK START ===');
       console.log('Task ID:', taskId);
@@ -1194,6 +1220,64 @@ const taskCtrl = {
       const oldTask = await Task.findById(taskId);
       if (!oldTask) {
         return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // Validate coupon code if provided (similar to createTask)
+      let coupon = null;
+      let couponId = null;
+      if (couponCode !== undefined) { // Allow clearing coupon if couponCode is explicitly null/empty
+        if (couponCode) {
+          try {
+            const couponCodeStr = String(couponCode).trim();
+            if (!couponCodeStr) {
+              return res.status(400).json({
+                message: 'Coupon code cannot be empty',
+                error: 'COUPON_INVALID'
+              });
+            }
+
+            const couponCodeUpper = couponCodeStr.toUpperCase();
+            const existingCouponCode = oldTask.couponCode ? String(oldTask.couponCode).trim().toUpperCase() : '';
+            
+            // Only validate if it's a NEW/different coupon code (skip validation if same as existing)
+            const isDifferentCoupon = couponCodeUpper !== existingCouponCode;
+            
+            coupon = await Coupon.findOne({ code: couponCodeUpper });
+            if (coupon) {
+              // Only validate if it's a different coupon from what's already saved
+              if (isDifferentCoupon) {
+                const validation = coupon.validateCoupon();
+                if (!validation.valid) {
+                  return res.status(400).json({
+                    message: `Invalid coupon code: ${validation.message}`,
+                    error: 'COUPON_INVALID'
+                  });
+                }
+                console.log(`✅ New coupon "${couponCodeUpper}" validated for update: ${validation.percentage}% discount`);
+              } else {
+                console.log(`ℹ️ Coupon "${couponCodeUpper}" unchanged - skipping validation (already exists on task)`);
+              }
+              couponId = coupon._id;
+              updates.couponCode = couponCodeUpper;
+              updates.couponId = couponId;
+            } else {
+              return res.status(400).json({
+                message: 'Coupon code not found',
+                error: 'COUPON_NOT_FOUND'
+              });
+            }
+          } catch (error) {
+            console.error('Error validating coupon:', error);
+            return res.status(500).json({
+              message: 'Error validating coupon code',
+              error: error.message
+            });
+          }
+        } else {
+          // Clear coupon if empty string or null
+          updates.couponCode = null;
+          updates.couponId = null;
+        }
       }
 
       console.log('=== PHOTO HANDLING ===');
@@ -1535,7 +1619,125 @@ const taskCtrl = {
           console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
         }
 
-        // Add VAT
+        // Apply coupon discount (AFTER percentage discount, BEFORE VAT)
+        let couponDiscount = 0;
+        // Use new coupon if provided, otherwise use existing coupon from task when recalculating
+        // This ensures existing coupons are preserved when recalculating due to item updates
+        const couponCodeToUse = updates.couponCode !== undefined 
+          ? (updates.couponCode || null) // Allow clearing coupon with empty string/null
+          : populatedTask.couponCode; // Preserve existing coupon when recalculating
+
+        // Determine if this is a new coupon (needs validation) or existing coupon (skip validation)
+        // Skip validation if:
+        // 1. No couponCode provided in update (undefined), OR
+        // 2. The couponCode matches what's already saved in the database
+        // Only validate if a new/different coupon code is being provided
+        const isNewCoupon = updates.couponCode !== undefined && 
+          String(updates.couponCode || '').trim().toUpperCase() !== String(populatedTask.couponCode || '').trim().toUpperCase();
+        console.log('isNewCoupon:', isNewCoupon);
+        console.log('String(updates.couponCode || "").trim().toUpperCase():', String(updates.couponCode || "").trim().toUpperCase());
+        console.log('String(populatedTask.couponCode || "").trim().toUpperCase():', String(populatedTask.couponCode || "").trim().toUpperCase());
+        console.log('=== COUPON APPLICATION DEBUG (updateTask) ===');
+        console.log('updates.couponCode:', updates.couponCode);
+        console.log('populatedTask.couponCode:', populatedTask.couponCode);
+        console.log('couponCodeToUse:', couponCodeToUse);
+        console.log('isNewCoupon:', isNewCoupon);
+        console.log('coupon variable (from validation):', coupon ? coupon.code : 'null');
+
+        if (couponCodeToUse) {
+          try {
+            const couponCodeStr = String(couponCodeToUse).trim().toUpperCase();
+            console.log('Looking up coupon with code:', couponCodeStr);
+            
+            // Use already validated coupon from earlier if available, otherwise fetch it
+            let couponToApply = coupon;
+            if (!couponToApply) {
+              console.log('Coupon not validated earlier, fetching from database...');
+              couponToApply = await Coupon.findOne({ code: couponCodeStr });
+              console.log('Coupon found from DB:', couponToApply ? 'Yes' : 'No');
+            } else {
+              console.log('Using already validated coupon from top section');
+            }
+            
+            if (couponToApply) {
+              // Only validate NEW coupons that haven't been validated yet in this request
+              // If coupon was already validated at the top (coupon variable exists), skip validation
+              const needsValidation = isNewCoupon && !coupon;
+              
+              if (needsValidation) {
+                const validation = couponToApply.validateCoupon();
+                console.log('Coupon validation result (NEW coupon, first validation):', validation);
+                
+                if (validation.valid) {
+                  const couponPercentage = validation.percentage;
+                  const subtotalBeforeCoupon = subtotal;
+                  couponDiscount = (subtotal * couponPercentage) / 100;
+                  subtotal = Number((subtotal - couponDiscount).toFixed(2));
+                  console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
+                  console.log(`Coupon Code: "${couponCodeStr}"`);
+                  console.log(`Coupon Source: New/Updated (validated in price calc)`);
+                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
+                  console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
+                  console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
+                  console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
+                  console.log(`✅ Coupon applied in updateTask: ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                } else {
+                  console.log(`⚠️ Coupon "${couponCodeStr}" is invalid in updateTask: ${validation.message}`);
+                  console.log('⚠️ Coupon validation failed, discount NOT applied');
+                }
+              } else if (coupon) {
+                // Coupon was already validated at the top section - use it without re-validation
+                const couponPercentage = couponToApply.percentage || 0;
+                if (couponPercentage > 0) {
+                  const subtotalBeforeCoupon = subtotal;
+                  couponDiscount = (subtotal * couponPercentage) / 100;
+                  subtotal = Number((subtotal - couponDiscount).toFixed(2));
+                  console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
+                  console.log(`Coupon Code: "${couponCodeStr}"`);
+                  console.log(`Coupon Source: New/Updated (already validated at top)`);
+                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
+                  console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
+                  console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
+                  console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
+                  console.log(`✅ Coupon applied (already validated): ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                } else {
+                  console.log(`⚠️ Coupon has invalid percentage: ${couponPercentage}%`);
+                }
+              } else {
+                // Existing coupon: skip validation, use percentage directly from coupon document
+                const couponPercentage = couponToApply.percentage || 0;
+                if (couponPercentage > 0) {
+                  const subtotalBeforeCoupon = subtotal;
+                  couponDiscount = (subtotal * couponPercentage) / 100;
+                  subtotal = Number((subtotal - couponDiscount).toFixed(2));
+                  console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
+                  console.log(`Coupon Code: "${couponCodeStr}"`);
+                  console.log(`Coupon Source: Existing (no validation)`);
+                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
+                  console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
+                  console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
+                  console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
+                  console.log(`✅ Existing coupon applied (no validation): ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                } else {
+                  console.log(`⚠️ Existing coupon has invalid percentage: ${couponPercentage}%`);
+                }
+              }
+            } else {
+              console.error(`❌ Coupon "${couponCodeStr}" not found in database!`);
+              console.error('❌ Discount NOT applied - coupon lookup failed');
+            }
+          } catch (error) {
+            console.error('❌ Error applying coupon in updateTask:', error);
+            console.error('Error details:', error.message, error.stack);
+          }
+        } else {
+          console.log('No coupon code to use (neither in update nor in existing task)');
+        }
+
+        // Add VAT (after coupon discount)
         let vat = subtotal * 0.2;
         let totalPrice = subtotal + vat;
 
@@ -2391,11 +2593,13 @@ const taskCtrl = {
           firstName: task.firstName,
           lastName: task.lastName,
           phoneNumber: task.phoneNumber,
-          amount: amountInCents,
+          amount: amountInGBP,
           paymentType: 'Stripe',
           paymentDate: new Date(),
           transactionId: paymentIntentId,
           payerAccount,
+          status: 'success',
+          statusMessage: `Payment successful via Stripe. Transaction ID: ${paymentIntentId}. Amount: £${amountInGBP.toFixed(2)}.`,
         });
 
         // Envoyer l'email de confirmation
@@ -2612,11 +2816,13 @@ const taskCtrl = {
           firstName: task.firstName,
           lastName: task.lastName,
           phoneNumber: task.phoneNumber,
-          amount: amountInGBP * 100,
+          amount: amountInGBP,
           paymentType: 'PayPal',
           paymentDate: new Date(),
           transactionId,
           payerAccount,
+          status: 'success',
+          statusMessage: `Payment successful via PayPal. Transaction ID: ${transactionId}. Amount: £${amountInGBP.toFixed(2)}.`,
         });
 
         // Envoyer l'email de confirmation
@@ -3083,8 +3289,39 @@ const taskCtrl = {
 
         const amountInCents = session.amount_total;
         const amountInGBP = amountInCents / 100;
-        const paymentIntentId = session.payment_intent || session.id;
-        const payerAccount = task.email;
+        
+        // Get the actual Payment Intent ID or Charge ID (not Checkout Session ID)
+        let transactionId = session.payment_intent; // Payment Intent ID (pi_xxx)
+        let payerAccount = task.email;
+
+        // If payment_intent exists, try to get the Charge ID (ch_xxx) which is the actual transaction ID
+        if (transactionId && transactionId.startsWith('pi_')) {
+          try {
+            const paymentIntent = await stripe.paymentIntents.retrieve(transactionId);
+            // Get the charge ID from the latest charge
+            if (paymentIntent.latest_charge) {
+              // latest_charge can be a string ID or a Charge object
+              const chargeId = typeof paymentIntent.latest_charge === 'string' 
+                ? paymentIntent.latest_charge 
+                : paymentIntent.latest_charge.id;
+              transactionId = chargeId; // Use Charge ID (ch_xxx) as the actual transaction ID
+              
+              // Also get the payer account from the charge if available
+              if (paymentIntent.charges?.data?.[0]?.billing_details?.email) {
+                payerAccount = paymentIntent.charges.data[0].billing_details.email;
+              }
+            }
+          } catch (error) {
+            console.error('Error retrieving Payment Intent:', error);
+            // Fall back to Payment Intent ID if we can't get the Charge ID
+            // transactionId already set to session.payment_intent
+          }
+        } else if (!transactionId) {
+          // Fallback: if no payment_intent, use session ID but log a warning
+          console.warn('No payment_intent found in checkout session, using session ID as fallback');
+          transactionId = session.id; // This would be cs_xxx, not ideal but better than nothing
+        }
+
         await task.save();
         console.log('Task payment status updated:', {
           taskId,
@@ -3101,10 +3338,10 @@ const taskCtrl = {
           amount: amountInGBP,
           paymentType: 'Stripe',
           paymentDate: new Date(),
-          transactionId: paymentIntentId,
+          transactionId: transactionId, // Now uses Charge ID (ch_xxx) when available
           payerAccount,
           status: 'success',
-          statusMessage: `Payment successful via Stripe. Transaction ID: ${paymentIntentId}. Amount: £${amountInGBP.toFixed(2)}. Payment type: ${paymentAmountType === 'deposit' ? 'Deposit' : paymentAmountType === 'remaining' ? 'Remaining' : 'Full payment'}.`,
+          statusMessage: `Payment successful via Stripe. Transaction ID: ${transactionId}. Amount: £${amountInGBP.toFixed(2)}. Payment type: ${paymentAmountType === 'deposit' ? 'Deposit' : paymentAmountType === 'remaining' ? 'Remaining' : 'Full payment'}.`,
         });
 
         // Construire le breakdown complet pour l'email
@@ -3164,7 +3401,12 @@ const taskCtrl = {
             taskId = session.metadata && session.metadata.taskId;
             amountInCents = session.amount_total || null;
             customerEmail = session.customer_details && session.customer_details.email;
-            paymentIntentId = session.payment_intent || session.id;
+            paymentIntentId = session.payment_intent; // Don't fallback to session.id for failed payments
+            // If payment_intent is missing, log a warning but still process the failure
+            if (!paymentIntentId) {
+              console.warn('No payment_intent in failed checkout session, using session ID');
+              paymentIntentId = session.id;
+            }
             if (event.type === 'checkout.session.async_payment_failed') {
               failureReason = session.last_payment_error
                 ? session.last_payment_error.message
