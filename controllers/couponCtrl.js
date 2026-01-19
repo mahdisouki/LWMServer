@@ -5,27 +5,92 @@ const couponCtrl = {
   // Create a new coupon
   createCoupon: async (req, res) => {
     try {
-      const { code, percentage, expirationDuration, description, maxUsage } = req.body;
+      const {
+        type = 'random', // Default to 'random' for backward compatibility
+        code,
+        percentage,
+        expirationDuration,
+        description,
+        maxUsage,
+        // Custom coupon fields
+        startDate,
+        endDate,
+        discountType,
+        discountValue,
+        minimumOrderAmount = 0,
+        maxUsagePerCustomer
+      } = req.body;
 
-      // Validate required fields
-      if (!code || !percentage || !expirationDuration) {
+      // Validate type
+      if (type !== 'random' && type !== 'custom') {
         return res.status(400).json({
-          message: 'Code, percentage, and expiration duration are required'
+          message: 'Type must be either "random" or "custom"'
         });
       }
 
-      // Validate percentage range
-      if (percentage < 0 || percentage > 100) {
-        return res.status(400).json({
-          message: 'Percentage must be between 0 and 100'
-        });
-      }
+      // Validate based on type
+      if (type === 'random') {
+        // Random coupon validation
+        if (!code || !percentage || !expirationDuration) {
+          return res.status(400).json({
+            message: 'Code, percentage, and expiration duration are required for random coupons'
+          });
+        }
 
-      // Validate expiration duration
-      if (expirationDuration <= 0) {
-        return res.status(400).json({
-          message: 'Expiration duration must be greater than 0'
-        });
+        if (percentage < 0 || percentage > 100) {
+          return res.status(400).json({
+            message: 'Percentage must be between 0 and 100'
+          });
+        }
+
+        if (expirationDuration <= 0) {
+          return res.status(400).json({
+            message: 'Expiration duration must be greater than 0'
+          });
+        }
+      } else {
+        // Custom coupon validation
+        if (!code || !startDate || !endDate || !discountType || discountValue === undefined) {
+          return res.status(400).json({
+            message: 'Code, startDate, endDate, discountType, and discountValue are required for custom coupons'
+          });
+        }
+
+        if (discountType !== 'percentage' && discountType !== 'amount') {
+          return res.status(400).json({
+            message: 'Discount type must be either "percentage" or "amount"'
+          });
+        }
+
+        if (discountType === 'percentage' && (discountValue < 0 || discountValue > 100)) {
+          return res.status(400).json({
+            message: 'Percentage discount value must be between 0 and 100'
+          });
+        }
+
+        if (discountType === 'amount' && discountValue < 0) {
+          return res.status(400).json({
+            message: 'Amount discount value must be greater than or equal to 0'
+          });
+        }
+
+        if (new Date(startDate) >= new Date(endDate)) {
+          return res.status(400).json({
+            message: 'End date must be after start date'
+          });
+        }
+
+        if (minimumOrderAmount < 0) {
+          return res.status(400).json({
+            message: 'Minimum order amount must be greater than or equal to 0'
+          });
+        }
+
+        if (maxUsagePerCustomer !== undefined && maxUsagePerCustomer !== null && maxUsagePerCustomer < 1) {
+          return res.status(400).json({
+            message: 'Max usage per customer must be greater than 0'
+          });
+        }
       }
 
       // Check if coupon code already exists
@@ -36,16 +101,30 @@ const couponCtrl = {
         });
       }
 
-      // Create coupon
-      const coupon = new Coupon({
+      // Create coupon based on type
+      const couponData = {
+        type,
         code: code.toUpperCase().trim(),
-        percentage,
-        expirationDuration,
         description: description || '',
         maxUsage: maxUsage || null,
-        expiresAt: new Date(Date.now() + (expirationDuration * 60 * 60 * 1000))
-      });
+        isActive: req.body.isActive !== undefined ? req.body.isActive : true
+      };
 
+      if (type === 'random') {
+        couponData.percentage = percentage;
+        couponData.expirationDuration = expirationDuration;
+        couponData.expiresAt = new Date(Date.now() + (expirationDuration * 60 * 60 * 1000));
+      } else {
+        couponData.startDate = new Date(startDate);
+        couponData.endDate = new Date(endDate);
+        couponData.expiresAt = new Date(endDate);
+        couponData.discountType = discountType;
+        couponData.discountValue = discountValue;
+        couponData.minimumOrderAmount = minimumOrderAmount || 0;
+        couponData.maxUsagePerCustomer = maxUsagePerCustomer || null;
+      }
+
+      const coupon = new Coupon(couponData);
       await coupon.save();
 
       // Log the creation
@@ -147,7 +226,8 @@ const couponCtrl = {
     }
   },
 
-  // Validate coupon code
+  // Validate coupon code (basic validation - only checks code)
+  // Full validation with customerEmail and cartTotal happens in createTask/updateTask
   validateCoupon: async (req, res) => {
     try {
       const { code } = req.body;
@@ -167,7 +247,9 @@ const couponCtrl = {
         });
       }
 
-      const validation = coupon.validateCoupon();
+      // Basic validation only (without customerEmail and cartTotal)
+      // Full validation with email and cart total happens in createTask/updateTask
+      const validation = coupon.validateCoupon(null, null);
 
       if (!validation.valid) {
         return res.status(200).json({
@@ -176,17 +258,29 @@ const couponCtrl = {
         });
       }
 
-      res.status(200).json({
+      // Build response based on coupon type
+      const response = {
         valid: true,
         message: 'Coupon is valid',
-        percentage: validation.percentage,
+        discountType: validation.discountType,
+        discountValue: validation.discountValue,
         coupon: {
           id: coupon._id,
           code: coupon.code,
-          percentage: coupon.percentage,
+          type: coupon.type,
           expiresAt: coupon.expiresAt
         }
-      });
+      };
+
+      // For backward compatibility, include percentage if it's a percentage discount
+      if (validation.discountType === 'percentage') {
+        response.percentage = validation.discountValue;
+        response.coupon.percentage = validation.discountValue;
+      } else {
+        response.percentage = null;
+      }
+
+      res.status(200).json(response);
     } catch (error) {
       console.error('Error validating coupon:', error);
       res.status(500).json({
@@ -200,7 +294,21 @@ const couponCtrl = {
   updateCoupon: async (req, res) => {
     try {
       const { id } = req.params;
-      const { code, percentage, isExpired, isActive, description, maxUsage } = req.body;
+      const {
+        code,
+        percentage,
+        isExpired,
+        isActive,
+        description,
+        maxUsage,
+        // Custom coupon fields
+        startDate,
+        endDate,
+        discountType,
+        discountValue,
+        minimumOrderAmount,
+        maxUsagePerCustomer
+      } = req.body;
 
       const coupon = await Coupon.findById(id);
 
@@ -213,9 +321,9 @@ const couponCtrl = {
       // Store old values for logging
       const oldCoupon = coupon.toObject();
 
-      // Update fields
+      // Update common fields
       if (code !== undefined) {
-        const existingCoupon = await Coupon.findOne({ 
+        const existingCoupon = await Coupon.findOne({
           code: code.toUpperCase().trim(),
           _id: { $ne: id }
         });
@@ -225,14 +333,6 @@ const couponCtrl = {
           });
         }
         coupon.code = code.toUpperCase().trim();
-      }
-      if (percentage !== undefined) {
-        if (percentage < 0 || percentage > 100) {
-          return res.status(400).json({
-            message: 'Percentage must be between 0 and 100'
-          });
-        }
-        coupon.percentage = percentage;
       }
       if (isExpired !== undefined) {
         coupon.isExpired = isExpired;
@@ -245,6 +345,72 @@ const couponCtrl = {
       }
       if (maxUsage !== undefined) {
         coupon.maxUsage = maxUsage;
+      }
+
+      // Update fields based on coupon type
+      if (coupon.type === 'random') {
+        // Random coupon fields
+        if (percentage !== undefined) {
+          if (percentage < 0 || percentage > 100) {
+            return res.status(400).json({
+              message: 'Percentage must be between 0 and 100'
+            });
+          }
+          coupon.percentage = percentage;
+        }
+      } else {
+        // Custom coupon fields
+        if (startDate !== undefined) {
+          coupon.startDate = new Date(startDate);
+        }
+        if (endDate !== undefined) {
+          coupon.endDate = new Date(endDate);
+          coupon.expiresAt = new Date(endDate); // Sync expiresAt with endDate
+        }
+        if (discountType !== undefined) {
+          if (discountType !== 'percentage' && discountType !== 'amount') {
+            return res.status(400).json({
+              message: 'Discount type must be either "percentage" or "amount"'
+            });
+          }
+          coupon.discountType = discountType;
+        }
+        if (discountValue !== undefined) {
+          if (coupon.discountType === 'percentage' && (discountValue < 0 || discountValue > 100)) {
+            return res.status(400).json({
+              message: 'Percentage discount value must be between 0 and 100'
+            });
+          }
+          if (coupon.discountType === 'amount' && discountValue < 0) {
+            return res.status(400).json({
+              message: 'Amount discount value must be greater than or equal to 0'
+            });
+          }
+          coupon.discountValue = discountValue;
+        }
+        if (minimumOrderAmount !== undefined) {
+          if (minimumOrderAmount < 0) {
+            return res.status(400).json({
+              message: 'Minimum order amount must be greater than or equal to 0'
+            });
+          }
+          coupon.minimumOrderAmount = minimumOrderAmount;
+        }
+        if (maxUsagePerCustomer !== undefined) {
+          if (maxUsagePerCustomer !== null && maxUsagePerCustomer < 1) {
+            return res.status(400).json({
+              message: 'Max usage per customer must be greater than 0 or null'
+            });
+          }
+          coupon.maxUsagePerCustomer = maxUsagePerCustomer;
+        }
+
+        // Validate date range if both dates are present
+        if (coupon.startDate && coupon.endDate && coupon.startDate >= coupon.endDate) {
+          return res.status(400).json({
+            message: 'End date must be after start date'
+          });
+        }
       }
 
       await coupon.save();

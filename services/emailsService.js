@@ -337,15 +337,34 @@ module.exports = {
     let couponDiscount = 0;
     let couponCode = null;
     let couponPercentage = 0;
+    let couponDiscountType = null;
+    let couponDiscountValue = null;
     if (task.couponCode) {
       try {
         const Coupon = require('../models/Coupon');
         const coupon = await Coupon.findOne({ code: task.couponCode });
         if (coupon) {
           couponCode = coupon.code;
-          couponPercentage = coupon.percentage;
-          // Calculate coupon discount on subtotal after other discounts
-          couponDiscount = (subtotal * couponPercentage) / 100;
+
+          // Handle both random and custom coupon types
+          if (coupon.type === 'custom') {
+            couponDiscountType = coupon.discountType;
+            couponDiscountValue = coupon.discountValue;
+            if (coupon.discountType === 'percentage') {
+              couponPercentage = coupon.discountValue;
+              couponDiscount = (subtotal * couponPercentage) / 100;
+            } else if (coupon.discountType === 'amount') {
+              couponPercentage = 0; // For display purposes
+              couponDiscount = coupon.discountValue;
+            }
+          } else {
+            // Random coupon (existing behavior)
+            couponDiscountType = 'percentage';
+            couponDiscountValue = coupon.percentage;
+            couponPercentage = coupon.percentage;
+            couponDiscount = (subtotal * couponPercentage) / 100;
+          }
+
           subtotal -= couponDiscount;
         }
       } catch (error) {
@@ -567,7 +586,16 @@ module.exports = {
     }
     // Show coupon discount if applicable
     if (couponCode && couponDiscount > 0) {
-      discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">Coupon Discount (${couponCode} - ${couponPercentage}%)</span>\n                <span class="summary-value">-£${couponDiscount.toFixed(2)}</span>\n              </div>`;
+      let couponLabel = '';
+      if (couponDiscountType === 'percentage') {
+        couponLabel = `Coupon Discount (${couponCode} - ${couponPercentage}%)`;
+      } else if (couponDiscountType === 'amount') {
+        couponLabel = `Coupon Discount (${couponCode} - £${couponDiscountValue.toFixed(2)})`;
+      } else {
+        // Fallback for random coupons
+        couponLabel = `Coupon Discount (${couponCode} - ${couponPercentage}%)`;
+      }
+      discountRow += `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n              <div class="summary-row">\n                <span class="summary-label">${couponLabel}</span>\n                <span class="summary-value">-£${couponDiscount.toFixed(2)}</span>\n              </div>`;
     }
     template = template.replace('{{discountRow}}', discountRow);
 
@@ -1127,6 +1155,8 @@ module.exports = {
       let couponDiscount = 0;
       let couponCode = null;
       let couponPercentage = 0;
+      let couponDiscountType = null;
+      let couponDiscountValue = null;
       if (task.couponCode) {
         try {
           const Coupon = require('../models/Coupon');
@@ -1135,9 +1165,26 @@ module.exports = {
           const coupon = await Coupon.findOne({ code: normalizedCouponCode });
           if (coupon) {
             couponCode = coupon.code;
-            couponPercentage = coupon.percentage;
-            // Calculate coupon discount on subtotal after other discounts
-            couponDiscount = (subtotal * couponPercentage) / 100;
+
+            // Handle both random and custom coupon types
+            if (coupon.type === 'custom') {
+              couponDiscountType = coupon.discountType;
+              couponDiscountValue = coupon.discountValue;
+              if (coupon.discountType === 'percentage') {
+                couponPercentage = coupon.discountValue;
+                couponDiscount = (subtotal * couponPercentage) / 100;
+              } else if (coupon.discountType === 'amount') {
+                couponPercentage = 0; // For display purposes
+                couponDiscount = coupon.discountValue;
+              }
+            } else {
+              // Random coupon (existing behavior)
+              couponDiscountType = 'percentage';
+              couponDiscountValue = coupon.percentage;
+              couponPercentage = coupon.percentage;
+              couponDiscount = (subtotal * couponPercentage) / 100;
+            }
+
             subtotal -= couponDiscount;
           } else {
             console.warn(`Coupon code "${normalizedCouponCode}" not found in database for task ${task.orderNumber}`);
@@ -1353,6 +1400,13 @@ module.exports = {
           couponCode: couponCode || '',
           couponPercentage: couponPercentage || 0,
           couponDiscount: couponDiscount.toFixed(2),
+          couponDiscountType: couponDiscountType || 'percentage',
+          couponDiscountValue: couponDiscountValue || couponPercentage || 0,
+          couponLabel: couponCode && couponDiscount > 0
+            ? (couponDiscountType === 'amount'
+              ? `Coupon Discount: (${couponCode} - £${couponDiscountValue.toFixed(2)})`
+              : `Coupon Discount: (${couponCode} - ${couponPercentage}%)`)
+            : '',
         };
 
         // Log template data for debugging

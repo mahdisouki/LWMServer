@@ -21,7 +21,7 @@ const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
-const CLIENT_URL = 'https://www.client.londonwastemanagement.uk';
+const CLIENT_URL = 'https://client.londonwastemanagement.uk';
 const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
@@ -98,6 +98,7 @@ async function calculateTotalPrice({
   available, // Add available parameter for discount calculation
   applyMinFee = false, // Admin option to apply minimum fee
   couponCode = null, // Coupon code to apply
+  customerEmail = null, // Customer email for custom coupon validation
 }) {
   console.log('🚀 CALCULATE TOTAL PRICE FUNCTION CALLED');
   console.log('Items received:', items);
@@ -205,6 +206,8 @@ async function calculateTotalPrice({
   // 3.5. Apply coupon discount if coupon code is provided
   let couponDiscount = 0;
   let couponPercentage = 0;
+  let couponDiscountType = null;
+  let couponDiscountValue = null;
   if (couponCode) {
     try {
       // Ensure couponCode is a string before calling toUpperCase
@@ -212,21 +215,37 @@ async function calculateTotalPrice({
       if (couponCodeStr) {
         const coupon = await Coupon.findOne({ code: couponCodeStr.toUpperCase() });
         if (coupon) {
-          const validation = coupon.validateCoupon();
+          // For custom coupons, pass customerEmail and cartTotal (subtotal) for validation
+          const validation = coupon.validateCoupon(customerEmail, subtotal);
           if (validation.valid) {
-            couponPercentage = validation.percentage;
+            couponDiscountType = validation.discountType;
+            couponDiscountValue = validation.discountValue;
+
             const subtotalBeforeCoupon = subtotal;
-            couponDiscount = (subtotal * couponPercentage) / 100;
+
+            // Calculate discount based on type
+            if (validation.discountType === 'percentage') {
+              couponPercentage = validation.discountValue;
+              couponDiscount = (subtotal * couponPercentage) / 100;
+            } else if (validation.discountType === 'amount') {
+              couponDiscount = validation.discountValue;
+              // For amount discounts, we still track percentage as 0 for backward compatibility
+              couponPercentage = 0;
+            }
+
             // Explicitly subtract the discount - ensure it's a subtraction
             subtotal = Number((subtotal - couponDiscount).toFixed(2));
             console.log(`=== COUPON DISCOUNT DEBUG ===`);
             console.log(`Coupon Code: "${couponCodeStr}"`);
+            console.log(`Coupon Type: ${coupon.type}`);
+            console.log(`Discount Type: ${couponDiscountType}`);
+            console.log(`Discount Value: ${couponDiscountValue}`);
             console.log(`Coupon Percentage: ${couponPercentage}%`);
             console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
             console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
             console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
             console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
-            console.log(`✅ Coupon "${couponCodeStr}" applied: ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+            console.log(`✅ Coupon "${couponCodeStr}" applied: ${couponDiscountType === 'percentage' ? couponPercentage + '%' : '£' + couponDiscountValue.toFixed(2)} discount = £${couponDiscount.toFixed(2)}`);
           } else {
             console.log(`⚠️ Coupon "${couponCodeStr}" is invalid: ${validation.message}`);
           }
@@ -293,6 +312,8 @@ async function calculateTotalPrice({
     vat: Number(vat.toFixed(2)),
     couponDiscount: Number(couponDiscount.toFixed(2)),
     couponPercentage: couponPercentage,
+    couponDiscountType: couponDiscountType,
+    couponDiscountValue: couponDiscountValue,
   };
 }
 function hasPerItemDiscount(arr) {
@@ -344,19 +365,19 @@ const taskCtrl = {
         // Set time to midnight for date-only comparison (ignore time component)
         dateObj.setHours(0, 0, 0, 0);
         now.setHours(0, 0, 0, 0);
-        
+
         console.log('date', date);
         console.log('dateObj', dateObj);
         console.log('now', now);
-        
-        if(isNaN(dateObj.getTime())) {
+
+        if (isNaN(dateObj.getTime())) {
           return res.status(400).json({
             message: 'Invalid date format',
             error: 'INVALID_DATE'
           });
         }
-        
-        if(dateObj < now) {
+
+        if (dateObj < now) {
           return res.status(400).json({
             message: 'Date cannot be in the past',
             error: 'DATE_IN_PAST'
@@ -387,6 +408,41 @@ const taskCtrl = {
         hasPerItemDiscount(items) ||
         hasPerItemDiscount(objects);
 
+      // Calculate preliminary subtotal for coupon validation (before discounts)
+      let preliminarySubtotal = 0;
+
+      // Add custom items (objects)
+      if (objects && Array.isArray(objects)) {
+        objects.forEach((customObject) => {
+          if (customObject.object && customObject.price) {
+            const itemTotal = Number(customObject.price) * (Number(customObject.quantity) || 1);
+            preliminarySubtotal += itemTotal;
+          }
+        });
+      }
+
+      // Add standard items
+      if (items && Array.isArray(items)) {
+        for (const item of items) {
+          if (!item.standardItemId) continue;
+          const standardItem = await StandardItem.findById(item.standardItemId);
+          if (!standardItem) continue;
+
+          const quantity = Number(item.quantity) || 1;
+          let baseItemPrice = Number(standardItem.price);
+          let positionFee = 0;
+
+          if (item.Objectsposition === 'InsideWithDismantling') {
+            positionFee = Number(standardItem.insideWithDismantlingPrice);
+          } else if (item.Objectsposition === 'Inside') {
+            positionFee = Number(standardItem.insidePrice);
+          }
+
+          const itemSubtotal = (baseItemPrice * quantity) + (positionFee * quantity);
+          preliminarySubtotal += itemSubtotal;
+        }
+      }
+
       // Validate coupon code if provided
       let coupon = null;
       let couponId = null;
@@ -404,7 +460,8 @@ const taskCtrl = {
           coupon = await Coupon.findOne({ code: couponCodeStr.toUpperCase() });
           console.log('coupon', couponCode);
           if (coupon) {
-            const validation = coupon.validateCoupon();
+            // For custom coupons, pass customerEmail and preliminarySubtotal for validation
+            const validation = coupon.validateCoupon(email, preliminarySubtotal);
             if (!validation.valid) {
               return res.status(400).json({
                 message: `Invalid coupon code: ${validation.message}`,
@@ -412,7 +469,10 @@ const taskCtrl = {
               });
             }
             couponId = coupon._id;
-            console.log(`✅ Coupon "${couponCodeStr}" validated: ${validation.percentage}% discount`);
+            const discountInfo = validation.discountType === 'percentage'
+              ? `${validation.discountValue}% discount`
+              : `£${validation.discountValue.toFixed(2)} discount`;
+            console.log(`✅ Coupon "${couponCodeStr}" validated: ${discountInfo}`);
           } else {
             return res.status(400).json({
               message: 'Coupon code not found',
@@ -446,6 +506,7 @@ const taskCtrl = {
         createdByType, // Pass createdByType for discount calculation
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
         couponCode: couponCode || null, // Pass coupon code
+        customerEmail: email || null, // Pass customer email for custom coupon validation
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
         // customDiscountPercent > 0,
@@ -1222,6 +1283,30 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
 
+      // Calculate preliminary subtotal for coupon validation (before discounts)
+      let preliminarySubtotal = 0;
+      const populatedTask = await Task.findById(taskId).populate('items.standardItemId');
+
+      if (populatedTask && populatedTask.items) {
+        for (const item of populatedTask.items) {
+          let itemPrice = 0;
+          let positionFee = 0;
+          const quantity = Number(item.quantity) || 1;
+
+          if (item.standardItemId) {
+            itemPrice = Number(item.standardItemId.price);
+            if (item.Objectsposition === 'InsideWithDismantling') {
+              positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
+            } else if (item.Objectsposition === 'Inside') {
+              positionFee = Number(item.standardItemId.insidePrice);
+            }
+            preliminarySubtotal += (itemPrice * quantity) + (positionFee * quantity);
+          } else if (item.object && item.price) {
+            preliminarySubtotal += Number(item.price) * quantity;
+          }
+        }
+      }
+
       // Validate coupon code if provided (similar to createTask)
       let coupon = null;
       let couponId = null;
@@ -1238,22 +1323,26 @@ const taskCtrl = {
 
             const couponCodeUpper = couponCodeStr.toUpperCase();
             const existingCouponCode = oldTask.couponCode ? String(oldTask.couponCode).trim().toUpperCase() : '';
-            
+
             // Only validate if it's a NEW/different coupon code (skip validation if same as existing)
             const isDifferentCoupon = couponCodeUpper !== existingCouponCode;
-            
+
             coupon = await Coupon.findOne({ code: couponCodeUpper });
             if (coupon) {
               // Only validate if it's a different coupon from what's already saved
               if (isDifferentCoupon) {
-                const validation = coupon.validateCoupon();
+                // For custom coupons, pass customerEmail and preliminarySubtotal for validation
+                const validation = coupon.validateCoupon(oldTask.email || null, preliminarySubtotal);
                 if (!validation.valid) {
                   return res.status(400).json({
                     message: `Invalid coupon code: ${validation.message}`,
                     error: 'COUPON_INVALID'
                   });
                 }
-                console.log(`✅ New coupon "${couponCodeUpper}" validated for update: ${validation.percentage}% discount`);
+                const discountInfo = validation.discountType === 'percentage'
+                  ? `${validation.discountValue}% discount`
+                  : `£${validation.discountValue.toFixed(2)} discount`;
+                console.log(`✅ New coupon "${couponCodeUpper}" validated for update: ${discountInfo}`);
               } else {
                 console.log(`ℹ️ Coupon "${couponCodeUpper}" unchanged - skipping validation (already exists on task)`);
               }
@@ -1623,7 +1712,7 @@ const taskCtrl = {
         let couponDiscount = 0;
         // Use new coupon if provided, otherwise use existing coupon from task when recalculating
         // This ensures existing coupons are preserved when recalculating due to item updates
-        const couponCodeToUse = updates.couponCode !== undefined 
+        const couponCodeToUse = updates.couponCode !== undefined
           ? (updates.couponCode || null) // Allow clearing coupon with empty string/null
           : populatedTask.couponCode; // Preserve existing coupon when recalculating
 
@@ -1632,7 +1721,7 @@ const taskCtrl = {
         // 1. No couponCode provided in update (undefined), OR
         // 2. The couponCode matches what's already saved in the database
         // Only validate if a new/different coupon code is being provided
-        const isNewCoupon = updates.couponCode !== undefined && 
+        const isNewCoupon = updates.couponCode !== undefined &&
           String(updates.couponCode || '').trim().toUpperCase() !== String(populatedTask.couponCode || '').trim().toUpperCase();
         console.log('isNewCoupon:', isNewCoupon);
         console.log('String(updates.couponCode || "").trim().toUpperCase():', String(updates.couponCode || "").trim().toUpperCase());
@@ -1648,7 +1737,7 @@ const taskCtrl = {
           try {
             const couponCodeStr = String(couponCodeToUse).trim().toUpperCase();
             console.log('Looking up coupon with code:', couponCodeStr);
-            
+
             // Use already validated coupon from earlier if available, otherwise fetch it
             let couponToApply = coupon;
             if (!couponToApply) {
@@ -1658,71 +1747,106 @@ const taskCtrl = {
             } else {
               console.log('Using already validated coupon from top section');
             }
-            
+
             if (couponToApply) {
               // Only validate NEW coupons that haven't been validated yet in this request
               // If coupon was already validated at the top (coupon variable exists), skip validation
               const needsValidation = isNewCoupon && !coupon;
-              
+
               if (needsValidation) {
-                const validation = couponToApply.validateCoupon();
+                // Validate with customer email and subtotal for custom coupons
+                const validation = couponToApply.validateCoupon(populatedTask.email || null, subtotal);
                 console.log('Coupon validation result (NEW coupon, first validation):', validation);
-                
+
                 if (validation.valid) {
-                  const couponPercentage = validation.percentage;
                   const subtotalBeforeCoupon = subtotal;
-                  couponDiscount = (subtotal * couponPercentage) / 100;
+
+                  // Calculate discount based on type
+                  if (validation.discountType === 'percentage') {
+                    couponDiscount = (subtotal * validation.discountValue) / 100;
+                  } else if (validation.discountType === 'amount') {
+                    couponDiscount = validation.discountValue;
+                  }
+
                   subtotal = Number((subtotal - couponDiscount).toFixed(2));
                   console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
                   console.log(`Coupon Code: "${couponCodeStr}"`);
                   console.log(`Coupon Source: New/Updated (validated in price calc)`);
-                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Discount Type: ${validation.discountType}`);
+                  console.log(`Discount Value: ${validation.discountValue}`);
                   console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
                   console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
                   console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
                   console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
-                  console.log(`✅ Coupon applied in updateTask: ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                  const discountInfo = validation.discountType === 'percentage'
+                    ? `${validation.discountValue}% discount`
+                    : `£${validation.discountValue.toFixed(2)} discount`;
+                  console.log(`✅ Coupon applied in updateTask: ${discountInfo} = £${couponDiscount.toFixed(2)}`);
                 } else {
                   console.log(`⚠️ Coupon "${couponCodeStr}" is invalid in updateTask: ${validation.message}`);
                   console.log('⚠️ Coupon validation failed, discount NOT applied');
                 }
               } else if (coupon) {
                 // Coupon was already validated at the top section - use it without re-validation
-                const couponPercentage = couponToApply.percentage || 0;
-                if (couponPercentage > 0) {
+                const validation = coupon.validateCoupon(populatedTask.email || null, subtotal);
+                if (validation.valid) {
                   const subtotalBeforeCoupon = subtotal;
-                  couponDiscount = (subtotal * couponPercentage) / 100;
+
+                  // Calculate discount based on type
+                  if (validation.discountType === 'percentage') {
+                    couponDiscount = (subtotal * validation.discountValue) / 100;
+                  } else if (validation.discountType === 'amount') {
+                    couponDiscount = validation.discountValue;
+                  }
+
                   subtotal = Number((subtotal - couponDiscount).toFixed(2));
                   console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
                   console.log(`Coupon Code: "${couponCodeStr}"`);
                   console.log(`Coupon Source: New/Updated (already validated at top)`);
-                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Discount Type: ${validation.discountType}`);
+                  console.log(`Discount Value: ${validation.discountValue}`);
                   console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
                   console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
                   console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
                   console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
-                  console.log(`✅ Coupon applied (already validated): ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                  const discountInfo = validation.discountType === 'percentage'
+                    ? `${validation.discountValue}% discount`
+                    : `£${validation.discountValue.toFixed(2)} discount`;
+                  console.log(`✅ Coupon applied (already validated): ${discountInfo} = £${couponDiscount.toFixed(2)}`);
                 } else {
-                  console.log(`⚠️ Coupon has invalid percentage: ${couponPercentage}%`);
+                  console.log(`⚠️ Coupon validation failed: ${validation.message}`);
                 }
               } else {
-                // Existing coupon: skip validation, use percentage directly from coupon document
-                const couponPercentage = couponToApply.percentage || 0;
-                if (couponPercentage > 0) {
+                // Existing coupon: use discount type and value from coupon document
+                const discountType = couponToApply.type === 'custom' ? couponToApply.discountType : 'percentage';
+                const discountValue = couponToApply.type === 'custom' ? couponToApply.discountValue : (couponToApply.percentage || 0);
+
+                if (discountValue > 0) {
                   const subtotalBeforeCoupon = subtotal;
-                  couponDiscount = (subtotal * couponPercentage) / 100;
+
+                  // Calculate discount based on type
+                  if (discountType === 'percentage') {
+                    couponDiscount = (subtotal * discountValue) / 100;
+                  } else if (discountType === 'amount') {
+                    couponDiscount = discountValue;
+                  }
+
                   subtotal = Number((subtotal - couponDiscount).toFixed(2));
                   console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
                   console.log(`Coupon Code: "${couponCodeStr}"`);
                   console.log(`Coupon Source: Existing (no validation)`);
-                  console.log(`Coupon Percentage: ${couponPercentage}%`);
+                  console.log(`Discount Type: ${discountType}`);
+                  console.log(`Discount Value: ${discountValue}`);
                   console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
                   console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
                   console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
                   console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
-                  console.log(`✅ Existing coupon applied (no validation): ${couponPercentage}% discount = £${couponDiscount.toFixed(2)}`);
+                  const discountInfo = discountType === 'percentage'
+                    ? `${discountValue}% discount`
+                    : `£${discountValue.toFixed(2)} discount`;
+                  console.log(`✅ Existing coupon applied (no validation): ${discountInfo} = £${couponDiscount.toFixed(2)}`);
                 } else {
-                  console.log(`⚠️ Existing coupon has invalid percentage: ${couponPercentage}%`);
+                  console.log(`⚠️ Existing coupon has invalid discount value: ${discountValue}`);
                 }
               }
             } else {
@@ -2107,7 +2231,27 @@ const taskCtrl = {
             task.couponId = null;
             await task.save();
           } else {
-            const validation = coupon.validateCoupon(); // Checks expiration, usage, active status
+            // Calculate preliminary subtotal for validation
+            let preliminarySubtotal = 0;
+            for (const item of task.items) {
+              let itemPrice = 0;
+              let positionFee = 0;
+              const quantity = Number(item.quantity) || 1;
+
+              if (item.standardItemId) {
+                itemPrice = Number(item.standardItemId.price);
+                if (item.Objectsposition === 'InsideWithDismantling') {
+                  positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
+                } else if (item.Objectsposition === 'Inside') {
+                  positionFee = Number(item.standardItemId.insidePrice);
+                }
+                preliminarySubtotal += (itemPrice * quantity) + (positionFee * quantity);
+              } else if (item.object && item.price) {
+                preliminarySubtotal += Number(item.price) * quantity;
+              }
+            }
+            // For custom coupons, pass customerEmail and preliminarySubtotal for validation
+            const validation = coupon.validateCoupon(task.email || null, preliminarySubtotal);
             if (!validation.valid) {
               // Coupon invalid or expired, remove from task
               task.couponCode = null;
@@ -2180,7 +2324,7 @@ const taskCtrl = {
           price: item.price
         }));
 
-      const { totalPrice: calculatedTotalPrice, vat: calculatedVat, couponDiscount: calculatedCouponDiscount } = await calculateTotalPrice({
+      const { totalPrice: calculatedTotalPrice, vat: calculatedVat, couponDiscount: calculatedCouponDiscount, couponDiscountType, couponDiscountValue } = await calculateTotalPrice({
         items: itemsForCalculation,
         objects: objectsForCalculation,
         customDiscountPercent: task.customDiscountPercent,
@@ -2189,7 +2333,8 @@ const taskCtrl = {
         createdByType: task.createdByType,
         available: task.available,
         applyMinFee: task.applyMinFee,
-        couponCode: task.couponCode
+        couponCode: task.couponCode,
+        customerEmail: task.email || null
       });
 
       let basePrice = breakdown.reduce(
@@ -2228,8 +2373,15 @@ const taskCtrl = {
 
       // Add coupon discount to breakdown if exists
       if (coupon && couponDiscount > 0) {
+        let couponLabel = '';
+        if (coupon.type === 'custom' && coupon.discountType === 'amount') {
+          couponLabel = `Coupon Discount (${coupon.code} - £${coupon.discountValue.toFixed(2)})`;
+        } else {
+          const percentage = coupon.type === 'custom' ? coupon.discountValue : coupon.percentage;
+          couponLabel = `Coupon Discount (${coupon.code} - ${percentage}%)`;
+        }
         fullBreakdown.push({
-          description: `Coupon Discount (${coupon.percentage}% - ${coupon.code})`,
+          description: couponLabel,
           amount: -couponDiscount.toFixed(2)
         });
       }
@@ -2401,6 +2553,26 @@ const taskCtrl = {
         const storedCouponId = task.couponId;
         const storedCouponCode = task.couponCode;
 
+        // Calculate preliminary subtotal for coupon validation (before discounts)
+        let preliminarySubtotal = 0;
+        for (const item of task.items) {
+          let itemPrice = 0;
+          let positionFee = 0;
+          const quantity = Number(item.quantity) || 1;
+
+          if (item.standardItemId) {
+            itemPrice = Number(item.standardItemId.price);
+            if (item.Objectsposition === 'InsideWithDismantling') {
+              positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
+            } else if (item.Objectsposition === 'Inside') {
+              positionFee = Number(item.standardItemId.insidePrice);
+            }
+            preliminarySubtotal += (itemPrice * quantity) + (positionFee * quantity);
+          } else if (item.object && item.price) {
+            preliminarySubtotal += Number(item.price) * quantity;
+          }
+        }
+
         // Retrieve coupon code from task if exists and validate it
         if (task.couponCode) {
           try {
@@ -2413,7 +2585,8 @@ const taskCtrl = {
               task.couponId = null;
               await task.save();
             } else {
-              const validation = coupon.validateCoupon();
+              // For custom coupons, pass customerEmail and preliminarySubtotal for validation
+              const validation = coupon.validateCoupon(task.email || null, preliminarySubtotal);
               if (!validation.valid) {
                 // Coupon invalid or expired, remove from task
                 task.couponCode = null;
@@ -2456,7 +2629,8 @@ const taskCtrl = {
           createdByType: task.createdByType,
           available: task.available,
           applyMinFee: task.applyMinFee,
-          couponCode: task.couponCode
+          couponCode: task.couponCode,
+          customerEmail: task.email || null
         });
 
         // Recalculer le prix final pour le remainingAmount - ONLY standard items with position fees
@@ -2529,7 +2703,7 @@ const taskCtrl = {
             const coupon = await Coupon.findById(storedCouponId);
             if (coupon) {
               const usageBefore = coupon.usageCount;
-              await coupon.incrementUsage();
+              await coupon.incrementUsage(task.email || null);
               // Refetch coupon to get updated usageCount
               const updatedCoupon = await Coupon.findById(storedCouponId);
               task.couponUsageIncremented = true;
@@ -2673,6 +2847,26 @@ const taskCtrl = {
       const storedCouponId = task.couponId;
       const storedCouponCode = task.couponCode;
 
+      // Calculate preliminary subtotal for coupon validation (before discounts)
+      let preliminarySubtotal = 0;
+      for (const item of task.items) {
+        let itemPrice = 0;
+        let positionFee = 0;
+        const quantity = Number(item.quantity) || 1;
+
+        if (item.standardItemId) {
+          itemPrice = Number(item.standardItemId.price);
+          if (item.Objectsposition === 'InsideWithDismantling') {
+            positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
+          } else if (item.Objectsposition === 'Inside') {
+            positionFee = Number(item.standardItemId.insidePrice);
+          }
+          preliminarySubtotal += (itemPrice * quantity) + (positionFee * quantity);
+        } else if (item.object && item.price) {
+          preliminarySubtotal += Number(item.price) * quantity;
+        }
+      }
+
       // Retrieve coupon code from task if exists and validate it
       if (task.couponCode) {
         try {
@@ -2685,7 +2879,8 @@ const taskCtrl = {
             task.couponId = null;
             await task.save();
           } else {
-            const validation = coupon.validateCoupon();
+            // For custom coupons, pass customerEmail and preliminarySubtotal for validation
+            const validation = coupon.validateCoupon(task.email || null, preliminarySubtotal);
             if (!validation.valid) {
               // Coupon invalid or expired, remove from task
               task.couponCode = null;
@@ -2778,7 +2973,7 @@ const taskCtrl = {
             const coupon = await Coupon.findById(storedCouponId);
             if (coupon) {
               const usageBefore = coupon.usageCount;
-              await coupon.incrementUsage();
+              await coupon.incrementUsage(task.email || null);
               // Refetch coupon to get updated usageCount
               const updatedCoupon = await Coupon.findById(storedCouponId);
               task.couponUsageIncremented = true;
@@ -3059,7 +3254,7 @@ const taskCtrl = {
             price: item.price
           }));
 
-        const { couponDiscount: calculatedCouponDiscount } = await calculateTotalPrice({
+        const { couponDiscount: calculatedCouponDiscount, couponDiscountType, couponDiscountValue } = await calculateTotalPrice({
           items: itemsForCalculation,
           objects: objectsForCalculation,
           customDiscountPercent: task.customDiscountPercent,
@@ -3068,14 +3263,22 @@ const taskCtrl = {
           createdByType: task.createdByType,
           available: task.available,
           applyMinFee: task.applyMinFee,
-          couponCode: task.couponCode
+          couponCode: task.couponCode,
+          customerEmail: task.email || null
         });
 
         couponDiscount = calculatedCouponDiscount;
         if (couponDiscount > 0) {
           subtotal -= couponDiscount;
+          let couponLabel = '';
+          if (coupon.type === 'custom' && coupon.discountType === 'amount') {
+            couponLabel = `Coupon Discount (${coupon.code} - £${coupon.discountValue.toFixed(2)})`;
+          } else {
+            const percentage = coupon.type === 'custom' ? coupon.discountValue : coupon.percentage;
+            couponLabel = `Coupon Discount (${coupon.code} - ${percentage}%)`;
+          }
           breakdown.push({
-            description: `Coupon Discount (${coupon.percentage}% - ${coupon.code})`,
+            description: couponLabel,
             amount: -couponDiscount,
           });
         }
@@ -3273,7 +3476,7 @@ const taskCtrl = {
 
             if (coupon) {
               const usageBefore = coupon.usageCount;
-              await coupon.incrementUsage();
+              await coupon.incrementUsage(task.email || null);
               // Refetch coupon to get updated usageCount
               const updatedCoupon = await Coupon.findById(coupon._id);
               task.couponUsageIncremented = true;
@@ -3289,7 +3492,7 @@ const taskCtrl = {
 
         const amountInCents = session.amount_total;
         const amountInGBP = amountInCents / 100;
-        
+
         // Get the actual Payment Intent ID or Charge ID (not Checkout Session ID)
         let transactionId = session.payment_intent; // Payment Intent ID (pi_xxx)
         let payerAccount = task.email;
@@ -3301,11 +3504,11 @@ const taskCtrl = {
             // Get the charge ID from the latest charge
             if (paymentIntent.latest_charge) {
               // latest_charge can be a string ID or a Charge object
-              const chargeId = typeof paymentIntent.latest_charge === 'string' 
-                ? paymentIntent.latest_charge 
+              const chargeId = typeof paymentIntent.latest_charge === 'string'
+                ? paymentIntent.latest_charge
                 : paymentIntent.latest_charge.id;
               transactionId = chargeId; // Use Charge ID (ch_xxx) as the actual transaction ID
-              
+
               // Also get the payer account from the charge if available
               if (paymentIntent.charges?.data?.[0]?.billing_details?.email) {
                 payerAccount = paymentIntent.charges.data[0].billing_details.email;
@@ -3538,7 +3741,7 @@ const taskCtrl = {
               const coupon = await Coupon.findById(task.couponId);
               if (coupon) {
                 const usageBefore = coupon.usageCount;
-                await coupon.incrementUsage();
+                await coupon.incrementUsage(task.email || null);
                 // Refetch coupon to get updated usageCount
                 const updatedCoupon = await Coupon.findById(task.couponId);
                 task.couponUsageIncremented = true;
@@ -3636,7 +3839,7 @@ const taskCtrl = {
 
               if (coupon) {
                 const usageBefore = coupon.usageCount;
-                await coupon.incrementUsage();
+                await coupon.incrementUsage(task.email || null);
                 // Refetch coupon to get updated usageCount
                 const updatedCoupon = await Coupon.findById(coupon._id);
                 task.couponUsageIncremented = true;
@@ -3957,9 +4160,26 @@ const taskCtrl = {
           const coupon = await Coupon.findOne({ code: normalizedCouponCode });
           if (coupon) {
             couponCode = coupon.code;
-            couponPercentage = coupon.percentage;
-            // Calculate coupon discount on subtotal after other discounts
-            couponDiscount = (subtotal * couponPercentage) / 100;
+
+            // Handle both random and custom coupon types
+            if (coupon.type === 'custom') {
+              couponDiscountType = coupon.discountType;
+              couponDiscountValue = coupon.discountValue;
+              if (coupon.discountType === 'percentage') {
+                couponPercentage = coupon.discountValue;
+                couponDiscount = (subtotal * couponPercentage) / 100;
+              } else if (coupon.discountType === 'amount') {
+                couponPercentage = 0; // For display purposes
+                couponDiscount = coupon.discountValue;
+              }
+            } else {
+              // Random coupon (existing behavior)
+              couponDiscountType = 'percentage';
+              couponDiscountValue = coupon.percentage;
+              couponPercentage = coupon.percentage;
+              couponDiscount = (subtotal * couponPercentage) / 100;
+            }
+
             subtotal -= couponDiscount;
           } else {
             console.warn(`Coupon code "${normalizedCouponCode}" not found in database for task ${task.orderNumber}`);
