@@ -33,20 +33,6 @@ const dailySheetSchema = new Schema({
       time: { type: Date, default: Date.now },        // Time of the expense
     }
   ],
-  pcnDamages: [
-    {
-      reason: { type: String, required: true },       // Reason for PCN/Damage
-      amount: { type: Number, required: true },       // Amount to deduct
-      deductedFromUserId: {
-        type: Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-      },                                              // User ID (Driver or Helper) to deduct from
-      proofUrl: { type: String },                     // URL to uploaded proof (image/URL)
-      addedBy: { type: String },                      // User name or ID who added this
-      time: { type: Date, default: Date.now },        // Time of the PCN/Damage
-    }
-  ],
   // Total cash received from all tasks paid in cash
   totalCash: { type: Number, default: 0 }
 }, { timestamps: true });

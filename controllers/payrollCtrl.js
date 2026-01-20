@@ -4,6 +4,7 @@ const APIfeatures = require('../utils/APIFeatures');
 const Truck = require('../models/Truck');
 const Task = require('../models/Task');
 const DailySheet = require('../models/DailySheet');
+const PcnDamage = require('../models/PcnDamage');
 
 const PayrollCtrl = {
   // Log start time at the beginning of the day
@@ -254,13 +255,14 @@ const PayrollCtrl = {
       }, 0) : 0;
 
       // Calculate PCN/Damages deductions for this user
-      const totalPcnDamages = dailySheet ? dailySheet.pcnDamages.reduce((sum, pcn) => {
-        // Only count PCN/Damages that should be deducted from this user
-        if (pcn.deductedFromUserId && pcn.deductedFromUserId.toString() === userId.toString()) {
-          return sum + pcn.amount;
-        }
-        return sum;
-      }, 0) : 0;
+      let totalPcnDamages = 0;
+      if (dailySheet) {
+        const pcnDamages = await PcnDamage.find({
+          dailySheetId: dailySheet._id,
+          deductedFromUserId: userId
+        });
+        totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + pcn.amount, 0);
+      }
 
       payroll.endTime = end;
       payroll.totalHoursWorked = totalHoursWorked;
@@ -632,12 +634,15 @@ const PayrollCtrl = {
         }
 
         // Calculate totalPcnDamages from daily sheet
-        payroll.totalPcnDamages = dailySheet ? dailySheet.pcnDamages.reduce((sum, pcn) => {
-          if (pcn.deductedFromUserId && pcn.deductedFromUserId.toString() === payroll.userId.toString()) {
-            return sum + pcn.amount;
-          }
-          return sum;
-        }, 0) : 0;
+        if (dailySheet) {
+          const pcnDamages = await PcnDamage.find({
+            dailySheetId: dailySheet._id,
+            deductedFromUserId: payroll.userId
+          });
+          payroll.totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + pcn.amount, 0);
+        } else {
+          payroll.totalPcnDamages = 0;
+        }
       }
 
       // Update status if provided
@@ -785,13 +790,15 @@ const PayrollCtrl = {
 
         // Calculate totalPcnDamages from daily sheet (use provided value if manually set, otherwise calculate)
         if (totalPcnDamages === undefined) {
-          calculatedTotalPcnDamages = dailySheet ? dailySheet.pcnDamages.reduce((sum, pcn) => {
-            // Only count PCN/Damages that should be deducted from this user
-            if (pcn.deductedFromUserId && pcn.deductedFromUserId.toString() === userId.toString()) {
-              return sum + pcn.amount;
-            }
-            return sum;
-          }, 0) : 0;
+          if (dailySheet) {
+            const pcnDamages = await PcnDamage.find({
+              dailySheetId: dailySheet._id,
+              deductedFromUserId: userId
+            });
+            calculatedTotalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + pcn.amount, 0);
+          } else {
+            calculatedTotalPcnDamages = 0;
+          }
         }
       }
 
