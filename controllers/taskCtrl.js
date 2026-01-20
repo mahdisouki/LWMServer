@@ -2811,6 +2811,12 @@ const taskCtrl = {
           charge.billing_details.email ||
           `Card ending in ${charge.payment_method_details.card.last4}`;
 
+        // Extract last 4 digits of card number
+        let cardLast4Digits = null;
+        if (charge.payment_method_details?.card?.last4) {
+          cardLast4Digits = charge.payment_method_details.card.last4;
+        }
+
         // Construire le breakdown complet - ONLY standard items
         const breakdown = task.items
           .filter((item) => item.standardItemId) // Only process standard items
@@ -2854,6 +2860,7 @@ const taskCtrl = {
           paymentDate: new Date(),
           transactionId: paymentIntentId,
           payerAccount,
+          cardLast4Digits,
           status: 'success',
           statusMessage: `Payment successful via Stripe. Transaction ID: ${paymentIntentId}. Amount: £${amountInGBP.toFixed(2)}.`,
         });
@@ -3579,6 +3586,7 @@ const taskCtrl = {
         // Get the actual Payment Intent ID or Charge ID (not Checkout Session ID)
         let transactionId = session.payment_intent; // Payment Intent ID (pi_xxx)
         let payerAccount = task.email;
+        let cardLast4Digits = null;
 
         // If payment_intent exists, try to get the Charge ID (ch_xxx) which is the actual transaction ID
         if (transactionId && transactionId.startsWith('pi_')) {
@@ -3592,9 +3600,16 @@ const taskCtrl = {
                 : paymentIntent.latest_charge.id;
               transactionId = chargeId; // Use Charge ID (ch_xxx) as the actual transaction ID
 
-              // Also get the payer account from the charge if available
-              if (paymentIntent.charges?.data?.[0]?.billing_details?.email) {
-                payerAccount = paymentIntent.charges.data[0].billing_details.email;
+              // Also get the payer account and card details from the charge if available
+              if (paymentIntent.charges?.data?.[0]) {
+                const charge = paymentIntent.charges.data[0];
+                if (charge.billing_details?.email) {
+                  payerAccount = charge.billing_details.email;
+                }
+                // Extract last 4 digits of card number
+                if (charge.payment_method_details?.card?.last4) {
+                  cardLast4Digits = charge.payment_method_details.card.last4;
+                }
               }
             }
           } catch (error) {
@@ -3626,6 +3641,7 @@ const taskCtrl = {
           paymentDate: new Date(),
           transactionId: transactionId, // Now uses Charge ID (ch_xxx) when available
           payerAccount,
+          cardLast4Digits,
           status: 'success',
           statusMessage: `Payment successful via Stripe. Transaction ID: ${transactionId}. Amount: £${amountInGBP.toFixed(2)}. Payment type: ${paymentAmountType === 'deposit' ? 'Deposit' : paymentAmountType === 'remaining' ? 'Remaining' : 'Full payment'}.`,
         });

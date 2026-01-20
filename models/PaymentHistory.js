@@ -12,10 +12,11 @@ const paymentHistorySchema = new Schema({
     paymentDate: { type: Date, default: Date.now },
     transactionId: { type: String, required: true },
     payerAccount: { type: String },
-    status: { 
-        type: String, 
-        enum: ['success', 'failed', 'pending', 'refunded'], 
-        default: 'pending' 
+    cardLast4Digits: { type: String }, // Last 4 digits of the card number (for Stripe payments)
+    status: {
+        type: String,
+        enum: ['success', 'failed', 'pending', 'refunded'],
+        default: 'pending'
     },
     statusMessage: { type: String },
     errorMessage: { type: String },
