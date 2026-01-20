@@ -3591,7 +3591,29 @@ const taskCtrl = {
         // If payment_intent exists, try to get the Charge ID (ch_xxx) which is the actual transaction ID
         if (transactionId && transactionId.startsWith('pi_')) {
           try {
-            const paymentIntent = await stripe.paymentIntents.retrieve(transactionId);
+            const paymentIntent = await stripe.paymentIntents.retrieve(transactionId, {
+              expand: ['payment_method']
+            });
+
+            // Try to get card details from payment method first (most reliable)
+            if (paymentIntent.payment_method) {
+              const paymentMethodId = typeof paymentIntent.payment_method === 'string'
+                ? paymentIntent.payment_method
+                : paymentIntent.payment_method.id;
+
+              try {
+                const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+                if (paymentMethod.card?.last4) {
+                  cardLast4Digits = paymentMethod.card.last4;
+                }
+                if (paymentMethod.billing_details?.email) {
+                  payerAccount = paymentMethod.billing_details.email;
+                }
+              } catch (pmError) {
+                console.error('Error retrieving Payment Method:', pmError);
+              }
+            }
+
             // Get the charge ID from the latest charge
             if (paymentIntent.latest_charge) {
               // latest_charge can be a string ID or a Charge object
@@ -3600,28 +3622,33 @@ const taskCtrl = {
                 : paymentIntent.latest_charge.id;
               transactionId = chargeId; // Use Charge ID (ch_xxx) as the actual transaction ID
 
-              // Retrieve the charge separately to get full card details
-              try {
-                const charge = await stripe.charges.retrieve(chargeId);
-                if (charge.billing_details?.email) {
-                  payerAccount = charge.billing_details.email;
-                }
-                // Extract last 4 digits of card number
-                if (charge.payment_method_details?.card?.last4) {
-                  cardLast4Digits = charge.payment_method_details.card.last4;
-                }
-              } catch (chargeError) {
-                console.error('Error retrieving Charge details:', chargeError);
-                // Fall back to payment intent charges if available
-                if (paymentIntent.charges?.data?.[0]) {
-                  const charge = paymentIntent.charges.data[0];
-                  if (charge.billing_details?.email) {
+              // Retrieve the charge separately to get full card details (if not already got from payment method)
+              if (!cardLast4Digits) {
+                try {
+                  const charge = await stripe.charges.retrieve(chargeId);
+                  if (charge.billing_details?.email && !payerAccount) {
                     payerAccount = charge.billing_details.email;
                   }
+                  // Extract last 4 digits of card number
                   if (charge.payment_method_details?.card?.last4) {
                     cardLast4Digits = charge.payment_method_details.card.last4;
                   }
+                } catch (chargeError) {
+                  console.error('Error retrieving Charge details:', chargeError);
+                  // Fall back to payment intent charges if available
+                  if (paymentIntent.charges?.data?.[0]) {
+                    const charge = paymentIntent.charges.data[0];
+                    if (charge.billing_details?.email && !payerAccount) {
+                      payerAccount = charge.billing_details.email;
+                    }
+                    if (charge.payment_method_details?.card?.last4 && !cardLast4Digits) {
+                      cardLast4Digits = charge.payment_method_details.card.last4;
+                    }
+                  }
                 }
+              } else {
+                // Still update transactionId to charge ID even if we already have card details
+                transactionId = chargeId;
               }
             }
           } catch (error) {
