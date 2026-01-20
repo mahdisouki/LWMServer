@@ -209,14 +209,39 @@ const couponCtrl = {
 
       if (!coupon) {
         return res.status(404).json({
+          valid: false,
           message: 'Coupon not found'
         });
       }
 
-      res.status(200).json({
-        message: 'Coupon retrieved successfully',
-        coupon
-      });
+      // Build response based on coupon type (without validation)
+      let discountType, discountValue;
+
+      if (coupon.type === 'random') {
+        discountType = 'percentage';
+        discountValue = coupon.percentage;
+      } else {
+        discountType = coupon.discountType;
+        discountValue = coupon.discountValue;
+      }
+
+      // Build response based on coupon type
+      const response = {
+        valid: true,
+        message: 'Coupon is valid',
+        discountType: discountType,
+        discountValue: discountValue,
+        coupon: coupon.toObject()
+      };
+
+      // For backward compatibility, include percentage if it's a percentage discount
+      if (discountType === 'percentage') {
+        response.percentage = discountValue;
+      } else {
+        response.percentage = null;
+      }
+
+      res.status(200).json(response);
     } catch (error) {
       console.error('Error fetching coupon:', error);
       res.status(500).json({
