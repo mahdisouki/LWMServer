@@ -41,10 +41,26 @@ async function processSingleRefund(paymentHistory, amountToRefund) {
     let verified = false;
 
     if (paymentHistory.paymentType === 'Stripe') {
-        const refund = await stripe.refunds.create({
-            payment_intent: paymentHistory.transactionId,
+        const transactionId = paymentHistory.transactionId;
+        
+        // Determine if transactionId is a charge ID (ch_xxx) or payment_intent ID (pi_xxx)
+        let refundParams = {
             amount: Math.round(amountToRefund * 100)
-        });
+        };
+        
+        if (transactionId && transactionId.startsWith('ch_')) {
+            // Use charge parameter for charge IDs
+            refundParams.charge = transactionId;
+        } else if (transactionId && transactionId.startsWith('pi_')) {
+            // Use payment_intent parameter for payment_intent IDs
+            refundParams.payment_intent = transactionId;
+        } else {
+            // If it's neither, try to get the charge from payment_intent if possible
+            // Otherwise, throw an error
+            throw new Error(`Invalid Stripe transaction ID format: ${transactionId}. Expected charge ID (ch_xxx) or payment_intent ID (pi_xxx).`);
+        }
+        
+        const refund = await stripe.refunds.create(refundParams);
         refundId = refund.id;
         refundStatus = refund.status;
         rawPayload = refund;
