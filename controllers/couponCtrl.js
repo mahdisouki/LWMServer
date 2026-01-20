@@ -201,6 +201,54 @@ const couponCtrl = {
     }
   },
 
+  // Search coupons by name (code)
+  searchCouponByName: async (req, res) => {
+    try {
+      const { name, page = '1', limit = '10' } = req.query;
+      const pageNum = parseInt(page, 10);
+      const limitNum = parseInt(limit, 10);
+      const skip = (pageNum - 1) * limitNum;
+
+      if (!name || name.trim() === '') {
+        return res.status(400).json({
+          message: 'Search name is required'
+        });
+      }
+
+      // Build filter with case-insensitive partial match
+      const filter = {
+        code: { $regex: name.trim(), $options: 'i' }
+      };
+
+      // Get total count
+      const total = await Coupon.countDocuments(filter);
+
+      // Get coupons
+      const coupons = await Coupon.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum);
+
+      res.status(200).json({
+        message: 'Coupons retrieved successfully',
+        coupons,
+        meta: {
+          currentPage: pageNum,
+          limit: limitNum,
+          total,
+          totalPages: Math.ceil(total / limitNum),
+          searchTerm: name.trim()
+        }
+      });
+    } catch (error) {
+      console.error('Error searching coupons:', error);
+      res.status(500).json({
+        message: 'Failed to search coupons',
+        error: error.message
+      });
+    }
+  },
+
   // Get coupon by ID
   getCouponById: async (req, res) => {
     try {
