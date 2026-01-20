@@ -314,7 +314,7 @@ const dailySheetController = {
   updateFuelLog: async (req, res) => {
     try {
       const { driverId, date, fuelLogId } = req.params;
-      const { amount, litres, station } = req.body;
+      const { amount, litres, station, time, date: newDate } = req.body;
 
       const startDate = new Date(date);
       startDate.setHours(0, 0, 0, 0);
@@ -340,13 +340,61 @@ const dailySheetController = {
       //   return res.status(403).json({ message: 'Not authorized to edit this log' });
       // }
 
-      if (amount !== undefined) log.amount = amount;
-      if (litres !== undefined) log.litres = litres;
-      if (station !== undefined) log.station = station;
+      // If a new date is provided, move the fuel log to that date's daily sheet
+      if (newDate !== undefined) {
+        const newDateObj = new Date(newDate);
+        const newStartDate = new Date(newDateObj);
+        newStartDate.setHours(0, 0, 0, 0);
+        const newEndDate = new Date(newDateObj);
+        newEndDate.setHours(23, 59, 59, 999);
 
-      await dailySheet.save();
+        // Find or create the daily sheet for the new date
+        let targetDailySheet = await DailySheet.findOne({
+          driverId,
+          date: { $gte: newStartDate, $lte: newEndDate },
+        });
 
-      res.status(200).json({ message: 'Fuel log updated', fuelLog: log });
+        if (!targetDailySheet) {
+          // Create a new daily sheet for the new date
+          targetDailySheet = new DailySheet({
+            driverId,
+            date: newDateObj,
+            fuelLogs: [],
+          });
+        }
+
+        // Save the current log data before removing it
+        const logData = {
+          amount: amount !== undefined ? amount : log.amount,
+          litres: litres !== undefined ? litres : log.litres,
+          station: station !== undefined ? station : log.station,
+          time: time !== undefined ? new Date(time) : log.time,
+          addedBy: log.addedBy,
+        };
+
+        // Remove the log from the current daily sheet
+        dailySheet.fuelLogs.pull({ _id: fuelLogId });
+        await dailySheet.save();
+
+        // Add the log to the new daily sheet with updated data
+        targetDailySheet.fuelLogs.push(logData);
+        await targetDailySheet.save();
+
+        // Get the newly added log for response
+        const newLog = targetDailySheet.fuelLogs[targetDailySheet.fuelLogs.length - 1];
+
+        res.status(200).json({ message: 'Fuel log updated and moved to new date', fuelLog: newLog });
+      } else {
+        // Just update the properties without moving
+        if (amount !== undefined) log.amount = amount;
+        if (litres !== undefined) log.litres = litres;
+        if (station !== undefined) log.station = station;
+        if (time !== undefined) log.time = new Date(time);
+
+        await dailySheet.save();
+
+        res.status(200).json({ message: 'Fuel log updated', fuelLog: log });
+      }
     } catch (err) {
       console.error(err);
       res.status(500).json({ message: 'Failed to update fuel log', error: err.message });
