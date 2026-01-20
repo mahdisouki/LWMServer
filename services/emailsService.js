@@ -344,28 +344,35 @@ module.exports = {
         const Coupon = require('../models/Coupon');
         const coupon = await Coupon.findOne({ code: task.couponCode });
         if (coupon) {
-          couponCode = coupon.code;
-
-          // Handle both random and custom coupon types
-          if (coupon.type === 'custom') {
-            couponDiscountType = coupon.discountType;
-            couponDiscountValue = coupon.discountValue;
-            if (coupon.discountType === 'percentage') {
-              couponPercentage = coupon.discountValue;
-              couponDiscount = (subtotal * couponPercentage) / 100;
-            } else if (coupon.discountType === 'amount') {
-              couponPercentage = 0; // For display purposes
-              couponDiscount = coupon.discountValue;
-            }
+          // Validate coupon with original subtotal (before discounts) for minimumOrderAmount check
+          const validation = coupon.validateCoupon(task.email || null, subtotalBeforeDiscounts);
+          if (!validation.valid) {
+            console.warn(`Coupon "${task.couponCode}" validation failed for PDF invoice: ${validation.message}`);
+            // Don't apply invalid coupon, but continue with invoice generation
           } else {
-            // Random coupon (existing behavior)
-            couponDiscountType = 'percentage';
-            couponDiscountValue = coupon.percentage;
-            couponPercentage = coupon.percentage;
-            couponDiscount = (subtotal * couponPercentage) / 100;
-          }
+            couponCode = coupon.code;
 
-          subtotal -= couponDiscount;
+            // Handle both random and custom coupon types
+            if (coupon.type === 'custom') {
+              couponDiscountType = coupon.discountType;
+              couponDiscountValue = coupon.discountValue;
+              if (coupon.discountType === 'percentage') {
+                couponPercentage = coupon.discountValue;
+                couponDiscount = (subtotal * couponPercentage) / 100;
+              } else if (coupon.discountType === 'amount') {
+                couponPercentage = 0; // For display purposes
+                couponDiscount = coupon.discountValue;
+              }
+            } else {
+              // Random coupon (existing behavior)
+              couponDiscountType = 'percentage';
+              couponDiscountValue = coupon.percentage;
+              couponPercentage = coupon.percentage;
+              couponDiscount = (subtotal * couponPercentage) / 100;
+            }
+
+            subtotal -= couponDiscount;
+          }
         }
       } catch (error) {
         console.error('Error fetching coupon for PDF invoice:', error);
@@ -1164,28 +1171,35 @@ module.exports = {
           const normalizedCouponCode = String(task.couponCode).trim().toUpperCase();
           const coupon = await Coupon.findOne({ code: normalizedCouponCode });
           if (coupon) {
-            couponCode = coupon.code;
-
-            // Handle both random and custom coupon types
-            if (coupon.type === 'custom') {
-              couponDiscountType = coupon.discountType;
-              couponDiscountValue = coupon.discountValue;
-              if (coupon.discountType === 'percentage') {
-                couponPercentage = coupon.discountValue;
-                couponDiscount = (subtotal * couponPercentage) / 100;
-              } else if (coupon.discountType === 'amount') {
-                couponPercentage = 0; // For display purposes
-                couponDiscount = coupon.discountValue;
-              }
+            // Validate coupon with original subtotal (before discounts) for minimumOrderAmount check
+            const validation = coupon.validateCoupon(task.email || null, subtotalBeforeDiscounts);
+            if (!validation.valid) {
+              console.warn(`Coupon "${normalizedCouponCode}" validation failed for payment confirmation email: ${validation.message}`);
+              // Don't apply invalid coupon, but continue with email generation
             } else {
-              // Random coupon (existing behavior)
-              couponDiscountType = 'percentage';
-              couponDiscountValue = coupon.percentage;
-              couponPercentage = coupon.percentage;
-              couponDiscount = (subtotal * couponPercentage) / 100;
-            }
+              couponCode = coupon.code;
 
-            subtotal -= couponDiscount;
+              // Handle both random and custom coupon types
+              if (coupon.type === 'custom') {
+                couponDiscountType = coupon.discountType;
+                couponDiscountValue = coupon.discountValue;
+                if (coupon.discountType === 'percentage') {
+                  couponPercentage = coupon.discountValue;
+                  couponDiscount = (subtotal * couponPercentage) / 100;
+                } else if (coupon.discountType === 'amount') {
+                  couponPercentage = 0; // For display purposes
+                  couponDiscount = coupon.discountValue;
+                }
+              } else {
+                // Random coupon (existing behavior)
+                couponDiscountType = 'percentage';
+                couponDiscountValue = coupon.percentage;
+                couponPercentage = coupon.percentage;
+                couponDiscount = (subtotal * couponPercentage) / 100;
+              }
+
+              subtotal -= couponDiscount;
+            }
           } else {
             console.warn(`Coupon code "${normalizedCouponCode}" not found in database for task ${task.orderNumber}`);
           }

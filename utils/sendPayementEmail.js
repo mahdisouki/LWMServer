@@ -209,27 +209,34 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
       const Coupon = require('../models/Coupon');
       const coupon = await Coupon.findOne({ code: taskDetails.couponCode });
       if (coupon) {
-        // Calculate coupon discount from subtotal after other discounts
-        const subtotalAfterDiscounts = subtotalBeforeDiscounts - automaticDiscount10Percent - calculatedDiscountAmount;
-        let couponDiscount = 0;
-        let couponLabel = '';
-
-        // Handle both random and custom coupon types
-        if (coupon.type === 'custom') {
-          if (coupon.discountType === 'percentage') {
-            couponDiscount = (subtotalAfterDiscounts * coupon.discountValue) / 100;
-            couponLabel = `Coupon Discount (${coupon.code} - ${coupon.discountValue}%)`;
-          } else if (coupon.discountType === 'amount') {
-            couponDiscount = coupon.discountValue;
-            couponLabel = `Coupon Discount (${coupon.code} - £${coupon.discountValue.toFixed(2)})`;
-          }
+        // Validate coupon with original subtotal (before discounts) for minimumOrderAmount check
+        const validation = coupon.validateCoupon(taskDetails.email || null, subtotalBeforeDiscounts);
+        if (!validation.valid) {
+          console.warn(`Coupon "${taskDetails.couponCode}" validation failed for payment email: ${validation.message}`);
+          // Don't display invalid coupon discount
         } else {
-          // Random coupon (existing behavior)
-          couponDiscount = (subtotalAfterDiscounts * coupon.percentage) / 100;
-          couponLabel = `Coupon Discount (${coupon.code} - ${coupon.percentage}%)`;
-        }
+          // Calculate coupon discount from subtotal after other discounts
+          const subtotalAfterDiscounts = subtotalBeforeDiscounts - automaticDiscount10Percent - calculatedDiscountAmount;
+          let couponDiscount = 0;
+          let couponLabel = '';
 
-        couponDiscountHtml = `<p style="margin:0 0 8px; font-size:13px;">${couponLabel}<span style="float:right; font-weight:bold;">-£${couponDiscount.toFixed(2)}</span></p>`;
+          // Handle both random and custom coupon types
+          if (coupon.type === 'custom') {
+            if (coupon.discountType === 'percentage') {
+              couponDiscount = (subtotalAfterDiscounts * coupon.discountValue) / 100;
+              couponLabel = `Coupon Discount (${coupon.code} - ${coupon.discountValue}%)`;
+            } else if (coupon.discountType === 'amount') {
+              couponDiscount = coupon.discountValue;
+              couponLabel = `Coupon Discount (${coupon.code} - £${coupon.discountValue.toFixed(2)})`;
+            }
+          } else {
+            // Random coupon (existing behavior)
+            couponDiscount = (subtotalAfterDiscounts * coupon.percentage) / 100;
+            couponLabel = `Coupon Discount (${coupon.code} - ${coupon.percentage}%)`;
+          }
+
+          couponDiscountHtml = `<p style="margin:0 0 8px; font-size:13px;">${couponLabel}<span style="float:right; font-weight:bold;">-£${couponDiscount.toFixed(2)}</span></p>`;
+        }
       }
     } catch (error) {
       console.error('Error fetching coupon for payment email:', error);
