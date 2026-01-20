@@ -1486,6 +1486,7 @@ module.exports = {
       await transporter.sendMail({
         from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
         to: email,
+        cc: 'hello@londonwastemanagement.com',
         subject: addStagingToSubject(`Payment Confirmation - Order #${task.orderNumber}`),
         html: addStagingBanner(html),
         attachments: [{ filename: fileName, path: filePath }],
