@@ -2807,15 +2807,15 @@ const taskCtrl = {
         const charge = charges.data[0];
         if (!charge) throw new Error('Charge not found for this payment');
 
-        const payerAccount =
-          charge.billing_details.email ||
-          `Card ending in ${charge.payment_method_details.card.last4}`;
-
         // Extract last 4 digits of card number
         let cardLast4Digits = null;
         if (charge.payment_method_details?.card?.last4) {
           cardLast4Digits = charge.payment_method_details.card.last4;
         }
+
+        const payerAccount =
+          charge.billing_details?.email ||
+          (cardLast4Digits ? `Card ending in ${cardLast4Digits}` : 'Card payment');
 
         // Construire le breakdown complet - ONLY standard items
         const breakdown = task.items
@@ -3600,15 +3600,27 @@ const taskCtrl = {
                 : paymentIntent.latest_charge.id;
               transactionId = chargeId; // Use Charge ID (ch_xxx) as the actual transaction ID
 
-              // Also get the payer account and card details from the charge if available
-              if (paymentIntent.charges?.data?.[0]) {
-                const charge = paymentIntent.charges.data[0];
+              // Retrieve the charge separately to get full card details
+              try {
+                const charge = await stripe.charges.retrieve(chargeId);
                 if (charge.billing_details?.email) {
                   payerAccount = charge.billing_details.email;
                 }
                 // Extract last 4 digits of card number
                 if (charge.payment_method_details?.card?.last4) {
                   cardLast4Digits = charge.payment_method_details.card.last4;
+                }
+              } catch (chargeError) {
+                console.error('Error retrieving Charge details:', chargeError);
+                // Fall back to payment intent charges if available
+                if (paymentIntent.charges?.data?.[0]) {
+                  const charge = paymentIntent.charges.data[0];
+                  if (charge.billing_details?.email) {
+                    payerAccount = charge.billing_details.email;
+                  }
+                  if (charge.payment_method_details?.card?.last4) {
+                    cardLast4Digits = charge.payment_method_details.card.last4;
+                  }
                 }
               }
             }
