@@ -1,5 +1,50 @@
 const SystemLog = require('../models/SystemLog');
 const StandardItem = require('../models/StandardItem');
+const Task = require('../models/Task');
+
+async function enrichLogsWithTasks(logs) {
+  // Collect all unique orderNumbers from logs (from changes field)
+  const orderNumbers = new Set();
+  logs.forEach(log => {
+    // Check changes field for orderNumber
+    if (log.changes?.created?.orderNumber) {
+      orderNumbers.add(log.changes.created.orderNumber);
+    }
+    if (log.changes?.after?.orderNumber) {
+      orderNumbers.add(log.changes.after.orderNumber);
+    }
+    if (log.changes?.before?.orderNumber) {
+      orderNumbers.add(log.changes.before.orderNumber);
+    }
+  });
+
+  // Fetch Tasks by orderNumber (if any orderNumbers found)
+  const tasks = orderNumbers.size
+    ? await Task.find({ orderNumber: { $in: Array.from(orderNumbers) } })
+      .populate('createdBy', 'email name')
+      .populate('couponId', 'code percentage discountType validFrom validTo maxUses currentUses')
+      .lean()
+    : [];
+
+  const taskMap = {};
+  tasks.forEach(task => {
+    if (task.orderNumber) {
+      taskMap[task.orderNumber] = task;
+    }
+  });
+
+  // Attach task data to logs
+  logs.forEach(log => {
+    const orderNumber = log.changes?.created?.orderNumber ||
+      log.changes?.after?.orderNumber ||
+      log.changes?.before?.orderNumber;
+
+    if (orderNumber && taskMap[orderNumber]) {
+      log.task = taskMap[orderNumber];
+    }
+  });
+}
+
 async function enrichLogsWithItemNames(logs) {
   // Collect all unique standardItemIds
   const itemIds = new Set();
@@ -81,6 +126,15 @@ const loggingService = {
         };
       }
 
+      // Search by orderNumber in changes field
+      if (filters.orderNumber) {
+        query.$or = [
+          { 'changes.created.orderNumber': { $regex: filters.orderNumber, $options: 'i' } },
+          { 'changes.after.orderNumber': { $regex: filters.orderNumber, $options: 'i' } },
+          { 'changes.before.orderNumber': { $regex: filters.orderNumber, $options: 'i' } }
+        ];
+      }
+
       const logs = await SystemLog.find(query)
         .sort({ timestamp: -1 })
         .skip((page - 1) * limit)
@@ -88,6 +142,7 @@ const loggingService = {
         .populate('userId', 'username email');
 
       await enrichLogsWithItemNames(logs);
+      await enrichLogsWithTasks(logs);
 
       const total = await SystemLog.countDocuments(query);
 
@@ -111,6 +166,7 @@ const loggingService = {
         .limit(limit)
         .populate('userId', 'username email');
       await enrichLogsWithItemNames(logs);
+      await enrichLogsWithTasks(logs);
 
       const total = await SystemLog.countDocuments({ entityType, entityId });
 
