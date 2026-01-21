@@ -276,11 +276,71 @@ const sendRetargetingEmail = async ({
                     font-size: 12px !important;
                 }
                 td[style*="background-color: #4CAF50"] p,
-                td[style*="background-color: #81C784"] p {
+                td[style*="background-color: #81C784"] p,
+                td[style*="background-color: #4EB5C0"] p {
                     writing-mode: vertical-rl !important;
                     transform: rotate(180deg) !important;
                     display: inline-block !important;
                     white-space: nowrap !important;
+                }
+                /* Mobile styles for discount circles */
+                .discount-row-20,
+                .discount-row-10 {
+                    white-space: normal !important;
+                    overflow: visible !important;
+                    word-wrap: break-word !important;
+                }
+                .discount-row-20 table,
+                .discount-row-10 table {
+                    width: 100% !important;
+                }
+                .discount-row-20 td[align="right"],
+                .discount-row-10 td[align="right"] {
+                    padding-left: 6px !important;
+                }
+                /* Ensure parent containers don't crop circles on mobile */
+                .coupon-box-20,
+                .coupon-box-10 {
+                    overflow: visible !important;
+                }
+                /* Add extra padding to prevent cropping on mobile */
+                .coupon-content-20 {
+                    padding: 18px 20px !important;
+                }
+                .coupon-content-10 {
+                    padding: 12px 20px !important;
+                }
+                /* Make 20% circle smaller on mobile */
+                .discount-circle-20 td {
+                    width: 40px !important;
+                    height: 40px !important;
+                }
+                .discount-circle-20 td span {
+                    font-size: 12px !important;
+                    line-height: 40px !important;
+                }
+                /* Make 10% circle smaller on mobile */
+                .discount-circle-10 td {
+                    width: 32px !important;
+                    height: 32px !important;
+                }
+                .discount-circle-10 td span {
+                    font-size: 10px !important;
+                    line-height: 32px !important;
+                }
+                /* Reduce text sizes on mobile */
+                .discount-text-20 {
+                    font-size: 12px !important;
+                }
+                .discount-text-10 {
+                    font-size: 11px !important;
+                }
+                /* Reduce margins on mobile */
+                .discount-circle-20 {
+                    margin-left: 6px !important;
+                }
+                .discount-circle-10 {
+                    margin-left: 6px !important;
                 }
             }
         </style>
@@ -373,20 +433,43 @@ const sendRetargetingEmail = async ({
                                                     <!-- Green Coupon Section - 20% -->
                                                     <tr>
                                                         <td style="padding: 0 15px 15px 15px;">
-                                                            <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #e8f5e9; border: 2px dashed #4CAF50; border-radius: 10px; overflow: hidden;">
+                                                            <table width="100%" cellpadding="0" cellspacing="0" class="coupon-box-20" style="background-color: #e8f5e9; border: 2px dashed #4CAF50; border-radius: 10px; overflow: visible;">
                                                                 <tr>
-                                                                    <td width="40" valign="middle" align="center" style="background-color: #4CAF50; border-radius: 8px 0 0 8px;">
+                                                                    <td width="40" valign="middle" align="center" style="background-color: #4CAF50;">
                                                                         <p style="font-size: 11px; font-weight: bold; color: #fff; margin: 0; line-height: 14px; padding: 12px 8px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.5px; display: inline-block; white-space: nowrap;">
                                                                             ${discount20Percentage}% DISCOUNT
                                                                         </p>
                                                                     </td>
-                                                                    <td style="padding: 18px 15px;">
-                                                                        <p style="font-size: 14px; font-weight: bold; color: #333; margin: 0 0 8px 0;">
-                                                                            ${discount20Percentage} % Offered Discount</p>
+                                                                    <td class="coupon-content-20" style="padding: 18px 15px;">
+                                                                        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 8px;">
+                                                                            <tr>
+                                                                                <td class="discount-row-20" style="vertical-align: middle;">
+                                                                                    <table width="100%" cellpadding="0" cellspacing="0">
+                                                                                        <tr>
+                                                                                            <td style="vertical-align: middle;">
+                                                                                                <span class="discount-text-20" style="font-size: 14px; font-weight: bold; color: #333; margin: 0; vertical-align: middle;">
+                                                                                                    ${discount20Percentage} % Discount
+                                                                                                </span>
+                                                                                            </td>
+                                                                                            <td align="right" style="vertical-align: middle; padding-left: 10px;">
+                                                                                                <!-- Discount Circle Badge -->
+                                                                                                <table class="discount-circle-20" cellpadding="0" cellspacing="0" border="0" style="display: inline-block; vertical-align: middle;">
+                                                                                                    <tr>
+                                                                                                        <td style="width: 50px; height: 50px; background: #28c152; border-radius: 50%; text-align: center; vertical-align: middle;">
+                                                                                                            <span style="color: #ffffff; font-size: 14px; font-weight: 700; line-height: 50px;">20%</span>
+                                                                                                        </td>
+                                                                                                    </tr>
+                                                                                                </table>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    </table>
+                                                                                </td>
+                                                                            </tr>
+                                                                        </table>
                                                                         <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 10px;">
                                                                             <tr>
                                                                                 <td>
-                                                                                    <p style="font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; color: #000; margin: 0; letter-spacing: 1px;">
+                                                                                    <p style="font-family: 'Courier New', monospace; font-size: 17px; font-weight: bold; color: #000; margin: 0; letter-spacing: 0.5px;">
                                                                                         ${coupon20Code}</p>
                                                                                 </td>
                                                                                 <td align="right" valign="middle">
@@ -422,14 +505,39 @@ const sendRetargetingEmail = async ({
                                         <tr>
                                             <td align="center" style="padding-top: 0;">
                                                 <!-- 10% Coupon - positioned at top of white section, overlapping card edge -->
-                                                <table border="0" cellpadding="0" cellspacing="0" width="220" align="center" class="small-coupon" style="margin-top: -25px; border: 1px dashed #a5d6a7; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); background-color: #ffffff; overflow: hidden; position: relative; z-index: 5;">
+                                                <table border="0" cellpadding="0" cellspacing="0" width="220" align="center" class="small-coupon coupon-box-10" style="margin-top: -25px; border: 1px dashed #a5d6a7; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); background-color: #ffffff; overflow: visible; position: relative; z-index: 5;">
                                                     <tr>
-                                                        <td width="28" align="center" valign="middle" style="background-color: #81C784;">
+                                                        <td width="28" align="center" valign="middle" style="background-color: #4EB5C0;">
                                                             <p style="font-size: 8px; font-weight: bold; color: #fff; margin: 0; padding: 12px 4px; text-align: center; writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.3px; display: inline-block; white-space: nowrap;">
                                                                 ${discount10Percentage}% DISCOUNT
                                                             </p>
                                                         </td>
-                                                        <td style="padding: 12px 15px;">
+                                                        <td class="coupon-content-10" style="padding: 12px 15px;">
+                                                            <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 8px;">
+                                                                <tr>
+                                                                    <td class="discount-row-10" style="vertical-align: middle;">
+                                                                        <table width="100%" cellpadding="0" cellspacing="0">
+                                                                            <tr>
+                                                                                <td style="vertical-align: middle;">
+                                                                                    <span class="discount-text-10" style="font-size: 13px; font-weight: bold; color: #333; margin: 0; vertical-align: middle;">
+                                                                                        10% Discount
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td align="right" style="vertical-align: middle; padding-left: 8px;">
+                                                                                    <!-- Discount Circle Badge -->
+                                                                                    <table class="discount-circle-10" cellpadding="0" cellspacing="0" border="0" style="display: inline-block; vertical-align: middle;">
+                                                                                        <tr>
+                                                                                            <td style="width: 40px; height: 40px; background: #4EB5C0; border-radius: 50%; text-align: center; vertical-align: middle;">
+                                                                                                <span style="color: #ffffff; font-size: 12px; font-weight: 700; line-height: 40px;">10%</span>
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    </table>
+                                                                                </td>
+                                                                            </tr>
+                                                                        </table>
+                                                                    </td>
+                                                                </tr>
+                                                            </table>
                                                             <p style="font-family: 'Courier New', monospace; font-weight: bold; font-size: 15px; color: #000; margin: 0 0 8px 0; letter-spacing: 1px;">
                                                                 ${coupon10Code}</p>
                                                             <a href="${applyCodeUrl10}" style="display: inline-block; border: 2px solid #4CAF50; background-color: #fff; padding: 5px 18px; border-radius: 15px; color: #4CAF50; text-decoration: none; font-size: 11px; font-weight: bold;">Apply Code</a>
