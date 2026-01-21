@@ -173,10 +173,10 @@ const quotationRequestController = {
                 sortBy = 'createdAt',
                 sortOrder = 'desc'
             } = req.query;
-    
+
             // Build the query
             let query = {};
-    
+
             // Add search condition if keyword exists
             if (keyword) {
                 query = {
@@ -189,7 +189,7 @@ const quotationRequestController = {
                     ]
                 };
             }
-    
+
             // Add date range if provided (for quotation creation date)
             if (startDate || endDate) {
                 query.createdAt = {};
@@ -200,7 +200,7 @@ const quotationRequestController = {
                     query.createdAt.$lte = new Date(endDate);
                 }
             }
-    
+
             // Add reason filter if provided
             if (reason) {
                 if (reason === 'other') {
@@ -210,24 +210,24 @@ const quotationRequestController = {
                     query.reason = reason;
                 }
             }
-    
+
             // Build sort object
             const sort = {};
             sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
-    
+
             // Check if status or statusDate filtering is needed
             const needsStatusFiltering = status || statusDateStart || statusDateEnd;
-    
+
             let quotations;
             let total;
-    
+
             if (needsStatusFiltering) {
                 // Fetch all quotations matching the base query (no pagination yet)
                 quotations = await QuotationRequest.find(query).sort(sort);
             } else {
                 // Calculate total count BEFORE pagination
                 total = await QuotationRequest.countDocuments(query);
-                
+
                 // Apply pagination at database level for better performance
                 const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
                 quotations = await QuotationRequest
@@ -236,15 +236,15 @@ const quotationRequestController = {
                     .skip(skip)
                     .limit(parseInt(limit, 10));
             }
-    
+
             // Get all quotation IDs to check for associated orders
             const quotationIds = quotations.map(q => q._id);
-    
+
             // Find all tasks that have these quotationIds with createdAt dates
             const tasksWithQuotations = await Task.find({
                 quotationId: { $in: quotationIds }
             }).select('quotationId createdAt');
-    
+
             // Create a Map of quotationId -> Task createdAt for quick lookup
             const quotationsWithOrders = new Map();
             tasksWithQuotations.forEach(task => {
@@ -256,26 +256,26 @@ const quotationRequestController = {
                     }
                 }
             });
-    
+
             // Add status and statusDate fields to each quotation using model method
             let quotationsWithStatus = quotations.map(quotation => {
                 const quotationObj = quotation.toObject();
                 const quotationIdStr = quotation._id.toString();
                 const taskCreatedAt = quotationsWithOrders.get(quotationIdStr) || null;
-    
+
                 const statusInfo = quotation.getStatusSync(taskCreatedAt);
                 quotationObj.status = statusInfo.status;
                 quotationObj.statusDate = statusInfo.statusDate;
                 quotationObj.hasOrder = statusInfo.hasOrder;
-    
+
                 return quotationObj;
             });
-    
+
             // Filter by status if provided
             if (status) {
                 quotationsWithStatus = quotationsWithStatus.filter(q => q.status === status);
             }
-    
+
             // Filter by status date range if provided
             if (statusDateStart || statusDateEnd) {
                 quotationsWithStatus = quotationsWithStatus.filter(q => {
@@ -286,19 +286,19 @@ const quotationRequestController = {
                     return true;
                 });
             }
-    
+
             // Calculate total count AFTER status filtering (if status filtering was applied)
             if (needsStatusFiltering) {
                 total = quotationsWithStatus.length;
-                
+
                 // Apply pagination AFTER status filtering
                 const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
                 quotationsWithStatus = quotationsWithStatus.slice(skip, skip + parseInt(limit, 10));
             }
-    
+
             // Calculate the number of pages (count)
             const pageCount = Math.ceil(total / parseInt(limit, 10));
-    
+
             res.status(200).json({
                 message: "All quotations retrieved successfully",
                 quotations: quotationsWithStatus,
@@ -503,9 +503,9 @@ const quotationRequestController = {
             }
 
             // Validate reason if provided
-            if (reason !== undefined && !['no response', 'price too high', 'other'].includes(reason)) {
+            if (reason !== undefined && !['no response', 'price too high', 'other', 'task created'].includes(reason)) {
                 return res.status(400).json({
-                    message: 'Invalid reason. Must be one of: no response, price too high, other'
+                    message: 'Invalid reason. Must be one of: no response, price too high, other, task created'
                 });
             }
 
@@ -558,10 +558,12 @@ const quotationRequestController = {
 
             // Check if we need to send retargeting email
             // Send email if reason is set to "price too high" or "no response" and email hasn't been sent yet
+            // Note: "task created" should NOT trigger retargeting emails since it's an acceptance
             const finalReason = reason !== undefined ? reason : existingQuotation.reason;
             const shouldSendEmail = (finalReason === 'price too high' || finalReason === 'no response') &&
                 !existingQuotation.retargetingEmailSent &&
-                quotation.email;
+                quotation.email &&
+                finalReason !== 'task created'; // Explicitly exclude "task created"
 
             if (shouldSendEmail) {
                 try {

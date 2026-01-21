@@ -16,7 +16,7 @@ const quotationRequestSchema = new Schema({
   read: { type: Boolean, default: false },
   reason: {
     type: String,
-    enum: ['no response', 'price too high', 'other'],
+    enum: ['no response', 'price too high', 'other', 'task created'],
     required: false
   },
   customReason: {
@@ -56,13 +56,15 @@ quotationRequestSchema.methods.computeStatus = async function () {
 
   const hasOrder = !!task;
   const hasReason = this.reason && this.reason.trim() !== '';
+  const isTaskCreatedReason = this.reason === 'task created';
 
   // Determine status: accepted > rejected > pending
-  if (hasOrder) {
+  // "task created" reason should result in accepted status
+  if (hasOrder || isTaskCreatedReason) {
     return {
       status: 'accepted',
-      statusDate: task.createdAt,
-      hasOrder: true
+      statusDate: task ? task.createdAt : (this.updatedAt || this.createdAt),
+      hasOrder: hasOrder
     };
   } else if (hasReason) {
     return {
@@ -83,12 +85,13 @@ quotationRequestSchema.methods.computeStatus = async function () {
 quotationRequestSchema.methods.getStatusSync = function (taskCreatedAt = null) {
   const hasOrder = !!taskCreatedAt;
   const hasReason = this.reason && this.reason.trim() !== '';
+  const isTaskCreatedReason = this.reason === 'task created';
 
-  if (hasOrder) {
+  if (hasOrder || isTaskCreatedReason) {
     return {
       status: 'accepted',
-      statusDate: taskCreatedAt,
-      hasOrder: true
+      statusDate: taskCreatedAt || (this.updatedAt || this.createdAt),
+      hasOrder: hasOrder
     };
   } else if (hasReason) {
     return {
