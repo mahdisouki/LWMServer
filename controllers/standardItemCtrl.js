@@ -13,91 +13,64 @@ const { PayPalClient } = require('../services/paymentService.js');
 const loggingService = require('../services/loggingService');
 
 // Helper function to get logical sort order for items (smallest to largest)
+const SORT_GROUPS = [
+  { keys: ['lamp', 'cushion'], base: 100 },
+  { keys: ['chair', 'armchair'], base: 200 },
+  { keys: ['table', 'desk'], base: 300 },
+  { keys: ['sofa'], base: 400 },
+  { keys: ['bed', 'mattress'], base: 500 },
+  { keys: ['wardrobe', 'drawer'], base: 600 },
+  { keys: ['printer', 'tv'], base: 700 },
+  { keys: ['fridge', 'freezer'], base: 800 },
+  { keys: ['door', 'window', 'radiator'], base: 900 },
+  { keys: ['load', 'bin'], base: 1000 },
+];
+
+const SIZE_ORDER = [
+  ['mini', 1],
+  ['small', 2],
+  ['single', 2],
+  ['standard', 3],
+  ['medium', 3],
+  ['double', 4],
+  ['king', 5],
+  ['emperor', 6],
+  ['large', 7],
+  ['corner', 8],
+  ['american', 9],
+  ['commercial', 10],
+];
+
 const getItemSortOrder = (itemName) => {
-  if (!itemName) return 9999; // Items without names go to the end
-  
-  const name = itemName.toLowerCase().trim();
-  
-  // Sofas and seating (smallest to largest)
-  if (name.includes('arm chair')) return 1;
-  if (name.includes('2 seater') || name.includes('two seater')) return 2;
-  if (name.includes('3 seater') || name.includes('three seater')) return 3;
-  if (name.includes('corner')) {
-    if (name.includes('large')) return 5;
-    return 4;
+  if (!itemName) return 99999;
+
+  const name = itemName.toLowerCase();
+
+  // 1️⃣ Group score
+  let base = 9000;
+  for (const g of SORT_GROUPS) {
+    if (g.keys.some(k => name.includes(k))) {
+      base = g.base;
+      break;
+    }
   }
-  if (name.includes('sofa')) {
-    // Generic sofa (not specified seater) comes after 3 seater
-    if (name.includes('large')) return 6;
-    return 3.5;
+
+  // 2️⃣ Size score
+  let size = 5;
+  for (const [key, val] of SIZE_ORDER) {
+    if (name.includes(key)) {
+      size = val;
+      break;
+    }
   }
-  
-  // Tables (smallest to largest)
-  if (name.includes('coffee table') || name.includes('side table')) return 10;
-  if (name.includes('dining table')) {
-    if (name.includes('small')) return 11;
-    if (name.includes('large') || name.includes('extendable')) return 13;
-    return 12;
-  }
-  
-  // Beds (smallest to largest)
-  if (name.includes('single bed')) return 20;
-  if (name.includes('double bed')) return 21;
-  if (name.includes('king bed') || name.includes('super king')) return 22;
-  
-  // Wardrobes (smallest to largest)
-  if (name.includes('wardrobe')) {
-    if (name.includes('small') || name.includes('2 door')) return 30;
-    if (name.includes('large') || name.includes('3 door') || name.includes('4 door')) return 32;
-    return 31;
-  }
-  
-  // Mattresses (smallest to largest)
-  if (name.includes('mattress')) {
-    if (name.includes('single')) return 40;
-    if (name.includes('double')) return 41;
-    if (name.includes('king') || name.includes('super king')) return 42;
-  }
-  
-  // Fridges and Freezers (smallest to largest) - IMPROVED
-  if (name.includes('freezer') || name.includes('fridge') || name.includes('refrigerator')) {
-    if (name.includes('mini')) return 50;      // Mini Fridge
-    if (name.includes('small')) return 51;     // Small Fridge
-    if (name.includes('chest freezer')) return 52;  // Chest Freezer
-    if (name.includes('standard') || name.includes('fridge freezer')) return 53;  // Standard Fridge Freezer
-    if (name.includes('american') || name.includes('double')) return 54;  // American (Double) Fridge
-    if (name.includes('commercial')) return 55;  // Commercial Fridge
-    // Generic fridge/freezer (not specified size)
-    return 53.5;
-  }
-  
-  // Printers (smallest to largest)
-  if (name.includes('printer')) {
-    if (name.includes('small')) return 60;
-    if (name.includes('office') || name.includes('standard')) return 61;
-    if (name.includes('large')) return 62;
-    return 61.5;
-  }
-  
-  // BBQs (smallest to largest)
-  if (name.includes('bbq') || name.includes('barbecue')) {
-    if (name.includes('small')) return 70;
-    if (name.includes('large')) return 71;
-    return 70.5;
-  }
-  
-  // Other appliances (smallest/common items first)
-  if (name.includes('toaster')) return 80;
-  if (name.includes('radio')) return 81;
-  if (name.includes('sewing machine')) return 82;
-  if (name.includes('tumble dryer') || name.includes('dryer')) return 83;
-  if (name.includes('storage heater')) return 84;
-  if (name.includes('treadmill')) return 85;
-  if (name.includes('bike') || name.includes('bicycle')) return 86;
-  
-  // Default: alphabetical sort order (use name as fallback)
-  return 9000 + name.charCodeAt(0);
+
+  // 3️⃣ Seater logic (overrides size)
+  const seaterMatch = name.match(/(\d)\s*seater/);
+  if (seaterMatch) size = parseInt(seaterMatch[1], 10);
+
+  return base + size;
 };
+
 
 const standardItemCtrl = {
   createStandardItem: async (req, res) => {
