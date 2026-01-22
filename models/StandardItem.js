@@ -15,7 +15,11 @@ const standardItemSchema = new mongoose.Schema({
     enum: ["Inside", "Outside", "InsideWithDismantling"],
     default: "Outside",
   },
-  ewcCode: { type: String, required: false }
+  ewcCode: { type: String, required: false },
+  spaceOfVan: { type: Number, required: false },
+  timespentOutside: { type: Number, required: false },
+  timespentInside: { type: Number, required: false },
+  timespentInsdiewithDis: { type: Number, required: false }
 });
 
 const StandardItem = mongoose.model('StandardItem', standardItemSchema);
