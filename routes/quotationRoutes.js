@@ -30,4 +30,8 @@ router.patch('/quotation/:id', isAuth, checkRole('Admin'), quotationRequestContr
 
 router.post("/sendMovingQuote", formLimiter, multer.array('files'), quotationRequestController.sendMovingServiceEmail);
 
+router.post("/sendBusinessQuote", formLimiter, quotationRequestController.sendBusinessQuoteEmail);
+
+router.post("/sendRecruitment", formLimiter, multer.single('cv'), quotationRequestController.sendRecruitmentEmail);
+
 module.exports = router;

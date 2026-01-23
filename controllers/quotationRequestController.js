@@ -429,7 +429,7 @@ const quotationRequestController = {
                 files,
             };
 
-            const responsibleEmail = 'eyatrk24@gmail.com';
+            const responsibleEmail = process.env.RESPONSIBLE_EMAIL;
             const sendContactEmail = require('../utils/sendContactEmail');
             await sendContactEmail({ responsibleEmail, contactData });
 
@@ -437,6 +437,79 @@ const quotationRequestController = {
         } catch (error) {
             console.error('Error sending moving service email:', error);
             res.status(500).json({ message: 'Failed to send moving service email', error: error.message });
+        }
+    },
+
+    sendBusinessQuoteEmail: async (req, res) => {
+        try {
+            const {
+                businessName,
+                industryType,
+                wasteType,
+                estimatedVolume,
+                collectionFrequency,
+                paymentOption,
+                contactName,
+                email,
+                phoneNumber,
+                additionalDetails,
+            } = req.body;
+
+            const contactData = {
+                businessName,
+                industryType,
+                wasteType,
+                estimatedVolume,
+                collectionFrequency,
+                paymentOption,
+                contactName,
+                email,
+                phoneNumber,
+                additionalDetails,
+            };
+
+            const responsibleEmail = process.env.RESPONSIBLE_EMAIL;
+            const sendBusinessQuoteEmail = require('../utils/sendBusinessQuoteEmail');
+            await sendBusinessQuoteEmail({ responsibleEmail, contactData });
+
+            res.status(200).json({ message: 'Business quote email sent successfully.' });
+        } catch (error) {
+            console.error('Error sending business quote email:', error);
+            res.status(500).json({ message: 'Failed to send business quote email', error: error.message });
+        }
+    },
+
+    sendRecruitmentEmail: async (req, res) => {
+        try {
+            const {
+                fullName,
+                email,
+                phoneNumber,
+                roleOfInterest,
+                experienceLevel,
+                message,
+            } = req.body;
+
+            const cvFile = req.file ? req.file.path : null;
+
+            const contactData = {
+                fullName,
+                email,
+                phoneNumber,
+                roleOfInterest,
+                experienceLevel,
+                message,
+                cvFile,
+            };
+
+            const responsibleEmail = process.env.RESPONSIBLE_EMAIL;
+            const sendRecruitmentEmail = require('../utils/sendRecruitmentEmail');
+            await sendRecruitmentEmail({ responsibleEmail, contactData });
+
+            res.status(200).json({ message: 'Recruitment application email sent successfully.' });
+        } catch (error) {
+            console.error('Error sending recruitment email:', error);
+            res.status(500).json({ message: 'Failed to send recruitment email', error: error.message });
         }
     },
 

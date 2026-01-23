@@ -78,7 +78,7 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
         <p style="font-size: 14px; color: #888;">London Waste Management</p>
       </div>
     </div>
-  `,
+  `),
   };
 
   // Email to the user
@@ -196,7 +196,7 @@ const sendContactEmail = async ({ responsibleEmail, contactData }) => {
           </table>
         </body>
       </html>
-    `),
+    `,
   };
   // Send both emails
   await transporter.sendMail(mailOptionsToResponsible);

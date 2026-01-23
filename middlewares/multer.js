@@ -7,6 +7,17 @@ const storage = new CloudinaryStorage({
   params: async (req, file) => {
     const isVideo = file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/');
     const isImage = file.mimetype.startsWith('image/');
+    const isPdf = file.mimetype === 'application/pdf';
+    
+    // Handle PDF files as raw files
+    if (isPdf) {
+      return {
+        folder: 'uploads',
+        resource_type: 'raw',
+        public_id: `${Date.now()}-${Math.random().toString(36).substring(7)}-${file.originalname.replace(/\.[^/.]+$/, '')}`,
+        overwrite: true,
+      };
+    }
     
     const baseParams = {
       folder: 'uploads',
@@ -55,10 +66,10 @@ const storage = new CloudinaryStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/')) {
+  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/') || file.mimetype === 'application/pdf') {
     cb(null, true);
   } else {
-    cb(new Error('Not an image, video or audio file!'), false);
+    cb(new Error('Not an image, video, audio, or PDF file!'), false);
   }
 };
 
