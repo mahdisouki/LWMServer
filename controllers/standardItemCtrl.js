@@ -79,7 +79,7 @@ const standardItemCtrl = {
         return res.status(400).json({ message: 'Main image file is required' });
       }
 
-      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode , isHidden } = req.body;
+      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode , isHidden, spaceOfVan, timespentOutside, timespentInside, timespentInsdiewithDis } = req.body;
       
       // Main image
       const image = req.file.path;
@@ -98,7 +98,11 @@ const standardItemCtrl = {
         insideWithDismantlingPrice,
         Objectsposition,
         ewcCode,
-        isHidden
+        isHidden,
+        spaceOfVan,
+        timespentOutside,
+        timespentInside,
+        timespentInsdiewithDis
       });
 
       await newStandardItem.save();
@@ -452,7 +456,7 @@ const standardItemCtrl = {
 
   updateStandardItem: async (req, res) => {
     try {
-      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode, isHidden } = req.body;
+      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode, isHidden, spaceOfVan, timespentOutside, timespentInside, timespentInsdiewithDis } = req.body;
       
       const updateData = {
         itemName,
@@ -463,7 +467,11 @@ const standardItemCtrl = {
         insideWithDismantlingPrice,
         Objectsposition,
         ewcCode,
-        isHidden
+        isHidden,
+        spaceOfVan,
+        timespentOutside,
+        timespentInside,
+        timespentInsdiewithDis
       };
 
       // Get existing item
