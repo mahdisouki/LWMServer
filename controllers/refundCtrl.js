@@ -32,6 +32,49 @@ async function verifyPayPalRefund(refundId) {
     return response.result && response.result.status === 'COMPLETED';
 }
 
+/**
+ * Get PayPal capture details to check available refundable amount
+ * @param {string} captureId - PayPal capture transaction ID
+ * @returns {Promise<{amount: number, refundedAmount: number, availableAmount: number}>}
+ */
+async function getPayPalCaptureDetails(captureId) {
+    try {
+        const request = new paypal.payments.CapturesGetRequest(captureId);
+        const response = await PayPalClient().execute(request);
+        const result = response.result;
+        
+        if (!result) {
+            throw new Error('Failed to retrieve PayPal capture details');
+        }
+
+        // Get the capture amount
+        const captureAmount = parseFloat(result.amount?.value || 0);
+        
+        // Calculate total refunded amount from refunds array
+        let refundedAmount = 0;
+        if (result.refundable_amount) {
+            // PayPal provides refundable_amount directly
+            refundedAmount = captureAmount - parseFloat(result.refundable_amount.value || 0);
+        } else if (result.refunds && Array.isArray(result.refunds)) {
+            // Calculate from refunds array
+            refundedAmount = result.refunds.reduce((sum, refund) => {
+                return sum + parseFloat(refund.amount?.value || 0);
+            }, 0);
+        }
+        
+        const availableAmount = captureAmount - refundedAmount;
+        
+        return {
+            amount: captureAmount,
+            refundedAmount: refundedAmount,
+            availableAmount: Math.max(0, availableAmount)
+        };
+    } catch (error) {
+        console.error('Error fetching PayPal capture details:', error);
+        throw new Error(`Failed to fetch PayPal capture details: ${error.message}`);
+    }
+}
+
 // Helper function to process a single refund for a payment history
 async function processSingleRefund(paymentHistory, amountToRefund) {
     let gateway = String(paymentHistory.paymentType || '').toLowerCase();
@@ -68,6 +111,15 @@ async function processSingleRefund(paymentHistory, amountToRefund) {
 
     } else if (paymentHistory.paymentType.toLowerCase() === 'paypal') {
         try {
+            // Validate refund amount against PayPal's actual available amount
+            const captureDetails = await getPayPalCaptureDetails(paymentHistory.transactionId);
+            
+            if (amountToRefund > captureDetails.availableAmount + 0.01) { // Add small epsilon for floating point
+                const errorMessage = `Refund amount (£${amountToRefund.toFixed(2)}) exceeds available refundable amount (£${captureDetails.availableAmount.toFixed(2)}). ` +
+                    `Capture amount: £${captureDetails.amount.toFixed(2)}, Already refunded: £${captureDetails.refundedAmount.toFixed(2)}`;
+                throw new Error(errorMessage);
+            }
+
             const request = new paypal.payments.CapturesRefundRequest(paymentHistory.transactionId);
             request.requestBody({
                 amount: {
@@ -83,10 +135,50 @@ async function processSingleRefund(paymentHistory, amountToRefund) {
 
         } catch (error) {
             console.error("PayPal Refund Error:", JSON.stringify(error, null, 2));
-            if (error.statusCode === 422 && error.message.includes("CAPTURE_FULLY_REFUNDED")) {
-                refundId = refundId || 'already_fully_refunded';
-                refundStatus = refundStatus || 'COMPLETED';
-                verified = true;
+            
+            // Handle specific PayPal error codes
+            if (error.statusCode === 422) {
+                // Parse PayPal error details
+                let errorDetails = error.message || '';
+                let errorIssue = '';
+                
+                // Try to extract error details from PayPal response
+                if (error.details && Array.isArray(error.details)) {
+                    const refundExceededError = error.details.find(d => d.issue === 'REFUND_AMOUNT_EXCEEDED');
+                    if (refundExceededError) {
+                        errorIssue = 'REFUND_AMOUNT_EXCEEDED';
+                        errorDetails = refundExceededError.description || errorDetails;
+                    }
+                }
+                
+                // Check if error message contains REFUND_AMOUNT_EXCEEDED
+                if (error.message && error.message.includes('REFUND_AMOUNT_EXCEEDED')) {
+                    errorIssue = 'REFUND_AMOUNT_EXCEEDED';
+                }
+                
+                if (errorIssue === 'REFUND_AMOUNT_EXCEEDED' || error.message.includes('CAPTURE_FULLY_REFUNDED')) {
+                    // Try to get actual available amount for better error message
+                    try {
+                        const captureDetails = await getPayPalCaptureDetails(paymentHistory.transactionId);
+                        throw new Error(
+                            `Refund amount (£${amountToRefund.toFixed(2)}) exceeds available refundable amount (£${captureDetails.availableAmount.toFixed(2)}). ` +
+                            `Capture amount: £${captureDetails.amount.toFixed(2)}, Already refunded: £${captureDetails.refundedAmount.toFixed(2)}. ` +
+                            `Please check PayPal dashboard or reduce the refund amount.`
+                        );
+                    } catch (fetchError) {
+                        // If we can't fetch details, use the original error
+                        throw new Error(
+                            `PayPal refund failed: ${errorDetails || error.message}. ` +
+                            `The refund amount must be less than or equal to the capture amount that has not yet been refunded.`
+                        );
+                    }
+                } else if (error.message.includes("CAPTURE_FULLY_REFUNDED")) {
+                    refundId = refundId || 'already_fully_refunded';
+                    refundStatus = refundStatus || 'COMPLETED';
+                    verified = true;
+                } else {
+                    throw error;
+                }
             } else {
                 throw error;
             }
@@ -324,7 +416,12 @@ exports.processRefund = async (req, res) => {
                 console.error(`Error processing refund for transaction ${item.paymentHistory.transactionId}:`, error);
                 // If one refund fails, we should rollback or at least report the issue
                 // For now, we'll throw to stop the process
-                throw new Error(`Failed to process refund: ${error.message}. Some refunds may have been processed.`);
+                // Provide more context about which transaction failed
+                const errorMessage = error.message || 'Unknown error';
+                throw new Error(
+                    `Failed to process refund for transaction ${item.paymentHistory.transactionId}: ${errorMessage}. ` +
+                    `Some refunds may have been processed. Please check PayPal dashboard for actual refund status.`
+                );
             }
         }
 
@@ -377,7 +474,22 @@ exports.processRefund = async (req, res) => {
         });
     } catch (error) {
         console.error("Error processing refund:", error);
-        res.status(500).json({ message: "Error processing refund", error: error.message });
+        
+        // Check if it's a PayPal refund amount exceeded error
+        if (error.message && error.message.includes('exceeds available refundable amount')) {
+            return res.status(400).json({ 
+                message: error.message,
+                error: "REFUND_AMOUNT_EXCEEDED",
+                suggestion: "Please check PayPal dashboard for actual refund status or reduce the refund amount."
+            });
+        }
+        
+        // For other errors, return appropriate status code
+        const statusCode = error.message && error.message.includes('exceeds') ? 400 : 500;
+        res.status(statusCode).json({ 
+            message: "Error processing refund", 
+            error: error.message 
+        });
     }
 };
 
