@@ -30,6 +30,7 @@ connectToDatabase()
     require('./cron/clearChats');
     require('./cron/autoEndShifts');
     require('./cron/sendReviewEmails');
+    require('./cron/refreshInstagramToken');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })
@@ -193,6 +194,7 @@ const feedbackRoutes = require('./routes/feedback');
 const announcementRoutes = require('./routes/announcement');
 const analyticsRoutes = require('./routes/analytics');
 const couponRoutes = require('./routes/coupon');
+const instagramRoutes = require('./routes/instagram');
 
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
@@ -230,6 +232,7 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/instagram', instagramRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;
