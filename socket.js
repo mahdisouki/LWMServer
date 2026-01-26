@@ -1407,7 +1407,8 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
         message: notificationMessage,
         senderName: senderName,
         read: false,
-        notificationId: savedNotification?._id // Include DB notification ID
+        notificationId: savedNotification?._id, // Include DB notification ID
+        createdAt: savedNotification?.createdAt || new Date() // Include timestamp for frontend
       });
       console.log(`✅ Socket notification sent to online user: ${userId}`);
     } catch (socketError) {
@@ -1534,7 +1535,8 @@ const sendOfflineNotifications = async (userId, socket) => {
       title: title,
       message: notification.message,
       senderName: notification.senderName,
-      read: notification.read
+      read: notification.read,
+      createdAt: notification.createdAt // Include timestamp for frontend
     });
   });
 

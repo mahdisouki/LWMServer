@@ -41,6 +41,15 @@ const quotationRequestSchema = new Schema({
     ref: 'Coupon',
     default: null
   },
+  reminderDate: {
+    type: Date,
+    required: false,
+    default: null
+  },
+  reminderSent: {
+    type: Boolean,
+    default: false
+  },
 
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true }); // Enable timestamps to get updatedAt

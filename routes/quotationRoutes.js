@@ -28,6 +28,9 @@ router.patch('/quotation/:id/unread', isAuth, checkRole('Admin'), quotationReque
 // Route to update quotation (e.g., set reason)
 router.patch('/quotation/:id', isAuth, checkRole('Admin'), quotationRequestController.updateQuotation);
 
+// Route to set quotation reminder date and time
+router.patch('/quotation/:id/reminder', isAuth, checkRole('Admin'), quotationRequestController.setQuotationReminder);
+
 router.post("/sendMovingQuote", formLimiter, multer.array('files'), quotationRequestController.sendMovingServiceEmail);
 
 router.post("/sendBusinessQuote", formLimiter, multer.array('photos'), quotationRequestController.sendBusinessQuoteEmail);

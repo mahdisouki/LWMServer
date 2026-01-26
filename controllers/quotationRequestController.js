@@ -716,6 +716,47 @@ const quotationRequestController = {
             });
         }
     },
+
+    setQuotationReminder: async (req, res) => {
+        const { id } = req.params;
+        const { reminderDate } = req.body; // Format: "2025-01-15T14:30:00" or ISO string
+
+        try {
+            // Prepare update object
+            const updateData = {
+                reminderSent: false
+            };
+
+            // Set reminderDate if provided, otherwise set to null
+            if (reminderDate) {
+                updateData.reminderDate = new Date(reminderDate);
+            } else {
+                updateData.reminderDate = null;
+            }
+
+            // Use findByIdAndUpdate to ensure the update is saved
+            const quotation = await QuotationRequest.findByIdAndUpdate(
+                id,
+                { $set: updateData },
+                { new: true, runValidators: true }
+            );
+
+            if (!quotation) {
+                return res.status(404).json({ message: 'Quotation not found' });
+            }
+
+            res.status(200).json({
+                message: 'Reminder date and time set successfully',
+                quotation
+            });
+        } catch (error) {
+            console.error('Error setting quotation reminder:', error);
+            res.status(500).json({
+                message: 'Failed to set reminder',
+                error: error.message,
+            });
+        }
+    },
 };
 
 module.exports = quotationRequestController;
