@@ -448,12 +448,15 @@ const quotationRequestController = {
                 wasteType,
                 estimatedVolume,
                 collectionFrequency,
-                paymentOption,
+                monthlySpend,
                 contactName,
                 email,
                 phoneNumber,
                 additionalDetails,
             } = req.body;
+
+            // Handle file uploads - get file paths from multer
+            const photos = req.files ? req.files.map((file) => file.path) : [];
 
             const contactData = {
                 businessName,
@@ -461,11 +464,12 @@ const quotationRequestController = {
                 wasteType,
                 estimatedVolume,
                 collectionFrequency,
-                paymentOption,
+                monthlySpend,
                 contactName,
                 email,
                 phoneNumber,
                 additionalDetails,
+                photos,
             };
 
             const responsibleEmail = process.env.RESPONSIBLE_EMAIL;

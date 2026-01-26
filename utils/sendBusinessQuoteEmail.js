@@ -2,21 +2,21 @@ const nodemailer = require('nodemailer');
 const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 
 const sendBusinessQuoteEmail = async ({ responsibleEmail, contactData }) => {
-    const transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASSWORD,
-        },
-    });
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD,
+    },
+  });
 
-    // Email to the responsible person
-    const mailOptionsToResponsible = {
-        from: `"London Waste Management" <${contactData.email}>`,
-        to: responsibleEmail,
-        replyTo: contactData.email,
-        subject: addStagingToSubject(`New Business Quote Request from ${contactData.contactName}`),
-        html: addStagingBanner(`
+  // Email to the responsible person
+  const mailOptionsToResponsible = {
+    from: `"London Waste Management" <${contactData.email}>`,
+    to: responsibleEmail,
+    replyTo: contactData.email,
+    subject: addStagingToSubject(`New Business Quote Request from ${contactData.contactName}`),
+    html: addStagingBanner(`
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
         <img src="https://res.cloudinary.com/dehzhd6xs/image/upload/v1762522796/omar%27s%20new/Logo_wwspkm.png" alt="London Waste Management" style="max-width: 150px;">
@@ -31,7 +31,7 @@ const sendBusinessQuoteEmail = async ({ responsibleEmail, contactData }) => {
         <p style="margin: 10px 0; font-size: 16px;"><strong>Waste Type:</strong> ${contactData.wasteType}</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Estimated Volume:</strong> ${contactData.estimatedVolume}</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Collection Frequency:</strong> ${contactData.collectionFrequency}</p>
-        <p style="margin: 10px 0; font-size: 16px;"><strong>Payment/Billing Option:</strong> ${contactData.paymentOption}</p>
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Monthly Spend:</strong> ${contactData.monthlySpend}</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Contact Name:</strong> ${contactData.contactName}</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Email:</strong> ${contactData.email}</p>
         <p style="margin: 10px 0; font-size: 16px;"><strong>Phone Number:</strong> ${contactData.phoneNumber}</p>
@@ -39,20 +39,27 @@ const sendBusinessQuoteEmail = async ({ responsibleEmail, contactData }) => {
         <div style="margin: 10px 0; padding: 10px; background-color: #f5f5f5; border-radius: 4px; border-left: 4px solid #4CAF50;">
           ${contactData.additionalDetails.replace(/\n/g, '<br>')}
         </div>` : ''}
+        ${contactData.photos && contactData.photos.length > 0 ? `
+        <p style="margin: 10px 0; font-size: 16px;"><strong>Attached Photos:</strong></p>
+        <ul style="margin: 10px 0; padding-left: 20px;">
+          ${contactData.photos.map((photo, index) => {
+      return `<li style="margin: 5px 0;"><a href="${photo}" target="_blank" style="color: #4CAF50; text-decoration: none;">Photo ${index + 1} - View Image</a></li>`;
+    }).join('')}
+        </ul>` : ''}
       </div>
       <div style="text-align: center; margin-top: 20px;">
         <p style="font-size: 14px; color: #888;">London Waste Management</p>
       </div>
     </div>
   `),
-    };
+  };
 
-    // Email to the user (confirmation)
-    const mailOptionsToUser = {
-        from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
-        to: contactData.email,
-        subject: 'Thank You for Your Business Quote Request!',
-        html: `
+  // Email to the user (confirmation)
+  const mailOptionsToUser = {
+    from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+    to: contactData.email,
+    subject: 'Thank You for Your Business Quote Request!',
+    html: `
       <!DOCTYPE html>
       <html lang="en">
         <head>
@@ -133,11 +140,11 @@ const sendBusinessQuoteEmail = async ({ responsibleEmail, contactData }) => {
         </body>
       </html>
     `,
-    };
+  };
 
-    // Send both emails
-    await transporter.sendMail(mailOptionsToResponsible);
-    await transporter.sendMail(mailOptionsToUser);
+  // Send both emails
+  await transporter.sendMail(mailOptionsToResponsible);
+  await transporter.sendMail(mailOptionsToUser);
 };
 
 module.exports = sendBusinessQuoteEmail;
