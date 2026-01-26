@@ -772,10 +772,19 @@ const taskCtrl = {
 
   getAllTasks: async (req, res) => {
     try {
+      // Support alias query params for collection date
+      // Task schema uses `date` as the collection date field.
+      if (req.query.collectiondate && !req.query.date) {
+        req.query.date = req.query.collectiondate;
+      }
+      if (req.query.collectionDate && !req.query.date) {
+        req.query.date = req.query.collectionDate;
+      }
+
       const { data: tasks, meta } = await paginateQuery(
         Task,
         req.query,
-        ['paymentStatus', 'date', 'orderNumber', 'quotationId'], // filters
+        ['paymentStatus', 'date', 'createdAt', 'orderNumber', 'quotationId'], // filters
         [
           'firstName',
           'lastName',
