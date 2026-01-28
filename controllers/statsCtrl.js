@@ -7,34 +7,66 @@ const calculateIncomeForDate = async (startDate, endDate) => {
       {
         $match: {
           date: { $gte: new Date(startDate), $lt: new Date(endDate) },
-          paymentStatus: { $in: ['Paid', 'Unpaid', 'partial_Paid' , 'cancelled' , 'On_Hold' , 'Failed'] }
+          $nor: [{ taskStatus: 'Cancelled', paymentStatus: 'Unpaid' }]
+        }
+      },
+      {
+        $lookup: {
+          from: 'paymenthistories',
+          localField: '_id',
+          foreignField: 'taskId',
+          as: 'paymentHistories'
+        }
+      },
+      {
+        $addFields: {
+          totalRefunded: {
+            $reduce: {
+              input: '$paymentHistories',
+              initialValue: 0,
+              in: { $add: ['$$value', { $ifNull: ['$$this.refundedTotalGBP', 0] }] }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          netIncome: { $max: [0, { $subtract: ['$totalPrice', '$totalRefunded'] }] }
+        }
+      },
+      {
+        $addFields: {
+          isPaidBucket: {
+            $in: [
+              '$paymentStatus',
+              ['Paid', 'partial_Paid', 'partial_Refunded', 'refunded', 'On_Hold']
+            ]
+          }
         }
       },
       {
         $group: {
-          _id: "$paymentStatus",
-          total: { $sum: "$totalPrice" },
+          _id: '$isPaidBucket',
+          total: { $sum: '$netIncome' },
           count: { $sum: 1 }
         }
       }
     ]);
-  
+
     let paidTotal = 0;
     let paidTasksCount = 0;
     let pendingTotal = 0;
     let pendingTasksCount = 0;
-    console.log(stats)
     stats.forEach(stat => {
-      if (stat._id === "Paid" || stat._id === "partial_Paid" || stat._id === "Unpaid"  || stat._id === "On_Hold") {
-        paidTotal += stat.total;
-        paidTasksCount += stat.count;
-      }
-       if (stat._id === "Unpaid" || stat._id === "cancelled" || stat._id === "Failed") {
-        pendingTotal += stat.total;
-        pendingTasksCount += stat.count;
+      if (stat._id === true) {
+        paidTotal = stat.total;
+        paidTasksCount = stat.count;
+      } else {
+        pendingTotal = stat.total;
+        pendingTasksCount = stat.count;
       }
     });
-  
+
     return {
       paidTotal,
       paidTasksCount,
