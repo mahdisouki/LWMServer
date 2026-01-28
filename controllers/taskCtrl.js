@@ -4389,39 +4389,32 @@ const taskCtrl = {
       let couponDiscountValue = 0;
       if (task.couponCode) {
         try {
-          // Normalize coupon code to uppercase to match Coupon model storage
+          // Do not re‑validate in the send-invoice flow; we just reflect the coupon
+          // that was used when the task total was originally calculated.
           const normalizedCouponCode = String(task.couponCode).trim().toUpperCase();
           const coupon = await Coupon.findOne({ code: normalizedCouponCode });
           if (coupon) {
-            // Validate coupon with original subtotal (before discounts) for minimumOrderAmount check
-            const validation = coupon.validateCoupon(task.email || null, subtotalBeforeDiscounts);
-            if (!validation.valid) {
-              console.warn(`Coupon "${normalizedCouponCode}" validation failed for task ${task.orderNumber}: ${validation.message}`);
-              // Don't apply invalid coupon, but continue with invoice generation
-            } else {
-              couponCode = coupon.code;
+            couponCode = coupon.code;
 
-              // Handle both random and custom coupon types
-              if (coupon.type === 'custom') {
-                couponDiscountType = coupon.discountType;
-                couponDiscountValue = coupon.discountValue;
-                if (coupon.discountType === 'percentage') {
-                  couponPercentage = coupon.discountValue;
-                  couponDiscount = (subtotal * couponPercentage) / 100;
-                } else if (coupon.discountType === 'amount') {
-                  couponPercentage = 0; // For display purposes
-                  couponDiscount = coupon.discountValue;
-                }
-              } else {
-                // Random coupon (existing behavior)
-                couponDiscountType = 'percentage';
-                couponDiscountValue = coupon.percentage;
-                couponPercentage = coupon.percentage;
+            if (coupon.type === 'custom') {
+              couponDiscountType = coupon.discountType;
+              couponDiscountValue = coupon.discountValue;
+              if (coupon.discountType === 'percentage') {
+                couponPercentage = coupon.discountValue;
                 couponDiscount = (subtotal * couponPercentage) / 100;
+              } else if (coupon.discountType === 'amount') {
+                couponPercentage = 0;
+                couponDiscount = coupon.discountValue;
               }
-
-              subtotal -= couponDiscount;
+            } else {
+              // Random coupon – treat as percentage on current subtotal
+              couponDiscountType = 'percentage';
+              couponDiscountValue = coupon.percentage;
+              couponPercentage = coupon.percentage;
+              couponDiscount = (subtotal * couponPercentage) / 100;
             }
+
+            subtotal -= couponDiscount;
           } else {
             console.warn(`Coupon code "${normalizedCouponCode}" not found in database for task ${task.orderNumber}`);
           }
