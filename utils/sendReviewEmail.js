@@ -17,15 +17,15 @@ const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
   let template = fs.readFileSync(templatePath, 'utf8');
 
   // Prepare dynamic links
-  const trustpilotLink = `https://www.trustpilot.com/evaluate/lwmclient.duckdns.org`;
+  const trustpilotLink = `https://www.trustpilot.com/evaluate/www.londonwastemanagement.com`;
 
   // Encode the name for URL parameter
   const encodedName = encodeURIComponent(firstName);
 
   // For ratings 1-3, link to feedback page with name parameter
-  const feedbackLink1 = `https://lwmclient.duckdns.org/feedback?name=${encodedName}&rating=1`;
-  const feedbackLink2 = `https://lwmclient.duckdns.org/feedback?name=${encodedName}&rating=2`;
-  const feedbackLink3 = `https://lwmclient.duckdns.org/feedback?name=${encodedName}&rating=3`;
+  const feedbackLink1 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=1`;
+  const feedbackLink2 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=2`;
+  const feedbackLink3 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=3`;
 
   // For ratings 4-5, link to Trustpilot
   // (rating 4 and 5 both go to Trustpilot)

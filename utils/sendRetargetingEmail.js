@@ -171,7 +171,7 @@ const sendRetargetingEmail = async ({
     `;
     }).join('');
 
-    const baseUrl = 'https://lwmclient.duckdns.org';
+    const baseUrl = 'https://www.londonwastemanagement.com';
     const applyCodeUrl20 = `${baseUrl}/checkout?order=${orderNumber}&coupon=${coupon20Code}`;
     const applyCodeUrl10 = `${baseUrl}/checkout?order=${orderNumber}&coupon=${coupon10Code}`;
 
@@ -482,7 +482,7 @@ const sendRetargetingEmail = async ({
                                                                         <p style="font-size: 12px; color: #555; margin: 0 0 3px 0;">
                                                                             Save <b style="color: #333;">£${(correctOriginalTotal - correctDiscountedTotal20).toFixed(2)}</b> on this Order${correctMinFeeApplied20 ? ` <span style="font-size: 10px; color: #f59e0b;">*Min fee £45 applies</span>` : ''}</p>
                                                                         <p style="margin: 0 0 12px 0;">
-                                                                            <a href="https://lwmclient.duckdns.org/terms-conditions/" style="font-size: 11px; color: #e65100; text-decoration: none;">*Terms & conditions</a>
+                                                                            <a href="https://www.londonwastemanagement.com/terms-conditions/" style="font-size: 11px; color: #e65100; text-decoration: none;">*Terms & conditions</a>
                                                                         </p>
                                                                         <table width="100%">
                                                                             <tr>

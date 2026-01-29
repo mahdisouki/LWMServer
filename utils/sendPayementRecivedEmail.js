@@ -540,7 +540,7 @@ module.exports = {
     if (!task) throw new Error('Task not found');
 
     const baseReviewLink = `https://lwmadmin.netlify.app/review/${task.orderNumber}`;
-    const trustpilotLink = `https://www.trustpilot.com/evaluate/lwmclient.duckdns.org`;
+    const trustpilotLink = `https://www.trustpilot.com/evaluate/www.londonwastemanagement.com`;
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px;">
         <div style="text-align: center; margin-bottom: 20px;">

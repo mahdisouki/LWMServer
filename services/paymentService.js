@@ -8,7 +8,7 @@ const VAT_RATE = 0.2; // VAT rate (20%)
 const MINIMUM_PRICE = 45; // Minimum price including VAT (£37.5 + £7.5 VAT)
 
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
-const CLIENT_URL = 'https://lwmclient.duckdns.org';
+const CLIENT_URL = 'https://www.londonwastemanagement.com';
 
 // PayPal environment configuration
 const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox'; // 'sandbox' or 'live'

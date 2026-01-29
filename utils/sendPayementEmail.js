@@ -400,7 +400,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
                 <tr>
                   <td align="center" style="padding:4px 16px 12px;">
                     <p style="margin:0; font-size:12px; color:#4b5563; line-height:1.5;">
-                      By clicking below and proceeding with payment, you are accepting our terms and conditions. Click here to view our <a href="https://lwmclient.duckdns.org/terms-conditions/" style="color:#34C759; text-decoration:underline;">terms and conditions</a>.
+                      By clicking below and proceeding with payment, you are accepting our terms and conditions. Click here to view our <a href="https://www.londonwastemanagement.com/terms-conditions/" style="color:#34C759; text-decoration:underline;">terms and conditions</a>.
                     </p>
                   </td>
                 </tr>
