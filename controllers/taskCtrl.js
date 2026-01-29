@@ -3859,6 +3859,7 @@ const taskCtrl = {
           const customIdRaw = pu?.custom_id; // could be "<taskId>|<paymentType>"
           const [customId, paymentTypeMeta] = (customIdRaw || '').split('|');
           const payerEmail = getRes.result.payer?.email_address;
+          console.log('PayPal CHECKOUT.ORDER.APPROVED webhook - customIdRaw:', customIdRaw, 'paymentTypeMeta:', paymentTypeMeta);
 
           if (!customId) return res.status(400).send('Missing custom_id');
 
@@ -3900,16 +3901,15 @@ const taskCtrl = {
           const finalPrice = calculatedTotalPrice;
 
           // Update based on payment type - verify it's truly a partial payment (like Stripe)
-          if (paymentTypeMeta === 'deposit' && amountInGBP < finalPrice) {
-            // True partial payment (deposit)
+          if (paymentTypeMeta === 'deposit') {
+            // Deposit paid: mark deposit as Paid, remaining stays Not_Paid, keep overall task as partial
             task.paidAmount = task.paidAmount || {};
             task.remainingAmount = task.remainingAmount || {};
-            task.paidAmount.amount = amountInGBP;
             task.paidAmount.status = 'Paid';
             task.paidAmount.method = task.paidAmount.method || 'online';
-            task.remainingAmount.amount = finalPrice - amountInGBP;
-            task.remainingAmount.status = 'Not_Paid';
+            task.remainingAmount.status = task.remainingAmount.status || 'Not_Paid';
             task.paymentStatus = 'partial_Paid';
+            // Do NOT auto-complete task on deposit
           } else if (paymentTypeMeta === 'remaining' && amountInGBP < finalPrice) {
             // Remaining balance payment
             task.paidAmount = task.paidAmount || {};
@@ -3999,6 +3999,7 @@ const taskCtrl = {
           const customIdRaw = pu?.custom_id;
           const [customId, paymentTypeMeta] = (customIdRaw || '').split('|');
           const payerEmail = getRes.result.payer?.email_address;
+          console.log('PayPal PAYMENT.CAPTURE.COMPLETED webhook - customIdRaw:', customIdRaw, 'paymentTypeMeta:', paymentTypeMeta, 'amountInGBP:', Number(capture.amount.value));
           if (!customId) return res.status(400).send('Missing custom_id');
 
           const task = await Task.findById(customId).populate('items.standardItemId');
@@ -4038,18 +4039,29 @@ const taskCtrl = {
           const finalPrice = calculatedTotalPrice;
 
           // Update based on payment type - verify it's truly a partial payment (like Stripe)
-          if (paymentTypeMeta === 'deposit' && amountInGBP === 45 && finalPrice > 45) {
-            // True partial payment (deposit)
+          if (paymentTypeMeta === 'deposit') {
+            // Deposit paid: mark deposit as Paid, remaining stays Not_Paid, keep overall task as partial
             task.paidAmount = task.paidAmount || {};
             task.remainingAmount = task.remainingAmount || {};
-            task.paidAmount.amount = 45;
             task.paidAmount.status = 'Paid';
             task.paidAmount.method = task.paidAmount.method || 'online';
-            task.remainingAmount.amount = finalPrice - 45;
-            task.remainingAmount.status = 'Not_Paid';
+            task.remainingAmount.status = task.remainingAmount.status || 'Not_Paid';
             task.paymentStatus = 'partial_Paid';
+            // Do NOT auto-complete task on deposit
+          } else if (paymentTypeMeta === 'remaining' && amountInGBP < finalPrice) {
+            // Remaining balance payment
+            task.paidAmount = task.paidAmount || {};
+            task.remainingAmount = task.remainingAmount || {};
+            task.remainingAmount.amount = amountInGBP;
+            task.remainingAmount.status = 'Paid';
+            task.remainingAmount.method = task.remainingAmount.method || 'online';
+            task.paymentStatus = 'Paid';
+            // If paidAmount wasn't set before, set it to 0
+            if (!task.paidAmount.amount) {
+              task.paidAmount.amount = 0;
+            }
           } else {
-            // Full payment (including when amountInGBP === 45 and finalPrice === 45)
+            // Full payment (including when amountInGBP === finalPrice or paymentTypeMeta is 'total')
             if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
             task.paymentStatus = 'Paid';
             // ❌ NE PAS modifier taskStatus - il reste inchangé
