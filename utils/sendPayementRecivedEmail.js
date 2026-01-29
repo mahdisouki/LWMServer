@@ -255,10 +255,16 @@ module.exports = {
     console.log('enforceMinimumPrice:', enforceMinimumPrice);
     console.log('subtotal before minimum check:', subtotal);
 
+    const MIN_BASE_AMOUNT = 37.5; // Minimum fee (before VAT)
+    let callOutFee = 0;
+    let showCallOutFeeRow = false;
+
     // Apply minimum price (before VAT) - if under £37.5, make it £37.5 (=> £45 with VAT)
-    if (enforceMinimumPrice && subtotal < 37.5) {
+    if (enforceMinimumPrice && subtotal < MIN_BASE_AMOUNT) {
       console.log('Applying minimum price adjustment: £' + subtotal + ' → £37.5');
-      subtotal = 37.5;
+      callOutFee = MIN_BASE_AMOUNT - subtotal;
+      showCallOutFeeRow = true;
+      subtotal = MIN_BASE_AMOUNT;
     } else {
       console.log('Minimum price NOT applied (Admin task without applyMinFee or subtotal >= 37.5)');
     }
@@ -398,6 +404,9 @@ module.exports = {
       clockIcon: asset('Group 4.png'),
       fontRegular: asset('Lato-Regular.ttf'),
       fontBold: asset('lato-bold.ttf'),
+      // Call out fee when minimum fee is applied (difference between min amount and base amount)
+      showCallOutFeeRow,
+      callOutFee: callOutFee.toFixed(2),
     };
 
     // Build discount columns for the table header based on discount type
@@ -414,6 +423,13 @@ module.exports = {
       discountRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div><span>${vars.discountLabel} :</span><span>-£${vars.discountAmount}</span></div>`;
     }
     template = template.replace('{{discountRow}}', discountRow);
+
+    // Build call out fee row when minimum fee is applied
+    let callOutFeeRow = '';
+    if (showCallOutFeeRow && callOutFee > 0) {
+      callOutFeeRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div class="summary-row"><span class="summary-label">Call out fee</span><span class="summary-value">£${callOutFee.toFixed(2)}</span></div>`;
+    }
+    template = template.replace('{{callOutFeeRow}}', callOutFeeRow);
 
     // Build bank transfer details section if payment method is BankTransfer
     let bankTransferDetails = '';
