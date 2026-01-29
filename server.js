@@ -32,6 +32,7 @@ connectToDatabase()
     require('./cron/sendReviewEmails');
     require('./cron/refreshInstagramToken');
     require('./cron/checkQuotationReminders');
+    require('./cron/deleteExpiredCoupons');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })

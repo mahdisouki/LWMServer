@@ -8,7 +8,7 @@ const pcnDamageSchema = new Schema({
         required: true
     }, // Reference to the DailySheet
     reason: { type: String, required: true },       // Reason for PCN/Damage
-    amount: { type: Number, required: true },       // Amount to deduct
+    amount: { type: Number, required: false },       // Amount to deduct
     deductedFromUserId: {
         type: Schema.Types.ObjectId,
         ref: 'User',

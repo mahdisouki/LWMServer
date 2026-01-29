@@ -51,7 +51,7 @@ const pcnDamageController = {
                     dailySheetId: dailySheet._id,
                     deductedFromUserId: userId
                 });
-                totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + pcn.amount, 0);
+                totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
             }
 
             // Update all payroll records for this user on this date
@@ -71,9 +71,9 @@ const pcnDamageController = {
             const { driverId, date } = req.params;
             const { reason, amount, deductedFromUserId, addedBy } = req.body;
 
-            if (!reason || amount == null || !deductedFromUserId) {
+            if (!reason || !deductedFromUserId) {
                 return res.status(400).json({
-                    message: 'Reason, amount, and deductedFromUserId are required.'
+                    message: 'Reason and deductedFromUserId are required.'
                 });
             }
 
