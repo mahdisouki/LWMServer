@@ -132,7 +132,7 @@ const corsOptions = {
     'https://stagingadmin.londonwastemanagement.uk/',
     'https://stagingadmin.londonwastemanagement.uk',
     'https://londonwastemanagement.com',
-    'https://www.londonwastemanagement.com',
+    'https://lwmclient.duckdns.org',
     'http://lwmtest-botest-lzlcjq-c53a95-191-101-81-116.traefik.me',
     'lwmtest-clienttest-ptkvge-7b883a-191-101-81-116.traefik.me',
     'http://lwmtest-clienttest-ptkvge-7b883a-191-101-81-116.traefik.me'

@@ -47,7 +47,7 @@ const sendQuotationRetargetingEmail = async ({
   const countdown20 = `${String(hours20).padStart(2, '0')}:${String(minutes20).padStart(2, '0')}:${String(seconds20).padStart(2, '0')}`;
 
   // Base URL for any links
-  const baseUrl = process.env.CLIENT_URL || 'https://www.londonwastemanagement.com';
+  const baseUrl = process.env.CLIENT_URL || 'https://lwmclient.duckdns.org';
 
   // Format customer name
   const displayName = customerName || 'Customer';

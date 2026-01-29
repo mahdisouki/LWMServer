@@ -1437,7 +1437,7 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
             type: type,
             userId: userId.toString(),
             senderName: senderName,
-            url: `${process.env.FRONTEND_URL || 'https://www.londonwastemanagement.com'}/notifications?type=${type}`,
+            url: `${process.env.FRONTEND_URL || 'https://lwmclient.duckdns.org'}/notifications?type=${type}`,
           }
         );
         
