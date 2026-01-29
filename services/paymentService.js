@@ -246,7 +246,7 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
     request.requestBody({
         intent: "CAPTURE",
         purchase_units: [{
-            custom_id: taskId,
+            custom_id: `${taskId}|${paymentType}`,
             description: `Payment for Task #${taskId}`,
             amount: {
                 currency_code: "GBP",
