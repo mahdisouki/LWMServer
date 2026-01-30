@@ -69,7 +69,7 @@ const pcnDamageController = {
     addPcnDamage: async (req, res) => {
         try {
             const { driverId, date } = req.params;
-            const { reason, amount, deductedFromUserId, addedBy } = req.body;
+            const { pcnReferenceNumber, reason, amount, deductedFromUserId, addedBy } = req.body;
 
             if (!reason || !deductedFromUserId) {
                 return res.status(400).json({
@@ -94,7 +94,10 @@ const pcnDamageController = {
                 });
             }
 
-            const proofUrl = req.file ? req.file.path : req.body.proofUrl || null;
+            // Handle proof: accepts file upload (image/PDF) or URL string
+            // req.file.path contains Cloudinary URL for uploaded files (images/PDFs)
+            // req.body.proofUrl accepts direct URLs (for images, PDFs, or any other URL)
+            const proofUrl = req.file ? req.file.path : (req.body.proofUrl || null);
 
             const startDate = new Date(date);
             startDate.setHours(0, 0, 0, 0);
@@ -130,6 +133,7 @@ const pcnDamageController = {
 
             // Create new PcnDamage document
             const pcnDamage = new PcnDamage({
+                pcnReferenceNumber,
                 dailySheetId: dailySheet._id,
                 reason,
                 amount,
@@ -159,7 +163,7 @@ const pcnDamageController = {
     updatePcnDamage: async (req, res) => {
         try {
             const { driverId, date, pcnDamageId } = req.params;
-            const { reason, amount, deductedFromUserId, newDate } = req.body;
+            const { pcnReferenceNumber, reason, amount, deductedFromUserId, newDate } = req.body;
 
             const startDate = new Date(date);
             startDate.setHours(0, 0, 0, 0);
@@ -217,6 +221,7 @@ const pcnDamageController = {
             }
 
             // Update other fields
+            if (pcnReferenceNumber !== undefined) pcnDamage.pcnReferenceNumber = pcnReferenceNumber;
             if (reason !== undefined) pcnDamage.reason = reason;
             if (amount !== undefined) pcnDamage.amount = amount;
             if (deductedFromUserId !== undefined) {
@@ -238,6 +243,9 @@ const pcnDamageController = {
                 }
                 pcnDamage.deductedFromUserId = deductedFromUserId;
             }
+            // Handle proof: accepts file upload (image/PDF) or URL string
+            // req.file.path contains Cloudinary URL for uploaded files (images/PDFs)
+            // req.body.proofUrl accepts direct URLs (for images, PDFs, or any other URL)
             if (req.file) {
                 pcnDamage.proofUrl = req.file.path;
             } else if (req.body.proofUrl !== undefined) {
@@ -378,6 +386,7 @@ const pcnDamageController = {
             // Format the response to match the previous structure
             const formattedPcnDamages = pcnDamages.map(pcn => ({
                 _id: pcn._id,
+                pcnReferenceNumber: pcn.pcnReferenceNumber,
                 driverId: pcn.dailySheetId?.driverId?._id || pcn.dailySheetId?.driverId,
                 date: pcn.dailySheetId?.date,
                 reason: pcn.reason,
