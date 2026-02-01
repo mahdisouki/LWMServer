@@ -197,6 +197,7 @@ const announcementRoutes = require('./routes/announcement');
 const analyticsRoutes = require('./routes/analytics');
 const couponRoutes = require('./routes/coupon');
 const instagramRoutes = require('./routes/instagram');
+const routeOptimizerRoutes = require('./routes/routeOptimizer');
 
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
@@ -210,6 +211,7 @@ app.use('/api', driverRouter);
 app.use("/api", tippingRouter);
 app.use("/api", dayoffRouter);
 app.use("/api/dailySheets", dailySheetRoutes);
+app.use("/api/route-optimizer", routeOptimizerRoutes);
 app.use("/api/pcn-damages", pcnDamageRoutes);
 app.use("/api/blueSheets", blueSheetRoutes);
 app.use("/api", payrollsRoutes);
