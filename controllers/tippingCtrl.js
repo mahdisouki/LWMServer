@@ -76,6 +76,9 @@ const tippingController = {
       console.log(newTippingRequest);
       await newTippingRequest.save();
 
+      // Update daily sheet after creation
+      await updateDailySheetForTippingRequest(newTippingRequest);
+
       // Create a log of the tipping request creation
       if (req.user) {
         await loggingService.createLog({
@@ -195,13 +198,16 @@ const tippingController = {
         notes: notes,
         status: status,
         isShipped: isShipped,
-        tipdate: tipdate, // Tip date set by admin
+        tipdate: tipdate || Date.now(), // Tip date set by admin, default to current date if not provided
         tippingProof: tippingProof.length > 0 ? tippingProof : undefined, // Tipping proof images from files
         price: price, // Price
         createdBy: admin._id, // Storing the admin who created the request
       });
 
       await newTippingRequest.save();
+
+      // Update daily sheet after creation
+      await updateDailySheetForTippingRequest(newTippingRequest);
 
       // Create a log of the tipping request creation by admin
       if (req.user) {

@@ -94,10 +94,18 @@ const dailySheetController = {
         });
 
 
-        // Fetch tipping requests made on that day
+        // Fetch tipping requests for that day - use tipdate if available, otherwise createdAt
         const tippingRequests = await TippingRequest.find({
           userId: driver._id,
-          createdAt: { $gte: startOfDay, $lt: endOfDay },
+          $or: [
+            { tipdate: { $gte: startOfDay, $lt: endOfDay } },
+            { 
+              $and: [
+                { $or: [{ tipdate: { $exists: false } }, { tipdate: null }] },
+                { createdAt: { $gte: startOfDay, $lt: endOfDay } }
+              ]
+            }
+          ]
         });
 
         // Calculate income from tasks
@@ -730,10 +738,18 @@ const dailySheetController = {
         });
 
 
-        // Fetch tipping requests made on that day
+        // Fetch tipping requests for that day - use tipdate if available, otherwise createdAt
         const tippingRequests = await TippingRequest.find({
           userId: driver._id,
-          createdAt: { $gte: startOfDay, $lt: endOfDay },
+          $or: [
+            { tipdate: { $gte: startOfDay, $lt: endOfDay } },
+            { 
+              $and: [
+                { $or: [{ tipdate: { $exists: false } }, { tipdate: null }] },
+                { createdAt: { $gte: startOfDay, $lt: endOfDay } }
+              ]
+            }
+          ]
         });
 
         // Calculate income from tasks
