@@ -47,12 +47,6 @@ async function createCalendarEvent(adminId, task) {
         dateTime: endDateTime.toISOString(),
         timeZone: 'Europe/London',
       },
-      reminders: {
-        useDefault: false,
-        overrides: [
-          { method: 'popup', minutes: 60 }, // 1 hour before
-        ],
-      },
       colorId: getColorIdForStatus(task.taskStatus),
     };
 
