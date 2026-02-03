@@ -52,6 +52,12 @@ const staffManagement = {
         permissions,
         address,
         postcode,
+        start_location,
+        end_location,
+        startLat,
+        startLng,
+        endLat,
+        endLng,
       } = req.body;
 
       // Get file paths
@@ -76,7 +82,7 @@ const staffManagement = {
 
       if (role === 'Driver' || role === 'Helper') {
         const Model = role === 'Driver' ? Driver : Helper;
-        newUser = new Model({
+        const driverFields = {
           firstName,
           lastName,
           dateOfBirth,
@@ -106,7 +112,20 @@ const staffManagement = {
           signedStarterForm: signedStarterFormUrl,
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
-        });
+        };
+        if (role === 'Driver') {
+          if (start_location && start_location.coordinates && start_location.coordinates.length >= 2) {
+            driverFields.start_location = start_location;
+          } else if (startLat != null && startLng != null) {
+            driverFields.start_location = { type: 'Point', coordinates: [Number(startLng), Number(startLat)] };
+          }
+          if (end_location && end_location.coordinates && end_location.coordinates.length >= 2) {
+            driverFields.end_location = end_location;
+          } else if (endLat != null && endLng != null) {
+            driverFields.end_location = { type: 'Point', coordinates: [Number(endLng), Number(endLat)] };
+          }
+        }
+        newUser = new Model(driverFields);
       } else if (role === 'Admin') {
         const parsedPermissions =
           typeof permissions === 'string' ? JSON.parse(permissions) : permissions;
@@ -354,6 +373,26 @@ const staffManagement = {
       // If password is included, hash it before updating
       if (updateData.password && updateData.password.trim() !== '') {
         updateData.password = await bcrypt.hash(updateData.password, 10);
+      }
+
+      // Driver-only: build start_location / end_location from lat/lng if provided
+      if (oldUser.roleType === 'Driver') {
+        if (updateData.startLat != null && updateData.startLng != null) {
+          updateData.start_location = {
+            type: 'Point',
+            coordinates: [Number(updateData.startLng), Number(updateData.startLat)],
+          };
+          delete updateData.startLat;
+          delete updateData.startLng;
+        }
+        if (updateData.endLat != null && updateData.endLng != null) {
+          updateData.end_location = {
+            type: 'Point',
+            coordinates: [Number(updateData.endLng), Number(updateData.endLat)],
+          };
+          delete updateData.endLat;
+          delete updateData.endLng;
+        }
       }
 
       // Choose correct discriminator model for update (ensures proper casting/validation)
