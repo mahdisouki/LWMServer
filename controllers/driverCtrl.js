@@ -9,6 +9,7 @@ const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const { emitNotificationToUser, emitEvent } = require('../socket');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
+const dailySheetController = require('./dailySheetController');
 const adminId = "67cb6810c9e768ec25d39523"
 
 function getTodayDateRange() {
@@ -534,6 +535,33 @@ const driverManagement = {
       // Add tipping request to truck's task list
       truck.addTippingRequest(date, tippingRequestId, order || 0);
       await truck.save();
+
+      // Update truckId on tipping request if not set
+      if (!tippingRequest.truckId) {
+        tippingRequest.truckId = truck._id;
+        await tippingRequest.save();
+      }
+
+      // Update daily sheets for the driver
+      try {
+        if (truck.driverId) {
+          console.log('Updating daily sheets after adding tipping request to truck');
+          
+          const mockReq = {
+            body: { date: date }
+          };
+          const mockRes = {
+            status: () => ({ json: () => { } }),
+            json: () => { }
+          };
+          
+          await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+          console.log('Daily sheets updated after adding tipping request for date:', date);
+        }
+      } catch (dailySheetError) {
+        console.error('Error updating daily sheets after adding tipping request:', dailySheetError);
+        // Don't fail the main operation if daily sheet update fails
+      }
 
       res.status(200).json({
         message: 'Tipping request added to truck tasks successfully',

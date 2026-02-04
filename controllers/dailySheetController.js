@@ -30,6 +30,7 @@ const dailySheetController = {
       for (const driver of drivers) {
         const trucks = await Truck.find({ driverId: driver._id });
         const allTaskIdsForDate = [];
+        const allTippingRequestIdsForDate = [];
 
         for (const truck of trucks) {
           if (!truck.tasks) {
@@ -60,20 +61,35 @@ const dailySheetController = {
 
           console.log(`Tasks for ${formattedDate} in truck ${truck.name}:`, tasksForDate);
 
-          // Extract task IDs from the tasks array
+          // Extract task IDs and tipping request IDs from the tasks array
           if (Array.isArray(tasksForDate)) {
-            const taskIds = tasksForDate.map(task => {
+            tasksForDate.forEach(task => {
               // Handle both string IDs and objects with taskId property
-              if (typeof task === 'string') {
-                return task;
-              } else if (task && task.taskId) {
-                return task.taskId;
-              }
-              return null;
-            }).filter(id => id !== null);
+              let taskId = null;
+              let taskType = null;
 
-            allTaskIdsForDate.push(...taskIds);
-            console.log(`Extracted task IDs for ${formattedDate}:`, taskIds);
+              if (typeof task === 'string') {
+                // Legacy format: just a string ID (assume it's a task)
+                taskId = task;
+                taskType = 'task';
+              } else if (task && task.taskId) {
+                taskId = task.taskId;
+                taskType = task.type || 'task'; // Default to 'task' if type not specified
+              }
+
+              if (taskId) {
+                // Check if it's a tipping request or a task
+                if (taskType === 'TippingRequest' || taskType === 'tipping_request') {
+                  allTippingRequestIdsForDate.push(taskId);
+                } else {
+                  // Default to task (for backward compatibility)
+                  allTaskIdsForDate.push(taskId);
+                }
+              }
+            });
+
+            console.log(`Extracted task IDs for ${formattedDate}:`, allTaskIdsForDate);
+            console.log(`Extracted tipping request IDs for ${formattedDate}:`, allTippingRequestIdsForDate);
           }
         }
 
@@ -93,20 +109,12 @@ const dailySheetController = {
           taskStatus: 'Declined',
         });
 
-
-        // Fetch tipping requests for that day - use tipdate if available, otherwise createdAt
-        const tippingRequests = await TippingRequest.find({
-          userId: driver._id,
-          $or: [
-            { tipdate: { $gte: startOfDay, $lt: endOfDay } },
-            { 
-              $and: [
-                { $or: [{ tipdate: { $exists: false } }, { tipdate: null }] },
-                { createdAt: { $gte: startOfDay, $lt: endOfDay } }
-              ]
-            }
-          ]
-        });
+        // Fetch tipping requests from the truck's tasks Map (not by userId)
+        const tippingRequests = allTippingRequestIdsForDate.length > 0
+          ? await TippingRequest.find({
+            _id: { $in: allTippingRequestIdsForDate }
+          })
+          : [];
 
         // Calculate income from tasks
         const totalCashIncome = jobsDone.reduce((acc, job) => {
@@ -138,7 +146,8 @@ const dailySheetController = {
             tippingRequests: tippingRequests.map(tip => tip._id),
             income: {
               cash: totalCashIncome,
-              total: totalCashIncome, // You can extend this if you have card income, etc.
+              tipping: totalTippingIncome,
+              total: totalIncome,
             },
           },
           { new: true, upsert: true }
@@ -674,6 +683,7 @@ const dailySheetController = {
 
         const trucks = await Truck.find({ driverId: driver._id });
         const allTaskIdsForDate = [];
+        const allTippingRequestIdsForDate = [];
 
         for (const truck of trucks) {
           if (!truck.tasks) {
@@ -704,20 +714,35 @@ const dailySheetController = {
 
           console.log(`Tasks for ${formattedDate} in truck ${truck.name}:`, tasksForDate);
 
-          // Extract task IDs from the tasks array
+          // Extract task IDs and tipping request IDs from the tasks array
           if (Array.isArray(tasksForDate)) {
-            const taskIds = tasksForDate.map(task => {
+            tasksForDate.forEach(task => {
               // Handle both string IDs and objects with taskId property
-              if (typeof task === 'string') {
-                return task;
-              } else if (task && task.taskId) {
-                return task.taskId;
-              }
-              return null;
-            }).filter(id => id !== null);
+              let taskId = null;
+              let taskType = null;
 
-            allTaskIdsForDate.push(...taskIds);
-            console.log(`Extracted task IDs for ${formattedDate}:`, taskIds);
+              if (typeof task === 'string') {
+                // Legacy format: just a string ID (assume it's a task)
+                taskId = task;
+                taskType = 'task';
+              } else if (task && task.taskId) {
+                taskId = task.taskId;
+                taskType = task.type || 'task'; // Default to 'task' if type not specified
+              }
+
+              if (taskId) {
+                // Check if it's a tipping request or a task
+                if (taskType === 'TippingRequest' || taskType === 'tipping_request') {
+                  allTippingRequestIdsForDate.push(taskId);
+                } else {
+                  // Default to task (for backward compatibility)
+                  allTaskIdsForDate.push(taskId);
+                }
+              }
+            });
+
+            console.log(`Extracted task IDs for ${formattedDate}:`, allTaskIdsForDate);
+            console.log(`Extracted tipping request IDs for ${formattedDate}:`, allTippingRequestIdsForDate);
           }
         }
 
@@ -737,20 +762,12 @@ const dailySheetController = {
           taskStatus: { $in: ['Declined', 'Cancelled'] },
         });
 
-
-        // Fetch tipping requests for that day - use tipdate if available, otherwise createdAt
-        const tippingRequests = await TippingRequest.find({
-          userId: driver._id,
-          $or: [
-            { tipdate: { $gte: startOfDay, $lt: endOfDay } },
-            { 
-              $and: [
-                { $or: [{ tipdate: { $exists: false } }, { tipdate: null }] },
-                { createdAt: { $gte: startOfDay, $lt: endOfDay } }
-              ]
-            }
-          ]
-        });
+        // Fetch tipping requests from the truck's tasks Map (not by userId)
+        const tippingRequests = allTippingRequestIdsForDate.length > 0
+          ? await TippingRequest.find({
+            _id: { $in: allTippingRequestIdsForDate }
+          })
+          : [];
 
         // Calculate income from tasks
         const totalCashIncome = jobsDone.reduce((acc, job) => {

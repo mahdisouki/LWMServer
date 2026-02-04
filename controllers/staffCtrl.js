@@ -8,6 +8,7 @@ const socket = require('../socket'); // Ensure you have the correct path to your
 const APIfeatures = require('../utils/APIFeatures');
 const { optimizeRoute } = require('../helper/OpitomRoute');
 const loggingService = require('../services/loggingService');
+const dailySheetController = require('./dailySheetController');
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -435,6 +436,38 @@ const staffManagement = {
       driver.designation = truckName; // Adjust as needed
       driver.truckId = truck._id; // Assign the truck ID to the driver
       await driver.save();
+
+      // Update daily sheets for the driver assignment period
+      try {
+        if (truck.driverId) {
+          // Update daily sheets for each date in the assignment period
+          const startDateObj = new Date(startDate);
+          const endDateObj = new Date(endDate);
+          const currentDate = new Date(startDateObj);
+          
+          while (currentDate <= endDateObj) {
+            const dateStr = currentDate.toISOString().split('T')[0];
+            
+            const mockReq = {
+              body: { date: dateStr }
+            };
+            const mockRes = {
+              status: () => ({ json: () => { } }),
+              json: () => { }
+            };
+            
+            await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+            
+            // Move to next day
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+          
+          console.log('Daily sheets updated for driver assignment period:', startDate, 'to', endDate);
+        }
+      } catch (dailySheetError) {
+        console.error('Error updating daily sheets after driver assignment:', dailySheetError);
+        // Don't fail the main operation if daily sheet update fails
+      }
 
       // Create a log of the driver assignment
       await loggingService.createLog({

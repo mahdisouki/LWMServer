@@ -69,6 +69,7 @@ const tippingController = {
 
       const newTippingRequest = new TippingRequest({
         userId: userId,
+        truckId: truck._id, // Set truckId when creating
         notes: notes,
         status: 'Pending',
         tipdate: Date.now(), // Set tipdate to current date when created by non-admin
@@ -184,16 +185,16 @@ const tippingController = {
         return res.status(400).json({ message: 'User is not a driver' });
       }
 
-      // // Find the truck
-      // const truck = await Truck.findById(truckId);
-      // if (!truck) {
-      //   return res.status(404).json({ message: 'Truck not found' });
-      // }
+      // Find the truck assigned to this driver
+      let truck = await Truck.findOne({ driverId: driver._id });
+      if (!truck) {
+        truck = await Truck.findOne({ helperId: driver._id });
+      }
 
       // Create the tipping request
       const newTippingRequest = new TippingRequest({
         userId: driver._id, // Assigning the tipping request to the driver
-        // truckId: truck._id,
+        truckId: truck ? truck._id : undefined, // Set truckId if truck exists
         tippingPlace: tippingPlace, // Tipping place
         notes: notes,
         status: status,
@@ -231,7 +232,7 @@ const tippingController = {
         request: {
           id: newTippingRequest._id,
           driverId: newTippingRequest.userId.toString(),
-          // truckId: newTippingRequest.truckId.toString(),
+          truckId: newTippingRequest.truckId ? newTippingRequest.truckId.toString() : null,
           tippingPlace: newTippingRequest.tippingPlace,
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
@@ -450,6 +451,11 @@ const tippingController = {
       request.status = status;
       request.tippingPlace = tippingPlace;
 
+      // Set truckId if it's not already set and truck exists
+      if (!request.truckId && truck) {
+        request.truckId = truck._id;
+      }
+
 
       // Handle storage place logic based on status
       if (status === 'Accepted') {
@@ -542,6 +548,17 @@ const tippingController = {
         return res.status(404).json({ message: 'Tipping request not found' });
       }
 
+      // Set truckId if it's not already set
+      if (!request.truckId) {
+        let truck = await Truck.findOne({ driverId: request.userId });
+        if (!truck) {
+          truck = await Truck.findOne({ helperId: request.userId });
+        }
+        if (truck) {
+          request.truckId = truck._id;
+        }
+      }
+
       request.isShipped = true;
       await request.save();
 
@@ -570,6 +587,17 @@ const tippingController = {
       const request = await TippingRequest.findById(id);
       if (!request) {
         return res.status(404).json({ message: 'Tipping request not found' });
+      }
+
+      // Set truckId if it's not already set
+      if (!request.truckId) {
+        let truck = await Truck.findOne({ driverId: request.userId });
+        if (!truck) {
+          truck = await Truck.findOne({ helperId: request.userId });
+        }
+        if (truck) {
+          request.truckId = truck._id;
+        }
       }
 
       // Extract Cloudinary URLs from uploaded files
@@ -661,6 +689,17 @@ const tippingController = {
         ...otherFields
       };
 
+      // Set truckId if it's not already set
+      if (!oldRequest.truckId && oldRequest.userId) {
+        let truck = await Truck.findOne({ driverId: oldRequest.userId });
+        if (!truck) {
+          truck = await Truck.findOne({ helperId: oldRequest.userId });
+        }
+        if (truck) {
+          updateFields.truckId = truck._id;
+        }
+      }
+
       // Handle file uploads for tipping proof
       if (req.files && req.files.length > 0) {
         // Extract Cloudinary URLs from uploaded files
@@ -734,6 +773,17 @@ const tippingController = {
         return res.status(403).json({
           message: 'Unauthorized: You can only update your own tipping requests'
         });
+      }
+
+      // Set truckId if it's not already set
+      if (!request.truckId) {
+        let truck = await Truck.findOne({ driverId: request.userId });
+        if (!truck) {
+          truck = await Truck.findOne({ helperId: request.userId });
+        }
+        if (truck) {
+          request.truckId = truck._id;
+        }
       }
 
       // Check if files were uploaded

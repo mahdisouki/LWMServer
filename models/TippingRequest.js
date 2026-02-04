@@ -7,11 +7,11 @@ const tippingRequestSchema = new Schema({
         ref: 'User',
         required: true
     },
-    // truckId: {
-    //     type: Schema.Types.ObjectId,
-    //     ref: 'Truck',
-    //     required: false
-    // },
+    truckId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Truck',
+        required: false
+    },
     notes: {
         type: String
     },
