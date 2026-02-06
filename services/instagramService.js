@@ -1,4 +1,5 @@
 const InstagramToken = require('../models/InstagramToken');
+const cloudinary = require('../helper/cloudinaryConfig');
 
 const IG_BUSINESS_ID = process.env.IG_BUSINESS_ID || '17841421517842524';
 const IG_APP_ID = process.env.IG_APP_ID || '998225742492123';
@@ -23,7 +24,129 @@ async function getInstagramToken() {
 }
 
 /**
- * Fetch Instagram posts from Graph API
+ * Upload media from Instagram URL to Cloudinary
+ * Uses Instagram post ID as public_id to avoid duplicate uploads
+ */
+async function uploadMediaToCloudinary(mediaUrl, mediaType, postId) {
+  try {
+    // Determine resource type based on media type
+    const resourceType = mediaType === 'VIDEO' ? 'video' : 'image';
+
+    // Use Instagram post ID as public_id (deterministic - same post = same Cloudinary asset)
+    // Full public_id will be: instagram/{postId}
+    const publicId = `instagram/${postId}`;
+
+    // Check if asset already exists in Cloudinary
+    try {
+      const existingAsset = await cloudinary.api.resource(publicId, {
+        resource_type: resourceType
+      });
+
+      // Asset exists, return existing URL
+      return existingAsset.secure_url;
+    } catch (apiError) {
+      // Asset doesn't exist (404), proceed with upload
+      if (apiError.http_code !== 404) {
+        // Some other error occurred, log it but continue with upload attempt
+        console.warn(`Error checking existing Cloudinary asset for ${publicId}:`, apiError.message);
+      }
+    }
+
+    // Upload options with optimizations
+    const uploadOptions = {
+      resource_type: resourceType,
+      public_id: publicId, // Full path: instagram/{postId}
+      overwrite: false, // Don't overwrite if somehow it exists
+      quality: 'auto:good',
+      fetch_format: resourceType === 'image' ? 'auto' : undefined, // WebP/AVIF for images
+      flags: resourceType === 'image' ? 'progressive' : undefined, // Progressive JPEG
+    };
+
+    // Upload from Instagram URL
+    const result = await cloudinary.uploader.upload(mediaUrl, uploadOptions);
+
+    return result.secure_url;
+  } catch (error) {
+    console.error(`Error uploading media to Cloudinary (${mediaUrl}):`, error.message);
+    // Return original URL if Cloudinary upload fails
+    return mediaUrl;
+  }
+}
+
+/**
+ * Fetch children media for CAROUSEL_ALBUM posts
+ */
+async function fetchChildrenMedia(mediaId, token) {
+  try {
+    const url = `https://graph.facebook.com/v24.0/${mediaId}/children?fields=id,media_type,media_url&access_token=${token}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) {
+      console.error(`Error fetching children media for ${mediaId}:`, data.error);
+      return [];
+    }
+
+    return data.data || [];
+  } catch (error) {
+    console.error(`Error fetching children media for ${mediaId}:`, error.message);
+    return [];
+  }
+}
+
+/**
+ * Process Instagram post media and upload to Cloudinary
+ */
+async function processPostMedia(post, token) {
+  const processedPost = { ...post };
+
+  // Handle CAROUSEL_ALBUM posts (multiple media items)
+  if (post.media_type === 'CAROUSEL_ALBUM') {
+    try {
+      const children = await fetchChildrenMedia(post.id, token);
+
+      // Process each child media item
+      const processedChildren = await Promise.all(
+        children.map(async (child) => {
+          if (child.media_url) {
+            const cloudinaryUrl = await uploadMediaToCloudinary(
+              child.media_url,
+              child.media_type,
+              child.id
+            );
+            return {
+              ...child,
+              media_url: cloudinaryUrl
+            };
+          }
+          return child;
+        })
+      );
+
+      processedPost.children = processedChildren;
+      // For carousel, use first child's media_url as main media_url for backward compatibility
+      if (processedChildren.length > 0 && processedChildren[0].media_url) {
+        processedPost.media_url = processedChildren[0].media_url;
+      }
+    } catch (error) {
+      console.error(`Error processing CAROUSEL_ALBUM post ${post.id}:`, error.message);
+    }
+  }
+  // Handle single IMAGE or VIDEO posts
+  else if (post.media_url) {
+    const cloudinaryUrl = await uploadMediaToCloudinary(
+      post.media_url,
+      post.media_type,
+      post.id
+    );
+    processedPost.media_url = cloudinaryUrl;
+  }
+
+  return processedPost;
+}
+
+/**
+ * Fetch Instagram posts from Graph API and proxy media through Cloudinary
  */
 async function fetchInstagramPosts(limit = 10, after = null) {
   try {
@@ -33,7 +156,7 @@ async function fetchInstagramPosts(limit = 10, after = null) {
     }
 
     let url = `https://graph.facebook.com/v24.0/${IG_BUSINESS_ID}/media?fields=id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count&access_token=${token}&limit=${limit}`;
-    
+
     if (after) {
       url += `&after=${after}`;
     }
@@ -45,8 +168,14 @@ async function fetchInstagramPosts(limit = 10, after = null) {
       throw new Error(`Instagram API error: ${JSON.stringify(data.error)}`);
     }
 
+    // Process each post to upload media to Cloudinary
+    const posts = data.data || [];
+    const processedPosts = await Promise.all(
+      posts.map(post => processPostMedia(post, token))
+    );
+
     return {
-      posts: data.data || [],
+      posts: processedPosts,
       paging: data.paging || null
     };
   } catch (error) {
@@ -63,7 +192,7 @@ async function refreshInstagramToken() {
   try {
     // Get current token from DB
     let tokenDoc = await InstagramToken.findOne({ platform: 'instagram' });
-    
+
     if (!tokenDoc) {
       // If no token in DB, try to create one from env variable
       const envToken = process.env.IG_TOKEN;
@@ -89,7 +218,7 @@ async function refreshInstagramToken() {
     }
 
     // Calculate expiration date (expires_in is in seconds)
-    const expiresAt = data.expires_in 
+    const expiresAt = data.expires_in
       ? new Date(Date.now() + (data.expires_in * 1000))
       : null;
 
