@@ -31,4 +31,13 @@ router.post(
   routeOptimizerCtrl.calculateRoutes
 );
 
+/**
+ * POST /api/route-optimizer/external/calculate-routes
+ * Body: { drivers, jobs, respect_time_slots?, job_priorities? } - forwarded to external API (e.g. https://routeoptimiser.duckdns.org/api/v1/calculate-routes)
+ */
+router.post(
+  '/external/calculate-routes',
+  routeOptimizerCtrl.calculateRoutesExternal
+);
+
 module.exports = router;

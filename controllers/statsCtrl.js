@@ -40,7 +40,7 @@ const calculateIncomeForDate = async (startDate, endDate) => {
           isPaidBucket: {
             $in: [
               '$paymentStatus',
-              ['Paid', 'partial_Paid', 'partial_Refunded', 'refunded', 'On_Hold' , 'Unpaid']
+              ['Paid', 'partial_Paid', 'partial_Refunded', 'refunded', 'On_Hold']
             ]
           }
         }

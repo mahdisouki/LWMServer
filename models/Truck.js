@@ -107,17 +107,23 @@ truckSchema.methods.addTask = function(date, taskId, order = 0) {
     this.tasks.set(dateKey, []);
   }
   
-  const tasksForDate = this.tasks.get(dateKey);
-  tasksForDate.push({
+  let tasksForDate = this.tasks.get(dateKey) || [];
+  // Normalize legacy 'Task' to schema enum 'task' and use new array so Mongoose marks path modified
+  const normalized = tasksForDate.map((entry) => ({
+    ...entry,
+    type: entry.type === 'Task' ? 'task' : entry.type,
+  }));
+  normalized.push({
     taskId: taskId,
-    type: 'Task',
+    type: 'task',
     order: order
   });
-  
+
   // Sort by order
-  tasksForDate.sort((a, b) => a.order - b.order);
-  
-  this.tasks.set(dateKey, tasksForDate);
+  normalized.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+  this.tasks.set(dateKey, normalized);
+  this.markModified('tasks');
 };
 
 // Instance method to add a tipping request to a specific date
@@ -142,6 +148,7 @@ truckSchema.methods.addTippingRequest = function(date, tippingRequestId, order =
   tasksForDate.sort((a, b) => a.order - b.order);
   
   this.tasks.set(dateKey, tasksForDate);
+  this.markModified('tasks');
 };
 
 // Instance method to get all tasks and tipping requests for a date with proper ordering
@@ -169,6 +176,7 @@ truckSchema.methods.updateTaskOrder = function(date, taskId, newOrder) {
     // Sort by order
     tasksForDate.sort((a, b) => a.order - b.order);
     this.tasks.set(date, tasksForDate);
+    this.markModified('tasks');
     return true;
   }
   
