@@ -31,6 +31,10 @@ const taskSchema = new Schema(
         },
         quantity: { type: Number, default: 0 },
         price: { type: Number },
+        spaceOfVan: { type: Number, required: false },
+        timespentOutside: { type: Number, required: false },
+        timespentInside: { type: Number, required: false },
+        timespentInsdiewithDis: { type: Number, required: false },
         customPrice: { type: Number },
         ewcCode: {
           type: String,
@@ -167,6 +171,7 @@ const taskSchema = new Schema(
       required: false, // Make it optional
       default: null
     },
+    taskDuration: { type: Number, required: false },
     googleCalendarEventId: {
       type: String,
       required: false
