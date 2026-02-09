@@ -329,6 +329,63 @@ function hasPerItemDiscount(arr) {
   );
 }
 
+/**
+ * Get duration in minutes for one item based on Objectsposition.
+ * @param {Object} source - Object with timespentOutside, timespentInside, timespentInsdiewithDis (numbers or undefined)
+ * @param {string} position - 'Outside' | 'Inside' | 'InsideWithDismantling'
+ * @returns {number} minutes (0 if missing)
+ */
+function getDurationMinutesForPosition(source, position) {
+  if (!source) return 0;
+  const pos = position || 'Outside';
+  let min = 0;
+  if (pos === 'Outside') min = Number(source.timespentOutside);
+  else if (pos === 'Inside') min = Number(source.timespentInside);
+  else if (pos === 'InsideWithDismantling') min = Number(source.timespentInsdiewithDis);
+  return Number.isFinite(min) && min >= 0 ? min : 0;
+}
+
+/** Standard items whose name indicates ¼/½/¾/full load: duration is multiplied by quantity. Others: duration added once per line. */
+function isLoadSizeByName(itemName) {
+  if (!itemName || typeof itemName !== 'string') return false;
+  const n = itemName.toLowerCase().trim();
+  return (
+    n.includes('quarter load') || n.includes('¼ load') || n.includes('1/4 load') ||
+    n.includes('half load') || n.includes('½ load') || n.includes('1/2 load') ||
+    n.includes('three quarter') || n.includes('¾ load') || n.includes('3/4 load') ||
+    n.includes('full load')
+  );
+}
+
+/**
+ * Calculate total task duration in minutes from items (standard + custom).
+ * - Standard items (normal, e.g. Coffee Table): add duration once per line (quantity does not affect time).
+ * - Standard items (¼/½/¾/full load by name): duration × quantity.
+ * - Custom items: duration × quantity.
+ */
+async function calculateTaskDuration(allItems) {
+  if (!allItems || !Array.isArray(allItems) || allItems.length === 0) return 0;
+  let totalMinutes = 0;
+  for (const item of allItems) {
+    const qty = Math.max(0, Number(item.quantity) || 1);
+    const position = item.Objectsposition || 'Outside';
+    let minutesPerUnit = 0;
+    let multiplyByQty = true;
+    if (item.standardItemId) {
+      const standardItem = await StandardItem.findById(item.standardItemId);
+      if (standardItem) {
+        minutesPerUnit = getDurationMinutesForPosition(standardItem, position);
+        multiplyByQty = isLoadSizeByName(standardItem.itemName);
+      }
+    } else {
+      minutesPerUnit = getDurationMinutesForPosition(item, position);
+      multiplyByQty = true;
+    }
+    totalMinutes += multiplyByQty ? minutesPerUnit * qty : minutesPerUnit;
+  }
+  return Math.round(totalMinutes);
+}
+
 const taskCtrl = {
   createTask: async (req, res) => {
     try {
@@ -548,7 +605,11 @@ const taskCtrl = {
                 ? Number(item.customPrice)
                 : undefined,
             Objectsposition: item.Objectsposition || 'Outside',
-            ewcCode: item.ewcCode || null, // Add EWC code support for custom items
+            ewcCode: item.ewcCode || null,
+            spaceOfVan: item.spaceOfVan !== undefined ? Number(item.spaceOfVan) : undefined,
+            timespentOutside: item.timespentOutside !== undefined ? Number(item.timespentOutside) : undefined,
+            timespentInside: item.timespentInside !== undefined ? Number(item.timespentInside) : undefined,
+            timespentInsdiewithDis: item.timespentInsdiewithDis !== undefined ? Number(item.timespentInsdiewithDis) : undefined,
           })),
         );
       }
@@ -567,6 +628,8 @@ const taskCtrl = {
       //   }
       //   return item;
       // });
+
+      const taskDuration = await calculateTaskDuration(allItems);
 
       // Create the task
       const newTask = new Task({
@@ -605,6 +668,7 @@ const taskCtrl = {
         privateNotes,
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
         quotationId: quotationId || null,
+        taskDuration: taskDuration || undefined,
       });
 
       const savedTask = await newTask.save();
