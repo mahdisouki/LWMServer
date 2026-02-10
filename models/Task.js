@@ -35,6 +35,12 @@ const taskSchema = new Schema(
         timespentOutside: { type: Number, required: false },
         timespentInside: { type: Number, required: false },
         timespentInsdiewithDis: { type: Number, required: false },
+        /** Custom items: copy times/position from matching standard load item when set. */
+        vanLoadOption: {
+          type: String,
+          enum: ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'],
+          required: false,
+        },
         customPrice: { type: Number },
         ewcCode: {
           type: String,

@@ -372,7 +372,8 @@ async function calculateTaskDuration(allItems) {
     let minutesPerUnit = 0;
     let multiplyByQty = true;
     if (item.standardItemId) {
-      const standardItem = await StandardItem.findById(item.standardItemId);
+      const id = item.standardItemId._id != null ? item.standardItemId._id : item.standardItemId;
+      const standardItem = await StandardItem.findById(id);
       if (standardItem) {
         minutesPerUnit = getDurationMinutesForPosition(standardItem, position);
         multiplyByQty = isLoadSizeByName(standardItem.itemName);
@@ -592,26 +593,41 @@ const taskCtrl = {
           })),
         );
       }
-      // If you want to keep supporting "objects" as a separate array, merge them too:
+      // Merge custom items (objects): validate vanLoadOption; when set, copy times/position from matching StandardItem
+      const VAN_LOAD_OPTIONS = ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
       if (objects && Array.isArray(objects)) {
         console.log('objects', objects);
-        allItems.push(
-          ...objects.map((item) => ({
+        const customItems = [];
+        for (const item of objects) {
+          const vanLoadOption = VAN_LOAD_OPTIONS.includes(item.vanLoadOption) ? item.vanLoadOption : undefined;
+          let timespentOutside = item.timespentOutside !== undefined ? Number(item.timespentOutside) : undefined;
+          let timespentInside = item.timespentInside !== undefined ? Number(item.timespentInside) : undefined;
+          let timespentInsdiewithDis = item.timespentInsdiewithDis !== undefined ? Number(item.timespentInsdiewithDis) : undefined;
+          let Objectsposition = item.Objectsposition || 'Outside';
+          if (vanLoadOption) {
+            const loadStandardItem = await StandardItem.findOne({ itemName: vanLoadOption });
+            if (loadStandardItem) {
+              timespentOutside = loadStandardItem.timespentOutside;
+              timespentInside = loadStandardItem.timespentInside;
+              timespentInsdiewithDis = loadStandardItem.timespentInsdiewithDis;
+              Objectsposition = item.Objectsposition || loadStandardItem.Objectsposition || 'Outside';
+            }
+          }
+          customItems.push({
             object: item.object || null,
             quantity: Number(item.quantity) || 1,
             price: Number(item.price) || 0,
-            customPrice:
-              item.customPrice !== undefined
-                ? Number(item.customPrice)
-                : undefined,
-            Objectsposition: item.Objectsposition || 'Outside',
+            customPrice: item.customPrice !== undefined ? Number(item.customPrice) : undefined,
+            Objectsposition,
             ewcCode: item.ewcCode || null,
             spaceOfVan: item.spaceOfVan !== undefined ? Number(item.spaceOfVan) : undefined,
-            timespentOutside: item.timespentOutside !== undefined ? Number(item.timespentOutside) : undefined,
-            timespentInside: item.timespentInside !== undefined ? Number(item.timespentInside) : undefined,
-            timespentInsdiewithDis: item.timespentInsdiewithDis !== undefined ? Number(item.timespentInsdiewithDis) : undefined,
-          })),
-        );
+            timespentOutside,
+            timespentInside,
+            timespentInsdiewithDis,
+            vanLoadOption: vanLoadOption || undefined,
+          });
+        }
+        allItems.push(...customItems);
       }
       // // Nettoyer allItems avant de sauvegarder (anti NaN, 'undefined', etc)
       // allItems = allItems.map(item => {
@@ -1666,20 +1682,41 @@ const taskCtrl = {
           });
 
           if (validObjects.length > 0) {
-            const customItems = validObjects.map((obj) => {
+            const VAN_LOAD_OPTIONS = ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
+            const customItems = [];
+            for (const obj of validObjects) {
               console.log('Processing custom object:', JSON.stringify(obj, null, 2));
+              const vanLoadOption = VAN_LOAD_OPTIONS.includes(obj.vanLoadOption) ? obj.vanLoadOption : undefined;
+              let timespentOutside = obj.timespentOutside !== undefined ? Number(obj.timespentOutside) : undefined;
+              let timespentInside = obj.timespentInside !== undefined ? Number(obj.timespentInside) : undefined;
+              let timespentInsdiewithDis = obj.timespentInsdiewithDis !== undefined ? Number(obj.timespentInsdiewithDis) : undefined;
+              let Objectsposition = obj.Objectsposition || 'Outside';
+              if (vanLoadOption) {
+                const loadStandardItem = await StandardItem.findOne({ itemName: vanLoadOption });
+                if (loadStandardItem) {
+                  timespentOutside = loadStandardItem.timespentOutside;
+                  timespentInside = loadStandardItem.timespentInside;
+                  timespentInsdiewithDis = loadStandardItem.timespentInsdiewithDis;
+                  Objectsposition = obj.Objectsposition || loadStandardItem.Objectsposition || 'Outside';
+                }
+              }
               const customItem = {
-                standardItemId: null, // Custom items don't have standardItemId
+                standardItemId: null,
                 object: obj.object,
-                Objectsposition: obj.Objectsposition || 'Outside',
+                Objectsposition,
                 quantity: Number(obj.quantity) || 1,
                 customPrice: obj.customPrice !== undefined ? Number(obj.customPrice) : undefined,
                 price: Number(obj.price) || 0,
-                ewcCode: obj.ewcCode || null, // Add EWC code support for custom items
+                ewcCode: obj.ewcCode || null,
+                spaceOfVan: obj.spaceOfVan !== undefined ? Number(obj.spaceOfVan) : undefined,
+                timespentOutside,
+                timespentInside,
+                timespentInsdiewithDis,
+                vanLoadOption: vanLoadOption || undefined,
               };
               console.log('Converted custom item:', JSON.stringify(customItem, null, 2));
-              return customItem;
-            });
+              customItems.push(customItem);
+            }
 
             // IMPORTANT: Remove existing custom items (items without standardItemId) before merging
             // This ensures we REPLACE custom items, not append to them
@@ -2031,6 +2068,10 @@ const taskCtrl = {
         });
 
         console.log('Items after sanitization:', JSON.stringify(updates.items, null, 2));
+      }
+
+      if (updates.items && updates.items.length > 0) {
+        updates.taskDuration = await calculateTaskDuration(updates.items);
       }
 
       console.log('=== FINAL UPDATE ===');
