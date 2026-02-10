@@ -205,6 +205,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   // Display coupon discount if exists (do not re‑validate here; we trust the coupon
   // already applied when calculating the task's total so the email always matches it)
   let couponDiscountHtml = '';
+  let couponDiscountAmount = 0;
   if (taskDetails.couponCode) {
     try {
       const Coupon = require('../models/Coupon');
@@ -229,6 +230,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
           couponLabel = `Coupon Discount (${coupon.code} - ${coupon.percentage}%)`;
         }
 
+        couponDiscountAmount = couponDiscount;
         couponDiscountHtml = `<p style="margin:0 0 8px; font-size:13px;">${couponLabel}<span style="float:right; font-weight:bold;">-£${couponDiscount.toFixed(2)}</span></p>`;
       }
     } catch (error) {
@@ -239,6 +241,35 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   // Use subtotal BEFORE discounts for display
   const subtotalForDisplay = subtotalBeforeDiscounts;
 
+  // Calculate subtotal after all discounts to check for callout fee
+  let subtotalAfterAllDiscounts = subtotalBeforeDiscounts;
+  if (automaticDiscount10Percent > 0) {
+    subtotalAfterAllDiscounts -= automaticDiscount10Percent;
+  }
+  if (calculatedDiscountAmount > 0) {
+    subtotalAfterAllDiscounts -= calculatedDiscountAmount;
+  }
+  if (couponDiscountAmount > 0) {
+    subtotalAfterAllDiscounts -= couponDiscountAmount;
+  }
+
+  // Calculate callout fee
+  const MIN_BASE_AMOUNT = 37.5; // Minimum fee (before VAT)
+  let callOutFee = 0;
+  let showCallOutFeeRow = false;
+  const enforceMinimumPrice = taskDetails.createdByType !== 'Admin' || taskDetails.applyMinFee === true;
+  
+  if (enforceMinimumPrice && subtotalAfterAllDiscounts < MIN_BASE_AMOUNT) {
+    callOutFee = MIN_BASE_AMOUNT - subtotalAfterAllDiscounts;
+    showCallOutFeeRow = true;
+  }
+
+  // Build callout fee row HTML
+  let callOutFeeRowHtml = '';
+  if (showCallOutFeeRow && callOutFee > 0) {
+    callOutFeeRowHtml = `<p style="margin:0 0 8px; font-size:13px;">Call out fee<span style="float:right; font-weight:bold;">£${callOutFee.toFixed(2)}</span></p>`;
+  }
+
   // Invoice summary box (right side of price breakdown)
   const summaryBoxHtml = `
       <div style="background:#34C759; padding:14px; color:#ffffff;">
@@ -248,6 +279,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         </p>
         ${discountRowHtml}
         ${couponDiscountHtml}
+        ${callOutFeeRowHtml}
         <p style="margin:0 0 8px; font-size:13px;">
           VAT
           <span style="float:right; font-weight:bold;">£${vatAmount.toFixed(2)}</span>

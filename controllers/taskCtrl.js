@@ -4514,9 +4514,20 @@ const taskCtrl = {
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
       // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
       // Skip minimum price enforcement if created by Admin, UNLESS applyMinFee is true
+      const MIN_BASE_AMOUNT = 37.5;
       const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
-      if (enforceMinimumPrice && subtotal < 37.5) {
-        subtotal = 37.5;
+      let callOutFee = 0;
+      let showCallOutFeeRow = false;
+      
+      // Calculate subtotal after all discounts (including percentage discount) for minimum price check
+      const subtotalAfterAllDiscounts = subtotal - percentageDiscount;
+      
+      if (enforceMinimumPrice && subtotalAfterAllDiscounts < MIN_BASE_AMOUNT) {
+        // Calculate callout fee: difference between minimum and subtotal after all discounts
+        callOutFee = MIN_BASE_AMOUNT - subtotalAfterAllDiscounts;
+        showCallOutFeeRow = true;
+        // Set subtotal to minimum, then percentage discount will be subtracted later
+        subtotal = MIN_BASE_AMOUNT;
       }
 
       const discountedSubtotal = subtotal - percentageDiscount;
@@ -4632,6 +4643,8 @@ const taskCtrl = {
         depositAmount: depositAmount.toFixed(2),
         remainingAmount: remainingAmount.toFixed(2),
         paymentMethod: paymentMethod,
+        showCallOutFeeRow: showCallOutFeeRow,
+        callOutFee: callOutFee.toFixed(2),
       });
       // Send the email with the generated PDF as attachment
       await transporter.sendMail({

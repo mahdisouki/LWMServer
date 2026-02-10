@@ -473,6 +473,27 @@
                                 </td>
                               </tr>
                               {{/if}}
+                              {{#if showCallOutFeeRow}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Call out fee:
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  £{{callOutFee}}
+                                </td>
+                              </tr>
+                              {{/if}}
                               <tr>
                                 <td
                                   style="
@@ -653,6 +674,27 @@
                                   "
                                 >
                                   -£{{couponDiscount}}
+                                </td>
+                              </tr>
+                              {{/if}}
+                              {{#if showCallOutFeeRow}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Call out fee:
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  £{{callOutFee}}
                                 </td>
                               </tr>
                               {{/if}}

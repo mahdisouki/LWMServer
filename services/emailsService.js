@@ -1042,11 +1042,160 @@ module.exports = {
 
     await generateOfficialInvoicePDF(task, filePath);
 
+    // Calculate callout fee for email body display
+    let subtotalBeforeDiscounts = 0;
+    let itemDiscountTotal = 0;
+
+    // Calculate subtotal from items (before discounts)
+    task.items.forEach((item) => {
+      const itemPrice = item.standardItemId
+        ? (item.standardItemId.price * item.quantity || 0)
+        : (item.price * item.quantity || 0);
+
+      const positionPricePerUnit =
+        item.Objectsposition === 'InsideWithDismantling'
+          ? (item.standardItemId?.insideWithDismantlingPrice || 0)
+          : item.Objectsposition === 'Inside'
+            ? (item.standardItemId?.insidePrice || 0)
+            : 0;
+
+      const positionPrice = positionPricePerUnit * (item.quantity || 1);
+      const itemSubtotal = itemPrice + positionPrice;
+
+      if (task.hasDiscount && task.discountType === "perItem" && item.customPrice) {
+        const customPrice = Number(item.customPrice);
+        const originalItemPrice = item.standardItemId
+          ? Number(item.standardItemId.price)
+          : Number(item.price);
+        itemDiscountTotal += (originalItemPrice - customPrice) * item.quantity;
+      }
+
+      subtotalBeforeDiscounts += itemSubtotal;
+    });
+
+    // Calculate discounts
+    const isAvailableAnyTime = task.available === 'AnyTime';
+    const isCreatedByPublic = task.createdByType === 'public';
+    const hasItems = task.items && task.items.length > 0;
+    const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+
+    let automaticDiscount10Percent = 0;
+    let subtotal = subtotalBeforeDiscounts;
+    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+      automaticDiscount10Percent = subtotal * 0.1;
+      subtotal *= 0.9;
+    }
+
+    let percentageDiscount = 0;
+    if (task.hasDiscount && task.discountType === "percentage" && task.customDiscountPercent > 0) {
+      percentageDiscount = (subtotal * task.customDiscountPercent) / 100;
+      subtotal -= percentageDiscount;
+    }
+
+    // Handle coupon discount if exists
+    let couponDiscount = 0;
+    if (task.couponCode) {
+      try {
+        const Coupon = require('../models/Coupon');
+        const normalizedCouponCode = String(task.couponCode).trim().toUpperCase();
+        const coupon = await Coupon.findOne({ code: normalizedCouponCode });
+        if (coupon) {
+          if (coupon.type === 'custom') {
+            if (coupon.discountType === 'percentage') {
+              couponDiscount = (subtotal * coupon.discountValue) / 100;
+            } else if (coupon.discountType === 'amount') {
+              couponDiscount = coupon.discountValue;
+            }
+          } else {
+            couponDiscount = (subtotal * coupon.percentage) / 100;
+          }
+          subtotal -= couponDiscount;
+        }
+      } catch (error) {
+        console.error('Error fetching coupon for invoice email:', error);
+      }
+    }
+
+    // Calculate callout fee
+    const MIN_BASE_AMOUNT = 37.5;
+    let callOutFee = 0;
+    let showCallOutFeeRow = false;
+    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+    
+    if (enforceMinimumPrice && subtotal < MIN_BASE_AMOUNT) {
+      callOutFee = MIN_BASE_AMOUNT - subtotal;
+      showCallOutFeeRow = true;
+      subtotal = MIN_BASE_AMOUNT;
+    }
+
+    const vat = subtotal * 0.2;
+    const total = subtotal + vat;
+
+    // Build email HTML with callout fee
+    let emailHtml = `<p>Please find attached your official invoice for Order #${task.orderNumber}.</p>`;
+    
+    if (showCallOutFeeRow && callOutFee > 0) {
+      emailHtml += `
+        <div style="margin-top: 20px; padding: 15px; background-color: #f0fdef; border-left: 4px solid #4caf50;">
+          <h3 style="margin-top: 0; color: #1c1c1c;">Invoice Summary:</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">Subtotal:</td>
+              <td style="padding: 8px 0; text-align: right; border-bottom: 1px solid #e0e0e0;">£${subtotalBeforeDiscounts.toFixed(2)}</td>
+            </tr>`;
+      
+      if (automaticDiscount10Percent > 0) {
+        emailHtml += `
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">Discount (10%):</td>
+              <td style="padding: 8px 0; text-align: right; border-bottom: 1px solid #e0e0e0;">-£${automaticDiscount10Percent.toFixed(2)}</td>
+            </tr>`;
+      }
+      
+      if (task.hasDiscount && task.discountType === "perItem" && itemDiscountTotal > 0) {
+        emailHtml += `
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">Item Discounts:</td>
+              <td style="padding: 8px 0; text-align: right; border-bottom: 1px solid #e0e0e0;">-£${itemDiscountTotal.toFixed(2)}</td>
+            </tr>`;
+      } else if (task.hasDiscount && task.discountType === "percentage" && percentageDiscount > 0) {
+        emailHtml += `
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">Discount (${task.customDiscountPercent}%):</td>
+              <td style="padding: 8px 0; text-align: right; border-bottom: 1px solid #e0e0e0;">-£${percentageDiscount.toFixed(2)}</td>
+            </tr>`;
+      }
+      
+      if (couponDiscount > 0) {
+        emailHtml += `
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">Coupon Discount:</td>
+              <td style="padding: 8px 0; text-align: right; border-bottom: 1px solid #e0e0e0;">-£${couponDiscount.toFixed(2)}</td>
+            </tr>`;
+      }
+      
+      emailHtml += `
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">Call out fee:</td>
+              <td style="padding: 8px 0; text-align: right; border-bottom: 1px solid #e0e0e0;">£${callOutFee.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; border-bottom: 1px solid #e0e0e0;">VAT:</td>
+              <td style="padding: 8px 0; text-align: right; border-bottom: 1px solid #e0e0e0;">£${vat.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-weight: bold;">Invoice Total:</td>
+              <td style="padding: 8px 0; text-align: right; font-weight: bold;">£${total.toFixed(2)}</td>
+            </tr>
+          </table>
+        </div>`;
+    }
+
     await transporter.sendMail({
       from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
       to: task.email,
       subject: addStagingToSubject(`Invoice for Order #${task.orderNumber}`),
-      html: addStagingBanner(`<p>Please find attached your official invoice for Order #${task.orderNumber}.</p>`),
+      html: addStagingBanner(emailHtml),
       attachments: [{ filename: fileName, path: filePath }],
     });
 
@@ -1214,9 +1363,15 @@ module.exports = {
       }
 
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
+      const MIN_BASE_AMOUNT = 37.5; // Minimum fee (before VAT)
+      let callOutFee = 0;
+      let showCallOutFeeRow = false;
       const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
-      if (enforceMinimumPrice && subtotal < 37.5) {
-        subtotal = 37.5;
+      
+      if (enforceMinimumPrice && subtotal < MIN_BASE_AMOUNT) {
+        callOutFee = MIN_BASE_AMOUNT - subtotal;
+        showCallOutFeeRow = true;
+        subtotal = MIN_BASE_AMOUNT;
       }
 
       // Calculate VAT and total
@@ -1426,6 +1581,9 @@ module.exports = {
               ? `Coupon Discount: (${couponCode} - £${couponDiscountValue.toFixed(2)})`
               : `Coupon Discount: (${couponCode} - ${couponPercentage}%)`)
             : '',
+          // Call out fee when minimum fee is applied
+          showCallOutFeeRow: showCallOutFeeRow,
+          callOutFee: callOutFee.toFixed(2),
         };
 
         // Log template data for debugging
