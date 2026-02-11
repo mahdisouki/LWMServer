@@ -4759,6 +4759,69 @@ const taskCtrl = {
       });
     }
   },
+
+  downloadInvoice: async (req, res) => {
+    const { taskId } = req.params;
+    try {
+      const task = await Task.findById(taskId).populate('items.standardItemId');
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // Ensure directory exists
+      const dirPath = path.join(__dirname, '../generated');
+      if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath);
+
+      const fileName = `invoice-${task.orderNumber}.pdf`;
+      const filePath = path.join(dirPath, fileName);
+
+      // Check if PDF already exists, if not generate it
+      if (!fs.existsSync(filePath)) {
+        // Check if task is refunded or partially refunded
+        const isRefunded = task.paymentStatus === 'refunded' || task.paymentStatus === 'partial_Refunded';
+        const PaymentHistory = require('../models/PaymentHistory');
+        let totalRefundedAmount = 0;
+        let refundInfo = null;
+
+        if (isRefunded) {
+          const paymentHistories = await PaymentHistory.find({ taskId: task._id });
+          totalRefundedAmount = paymentHistories.reduce((sum, ph) => {
+            return sum + (ph.refundedTotalGBP || 0);
+          }, 0);
+
+          const isFullRefund = task.paymentStatus === 'refunded';
+          refundInfo = {
+            isRefund: true,
+            refundAmount: totalRefundedAmount,
+            isFullRefund: isFullRefund
+          };
+        }
+
+        // Generate the official invoice PDF with refund info if applicable
+        await generateOfficialInvoicePDF(task, filePath, refundInfo);
+      }
+
+      // Send the PDF file for download
+      res.download(filePath, fileName, (err) => {
+        if (err) {
+          console.error('Error downloading invoice:', err);
+          if (!res.headersSent) {
+            res.status(500).json({
+              message: 'Failed to download invoice',
+              error: err.message,
+            });
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error downloading invoice:', error);
+      res.status(500).json({
+        message: 'Failed to download invoice',
+        error: error.message,
+      });
+    }
+  },
+
   // Lock a task
   lockTask: async (req, res) => {
     const { taskId } = req.params;
