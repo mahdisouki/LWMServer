@@ -387,6 +387,42 @@ async function calculateTaskDuration(allItems) {
   return Math.round(totalMinutes);
 }
 
+const VAN_LOAD_OPTION_PERCENT = {
+  '1/4 Load': 25,
+  '1/2 Load': 50,
+  '3/4 Load': 75,
+  'Full Load / Large Load': 100,
+};
+
+/**
+ * Calculate van load percentage (0–100) from task items.
+ * - Standard items: use spaceOfVan from item or StandardItem; add (quantity/spaceOfVan)*100.
+ * - Custom items with vanLoadOption: add quantity * mapped percentage (1/4→25, 1/2→50, 3/4→75, Full→100).
+ * Result is capped at 100 and rounded.
+ */
+async function calculateVanLoadPercentage(task) {
+  const items = task?.items;
+  if (!items || !Array.isArray(items) || items.length === 0) return 0;
+  let total = 0;
+  for (const item of items) {
+    const qty = Math.max(0, Number(item.quantity) || 1);
+    if (item.standardItemId) {
+      let spaceOfVan = Number(item.spaceOfVan);
+      if (!Number.isFinite(spaceOfVan) || spaceOfVan <= 0) {
+        const id = item.standardItemId._id != null ? item.standardItemId._id : item.standardItemId;
+        const standardItem = await StandardItem.findById(id);
+        if (standardItem && Number.isFinite(Number(standardItem.spaceOfVan)) && Number(standardItem.spaceOfVan) > 0) {
+          spaceOfVan = Number(standardItem.spaceOfVan);
+        }
+      }
+      if (spaceOfVan > 0) total += (qty / spaceOfVan) * 100;
+    } else if (item.vanLoadOption && VAN_LOAD_OPTION_PERCENT[item.vanLoadOption] != null) {
+      total += qty * VAN_LOAD_OPTION_PERCENT[item.vanLoadOption];
+    }
+  }
+  return Math.min(100, Math.round(total));
+}
+
 const taskCtrl = {
   createTask: async (req, res) => {
     try {
@@ -824,7 +860,12 @@ const taskCtrl = {
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-      res.status(200).json({ message: 'Task retrieved successfully', task });
+      const vanLoadPercentage = await calculateVanLoadPercentage(task);
+      res.status(200).json({
+        message: 'Task retrieved successfully',
+        task,
+        vanLoadPercentage,
+      });
     } catch (error) {
       res
         .status(500)
@@ -842,7 +883,12 @@ const taskCtrl = {
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
-      res.status(200).json({ message: 'Task retrieved successfully', task });
+      const vanLoadPercentage = await calculateVanLoadPercentage(task);
+      res.status(200).json({
+        message: 'Task retrieved successfully',
+        task,
+        vanLoadPercentage,
+      });
     } catch (error) {
       res
         .status(500)
@@ -2070,8 +2116,10 @@ const taskCtrl = {
         console.log('Items after sanitization:', JSON.stringify(updates.items, null, 2));
       }
 
-      if (updates.items && updates.items.length > 0) {
-        updates.taskDuration = await calculateTaskDuration(updates.items);
+      // Recalc taskDuration from updated items when provided, otherwise from existing task items
+      const itemsToUse = updates.items && updates.items.length > 0 ? updates.items : (oldTask.items || []);
+      if (itemsToUse.length > 0) {
+        updates.taskDuration = await calculateTaskDuration(itemsToUse);
       }
 
       console.log('=== FINAL UPDATE ===');
