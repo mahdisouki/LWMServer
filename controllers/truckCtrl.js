@@ -104,12 +104,12 @@ const truckCtrl = {
                 ],
             });
         }
+      
+    
+        const features = new APIfeatures(query, req.query);
         if (!dateOfTasks) {
           features.paginating();
         }
-    
-        const features = new APIfeatures(query, req.query);
-
         if (filters) {
             features.filtering();
         }
