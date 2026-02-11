@@ -212,7 +212,7 @@ router.post('/tasks/take-over/:taskId', isAuth, checkRole('Admin'), taskCtrl.tak
 router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
 router.get('/tasks', taskCtrl.getAllTasks);
-router.get('/task/:taskId',taskCtrl.getTaskById);
+router.get('/task/:taskId', taskCtrl.getTaskById);
 router.get('/task/order-number/:orderNumber', taskCtrl.getTaskByOrderNumber);
 router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
@@ -234,6 +234,7 @@ router.post('/webhooks/paypal', express.json(), taskCtrl.handlePayPalWebhook);
 
 router.post('/task/:taskId/send-booking-confirmation', taskCtrl.sendBookingConfirmation);
 router.post('/task/:taskId/send-invoice', taskCtrl.sendInvoice);
+router.get('/task/:taskId/download-invoice', taskCtrl.downloadInvoice);
 router.post('/task/:taskId/send-waste-transfer-note', taskCtrl.sendWasteTransferNote);
 router.post('/task/send-retargeting-email', isAuth, checkRole('Admin'), taskCtrl.sendRetargetingEmailWithCoupon);
 router.put('/task/:taskId/prevent-review-email', isAuth, taskCtrl.togglePreventReviewEmail);
