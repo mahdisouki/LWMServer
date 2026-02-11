@@ -8,9 +8,9 @@ const Task = require('../models/Task');
 const Truck = require('../models/Truck');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
-
+//https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://10.133.90.2:8000';
 
 /**
  * POST /api/route-optimizer/assign-and-optimize
@@ -406,18 +406,19 @@ async function calculateRoutesExternal(req, res) {
     const tasksWithCoords = tasks.filter((t) => t.location?.coordinates?.length >= 2);
     const jobIdToTaskId = {};
     tasksWithCoords.forEach((t) => {
-      jobIdToTaskId[t.orderNumber || t._id.toString()] = t._id;
+      jobIdToTaskId[t._id.toString()] = t._id;
     });
     console.log('[RouteOptimizer:external] tasks with coords=%d jobIdToTaskId keys=%s', tasksWithCoords.length, Object.keys(jobIdToTaskId).slice(0, 10).join(', ') + (Object.keys(jobIdToTaskId).length > 10 ? '...' : ''));
 
     const jobs = tasksWithCoords.map((t) => ({
-      job_id: t.orderNumber || t._id.toString(),
+      job_id: t._id.toString(),
       name: [t.firstName, t.lastName].filter(Boolean).join(' ') || 'Customer',
       lat: t.location.coordinates[1],
       lng: t.location.coordinates[0],
       duration_min: 10,
       time_slot: t.available || 'AnyTime',
       total_price: t.totalPrice || 0,
+      taskDuration: typeof t.taskDuration === 'number' && t.taskDuration >= 0 ? t.taskDuration : 10,
     }));
 
     if (!jobs.length) {
@@ -448,8 +449,12 @@ async function calculateRoutesExternal(req, res) {
           endLng = endCoords[0];
         }
       }
+      console.log({ driver_id: truck.driverId._id.toString(),
+        start_location: { lat: startLat, lng: startLng },
+        end_location: { lat: endLat, lng: endLng },
+        status: 'active',})
       return {
-        driver_id: truck._id.toString(),
+        driver_id: truck.driverId._id.toString(),
         start_location: { lat: startLat, lng: startLng },
         end_location: { lat: endLat, lng: endLng },
         working_hours: { start: '08:00', end: '17:00' },
@@ -473,10 +478,9 @@ async function calculateRoutesExternal(req, res) {
     const payload = {
       drivers,
       jobs,
-      respect_time_slots: Boolean(respect_time_slots),
-      ...(Object.keys(high_priority_jobs).length > 0 && { high_priority_jobs }),
+      respect_time_slots: false
     };
-
+    console.log("payload", payload);
     const { data, status } = await axios.post(
       `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`,
       payload,
@@ -488,12 +492,17 @@ async function calculateRoutesExternal(req, res) {
     );
 
     if (status !== 200) {
+      if (data?.detail && Array.isArray(data.detail)) {
+        console.error('[RouteOptimizer:external] validation errors (full):', JSON.stringify(data.detail, null, 2));
+      } else {
+        console.log(data);
+      }
       return res.status(status >= 500 ? 502 : status).json({
         message: data?.detail || data?.message || 'External route optimizer request failed',
         ...(data && typeof data === 'object' && { detail: data }),
       });
     }
-
+    console.log(data.routes);
     const routes = data.routes || {};
     const routeKeys = Object.keys(routes);
     console.log('[RouteOptimizer:external] external response route keys (%d): %s', routeKeys.length, routeKeys.join(', '));
