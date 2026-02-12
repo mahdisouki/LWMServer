@@ -11,12 +11,12 @@ const { checkRole } = require('../middlewares/role');
  * optimizes visit order per truck, updates Task.truckId and Truck.tasks.
  * If includeRouteSegments=true and MAPBOX_API_KEY is set, response includes Mapbox route segments (distance, duration, coords).
  */
-router.post(
-  '/assign-and-optimize',
-  isAuth,
-  checkRole('Admin'),
-  routeOptimizerCtrl.assignAndOptimize
-);
+// router.post(
+//   '/assign-and-optimize',
+//   isAuth,
+//   checkRole('Admin'),
+//   routeOptimizerCtrl.assignAndOptimize
+// );
 
 /**
  * POST /api/route-optimizer/calculate-routes
@@ -24,12 +24,12 @@ router.post(
  * Same assignment + optimization logic but does NOT persist. Returns Mapbox route segments per driver (like Python script).
  * Requires MAPBOX_API_KEY in env.
  */
-router.post(
-  '/calculate-routes',
-  isAuth,
-  checkRole('Admin'),
-  routeOptimizerCtrl.calculateRoutes
-);
+// router.post(
+//   '/calculate-routes',
+//   isAuth,
+//   checkRole('Admin'),
+//   routeOptimizerCtrl.calculateRoutes
+// );
 
 /**
  * POST /api/route-optimizer/external/calculate-routes
@@ -39,5 +39,6 @@ router.post(
   '/external/calculate-routes',
   routeOptimizerCtrl.calculateRoutesExternal
 );
+
 
 module.exports = router;
