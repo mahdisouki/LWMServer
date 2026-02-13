@@ -4559,10 +4559,10 @@ const taskCtrl = {
       const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
       let callOutFee = 0;
       let showCallOutFeeRow = false;
-      
+
       // Calculate subtotal after all discounts (including percentage discount) for minimum price check
       const subtotalAfterAllDiscounts = subtotal - percentageDiscount;
-      
+
       if (enforceMinimumPrice && subtotalAfterAllDiscounts < MIN_BASE_AMOUNT) {
         // Calculate callout fee: difference between minimum and subtotal after all discounts
         callOutFee = MIN_BASE_AMOUNT - subtotalAfterAllDiscounts;
@@ -4727,31 +4727,29 @@ const taskCtrl = {
       const fileName = `invoice-${task.orderNumber}.pdf`;
       const filePath = path.join(dirPath, fileName);
 
-      // Check if PDF already exists, if not generate it
-      if (!fs.existsSync(filePath)) {
-        // Check if task is refunded or partially refunded
-        const isRefunded = task.paymentStatus === 'refunded' || task.paymentStatus === 'partial_Refunded';
-        const PaymentHistory = require('../models/PaymentHistory');
-        let totalRefundedAmount = 0;
-        let refundInfo = null;
+      // Check if task is refunded or partially refunded
+      const isRefunded = task.paymentStatus === 'refunded' || task.paymentStatus === 'partial_Refunded';
+      const PaymentHistory = require('../models/PaymentHistory');
+      let totalRefundedAmount = 0;
+      let refundInfo = null;
 
-        if (isRefunded) {
-          const paymentHistories = await PaymentHistory.find({ taskId: task._id });
-          totalRefundedAmount = paymentHistories.reduce((sum, ph) => {
-            return sum + (ph.refundedTotalGBP || 0);
-          }, 0);
+      if (isRefunded) {
+        const paymentHistories = await PaymentHistory.find({ taskId: task._id });
+        totalRefundedAmount = paymentHistories.reduce((sum, ph) => {
+          return sum + (ph.refundedTotalGBP || 0);
+        }, 0);
 
-          const isFullRefund = task.paymentStatus === 'refunded';
-          refundInfo = {
-            isRefund: true,
-            refundAmount: totalRefundedAmount,
-            isFullRefund: isFullRefund
-          };
-        }
-
-        // Generate the official invoice PDF with refund info if applicable
-        await generateOfficialInvoicePDF(task, filePath, refundInfo);
+        const isFullRefund = task.paymentStatus === 'refunded';
+        refundInfo = {
+          isRefund: true,
+          refundAmount: totalRefundedAmount,
+          isFullRefund: isFullRefund
+        };
       }
+
+      // Always generate the official invoice PDF with refund info if applicable
+      // This ensures the PDF reflects the latest task data
+      await generateOfficialInvoicePDF(task, filePath, refundInfo);
 
       // Send the PDF file for download
       res.download(filePath, fileName, (err) => {
