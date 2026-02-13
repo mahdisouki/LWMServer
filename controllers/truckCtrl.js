@@ -104,14 +104,17 @@ const truckCtrl = {
                 ],
             });
         }
-
+      
+    
         const features = new APIfeatures(query, req.query);
-
+        if (!dateOfTasks) {
+          features.paginating();
+        }
         if (filters) {
             features.filtering();
         }
 
-        features.sorting().paginating();
+        features.sorting();
 
         const trucks = await features.query
             .populate('driverId')
@@ -133,7 +136,7 @@ const truckCtrl = {
         );
 
         const currentPage = parseInt(req.query.page, 10) || 1;
-        const limitNum = parseInt(req.query.limit, 10) || 9;
+        const limitNum = parseInt(req.query.limit, 20) || 20;
         
         res.status(200).json({
             message: 'All trucks retrieved successfully',
