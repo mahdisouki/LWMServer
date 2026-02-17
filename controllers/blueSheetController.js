@@ -2,6 +2,7 @@ const BlueSheet = require('../models/BlueSheet');
 const Truck = require('../models/Truck');
 const Task = require('../models/Task');
 const TippingRequest = require('../models/TippingRequest');
+const PcnDamage = require('../models/PcnDamage');
 const Payroll = require('../models/Payroll');
 const DailySheet = require('../models/DailySheet');
 const Driver = require('../models/Driver');
@@ -14,10 +15,17 @@ const COMMISSION_POOL = 3760;
 // Helper function to format date to YYYY-MM-DD
 const formatDate = (date) => {
   const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+// Parse any date input to UTC midnight (for consistent storage and query)
+const toUTCMidnight = (dateInput) => {
+  const d = new Date(dateInput);
+  if (isNaN(d)) return null;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 };
 
 const blueSheetController = {
@@ -29,13 +37,11 @@ const blueSheetController = {
       if (isNaN(inputDate)) {
         return res.status(400).json({ message: 'Invalid date format' });
       }
-
-      const formattedDate = req.body.date || formatDate(new Date());
-      const dateObj = new Date(formattedDate);
-      dateObj.setHours(0, 0, 0, 0);
+      const formattedDate = req.body.date || formatDate(inputDate);
+      const dateObj = toUTCMidnight(formattedDate) || new Date(formattedDate + 'T00:00:00.000Z');
       const startOfDay = new Date(dateObj);
       const endOfDay = new Date(dateObj);
-      endOfDay.setHours(23, 59, 59, 999);
+      endOfDay.setUTCHours(23, 59, 59, 999);
 
       // Get all trucks
       const trucks = await Truck.find().populate('driverId helperId');
@@ -96,6 +102,19 @@ const blueSheetController = {
       console.log('Truck route totals:', truckRouteTotals);
       console.log('Total In (sum of all route totals):', totalIn);
 
+      // Tipping: use tipdate when set (day the tip applies to), else fall back to createdAt
+      const tippingDateFilter = {
+        $or: [
+          { tipdate: { $gte: startOfDay, $lt: endOfDay } },
+          {
+            $and: [
+              { $or: [{ tipdate: null }, { tipdate: { $exists: false } }] },
+              { createdAt: { $gte: startOfDay, $lt: endOfDay } },
+            ],
+          },
+        ],
+      };
+
       // Second pass: Generate blue sheets for each truck
       for (const truck of trucks) {
         const truckData = truckRouteTotals.find(t => t.truckId.toString() === truck._id.toString());
@@ -123,7 +142,7 @@ const blueSheetController = {
           const tippingRequests = await TippingRequest.find({
             userId: { $in: userIds },
             status: 'Accepted',
-            createdAt: { $gte: startOfDay, $lt: endOfDay },
+            ...tippingDateFilter,
           });
 
           tipping = tippingRequests.reduce((sum, tr) => sum + (tr.price || 0), 0);
@@ -248,7 +267,7 @@ const blueSheetController = {
                           (stripeCom || 0) + 
                           (paypalComi || 0);
 
-        // Get tipping request IDs for this date
+        // Get tipping request IDs for this date (same tipdate/createdAt logic as tipping total)
         let tippingRequestIds = [];
         if (truck.driverId || truck.helperId) {
           const userIds = [];
@@ -257,10 +276,26 @@ const blueSheetController = {
 
           const tippingRequests = await TippingRequest.find({
             userId: { $in: userIds },
-            createdAt: { $gte: startOfDay, $lt: endOfDay },
+            ...tippingDateFilter,
           });
 
           tippingRequestIds = tippingRequests.map(tr => tr._id);
+        }
+
+        // Get PCN/Damages for this truck and date (via driver's DailySheet)
+        let pcnDamageIds = [];
+        let pcnDamageTotal = 0;
+        if (truck.driverId) {
+          const driverId = truck.driverId._id || truck.driverId;
+          const dailySheet = await DailySheet.findOne({
+            driverId,
+            date: { $gte: startOfDay, $lte: endOfDay },
+          });
+          if (dailySheet) {
+            const pcnDamages = await PcnDamage.find({ dailySheetId: dailySheet._id });
+            pcnDamageIds = pcnDamages.map(p => p._id);
+            pcnDamageTotal = pcnDamages.reduce((sum, p) => sum + (p.amount || 0), 0);
+          }
         }
 
         // Create or update blue sheet
@@ -276,11 +311,12 @@ const blueSheetController = {
             commission, // Column F: Commission Paid day
             tipping, // Column G: Tipping for this day
             fuel, // Column H: FUEL
-            pcnDamage: 0, // Column I: PCN (default to 0, can be updated manually)
+            pcnDamage: pcnDamageTotal, // Column I: PCN (from linked PcnDamage records)
             otherCosts, // Column J: Other costs
             // Profit (Column K) is calculated in pre-save hook
             tasks: taskIdsForDate,
             tippingRequests: tippingRequestIds,
+            pcnDamages: pcnDamageIds,
           },
           { new: true, upsert: true }
         );
@@ -316,8 +352,10 @@ const blueSheetController = {
         return res.status(400).json({ message: 'Date parameter is required' });
       }
 
-      const dateObj = new Date(date);
-      dateObj.setHours(0, 0, 0, 0);
+      const dateObj = toUTCMidnight(date);
+      if (!dateObj) {
+        return res.status(400).json({ message: 'Invalid date format' });
+      }
 
       const blueSheet = await BlueSheet.findOne({
         truckId,
@@ -325,7 +363,8 @@ const blueSheetController = {
       })
         .populate('truckId', 'name matricule driverId helperId')
         .populate('tasks')
-        .populate('tippingRequests');
+        .populate('tippingRequests')
+        .populate('pcnDamages');
 
       if (!blueSheet) {
         return res.status(404).json({ message: 'Blue sheet not found for this truck and date' });
@@ -353,13 +392,16 @@ const blueSheetController = {
         return res.status(400).json({ message: 'Date parameter is required' });
       }
 
-      const dateObj = new Date(date);
-      dateObj.setHours(0, 0, 0, 0);
+      const dateObj = toUTCMidnight(date);
+      if (!dateObj) {
+        return res.status(400).json({ message: 'Invalid date format' });
+      }
 
       const blueSheets = await BlueSheet.find({
         date: dateObj,
       })
         .populate('truckId', 'name matricule driverId helperId')
+        .populate('pcnDamages')
         .sort({ 'truckId.name': 1 });
 
       res.status(200).json({
@@ -374,6 +416,25 @@ const blueSheetController = {
         error: error.message || 'Unknown error occurred',
       });
     }
+  },
+
+  // Sync pcnDamages array and pcnDamage total for the BlueSheet linked to this DailySheet (used when PCN/Damage add/update/delete)
+  syncBlueSheetPcnDamages: async (dailySheetId) => {
+    const DailySheet = require('../models/DailySheet');
+    const PcnDamage = require('../models/PcnDamage');
+    const Truck = require('../models/Truck');
+    const dailySheet = await DailySheet.findById(dailySheetId).select('driverId date');
+    if (!dailySheet) return;
+    const truck = await Truck.findOne({ driverId: dailySheet.driverId });
+    if (!truck) return;
+    const dateObj = toUTCMidnight(dailySheet.date);
+    if (!dateObj) return;
+    const blueSheet = await BlueSheet.findOne({ truckId: truck._id, date: dateObj });
+    if (!blueSheet) return;
+    const pcnDamages = await PcnDamage.find({ dailySheetId });
+    blueSheet.pcnDamages = pcnDamages.map(p => p._id);
+    blueSheet.pcnDamage = pcnDamages.reduce((sum, p) => sum + (p.amount || 0), 0);
+    await blueSheet.save();
   },
 
   // Update blue sheet (for manual updates like PCN/DAMAGE, otherCosts, etc.)

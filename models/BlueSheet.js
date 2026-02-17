@@ -35,9 +35,10 @@ const blueSheetSchema = new Schema({
   // Column K: PROF
   profit: { type: Number, default: 0 },
   
-  // Reference to tasks and tipping requests for this day
+  // Reference to tasks, tipping requests and PCN/damages for this day
   tasks: [{ type: Schema.Types.ObjectId, ref: 'Task' }],
   tippingRequests: [{ type: Schema.Types.ObjectId, ref: 'TippingRequest' }],
+  pcnDamages: [{ type: Schema.Types.ObjectId, ref: 'PcnDamage' }],
   
 }, { timestamps: true });
 

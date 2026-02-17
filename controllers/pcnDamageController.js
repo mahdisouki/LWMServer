@@ -3,6 +3,7 @@ const PcnDamage = require('../models/PcnDamage');
 const { User } = require('../models/User');
 const Truck = require('../models/Truck');
 const Payroll = require('../models/Payroll');
+const blueSheetController = require('./blueSheetController');
 
 const pcnDamageController = {
     // Helper function to recalculate payroll PCN/Damages
@@ -146,6 +147,8 @@ const pcnDamageController = {
 
             // Recalculate payroll for the user this PCN/Damage is deducted from
             await pcnDamageController.recalculatePayrollPcnDamages(date, deductedFromUserId);
+            // Sync BlueSheet pcnDamages and pcnDamage total
+            await blueSheetController.syncBlueSheetPcnDamages(dailySheet._id);
 
             res.status(200).json({
                 message: 'PCN/Damage added successfully',
@@ -270,6 +273,12 @@ const pcnDamageController = {
                 }
             }
 
+            // Sync BlueSheet(s): current daily sheet and old one if it changed
+            await blueSheetController.syncBlueSheetPcnDamages(pcnDamage.dailySheetId);
+            if (oldDailySheetId && oldDailySheetId.toString() !== pcnDamage.dailySheetId.toString()) {
+                await blueSheetController.syncBlueSheetPcnDamages(oldDailySheetId);
+            }
+
             res.status(200).json({ message: 'PCN/Damage updated', pcnDamage });
         } catch (error) {
             console.error(error);
@@ -314,6 +323,8 @@ const pcnDamageController = {
 
             // Recalculate payroll for the user this PCN/Damage was deducted from
             await pcnDamageController.recalculatePayrollPcnDamages(date, deductedFromUserId);
+            // Sync BlueSheet pcnDamages and pcnDamage total
+            await blueSheetController.syncBlueSheetPcnDamages(dailySheet._id);
 
             res.status(200).json({ message: 'PCN/Damage deleted' });
         } catch (error) {
