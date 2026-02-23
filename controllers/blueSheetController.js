@@ -188,18 +188,14 @@ const blueSheetController = {
           }
         }
 
-        // Get fuel from DailySheet (sum of fuelLogs amounts)
+        // Get fuel from DailySheet (sum of fuelLogs amounts) for this truck and date
         let fuel = 0;
-        if (truck.driverId) {
-          const driverId = truck.driverId._id || truck.driverId;
-          const dailySheet = await DailySheet.findOne({
-            driverId: driverId,
-            date: { $gte: startOfDay, $lt: endOfDay },
-          });
-
-          if (dailySheet && dailySheet.fuelLogs && dailySheet.fuelLogs.length > 0) {
-            fuel = dailySheet.fuelLogs.reduce((sum, log) => sum + (log.amount || 0), 0);
-          }
+        const dailySheetForFuel = await DailySheet.findOne({
+          truckId: truck._id,
+          date: { $gte: startOfDay, $lt: endOfDay },
+        });
+        if (dailySheetForFuel && dailySheetForFuel.fuelLogs && dailySheetForFuel.fuelLogs.length > 0) {
+          fuel = dailySheetForFuel.fuelLogs.reduce((sum, log) => sum + (log.amount || 0), 0);
         }
 
         // Get tasks for this date
@@ -282,20 +278,17 @@ const blueSheetController = {
           tippingRequestIds = tippingRequests.map(tr => tr._id);
         }
 
-        // Get PCN/Damages for this truck and date (via driver's DailySheet)
+        // Get PCN/Damages for this truck and date (via this truck's DailySheet)
         let pcnDamageIds = [];
         let pcnDamageTotal = 0;
-        if (truck.driverId) {
-          const driverId = truck.driverId._id || truck.driverId;
-          const dailySheet = await DailySheet.findOne({
-            driverId,
-            date: { $gte: startOfDay, $lte: endOfDay },
-          });
-          if (dailySheet) {
-            const pcnDamages = await PcnDamage.find({ dailySheetId: dailySheet._id });
-            pcnDamageIds = pcnDamages.map(p => p._id);
-            pcnDamageTotal = pcnDamages.reduce((sum, p) => sum + (p.amount || 0), 0);
-          }
+        const dailySheetForPcn = await DailySheet.findOne({
+          truckId: truck._id,
+          date: { $gte: startOfDay, $lte: endOfDay },
+        });
+        if (dailySheetForPcn) {
+          const pcnDamages = await PcnDamage.find({ dailySheetId: dailySheetForPcn._id });
+          pcnDamageIds = pcnDamages.map(p => p._id);
+          pcnDamageTotal = pcnDamages.reduce((sum, p) => sum + (p.amount || 0), 0);
         }
 
         // Create or update blue sheet
@@ -423,9 +416,11 @@ const blueSheetController = {
     const DailySheet = require('../models/DailySheet');
     const PcnDamage = require('../models/PcnDamage');
     const Truck = require('../models/Truck');
-    const dailySheet = await DailySheet.findById(dailySheetId).select('driverId date');
+    const dailySheet = await DailySheet.findById(dailySheetId).select('driverId date truckId');
     if (!dailySheet) return;
-    const truck = await Truck.findOne({ driverId: dailySheet.driverId });
+    const truck = dailySheet.truckId
+      ? await Truck.findById(dailySheet.truckId)
+      : await Truck.findOne({ driverId: dailySheet.driverId });
     if (!truck) return;
     const dateObj = toUTCMidnight(dailySheet.date);
     if (!dateObj) return;

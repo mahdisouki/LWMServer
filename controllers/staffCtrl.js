@@ -868,6 +868,7 @@ const staffManagement = {
       const driver = await Driver.findById(driverId);
       if (driver) {
         driver.designation = undefined;
+        driver.truckId = undefined;
         await driver.save();
       }
 
@@ -925,6 +926,7 @@ const staffManagement = {
       const helper = await Helper.findById(helperId);
       if (helper) {
         helper.designation = undefined;
+        helper.truckId = undefined;
         await helper.save();
       }
 

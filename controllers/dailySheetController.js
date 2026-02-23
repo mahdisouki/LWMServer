@@ -139,6 +139,7 @@ const dailySheetController = {
           { driverId: driver._id, date: formattedDate },
           {
             driverId: driver._id,
+            truckId:driver.truckId,
             date: new Date(formattedDate), // ensure correct format
             jobsDone: jobsDone.map(job => job._id),
             jobsPending: jobsPending.map(job => job._id),
@@ -185,6 +186,7 @@ const dailySheetController = {
         date: { $gte: startDate, $lte: endDate },
       }).populate([
         { path: 'driverId' },
+        { path: 'truckId' },
         { path: 'jobsDone' },
         { path: 'jobsPending' },
         { path: 'jobsCancelled' },
@@ -192,8 +194,8 @@ const dailySheetController = {
           path: 'tippingRequests',
           populate: {
             path: 'tippingPlace',
-            model: 'TippingPlace', // Explicitly specify the model name
-            match: {}, // Populate only if tippingPlace exists
+            model: 'TippingPlace',
+            match: {},
           },
         },
       ]);
@@ -237,12 +239,15 @@ const dailySheetController = {
     try {
       const { driverId, date } = req.params;
       const updates = req.body; // Assume the client sends the updates (jobsDone, jobsPending, etc.)
+      console.log('updates', updates);
+      console.log('driverId', driverId);
+      console.log('date', date);
 
       const dailySheet = await DailySheet.findOneAndUpdate(
-        { driverId, date },
+        { driverId, date, ...(req.body.truckId && { truckId: req.body.truckId }) },
         updates,
         { new: true },
-      ).populate('driverId jobsDone jobsPending jobsCancelled tippingRequests');
+      ).populate('driverId truckId jobsDone jobsPending jobsCancelled tippingRequests');
 
       if (!dailySheet) {
         return res.status(404).json({ message: 'Daily sheet not found' });
@@ -268,8 +273,9 @@ const dailySheetController = {
       const dailySheet = await DailySheet.findOne({
         driverId,
         date: { $gte: startDate, $lte: endDate },
+        ...(req.query.truckId && { truckId: req.query.truckId }),
       }).populate(
-        'driverId jobsDone jobsPending jobsCancelled tippingRequests',
+        'driverId truckId jobsDone jobsPending jobsCancelled tippingRequests',
       ).populate({
         path: 'tippingRequests',
         populate: {
@@ -668,152 +674,59 @@ const dailySheetController = {
       const updatedDailySheets = [];
 
       for (const driver of drivers) {
-        // Check if daily sheet exists for this driver and date
-        const existingDailySheet = await DailySheet.findOne({
-          driverId: driver._id,
-          date: { $gte: startOfDay, $lte: endOfDay },
-        });
-
-        if (!existingDailySheet) {
-          console.log(`No existing daily sheet found for driver ${driver._id} on ${formattedDate}`);
-          continue; // Skip if no existing daily sheet
-        }
-
-        console.log(`Updating existing daily sheet for driver ${driver._id} on ${formattedDate}`);
-
         const trucks = await Truck.find({ driverId: driver._id });
-        const allTaskIdsForDate = [];
-        const allTippingRequestIdsForDate = [];
-
         for (const truck of trucks) {
-          if (!truck.tasks) {
-            console.log(`Truck ${truck.name} has no tasks`);
-            continue;
-          }
+          const existingDailySheet = await DailySheet.findOne({
+            driverId: driver._id,
+            truckId: truck._id,
+            date: { $gte: startOfDay, $lte: endOfDay },
+          });
 
-          let tasksForDate = [];
+          if (!existingDailySheet) continue;
 
-          // Handle both Map and Object structures
-          if (truck.tasks instanceof Map) {
-            // If it's a Map
-            const taskKeys = Array.from(truck.tasks.keys());
-            console.log(`Truck ${truck.name} task keys (Map):`, taskKeys);
-            if (!taskKeys.includes(formattedDate)) {
-              console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
-            }
-            tasksForDate = truck.tasks.get(formattedDate) || [];
-          } else if (typeof truck.tasks === 'object') {
-            // If it's an Object
-            const taskKeys = Object.keys(truck.tasks);
-            console.log(`Truck ${truck.name} task keys (Object):`, taskKeys);
-            if (!taskKeys.includes(formattedDate)) {
-              console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
-            }
-            tasksForDate = truck.tasks[formattedDate] || [];
-          }
-
-          console.log(`Tasks for ${formattedDate} in truck ${truck.name}:`, tasksForDate);
-
-          // Extract task IDs and tipping request IDs from the tasks array
-          if (Array.isArray(tasksForDate)) {
-            tasksForDate.forEach(task => {
-              // Handle both string IDs and objects with taskId property
-              let taskId = null;
-              let taskType = null;
-
-              if (typeof task === 'string') {
-                // Legacy format: just a string ID (assume it's a task)
-                taskId = task;
-                taskType = 'task';
-              } else if (task && task.taskId) {
-                taskId = task.taskId;
-                taskType = task.type || 'task'; // Default to 'task' if type not specified
-              }
-
-              if (taskId) {
-                // Check if it's a tipping request or a task
-                if (taskType === 'TippingRequest' || taskType === 'tipping_request') {
-                  allTippingRequestIdsForDate.push(taskId);
-                } else {
-                  // Default to task (for backward compatibility)
-                  allTaskIdsForDate.push(taskId);
+          const allTaskIdsForDate = [];
+          const allTippingRequestIdsForDate = [];
+          if (truck.tasks) {
+            let tasksForDate = [];
+            if (truck.tasks instanceof Map) tasksForDate = truck.tasks.get(formattedDate) || [];
+            else if (typeof truck.tasks === 'object') tasksForDate = truck.tasks[formattedDate] || [];
+            if (Array.isArray(tasksForDate)) {
+              tasksForDate.forEach(task => {
+                let taskId = null, taskType = null;
+                if (typeof task === 'string') { taskId = task; taskType = 'task'; }
+                else if (task && task.taskId) { taskId = task.taskId; taskType = task.type || 'task'; }
+                if (taskId) {
+                  if (taskType === 'TippingRequest' || taskType === 'tipping_request') allTippingRequestIdsForDate.push(taskId);
+                  else allTaskIdsForDate.push(taskId);
                 }
-              }
-            });
-
-            console.log(`Extracted task IDs for ${formattedDate}:`, allTaskIdsForDate);
-            console.log(`Extracted tipping request IDs for ${formattedDate}:`, allTippingRequestIdsForDate);
+              });
+            }
           }
-        }
 
-        // Fetch jobs based on task IDs and status
-        const jobsDone = await Task.find({
-          _id: { $in: allTaskIdsForDate },
-          taskStatus: 'Completed',
-        });
+          const jobsDone = await Task.find({ _id: { $in: allTaskIdsForDate }, taskStatus: 'Completed' });
+          const jobsPending = await Task.find({ _id: { $in: allTaskIdsForDate }, taskStatus: { $in: ['Processing', 'New'] } });
+          const jobsCancelled = await Task.find({ _id: { $in: allTaskIdsForDate }, taskStatus: { $in: ['Declined', 'Cancelled'] } });
+          const tippingRequests = allTippingRequestIdsForDate.length > 0
+            ? await TippingRequest.find({ _id: { $in: allTippingRequestIdsForDate } })
+            : [];
 
-        const jobsPending = await Task.find({
-          _id: { $in: allTaskIdsForDate },
-          taskStatus: { $in: ['Processing', 'New'] },
-        });
+          const totalCashIncome = jobsDone.reduce((acc, job) => (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash' ? acc + job.totalPrice : acc), 0);
+          const totalTippingIncome = tippingRequests.reduce((acc, tip) => (tip.status === 'Accepted' && tip.price ? acc + tip.price : acc), 0);
+          const totalIncome = totalCashIncome + totalTippingIncome;
 
-        const jobsCancelled = await Task.find({
-          _id: { $in: allTaskIdsForDate },
-          taskStatus: { $in: ['Declined', 'Cancelled'] },
-        });
-
-        // Fetch tipping requests from the truck's tasks Map (not by userId)
-        const tippingRequests = allTippingRequestIdsForDate.length > 0
-          ? await TippingRequest.find({
-            _id: { $in: allTippingRequestIdsForDate }
-          })
-          : [];
-
-        // Calculate income from tasks
-        const totalCashIncome = jobsDone.reduce((acc, job) => {
-          if (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash') {
-            return acc + job.totalPrice;
-          }
-          return acc;
-        }, 0);
-
-        // Calculate income from accepted tipping requests
-        const totalTippingIncome = tippingRequests.reduce((acc, tip) => {
-          if (tip.status === 'Accepted' && tip.price) {
-            return acc + tip.price;
-          }
-          return acc;
-        }, 0);
-
-        const totalIncome = totalCashIncome + totalTippingIncome;
-
-        // Update the existing daily sheet
-        const updatedDailySheet = await DailySheet.findByIdAndUpdate(
-          existingDailySheet._id,
-          {
-            jobsDone: jobsDone.map(job => job._id),
-            jobsPending: jobsPending.map(job => job._id),
-            jobsCancelled: jobsCancelled.map(job => job._id),
-            tippingRequests: tippingRequests.map(tip => tip._id),
-            income: {
-              cash: totalCashIncome,
-              tipping: totalTippingIncome,
-              total: totalIncome,
+          const updatedDailySheet = await DailySheet.findByIdAndUpdate(
+            existingDailySheet._id,
+            {
+              jobsDone: jobsDone.map(job => job._id),
+              jobsPending: jobsPending.map(job => job._id),
+              jobsCancelled: jobsCancelled.map(job => job._id),
+              tippingRequests: tippingRequests.map(tip => tip._id),
+              income: { cash: totalCashIncome, tipping: totalTippingIncome, total: totalIncome },
             },
-          },
-          { new: true }
-        );
-
-        updatedDailySheets.push(updatedDailySheet);
-        console.log(`Daily sheet updated for driver ${driver._id}:`, {
-          jobsDone: jobsDone.length,
-          jobsPending: jobsPending.length,
-          jobsCancelled: jobsCancelled.length,
-          tippingRequests: tippingRequests.length,
-          totalIncome: totalIncome,
-          cashIncome: totalCashIncome,
-          tippingIncome: totalTippingIncome
-        });
+            { new: true }
+          );
+          updatedDailySheets.push(updatedDailySheet);
+        }
       }
 
       res.status(200).json({

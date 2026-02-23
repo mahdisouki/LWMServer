@@ -260,9 +260,10 @@ taskSchema.post('save', async function (doc) {
     // Get the task date in YYYY-MM-DD format
     const taskDate = doc.date.toISOString().split('T')[0];
 
-    // Find or create a DailySheet for this driver and date
+    // Find or create a DailySheet for this driver, truck and date
     let dailySheet = await DailySheet.findOne({
       driverId: truck.driverId,
+      truckId: truck._id,
       date: {
         $gte: new Date(taskDate + 'T00:00:00.000Z'),
         $lt: new Date(taskDate + 'T23:59:59.999Z')
@@ -272,6 +273,7 @@ taskSchema.post('save', async function (doc) {
     if (!dailySheet) {
       dailySheet = new DailySheet({
         driverId: truck.driverId,
+        truckId: truck._id,
         date: doc.date,
         jobsPending: [doc._id]
       });
@@ -306,9 +308,10 @@ taskSchema.pre('save', async function (next) {
     // Get the task date in YYYY-MM-DD format
     const taskDate = this.date.toISOString().split('T')[0];
 
-    // Find the DailySheet for this driver and date
+    // Find the DailySheet for this driver, truck and date
     const dailySheet = await DailySheet.findOne({
       driverId: truck.driverId,
+      truckId: this.truckId,
       date: {
         $gte: new Date(taskDate + 'T00:00:00.000Z'),
         $lt: new Date(taskDate + 'T23:59:59.999Z')

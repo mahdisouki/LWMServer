@@ -3,6 +3,7 @@ const { Schema } = mongoose;
 
 const dailySheetSchema = new Schema({
   driverId: { type: Schema.Types.ObjectId, ref: 'Driver', required: true },  // Reference to the Driver
+  truckId: { type: Schema.Types.ObjectId, ref: 'Truck', required: true },  // Reference to the Truck
   date: { type: Date, default: Date.now, required: true },  // The date of the daily sheet
 
   // Jobs: group them by status
