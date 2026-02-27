@@ -136,8 +136,8 @@ exports.processRefund = async (req, res) => {
         const task = await Task.findById(taskId).populate('items.standardItemId');
         if (!task) return res.status(404).json({ message: "Task not found" });
 
-        // Find ALL payment histories for this task (deposit + remaining)
-        const paymentHistories = await PaymentHistory.find({ taskId });
+        // Find successful payment histories only (exclude failed e.g. expired checkout sessions)
+        const paymentHistories = await PaymentHistory.find({ taskId, status: 'success' });
         if (!paymentHistories || paymentHistories.length === 0) {
             // Check if this is a cash or bank transfer payment that should use manual refund endpoint
             const isCash = task.paymentMethod === 'cash' ||
