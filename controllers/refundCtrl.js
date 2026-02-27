@@ -54,10 +54,25 @@ async function processSingleRefund(paymentHistory, amountToRefund) {
         } else if (transactionId && transactionId.startsWith('pi_')) {
             // Use payment_intent parameter for payment_intent IDs
             refundParams.payment_intent = transactionId;
+        } else if (transactionId && transactionId.startsWith('cs_')) {
+            // Checkout session ID: retrieve session, then get payment_intent or charge
+            const session = await stripe.checkout.sessions.retrieve(transactionId);
+            const pi = session.payment_intent;
+            const paymentIntentId = typeof pi === 'string' ? pi : (pi && pi.id ? pi.id : null);
+            if (paymentIntentId) {
+                const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+                if (paymentIntent.latest_charge) {
+                    refundParams.charge = typeof paymentIntent.latest_charge === 'string'
+                        ? paymentIntent.latest_charge
+                        : paymentIntent.latest_charge.id;
+                } else {
+                    refundParams.payment_intent = paymentIntentId;
+                }
+            } else {
+                throw new Error(`Checkout session ${transactionId} has no payment_intent. Cannot process refund.`);
+            }
         } else {
-            // If it's neither, try to get the charge from payment_intent if possible
-            // Otherwise, throw an error
-            throw new Error(`Invalid Stripe transaction ID format: ${transactionId}. Expected charge ID (ch_xxx) or payment_intent ID (pi_xxx).`);
+            throw new Error(`Invalid Stripe transaction ID format: ${transactionId}. Expected charge ID (ch_xxx), payment_intent ID (pi_xxx), or checkout session ID (cs_xxx).`);
         }
         
         const refund = await stripe.refunds.create(refundParams);
