@@ -725,6 +725,45 @@ const taskCtrl = {
 
       const savedTask = await newTask.save();
 
+      /**
+       * 🔁 Repeat customer handling
+       * If a new task is created with an email that has been used before,
+       * increment `repeatCustomer` on ALL tasks for that email.
+       *
+       * This way, `repeatCustomer` reflects how many times this customer has
+       * become a "repeat" (2nd order, 3rd order, etc.), and it is updated
+       * immediately when the order is created – not delayed to the review-email cron.
+       */
+      try {
+        if (savedTask.email) {
+          const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const emailNormalized = String(savedTask.email).trim().toLowerCase();
+          const emailExactCi = new RegExp(`^${escapeRegExp(emailNormalized)}$`, 'i');
+
+          /**
+           * Use an idempotent approach:
+           * repeatCustomer = (number of tasks with this email) - 1
+           *
+           * This avoids race conditions where two orders created concurrently could
+           * double-increment with `$inc`.
+           */
+          const tasksCountForEmail = await Task.countDocuments({ email: emailExactCi });
+          if (tasksCountForEmail > 1) {
+            const repeatCustomerValue = Math.max(0, tasksCountForEmail - 1);
+            const repeatUpdateResult = await Task.updateMany(
+              { email: emailExactCi },
+              { $set: { repeatCustomer: repeatCustomerValue } },
+            );
+            console.log(
+              `[RepeatCustomer] Set repeatCustomer=${repeatCustomerValue} for ${repeatUpdateResult.modifiedCount} tasks of customer ${savedTask.email}`,
+            );
+          }
+        }
+      } catch (err) {
+        console.error('[RepeatCustomer] Error incrementing repeatCustomer on createTask:', err);
+        // Do not fail task creation if repeat-customer update fails
+      }
+
       // NOTE:
       // - For online payments, coupon usage is incremented only after successful payment confirmation/capture.
       // - For manual payments (cash/BankTransfer) where the task is CREATED already paid, increment coupon usage here once.
