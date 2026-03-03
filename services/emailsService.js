@@ -969,11 +969,9 @@ module.exports = {
       .map((item) => {
         const name = item.standardItemId?.itemName || item.object || 'Unnamed Item';
         const quantity = item.quantity || 1;
-        const price = (item.price || item.standardItemId?.price || 0).toFixed(2);
         return `<tr>
   <td style="padding: 8px 10px; border-bottom: 1px solid #f3f4f6;">${name}</td>
   <td style="padding: 8px 10px; border-bottom: 1px solid #f3f4f6; text-align: center;">${quantity}</td>
-  <td style="padding: 8px 10px; border-bottom: 1px solid #f3f4f6; text-align: right;">£${price}</td>
 </tr>`;
       })
       .join('');
