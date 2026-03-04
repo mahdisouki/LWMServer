@@ -18,6 +18,7 @@ const pcnDamageSchema = new Schema({
     proofUrl: { type: String },                     // URL to uploaded proof (image/PDF/URL)
     addedBy: { type: String },                      // User name or ID who added this
     time: { type: Date, default: Date.now },        // Time of the PCN/Damage
+    vanMatricule: { type: String },                 // Optional van registration / matricule
 }, { timestamps: true });
 
 const PcnDamage = mongoose.model('PcnDamage', pcnDamageSchema);

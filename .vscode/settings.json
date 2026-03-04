@@ -1,5 +1,7 @@
 {
     "cSpell.words": [
         "Objectsposition"
-    ]
+    ],
+    "editor.tabCompletion": "on",
+    "diffEditor.codeLens": true
 }

@@ -70,7 +70,7 @@ const pcnDamageController = {
     addPcnDamage: async (req, res) => {
         try {
             const { driverId, date } = req.params;
-            const { pcnReferenceNumber, reason, amount, deductedFromUserId, addedBy } = req.body;
+            const { pcnReferenceNumber, reason, amount, deductedFromUserId, addedBy, vanMatricule } = req.body;
 
             if (!reason || !deductedFromUserId) {
                 return res.status(400).json({
@@ -108,14 +108,15 @@ const pcnDamageController = {
             // Find the driver's daily sheet
             // If the user is a helper, find their driver via truck
             let targetDriverId = driverId;
+            let helperTruck = null;
             if (isHelper) {
-                const truck = await Truck.findOne({ helperId: deductedFromUserId });
-                if (!truck || !truck.driverId) {
+                helperTruck = await Truck.findOne({ helperId: deductedFromUserId });
+                if (!helperTruck || !helperTruck.driverId) {
                     return res.status(404).json({
                         message: 'Helper is not assigned to any truck or truck has no driver. Please assign helper to a truck first.'
                     });
                 }
-                targetDriverId = truck.driverId;
+                targetDriverId = helperTruck.driverId;
             } else if (isDriver && deductedFromUserId.toString() !== driverId) {
                 // If it's a different driver, use the provided driverId from params
                 targetDriverId = driverId;
@@ -132,6 +133,25 @@ const pcnDamageController = {
                 });
             }
 
+            // If a van matricule has been provided, validate that it matches
+            // the truck used on this daily sheet. This aligns the validation
+            // with the display logic, which falls back to the daily sheet's truck.
+            if (vanMatricule) {
+                const sheetTruck = await Truck.findById(dailySheet.truckId);
+
+                if (!sheetTruck) {
+                    return res.status(400).json({
+                        message: 'Truck for this daily sheet not found.',
+                    });
+                }
+
+                if (sheetTruck.matricule !== vanMatricule) {
+                    return res.status(400).json({
+                        message: 'Selected van does not match the van used on this daily sheet.',
+                    });
+                }
+            }
+
             // Create new PcnDamage document
             const pcnDamage = new PcnDamage({
                 pcnReferenceNumber,
@@ -141,6 +161,7 @@ const pcnDamageController = {
                 deductedFromUserId,
                 proofUrl,
                 addedBy,
+                vanMatricule,
             });
 
             await pcnDamage.save();
@@ -166,7 +187,7 @@ const pcnDamageController = {
     updatePcnDamage: async (req, res) => {
         try {
             const { driverId, date, pcnDamageId } = req.params;
-            const { pcnReferenceNumber, reason, amount, deductedFromUserId, newDate } = req.body;
+            const { pcnReferenceNumber, reason, amount, deductedFromUserId, newDate, vanMatricule } = req.body;
 
             const startDate = new Date(date);
             startDate.setHours(0, 0, 0, 0);
@@ -245,6 +266,9 @@ const pcnDamageController = {
                     });
                 }
                 pcnDamage.deductedFromUserId = deductedFromUserId;
+            }
+            if (vanMatricule !== undefined) {
+                pcnDamage.vanMatricule = vanMatricule;
             }
             // Handle proof: accepts file upload (image/PDF) or URL string
             // req.file.path contains Cloudinary URL for uploaded files (images/PDFs)
@@ -382,11 +406,17 @@ const pcnDamageController = {
             const pcnDamages = await PcnDamage.find()
                 .populate({
                     path: 'dailySheetId',
-                    select: 'driverId date',
-                    populate: {
-                        path: 'driverId',
-                        select: 'username firstName lastName'
-                    }
+                    select: 'driverId date truckId',
+                    populate: [
+                        {
+                            path: 'driverId',
+                            select: 'username firstName lastName'
+                        },
+                        {
+                            path: 'truckId',
+                            select: 'matricule'
+                        }
+                    ]
                 })
                 .populate({
                     path: 'deductedFromUserId',
@@ -394,27 +424,43 @@ const pcnDamageController = {
                 })
                 .sort({ time: -1 });
 
-            // Format the response to match the previous structure
-            const formattedPcnDamages = pcnDamages.map(pcn => ({
-                _id: pcn._id,
-                pcnReferenceNumber: pcn.pcnReferenceNumber,
-                driverId: pcn.dailySheetId?.driverId?._id || pcn.dailySheetId?.driverId,
-                date: pcn.dailySheetId?.date,
-                reason: pcn.reason,
-                amount: pcn.amount,
-                deductedFromUserId: pcn.deductedFromUserId?._id || pcn.deductedFromUserId,
-                deductedFromUser: pcn.deductedFromUserId ? {
-                    _id: pcn.deductedFromUserId._id,
-                    username: pcn.deductedFromUserId.username,
-                    firstName: pcn.deductedFromUserId.firstName,
-                    lastName: pcn.deductedFromUserId.lastName,
-                    role: pcn.deductedFromUserId.role,
-                    roleType: pcn.deductedFromUserId.roleType
-                } : null,
-                proofUrl: pcn.proofUrl,
-                addedBy: pcn.addedBy,
-                time: pcn.time,
-            }));
+            // Format the response to match the previous structure,
+            // but ensure we always return a vanMatricule:
+            // 1) use the value stored on the PCN document if present
+            // 2) otherwise fall back to the truck's matricule from the daily sheet
+            const formattedPcnDamages = pcnDamages.map(pcn => {
+                const driverFromDailySheet = pcn.dailySheetId?.driverId;
+                const truckFromDailySheet = pcn.dailySheetId?.truckId;
+
+                const resolvedVanMatricule =
+                    pcn.vanMatricule ||
+                    (truckFromDailySheet && truckFromDailySheet.matricule) ||
+                    null;
+
+                return {
+                    _id: pcn._id,
+                    pcnReferenceNumber: pcn.pcnReferenceNumber,
+                    driverId: driverFromDailySheet?._id || driverFromDailySheet,
+                    date: pcn.dailySheetId?.date,
+                    reason: pcn.reason,
+                    amount: pcn.amount,
+                    deductedFromUserId: pcn.deductedFromUserId?._id || pcn.deductedFromUserId,
+                    deductedFromUser: pcn.deductedFromUserId
+                        ? {
+                            _id: pcn.deductedFromUserId._id,
+                            username: pcn.deductedFromUserId.username,
+                            firstName: pcn.deductedFromUserId.firstName,
+                            lastName: pcn.deductedFromUserId.lastName,
+                            role: pcn.deductedFromUserId.role,
+                            roleType: pcn.deductedFromUserId.roleType
+                        }
+                        : null,
+                    proofUrl: pcn.proofUrl,
+                    addedBy: pcn.addedBy,
+                    time: pcn.time,
+                    vanMatricule: resolvedVanMatricule,
+                };
+            });
 
             res.status(200).json({
                 message: 'All PCN/Damages retrieved',

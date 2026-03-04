@@ -11,6 +11,7 @@ const notificationSchema = new mongoose.Schema({
     enum: [
       "Staff",
       "Orders",
+      "Incidents",
       "Driver_Tracking",
       "Payroll",
       "Chat",
