@@ -1,5 +1,6 @@
 const StandardItem = require('../models/StandardItem');
 const ServiceCategory = require('../models/ServiceCategory.js');
+const Task = require('../models/Task');
 const mongoose = require('mongoose');
 const { normalizeForSlugCompare } = require('../utils/slug');
 const {
@@ -79,11 +80,11 @@ const standardItemCtrl = {
         return res.status(400).json({ message: 'Main image file is required' });
       }
 
-      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode , isHidden, spaceOfVan, timespentOutside, timespentInside, timespentInsdiewithDis } = req.body;
-      
+      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode, isHidden, spaceOfVan, timespentOutside, timespentInside, timespentInsdiewithDis } = req.body;
+
       // Main image
       const image = req.file.path;
-      
+
       // Additional images if any
       const additionalImages = req.files ? req.files.map(file => file.path) : [];
 
@@ -215,20 +216,146 @@ const standardItemCtrl = {
   //     }
   // },
 
+  /**
+   * Get top purchased & affordable items for marketing (e.g. "You may also like")
+   * Logic:
+   *  - Look at completed/paid tasks (orders)
+   *  - Count how often each standard item is purchased (quantity + occurrences)
+   *  - Keep only items in the same primary category as the current item
+   *  - Sort by purchase volume (desc), then by price (asc) to surface cheaper options
+   * Route example (added in routes/standardItems.js):
+   *    GET /api/standard/items/:id/top-related?limit=5
+   */
+  getTopRelatedItems: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const limit = Math.min(parseInt(req.query.limit, 10) || 12, 20); // safety cap
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({ message: 'Invalid item ID' });
+      }
+
+      const baseItem = await StandardItem.findById(id).populate('category');
+      if (!baseItem) {
+        return res.status(404).json({ message: 'Standard item not found' });
+      }
+
+      // Use the first category as the "primary" one for related items
+      const categories = Array.isArray(baseItem.category) ? baseItem.category : [];
+      if (!categories.length) {
+        return res.status(200).json({
+          message: 'No category found for this item, cannot compute related items',
+          items: []
+        });
+      }
+
+      const primaryCategory = categories[0]._id || categories[0];
+
+      const pipeline = [
+        {
+          $match: {
+            // Consider only real orders: paid / partially paid and not cancelled
+            paymentStatus: { $in: ['Paid', 'partial_Paid'] },
+            taskStatus: { $ne: 'Cancelled' },
+            'items.standardItemId': { $ne: null }
+          }
+        },
+        { $unwind: '$items' },
+        {
+          $match: {
+            'items.standardItemId': { $ne: null }
+          }
+        },
+        {
+          $group: {
+            _id: '$items.standardItemId',
+            totalQuantity: {
+              $sum: {
+                $cond: [
+                  { $gt: ['$items.quantity', 0] },
+                  '$items.quantity',
+                  1
+                ]
+              }
+            },
+            timesOrdered: { $sum: 1 }
+          }
+        },
+        {
+          $lookup: {
+            from: 'standarditems',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'item'
+          }
+        },
+        { $unwind: '$item' },
+        {
+          $match: {
+            'item.category': primaryCategory,
+            'item.isHidden': { $ne: true }
+          }
+        },
+        // Exclude the current item from the recommendations
+        {
+          $match: {
+            'item._id': { $ne: baseItem._id }
+          }
+        },
+        {
+          $project: {
+            _id: 0,
+            itemId: '$_id',
+            itemName: '$item.itemName',
+            image: '$item.image',
+            price: '$item.price',
+            category: '$item.category',
+            totalQuantity: 1,
+            timesOrdered: 1
+          }
+        },
+        {
+          $sort: {
+            totalQuantity: -1, // most purchased first
+            price: 1           // cheaper first
+          }
+        },
+        { $limit: limit }
+      ];
+
+      const items = await Task.aggregate(pipeline);
+
+      return res.status(200).json({
+        message: 'Top related items fetched successfully',
+        baseItem: {
+          id: baseItem._id,
+          itemName: baseItem.itemName
+        },
+        items
+      });
+    } catch (error) {
+      console.error('Error getting top related items:', error);
+      return res.status(500).json({
+        message: 'Failed to get top related items',
+        error: error.message
+      });
+    }
+  },
+
   getAllStandardItems: async (req, res) => {
     try {
       const { page = '1', limit = '9', pagination, category, search = '', sort } = req.query;
       const pageNum = parseInt(page, 10);
       const limitNum = parseInt(limit, 10);
       const isPaginationDisabled = (pagination === 'false');
-  
+
       // Build the filter object
       let filter = {};
-  
+
       // 🔍 Add search condition if provided
       if (search && search.trim()) {
         const searchTerm = search.trim();
-        
+
         // Normalize text: remove accents/diacritics for better matching
         // e.g., "lampe" matches "lamp" and vice versa
         const normalizeText = (text) => {
@@ -239,7 +366,7 @@ const standardItemCtrl = {
         };
 
         const normalizedSearch = normalizeText(searchTerm);
-        
+
         // Escape special regex characters
         const escapeRegex = (str) => {
           return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -254,12 +381,12 @@ const standardItemCtrl = {
           'i' // case-insensitive
         );
 
-        filter.itemName = { 
+        filter.itemName = {
           $regex: searchRegex
           // Case-insensitive matching is already handled by the 'i' flag in the RegExp
         };
       }
-  
+
       // Filter by Category if provided
       if (category) {
         if (!mongoose.Types.ObjectId.isValid(category)) {
@@ -267,11 +394,11 @@ const standardItemCtrl = {
         }
         filter.category = category;
       }
-  
+
       // Determine sort option
       let sortOption = { createdAt: -1, _id: 1 }; // Default: newest first
       let useCustomSort = false; // Flag for custom category-based sorting
-      
+
       if (sort) {
         switch (sort) {
           case 'name-asc':
@@ -293,32 +420,32 @@ const standardItemCtrl = {
         // When category is selected and no explicit sort, use custom logical sort
         useCustomSort = true;
       }
-  
+
       // Count total matching items
       const total = await StandardItem.countDocuments(filter);
-  
+
       // Build the query
       let query = StandardItem.find(filter).populate('category');
 
       let items;
-      
+
       if (useCustomSort) {
         // Fetch all items for custom sorting (categories typically don't have many items)
         const allItems = await query.exec();
-        
+
         // Apply custom logical sorting
         allItems.sort((a, b) => {
           const orderA = getItemSortOrder(a.itemName);
           const orderB = getItemSortOrder(b.itemName);
-          
+
           // If same order, sort alphabetically
           if (orderA === orderB) {
             return a.itemName.localeCompare(b.itemName);
           }
-          
+
           return orderA - orderB;
         });
-        
+
         // Apply pagination after sorting
         if (isPaginationDisabled) {
           items = allItems;
@@ -349,7 +476,7 @@ const standardItemCtrl = {
       } else {
         // Normal sorting (use MongoDB sort)
         query = query.sort(sortOption);
-        
+
         if (isPaginationDisabled) {
           items = await query.exec();
           return res.status(200).json({
@@ -385,7 +512,7 @@ const standardItemCtrl = {
       });
     }
   },
-  
+
 
   getItemsByCategory: async (req, res) => {
     const { category } = req.params; // Category parameter from the route
@@ -396,27 +523,27 @@ const standardItemCtrl = {
       // Define the query dynamically
       let query = {};
       if (category) {
-        
+
         // Validate category only if it's provided
         if (!mongoose.Types.ObjectId.isValid(category)) {
           return res.status(400).json({ message: 'Invalid category ID' });
         }
         query.category = category; // Add category filter to the query
       }
-  
+
       // Fetch items based on the query
       const items = await StandardItem.find(query)
         .skip((page - 1) * limit)
         .limit(limit)
         .populate('category', 'name'); // Populate category details
-  
+
       // Count total items based on the query
       const totalItems = await StandardItem.countDocuments(query);
-  
+
       if (items.length === 0) {
         return res.status(404).json({ message: 'No standard items found' });
       }
-  
+
       // Return paginated response
       res.status(200).json({
         message: 'Standard items fetched successfully',
@@ -436,8 +563,8 @@ const standardItemCtrl = {
       });
     }
   },
-  
-  
+
+
 
   getStandardItemById: async (req, res) => {
     const { id } = req.params;
@@ -457,7 +584,7 @@ const standardItemCtrl = {
   updateStandardItem: async (req, res) => {
     try {
       const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode, isHidden, spaceOfVan, timespentOutside, timespentInside, timespentInsdiewithDis } = req.body;
-      
+
       const updateData = {
         itemName,
         price,
@@ -589,7 +716,7 @@ const standardItemCtrl = {
   deleteAdditionalImage: async (req, res) => {
     try {
       const { itemId, imageIndex } = req.params;
-      
+
       const standardItem = await StandardItem.findById(itemId);
       if (!standardItem) {
         return res.status(404).json({ message: 'Standard item not found' });

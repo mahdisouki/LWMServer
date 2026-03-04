@@ -172,6 +172,9 @@ router.get('/items', standardItemCtrl.getAllStandardItems);
 // Get items by category
 router.get('/items/category/:category', standardItemCtrl.getItemsByCategory);
 
+// Get top related items for marketing (based on orders & price)
+router.get('/items/:id/top-related', standardItemCtrl.getTopRelatedItems);
+
 // Get item by ID
 router.get('/items/:id', standardItemCtrl.getStandardItemById);
 
