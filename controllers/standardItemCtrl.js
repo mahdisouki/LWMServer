@@ -217,19 +217,27 @@ const standardItemCtrl = {
   // },
 
   /**
-   * Get top purchased & affordable items for marketing (e.g. "You may also like")
+   * Get all items in the same category, ordered by:
+   *   1) How often they are purchased in real orders (tasks)
+   *   2) Then by price ascending (cheaper first)
+   *
+   * This is ideal for a marketing block like "You may also like":
+   *  - All items from the category are returned
+   *  - The most popular & affordable ones appear at the top
    * Logic:
    *  - Look at completed/paid tasks (orders)
    *  - Count how often each standard item is purchased (quantity + occurrences)
-   *  - Keep only items in the same primary category as the current item
+   *  - Join this popularity info onto all items in the same primary category
    *  - Sort by purchase volume (desc), then by price (asc) to surface cheaper options
    * Route example (added in routes/standardItems.js):
-   *    GET /api/standard/items/:id/top-related?limit=5
+   *    GET /api/standard/items/:id/top-related
+   *    Optional: ?limit=10 to cap the number of returned items
    */
   getTopRelatedItems: async (req, res) => {
     try {
       const { id } = req.params;
-      const limit = Math.min(parseInt(req.query.limit, 10) || 12, 20); // safety cap
+      const rawLimit = parseInt(req.query.limit, 30);
+      const limit = Number.isNaN(rawLimit) ? null : Math.min(rawLimit, 50); // optional cap
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ message: 'Invalid item ID' });
@@ -253,63 +261,75 @@ const standardItemCtrl = {
 
       const pipeline = [
         {
+          // Start from all items in the same primary category (except the current one)
           $match: {
-            // Consider only real orders: paid / partially paid and not cancelled
-            paymentStatus: { $in: ['Paid', 'partial_Paid'] },
-            taskStatus: { $ne: 'Cancelled' },
-            'items.standardItemId': { $ne: null }
-          }
-        },
-        { $unwind: '$items' },
-        {
-          $match: {
-            'items.standardItemId': { $ne: null }
+            category: primaryCategory,
+            isHidden: { $ne: true },
+            _id: { $ne: baseItem._id }
           }
         },
         {
-          $group: {
-            _id: '$items.standardItemId',
-            totalQuantity: {
-              $sum: {
-                $cond: [
-                  { $gt: ['$items.quantity', 0] },
-                  '$items.quantity',
-                  1
-                ]
-              }
-            },
-            timesOrdered: { $sum: 1 }
-          }
-        },
-        {
+          // Lookup popularity information from tasks collection
           $lookup: {
-            from: 'standarditems',
-            localField: '_id',
-            foreignField: '_id',
-            as: 'item'
+            from: 'tasks',
+            let: { itemId: '$_id' },
+            pipeline: [
+              {
+                $match: {
+                  paymentStatus: { $in: ['Paid', 'partial_Paid'] },
+                  taskStatus: { $ne: 'Cancelled' },
+                  'items.standardItemId': { $ne: null }
+                }
+              },
+              { $unwind: '$items' },
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$items.standardItemId', '$$itemId'] },
+                      { $ne: ['$items.standardItemId', null] }
+                    ]
+                  }
+                }
+              },
+              {
+                $group: {
+                  _id: '$items.standardItemId',
+                  totalQuantity: {
+                    $sum: {
+                      $cond: [
+                        { $gt: ['$items.quantity', 0] },
+                        '$items.quantity',
+                        1
+                      ]
+                    }
+                  },
+                  timesOrdered: { $sum: 1 }
+                }
+              }
+            ],
+            as: 'popularity'
           }
         },
-        { $unwind: '$item' },
         {
-          $match: {
-            'item.category': primaryCategory,
-            'item.isHidden': { $ne: true }
-          }
-        },
-        // Exclude the current item from the recommendations
-        {
-          $match: {
-            'item._id': { $ne: baseItem._id }
+          // Flatten popularity info and default to 0 when no orders exist
+          $addFields: {
+            totalQuantity: {
+              $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
+            },
+            timesOrdered: {
+              $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
+            }
           }
         },
         {
           $project: {
             _id: 0,
             itemId: '$_id',
-            itemName: '$item.itemName',
-            image: '$item.image',
-            price: '$item.price',
-            category: '$item.category',
+            itemName: '$itemName',
+            image: '$image',
+            price: '$price',
+            category: '$category',
             totalQuantity: 1,
             timesOrdered: 1
           }
@@ -317,13 +337,18 @@ const standardItemCtrl = {
         {
           $sort: {
             totalQuantity: -1, // most purchased first
-            price: 1           // cheaper first
+            price: 1,          // cheaper first
+            itemName: 1        // tie‑breaker
           }
-        },
-        { $limit: limit }
+        }
       ];
 
-      const items = await Task.aggregate(pipeline);
+      // Apply limit only if provided
+      if (limit && limit > 0) {
+        pipeline.push({ $limit: limit });
+      }
+
+      const items = await StandardItem.aggregate(pipeline);
 
       return res.status(200).json({
         message: 'Top related items fetched successfully',
