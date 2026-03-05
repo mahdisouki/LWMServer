@@ -217,9 +217,12 @@ const standardItemCtrl = {
   // },
 
   /**
-   * Get all items in the same category, ordered by:
-   *   1) How often they are purchased in real orders (tasks)
-   *   2) Then by price ascending (cheaper first)
+  * Get all items in the same category, ordered by:
+  *   1) How often they are ordered (times ordered)
+  *   2) Then by how many units are sold in total (totalQuantity)
+  *   3) Then by price ascending (cheaper first)
+  *   4) Optionally biased by a regex on the item name (e.g. "table"), so
+  *      "Dining Table" can suggest "Garden Table", "Bedside Table", etc.
    *
    * This is ideal for a marketing block like "You may also like":
    *  - All items from the category are returned
@@ -236,8 +239,11 @@ const standardItemCtrl = {
   getTopRelatedItems: async (req, res) => {
     try {
       const { id } = req.params;
-      const rawLimit = parseInt(req.query.limit, 30);
-      const limit = Number.isNaN(rawLimit) ? null : Math.min(rawLimit, 50); // optional cap
+      // We no longer limit category-related items; the full category will be returned
+      // and sorted. The optional "limit" query param is only used for the global
+      // fallback case (when there are no related items in the same category).
+      const rawLimit = parseInt(req.query.limit, 12);
+      const limit = Number.isNaN(rawLimit) ? null : Math.min(rawLimit, 50);
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ message: 'Invalid item ID' });
@@ -259,9 +265,34 @@ const standardItemCtrl = {
 
       const primaryCategory = categories[0]._id || categories[0];
 
+      // Build a simple regex based on the base item's name to bias suggestions
+      // towards items with similar names (e.g. anything containing "table").
+      // We must escape the keyword to avoid invalid regexes when names contain
+      // characters like ")", "(", "+", etc.
+      const nameWords = (baseItem.itemName || '')
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((w) => w.length > 2);
+
+      // Prefer a "core" word instead of size adjectives like "small/medium/large"
+      // so that "Coffee Machine Small" groups with other coffee machines.
+      const sizeWords = ['small', 'medium', 'large', 'xl', 'xxl', 'xs', 'sm', 'md', 'lg'];
+      let keyword = null;
+      if (nameWords.length) {
+        let candidate = nameWords[nameWords.length - 1];
+        if (sizeWords.includes(candidate) && nameWords.length > 1) {
+          candidate = nameWords[nameWords.length - 2];
+        }
+        keyword = candidate || nameWords[0];
+      }
+      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const safeKeyword = keyword ? escapeRegex(keyword) : null;
+      const nameRegex = safeKeyword ? new RegExp(safeKeyword, 'i') : null;
+
       const pipeline = [
         {
           // Start from all items in the same primary category (except the current one)
+          // Regex (if present) is NOT used here to filter items, only for sorting.
           $match: {
             category: primaryCategory,
             isHidden: { $ne: true },
@@ -295,6 +326,7 @@ const standardItemCtrl = {
               {
                 $group: {
                   _id: '$items.standardItemId',
+                  // Track how many units were sold (quantity) and how many times ordered
                   totalQuantity: {
                     $sum: {
                       $cond: [
@@ -312,14 +344,30 @@ const standardItemCtrl = {
           }
         },
         {
-          // Flatten popularity info and default to 0 when no orders exist
+          // Flatten popularity info and default to 0 when no orders exist.
+          // Also compute a "nameMatch" score (1/0) when a regex keyword is available
+          // so that matching names can be ranked higher without excluding others.
           $addFields: {
             totalQuantity: {
               $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
             },
             timesOrdered: {
               $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
-            }
+            },
+            nameMatch: nameRegex
+              ? {
+                $cond: [
+                  {
+                    $regexMatch: {
+                      input: '$itemName',
+                      regex: nameRegex
+                    }
+                  },
+                  1,
+                  0
+                ]
+              }
+              : 0
           }
         },
         {
@@ -331,24 +379,141 @@ const standardItemCtrl = {
             price: '$price',
             category: '$category',
             totalQuantity: 1,
-            timesOrdered: 1
+            timesOrdered: 1,
+            nameMatch: 1
           }
         },
         {
           $sort: {
-            totalQuantity: -1, // most purchased first
-            price: 1,          // cheaper first
-            itemName: 1        // tie‑breaker
+            nameMatch: -1,      // name matches (regex) first, if any
+            timesOrdered: -1,   // then most frequently ordered
+            totalQuantity: -1,  // then by total units sold
+            price: 1,           // then cheapest first
+            itemName: 1         // tie‑breaker
           }
         }
       ];
 
-      // Apply limit only if provided
-      if (limit && limit > 0) {
-        pipeline.push({ $limit: limit });
-      }
-
       const items = await StandardItem.aggregate(pipeline);
+
+      // If no related items were found in the same category, fall back to global popular & cheap items
+      if (!items.length) {
+        // For the global fallback we cap the number of items so we don't
+        // return an unbounded list; default is 12, or the optional ?limit.
+        const globalLimit = limit && limit > 0 ? limit : 12;
+
+        const globalPipeline = [
+          {
+            // Global search across all visible items (except the current one);
+            // regex is only used later to bias sorting, not to filter items out.
+            $match: {
+              isHidden: { $ne: true },
+              _id: { $ne: baseItem._id }
+            }
+          },
+          {
+            $lookup: {
+              from: 'tasks',
+              let: { itemId: '$_id' },
+              pipeline: [
+                {
+                  $match: {
+                    paymentStatus: { $in: ['Paid', 'partial_Paid'] },
+                    taskStatus: { $ne: 'Cancelled' },
+                    'items.standardItemId': { $ne: null }
+                  }
+                },
+                { $unwind: '$items' },
+                {
+                  $match: {
+                    $expr: {
+                      $and: [
+                        { $eq: ['$items.standardItemId', '$$itemId'] },
+                        { $ne: ['$items.standardItemId', null] }
+                      ]
+                    }
+                  }
+                },
+                {
+                  $group: {
+                    _id: '$items.standardItemId',
+                    totalQuantity: {
+                      $sum: {
+                        $cond: [
+                          { $gt: ['$items.quantity', 0] },
+                          '$items.quantity',
+                          1
+                        ]
+                      }
+                    },
+                    timesOrdered: { $sum: 1 }
+                  }
+                }
+              ],
+              as: 'popularity'
+            }
+          },
+          {
+            $addFields: {
+              totalQuantity: {
+                $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
+              },
+              timesOrdered: {
+                $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
+              },
+              nameMatch: nameRegex
+                ? {
+                  $cond: [
+                    {
+                      $regexMatch: {
+                        input: '$itemName',
+                        regex: nameRegex
+                      }
+                    },
+                    1,
+                    0
+                  ]
+                }
+                : 0
+            }
+          },
+          {
+            $project: {
+              _id: 0,
+              itemId: '$_id',
+              itemName: '$itemName',
+              image: '$image',
+              price: '$price',
+              category: '$category',
+              totalQuantity: 1,
+              timesOrdered: 1,
+              nameMatch: 1
+            }
+          },
+          {
+            $sort: {
+              nameMatch: -1,
+              timesOrdered: -1,
+              totalQuantity: -1,
+              price: 1,
+              itemName: 1
+            }
+          },
+          { $limit: globalLimit }
+        ];
+
+        const fallbackItems = await StandardItem.aggregate(globalPipeline);
+
+        return res.status(200).json({
+          message:
+            'No related items found in the same category, showing top popular & cheap items instead',
+          baseItem: {
+            id: baseItem._id,
+            itemName: baseItem.itemName
+          },
+          items: fallbackItems
+        });
+      }
 
       return res.status(200).json({
         message: 'Top related items fetched successfully',
