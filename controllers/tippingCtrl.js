@@ -24,20 +24,49 @@ const updateDailySheetForTippingRequest = async (tippingRequest) => {
       return;
     }
 
-    // Format date as YYYY-MM-DD
-    const dateStr = new Date(requestDate).toISOString().split('T')[0];
-
+    // Pass the actual date object to avoid timezone shifting
     // Create mock request/response objects for updateExistingDailySheets
     const mockReq = {
-      body: { date: dateStr }
+      body: { date: requestDate }
     };
     const mockRes = {
       status: () => ({ json: () => { } }),
       json: () => { }
     };
 
+    // First ensure the tipping request is in the truck's tasks array for that date
+    if (tippingRequest.truckId && tippingRequest._id) {
+      const truck = await Truck.findById(tippingRequest.truckId);
+      if (truck) {
+        const dObj = new Date(requestDate);
+        const y = dObj.getFullYear();
+        const m = String(dObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dObj.getDate()).padStart(2, '0');
+        const formattedDate = `${y}-${m}-${d}`;
+        
+        let tasksForDate = [];
+        if (truck.tasks instanceof Map) {
+          tasksForDate = truck.tasks.get(formattedDate) || [];
+        } else if (typeof truck.tasks === 'object' && truck.tasks) {
+          tasksForDate = truck.tasks[formattedDate] || [];
+        }
+
+        // Check if it's already there
+        const exists = tasksForDate.some(t => {
+          const tid = typeof t === 'string' ? t : (t.taskId ? t.taskId.toString() : null);
+          return tid === tippingRequest._id.toString();
+        });
+
+        if (!exists) {
+          console.log(`Adding tipping request ${tippingRequest._id} to truck ${truck.name} for date ${formattedDate}`);
+          truck.addTippingRequest(formattedDate, tippingRequest._id);
+          await truck.save();
+        }
+      }
+    }
+
     await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
-    console.log('Daily sheet updated for tipping request on date:', dateStr);
+    console.log('Daily sheet updated for tipping request on date:', requestDate);
   } catch (error) {
     console.error('Error updating daily sheet for tipping request:', error);
     // Don't throw - we don't want to fail the main operation

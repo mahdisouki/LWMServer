@@ -37,7 +37,7 @@ const blueSheetController = {
       if (isNaN(inputDate)) {
         return res.status(400).json({ message: 'Invalid date format' });
       }
-      const formattedDate = req.body.date || formatDate(inputDate);
+      const formattedDate = formatDate(inputDate);
       const dateObj = toUTCMidnight(formattedDate) || new Date(formattedDate + 'T00:00:00.000Z');
       const startOfDay = new Date(dateObj);
       const endOfDay = new Date(dateObj);
