@@ -749,13 +749,16 @@ module.exports = {
     let template = fs.readFileSync(templatePath, 'utf8');
 
     // Build product rows
-    const productRows = task.items.map(item => `
-      <div class="bg-white grid grid-cols-3 p-2 border-b border-gray-200">
-        <div>${item.standardItemId?.itemName || item.object || 'Unnamed Item'}</div>
-        <div class="text-center">${item.quantity || 1}</div>
-        <div class="text-right">£${(item.price || item.standardItemId?.price || 0).toFixed(2)}</div>
-      </div>
-    `).join('');
+    const productRows = task.items
+      .map((item) => {
+        const name = item.standardItemId?.itemName || item.object || 'Unnamed Item';
+        const quantity = item.quantity || 1;
+        return `<tr>
+  <td style="padding: 8px 10px; border-bottom: 1px solid #f3f4f6;">${name}</td>
+  <td style="padding: 8px 10px; border-bottom: 1px solid #f3f4f6; text-align: center;">${quantity}</td>
+</tr>`;
+      })
+      .join('');
 
     // Build EWC codes - include both standard and custom items
     const ewcCodes = task.items
