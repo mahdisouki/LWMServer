@@ -10,7 +10,7 @@ const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://10.133.90.2:8000';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org';
 
 /**
  * POST /api/route-optimizer/assign-and-optimize

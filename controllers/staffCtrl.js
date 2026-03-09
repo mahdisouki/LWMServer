@@ -472,7 +472,7 @@ const staffManagement = {
       await truck.save();
 
       // Update the driver's designation with the truck name and assign truck ID
-      driver.designation = truckName; // Adjust as needed
+      // driver.designation = truckName; // Adjust as needed
       driver.truckId = truck._id; // Assign the truck ID to the driver
       await driver.save();
 
@@ -545,7 +545,7 @@ const staffManagement = {
 
     try {
       const truck = await Truck.findOne({ name: truckName });
-      const helper = await Helper.findById(helperId);
+      const helper = await User.findById(helperId);
 
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
@@ -570,7 +570,7 @@ const staffManagement = {
       await truck.save();
 
       // Update the helper's designation with the truck name and assign truck ID
-      helper.designation = truckName; // Adjust as needed
+      // helper.designation = truckName; // Adjust as needed
       helper.truckId = truck._id; // Assign the truck ID to the helper
       await helper.save();
 
