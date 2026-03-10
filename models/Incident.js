@@ -26,6 +26,14 @@ const incidentSchema = new Schema(
     {
         truckId: { type: Schema.Types.ObjectId, ref: 'Truck' },
         driverId: { type: Schema.Types.ObjectId, ref: 'Driver' },
+        helperId: { type: Schema.Types.ObjectId, ref: 'Helper' },
+
+        // Type of incident: generic incident or breakdown-specific flow
+        type: {
+            type: String,
+            enum: ['accident', 'breakdown'],
+            default: 'breakdown',
+        },
 
         incidentTime: { type: Date },
         location: { type: String },
@@ -40,6 +48,7 @@ const incidentSchema = new Schema(
         },
 
         steps: [stepSchema],
+        createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
     },
     {
         timestamps: true,
