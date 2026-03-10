@@ -22,17 +22,22 @@ const dailySheetController = {
       const endOfDay = new Date(inputDate);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const formattedDate = req.body.date || new Date().toISOString().split('T')[0];
+      // Force formattedDate to be exactly 'YYYY-MM-DD'
+      const year = startOfDay.getFullYear();
+      const month = String(startOfDay.getMonth() + 1).padStart(2, '0');
+      const day = String(startOfDay.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
 
       const drivers = await Driver.find();
       const dailySheets = [];
 
       for (const driver of drivers) {
         const trucks = await Truck.find({ driverId: driver._id });
-        const allTaskIdsForDate = [];
-        const allTippingRequestIdsForDate = [];
 
         for (const truck of trucks) {
+          const allTaskIdsForDate = [];
+          const allTippingRequestIdsForDate = [];
+
           if (!truck.tasks) {
             console.log(`Truck ${truck.name} has no tasks`);
             continue;
@@ -88,75 +93,78 @@ const dailySheetController = {
               }
             });
 
-            console.log(`Extracted task IDs for ${formattedDate}:`, allTaskIdsForDate);
-            console.log(`Extracted tipping request IDs for ${formattedDate}:`, allTippingRequestIdsForDate);
+            console.log(`[GENERATE] Extracted task IDs for ${formattedDate} in truck ${truck.name}:`, allTaskIdsForDate.length);
           }
-        }
 
-        // Fetch jobs based on task IDs and status
-        const jobsDone = await Task.find({
-          _id: { $in: allTaskIdsForDate },
-          taskStatus: 'Completed',
-        });
+          // Fetch jobs based on task IDs and status
+          const jobsDone = await Task.find({
+            _id: { $in: allTaskIdsForDate },
+            taskStatus: 'Completed',
+          });
 
-        const jobsPending = await Task.find({
-          _id: { $in: allTaskIdsForDate },
-          taskStatus: { $in: ['Processing', 'New'] },
-        });
+          const jobsPending = await Task.find({
+            _id: { $in: allTaskIdsForDate },
+            taskStatus: { $in: ['Processing', 'New'] },
+          });
 
-        const jobsCancelled = await Task.find({
-          _id: { $in: allTaskIdsForDate },
-          taskStatus: 'Declined',
-        });
+          const jobsCancelled = await Task.find({
+            _id: { $in: allTaskIdsForDate },
+            taskStatus: { $in: ['Declined', 'Cancelled'] },
+          });
 
-        // Fetch tipping requests from the truck's tasks Map (not by userId)
-        const tippingRequests = allTippingRequestIdsForDate.length > 0
-          ? await TippingRequest.find({
-            _id: { $in: allTippingRequestIdsForDate }
-          })
-          : [];
+          // Fetch tipping requests from the truck's tasks Map (not by userId)
+          const tippingRequests = allTippingRequestIdsForDate.length > 0
+            ? await TippingRequest.find({
+              _id: { $in: allTippingRequestIdsForDate }
+            })
+            : [];
 
-        // Calculate income from tasks
-        const totalCashIncome = jobsDone.reduce((acc, job) => {
-          if (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash') {
-            return acc + job.totalPrice;
-          }
-          return acc;
-        }, 0);
+          // Calculate income from tasks
+          const totalCashIncome = jobsDone.reduce((acc, job) => {
+            if (job.paymentStatus === 'Paid' && job.paymentMethod === 'Cash') {
+              return acc + job.totalPrice;
+            }
+            return acc;
+          }, 0);
 
-        // Calculate income from accepted tipping requests
-        const totalTippingIncome = tippingRequests.reduce((acc, tip) => {
-          if (tip.status === 'Accepted' && tip.price) {
-            return acc + tip.price;
-          }
-          return acc;
-        }, 0);
+          // Calculate income from accepted tipping requests
+          const totalTippingIncome = tippingRequests.reduce((acc, tip) => {
+            if (tip.status === 'Accepted' && tip.price) {
+              return acc + tip.price;
+            }
+            return acc;
+          }, 0);
 
-        const totalIncome = totalCashIncome + totalTippingIncome;
+          const totalIncome = totalCashIncome + totalTippingIncome;
 
-        // Upsert daily sheet
-        const dailySheet = await DailySheet.findOneAndUpdate(
-          { driverId: driver._id, date: formattedDate },
-          {
-            driverId: driver._id,
-            truckId:driver.truckId,
-            date: new Date(formattedDate), // ensure correct format
-            jobsDone: jobsDone.map(job => job._id),
-            jobsPending: jobsPending.map(job => job._id),
-            jobsCancelled: jobsCancelled.map(job => job._id),
-            tippingRequests: tippingRequests.map(tip => tip._id),
-            income: {
-              cash: totalCashIncome,
-              tipping: totalTippingIncome,
-              total: totalIncome,
+          // Upsert daily sheet
+          const dailySheet = await DailySheet.findOneAndUpdate(
+            { 
+              driverId: driver._id, 
+              truckId: truck._id,
+              date: { $gte: startOfDay, $lte: endOfDay } 
             },
-          },
-          { new: true, upsert: true }
-        );
+            {
+              driverId: driver._id,
+              truckId: truck._id,
+              date: new Date(formattedDate), // ensure correct format
+              jobsDone: jobsDone.map(job => job._id),
+              jobsPending: jobsPending.map(job => job._id),
+              jobsCancelled: jobsCancelled.map(job => job._id),
+              tippingRequests: tippingRequests.map(tip => tip._id),
+              income: {
+                cash: totalCashIncome,
+                tipping: totalTippingIncome,
+                total: totalIncome,
+              },
+            },
+            { new: true, upsert: true }
+          );
 
-        dailySheets.push(dailySheet);
+          dailySheets.push(dailySheet);
+        }
       }
-
+      
       res.status(201).json({ message: 'Daily sheets generated', dailySheets });
     } catch (error) {
       console.error('Error generating daily sheets:', error);
@@ -668,7 +676,11 @@ const dailySheetController = {
       const endOfDay = new Date(inputDate);
       endOfDay.setHours(23, 59, 59, 999);
 
-      const formattedDate = req.body.date || new Date().toISOString().split('T')[0];
+      // Force formattedDate to be exactly 'YYYY-MM-DD'
+      const year = startOfDay.getFullYear();
+      const month = String(startOfDay.getMonth() + 1).padStart(2, '0');
+      const day = String(startOfDay.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
 
       const drivers = await Driver.find();
       const updatedDailySheets = [];

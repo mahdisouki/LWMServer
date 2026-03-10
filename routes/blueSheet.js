@@ -5,7 +5,7 @@ const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 
 // Generate blue sheets for all trucks for a specific date
-router.post('/generate', isAuth, checkRole('Admin'), blueSheetController.generateBlueSheetsForAllTrucks);
+router.post('/generate',blueSheetController.generateBlueSheetsForAllTrucks);
 
 // Get all blue sheets for a specific date
 router.get('/sheets', isAuth, checkRole('Admin'), blueSheetController.getBlueSheetsForDate);
