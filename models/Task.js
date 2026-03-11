@@ -178,6 +178,7 @@ const taskSchema = new Schema(
       default: null
     },
     taskDuration: { type: Number, required: false },
+    spaceOfVan: { type: Number, required: false },
     googleCalendarEventId: {
       type: String,
       required: false

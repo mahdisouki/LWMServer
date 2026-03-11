@@ -200,7 +200,7 @@ const analyticsRoutes = require('./routes/analytics');
 const couponRoutes = require('./routes/coupon');
 const instagramRoutes = require('./routes/instagram');
 const routeOptimizerRoutes = require('./routes/routeOptimizer');
-
+const vanRoutes = require('./routes/van');
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app);
@@ -240,6 +240,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/instagram', instagramRoutes);
 app.use('/api', incidentRoutes);
+app.use('/api', vanRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;

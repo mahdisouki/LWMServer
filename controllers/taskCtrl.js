@@ -47,6 +47,30 @@ const cloudinary = require('../helper/cloudinaryConfig');
 const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } = require('../services/calendarService');
 const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
 
+/**
+ * Calculate task van space as percentage from items.
+ * spaceOfVan on StandardItem = how many of that item fit in the van (e.g. 100 chairs).
+ * So 2 chairs → 2/100 = 2%.
+ */
+async function calculateTaskVanSpacePercent(allItems) {
+  let fraction = 0;
+  for (const item of allItems) {
+    let capacity = null;
+    if (item.standardItemId) {
+      const std = await StandardItem.findById(item.standardItemId).select('spaceOfVan').lean();
+      capacity = std?.spaceOfVan;
+    } else {
+      capacity = item.spaceOfVan;
+    }
+    const qty = Number(item.quantity) || 1;
+    if (capacity != null && capacity > 0) {
+      fraction += qty / capacity;
+    }
+  }
+  const percent = fraction * 100;
+  return Math.min(100, Math.round(percent * 100) / 100); // cap 100%, 2 decimals
+}
+
 // Helper to update daily sheets when a task changes (e.g. status moved to Completed)
 const updateDailySheetForTask = async (task) => {
   try {
@@ -682,6 +706,7 @@ const taskCtrl = {
       // });
 
       const taskDuration = await calculateTaskDuration(allItems);
+      const taskVanSpacePercent = await calculateTaskVanSpacePercent(allItems);
 
       // Create the task
       const newTask = new Task({
@@ -721,6 +746,7 @@ const taskCtrl = {
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
         quotationId: quotationId || null,
         taskDuration: taskDuration || undefined,
+        spaceOfVan: taskVanSpacePercent,
       });
 
       const savedTask = await newTask.save();
@@ -1826,9 +1852,12 @@ const taskCtrl = {
 
         console.log('Final items to save:', JSON.stringify(updates.items, null, 2));
 
+        // Calculate and save van space % from items (same logic as createTask)
+        const taskVanSpacePercent = await calculateTaskVanSpacePercent(updates.items);
+
         // Save the new items first
         await Task.findByIdAndUpdate(taskId, {
-          $set: { items: updates.items },
+          $set: { items: updates.items, spaceOfVan: taskVanSpacePercent },
         });
 
         // Re-fetch the task with populated items
