@@ -44,7 +44,7 @@ const blueSheetController = {
       endOfDay.setUTCHours(23, 59, 59, 999);
 
       // Get all trucks
-      const trucks = await Truck.find().populate('driverId helperId');
+      const trucks = await Truck.find().populate('vanId').populate('driverId helperId');
       const blueSheets = [];
       const truckRouteTotals = [];
 
@@ -127,9 +127,9 @@ const blueSheetController = {
           commissionPercentage = routeTotal / totalIn; // Column E: Percentage commission (D / B)
           commission = commissionPercentage * COMMISSION_POOL; // Column F: Commission Paid day (E * C)
           
-          console.log(`Truck ${truck.name || truck._id}: routeTotal=${routeTotal}, totalIn=${totalIn}, commissionPercentage=${commissionPercentage}, commission=${commission}`);
+          console.log(`Truck ${truck.name || (truck.vanId ? (truck.vanId.name || truck.vanId.matricule) : truck._id)}: routeTotal=${routeTotal}, totalIn=${totalIn}, commissionPercentage=${commissionPercentage}, commission=${commission}`);
         } else {
-          console.log(`⚠️ TotalIn is 0 - cannot calculate commission percentage for truck ${truck.name || truck._id}`);
+          console.log(`⚠️ TotalIn is 0 - cannot calculate commission percentage for truck ${truck.name || (truck.vanId ? (truck.vanId.name || truck.vanId.matricule) : truck._id)}`);
         }
 
         // Get tipping for this day (Column G: Tipping for this day)
@@ -149,8 +149,8 @@ const blueSheetController = {
         }
 
         // Get van hire and insurance from truck
-        const vanHire = truck.vanHire || 0;
-        const insurance = truck.insurance || 0;
+        const vanHire = (truck.vanId && truck.vanId.vanHire) || 0;
+        const insurance = (truck.vanId && truck.vanId.insurance) || 0;
 
         // Get driver OT (extraHours * extraHourPrice)
         let driverOT = 0;
@@ -393,9 +393,9 @@ const blueSheetController = {
       const blueSheets = await BlueSheet.find({
         date: dateObj,
       })
-        .populate('truckId', 'name matricule driverId helperId')
+        .populate({ path: 'truckId', select: 'vanId driverId helperId', populate: { path: 'vanId', select: 'name matricule' } })
         .populate('pcnDamages')
-        .sort({ 'truckId.name': 1 });
+        .sort({ 'truckId.vanId.matricule': 1 });
 
       res.status(200).json({
         message: 'Blue sheets retrieved successfully',

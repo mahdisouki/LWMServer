@@ -26,7 +26,6 @@ connectToDatabase()
     // ✅ Load your routes, middleware, jobs, etc.
     require('./jobs/dailySheetCron');
     require('./jobs/blueSheetCron');
-    require('./jobs/AssignedStaffCron');
     require('./cron/clearNotifications');
     require('./cron/clearChats');
     require('./cron/autoEndShifts');

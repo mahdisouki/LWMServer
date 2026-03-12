@@ -39,7 +39,7 @@ const dailySheetController = {
           const allTippingRequestIdsForDate = [];
 
           if (!truck.tasks) {
-            console.log(`Truck ${truck.name} has no tasks`);
+            console.log(`Truck ${truck._id} has no tasks`);
             continue;
           }
 
@@ -49,7 +49,7 @@ const dailySheetController = {
           if (truck.tasks instanceof Map) {
             // If it's a Map
             const taskKeys = Array.from(truck.tasks.keys());
-            console.log(`Truck ${truck.name} task keys (Map):`, taskKeys);
+            console.log(`Truck ${truck._id} task keys (Map):`, taskKeys);
             if (!taskKeys.includes(formattedDate)) {
               console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
             }
@@ -57,14 +57,14 @@ const dailySheetController = {
           } else if (typeof truck.tasks === 'object') {
             // If it's an Object
             const taskKeys = Object.keys(truck.tasks);
-            console.log(`Truck ${truck.name} task keys (Object):`, taskKeys);
+            console.log(`Truck ${truck._id} task keys (Object):`, taskKeys);
             if (!taskKeys.includes(formattedDate)) {
               console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
             }
             tasksForDate = truck.tasks[formattedDate] || [];
           }
 
-          console.log(`Tasks for ${formattedDate} in truck ${truck.name}:`, tasksForDate);
+          console.log(`Tasks for ${formattedDate} in truck ${truck._id}:`, tasksForDate);
 
           // Extract task IDs and tipping request IDs from the tasks array
           if (Array.isArray(tasksForDate)) {
@@ -93,7 +93,7 @@ const dailySheetController = {
               }
             });
 
-            console.log(`[GENERATE] Extracted task IDs for ${formattedDate} in truck ${truck.name}:`, allTaskIdsForDate.length);
+            console.log(`[GENERATE] Extracted task IDs for ${formattedDate} in truck ${truck._id}:`, allTaskIdsForDate.length);
           }
 
           // Fetch jobs based on task IDs and status

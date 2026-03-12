@@ -137,7 +137,7 @@ const pcnDamageController = {
             // the truck used on this daily sheet. This aligns the validation
             // with the display logic, which falls back to the daily sheet's truck.
             if (vanMatricule) {
-                const sheetTruck = await Truck.findById(dailySheet.truckId);
+                const sheetTruck = await Truck.findById(dailySheet.truckId).populate('vanId');
 
                 if (!sheetTruck) {
                     return res.status(400).json({
@@ -145,7 +145,8 @@ const pcnDamageController = {
                     });
                 }
 
-                if (sheetTruck.matricule !== vanMatricule) {
+                const truckMatricule = sheetTruck.vanId ? sheetTruck.vanId.matricule : null;
+                if (truckMatricule !== vanMatricule) {
                     return res.status(400).json({
                         message: 'Selected van does not match the van used on this daily sheet.',
                     });
@@ -414,7 +415,8 @@ const pcnDamageController = {
                         },
                         {
                             path: 'truckId',
-                            select: 'matricule'
+                            select: 'vanId',
+                            populate: { path: 'vanId', select: 'matricule' }
                         }
                     ]
                 })
@@ -434,7 +436,7 @@ const pcnDamageController = {
 
                 const resolvedVanMatricule =
                     pcn.vanMatricule ||
-                    (truckFromDailySheet && truckFromDailySheet.matricule) ||
+                    (truckFromDailySheet && truckFromDailySheet.vanId && truckFromDailySheet.vanId.matricule) ||
                     null;
 
                 return {

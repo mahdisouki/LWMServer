@@ -1,6 +1,7 @@
 const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
+const { findTruckByTruckName, truckDisplayName } = require('../utils/truckHelpers');
 const { User } = require('../models/User');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
@@ -990,9 +991,9 @@ const taskCtrl = {
       const tasksWithTrucks = await Promise.all(
         tasks.map(async (task) => {
           if (task.truckId) {
-            const truck = await Truck.findById(task.truckId);
+            const truck = await Truck.findById(task.truckId).populate('vanId');
             task = task.toObject();
-            task.truckName = truck?.name ?? null;
+            task.truckName = truck ? truckDisplayName(truck) : null;
           }
           return task;
         }),
@@ -1016,7 +1017,7 @@ const taskCtrl = {
     const { truckName } = req.body;
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
@@ -1195,7 +1196,7 @@ const taskCtrl = {
             deassignment: {
               type: 'deassign_truck',
               truckId: truck._id,
-              truckName: truck.name,
+              truckName: truckDisplayName(truck),
               taskDate,
             },
           },
@@ -1235,7 +1236,7 @@ const taskCtrl = {
       }
 
       // Find the new truck by name
-      const newTruck = await Truck.findOne({ name: newTruckName });
+      const newTruck = await findTruckByTruckName(newTruckName);
       if (!newTruck) {
         return res.status(404).json({ message: 'New truck not found' });
       }
@@ -1293,7 +1294,7 @@ const taskCtrl = {
             move: {
               type: 'move_truck',
               fromTruckId: currentTruck._id,
-              fromTruckName: currentTruck.name,
+              fromTruckName: truckDisplayName(currentTruck),
               toTruckId: newTruck._id,
               toTruckName: newTruckName,
               taskDate,

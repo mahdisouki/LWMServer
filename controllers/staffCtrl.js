@@ -3,12 +3,14 @@ const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const Admin = require('../models/Admin');
 const Truck = require('../models/Truck');
+const { findTruckByTruckName } = require('../utils/truckHelpers');
 const bcrypt = require('bcrypt');
 const socket = require('../socket'); // Ensure you have the correct path to your socket module
 const APIfeatures = require('../utils/APIFeatures');
 const { optimizeRoute } = require('../helper/OpitomRoute');
 const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
+const { logUnitAssignment } = require('../services/unitAssignmentLogService');
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -245,7 +247,7 @@ const staffManagement = {
       const userIds = users.map((user) => user._id);
       const trucks = await Truck.find({
         $or: [{ driverId: { $in: userIds } }, { helperId: { $in: userIds } }],
-      }).select('name driverId helperId driverSpecificDays helperSpecificDays');
+      }).select('name driverId helperId');
 
       const usersWithTrucks = users.map((user) => {
         const userTrucks = trucks.filter(
@@ -439,10 +441,10 @@ const staffManagement = {
 
   assignDriverToTruck: async (req, res) => {
     const { driverId } = req.params;
-    const { truckName, startDate, endDate } = req.body; // Accept start and end dates
+    const { truckName, startAt } = req.body; // startAt = start date and time (ISO string or Date)
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
       const driver = await Driver.findById(driverId);
 
       if (!truck) {
@@ -453,62 +455,41 @@ const staffManagement = {
         return res.status(404).json({ message: 'Driver not found' });
       }
 
-      // Check if the truck already has a driver assigned
       if (truck.driverId) {
         return res
           .status(400)
           .json({ message: 'This truck already has a driver assigned' });
       }
 
-      // Assign driver to truck
-      truck.driverId = driverId;
-
-      // Set the specific days for the driver
-      truck.driverSpecificDays = {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-      };
-
-      await truck.save();
-
-      // Update the driver's designation with the truck name and assign truck ID
-      // driver.designation = truckName; // Adjust as needed
-      driver.truckId = truck._id; // Assign the truck ID to the driver
-      await driver.save();
-
-      // Update daily sheets for the driver assignment period
-      try {
-        if (truck.driverId) {
-          // Update daily sheets for each date in the assignment period
-          const startDateObj = new Date(startDate);
-          const endDateObj = new Date(endDate);
-          const currentDate = new Date(startDateObj);
-          
-          while (currentDate <= endDateObj) {
-            const dateStr = currentDate.toISOString().split('T')[0];
-            
-            const mockReq = {
-              body: { date: dateStr }
-            };
-            const mockRes = {
-              status: () => ({ json: () => { } }),
-              json: () => { }
-            };
-            
-            await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
-            
-            // Move to next day
-            currentDate.setDate(currentDate.getDate() + 1);
-          }
-          
-          console.log('Daily sheets updated for driver assignment period:', startDate, 'to', endDate);
-        }
-      } catch (dailySheetError) {
-        console.error('Error updating daily sheets after driver assignment:', dailySheetError);
-        // Don't fail the main operation if daily sheet update fails
+      const startAtDate = startAt ? new Date(startAt) : new Date();
+      if (isNaN(startAtDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid startAt date/time' });
       }
 
-      // Create a log of the driver assignment
+      truck.driverId = driverId;
+      await truck.save();
+
+      await logUnitAssignment({
+        truckId: truck._id,
+        type: 'driver',
+        refId: driverId,
+        event: 'assigned',
+        by: req.user && req.user._id,
+        startAt: startAtDate,
+      });
+
+      driver.truckId = truck._id;
+      await driver.save();
+
+      try {
+        const dateStr = startAtDate.toISOString().split('T')[0];
+        const mockReq = { body: { date: dateStr } };
+        const mockRes = { status: () => ({ json: () => { } }), json: () => { } };
+        await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+      } catch (dailySheetError) {
+        console.error('Error updating daily sheets after driver assignment:', dailySheetError);
+      }
+
       await loggingService.createLog({
         userId: req.user._id,
         username: req.user.username,
@@ -519,8 +500,7 @@ const staffManagement = {
           assignment: {
             type: 'driver_to_truck',
             truckName,
-            startDate,
-            endDate,
+            startAt: startAtDate,
             driverId,
             truckId: truck._id,
           },
@@ -541,40 +521,42 @@ const staffManagement = {
 
   assignHelperToTruck: async (req, res) => {
     const { helperId } = req.params;
-    const { truckName, startDate, endDate } = req.body; // Accept start and end dates
+    const { truckName, startAt } = req.body; // startAt = start date and time (ISO string or Date)
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
       const helper = await User.findById(helperId);
 
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
-      // Check if the truck already has a helper assigned
       if (truck.helperId) {
         return res
           .status(400)
           .json({ message: 'This truck already has a helper assigned' });
       }
 
-      // Assign helper to truck
+      const startAtDate = startAt ? new Date(startAt) : new Date();
+      if (isNaN(startAtDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid startAt date/time' });
+      }
+
       truck.helperId = helperId;
-
-      // Set the specific days for the helper
-      truck.helperSpecificDays = {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-      };
-
       await truck.save();
 
-      // Update the helper's designation with the truck name and assign truck ID
-      // helper.designation = truckName; // Adjust as needed
-      helper.truckId = truck._id; // Assign the truck ID to the helper
+      await logUnitAssignment({
+        truckId: truck._id,
+        type: 'helper',
+        refId: helperId,
+        event: 'assigned',
+        by: req.user && req.user._id,
+        startAt: startAtDate,
+      });
+
+      helper.truckId = truck._id;
       await helper.save();
 
-      // Create a log of the helper assignment
       await loggingService.createLog({
         userId: req.user._id,
         username: req.user.username,
@@ -585,8 +567,7 @@ const staffManagement = {
           assignment: {
             type: 'helper_to_truck',
             truckName,
-            startDate,
-            endDate,
+            startAt: startAtDate,
             helperId,
             truckId: truck._id,
           },
@@ -610,7 +591,7 @@ const staffManagement = {
     const { truckName, startDate, endDate } = req.body;
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
       const driver = await Driver.findById(driverId);
 
       if (!truck) {
@@ -675,7 +656,7 @@ const staffManagement = {
     const { truckName, startDate, endDate } = req.body;
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
       const helper = await Helper.findById(helperId);
 
       if (!truck) {
@@ -740,7 +721,7 @@ const staffManagement = {
     const { truckName } = req.body;
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
@@ -794,7 +775,7 @@ const staffManagement = {
     const { truckName } = req.body;
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
@@ -845,10 +826,10 @@ const staffManagement = {
 
   deassignDriverFromTruck: async (req, res) => {
     const { driverId } = req.params;
-    const { truckName } = req.body;
+    const { truckName, endAt } = req.body; // endAt = end date and time (ISO string or Date)
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
 
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
@@ -860,10 +841,22 @@ const staffManagement = {
         });
       }
 
-      truck.driverId = undefined;
-      truck.driverSpecificDays = undefined;
+      const endAtDate = endAt ? new Date(endAt) : new Date();
+      if (isNaN(endAtDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid endAt date/time' });
+      }
 
+      truck.driverId = undefined;
       await truck.save();
+
+      await logUnitAssignment({
+        truckId: truck._id,
+        type: 'driver',
+        refId: driverId,
+        event: 'deassigned',
+        by: req.user && req.user._id,
+        endAt: endAtDate,
+      });
 
       const driver = await Driver.findById(driverId);
       if (driver) {
@@ -903,10 +896,10 @@ const staffManagement = {
 
   deassignHelperFromTruck: async (req, res) => {
     const { helperId } = req.params;
-    const { truckName } = req.body;
+    const { truckName, endAt } = req.body; // endAt = end date and time (ISO string or Date)
 
     try {
-      const truck = await Truck.findOne({ name: truckName });
+      const truck = await findTruckByTruckName(truckName);
 
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
@@ -918,10 +911,22 @@ const staffManagement = {
         });
       }
 
-      truck.helperId = undefined;
-      truck.helperSpecificDays = undefined;
+      const endAtDate = endAt ? new Date(endAt) : new Date();
+      if (isNaN(endAtDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid endAt date/time' });
+      }
 
+      truck.helperId = undefined;
       await truck.save();
+
+      await logUnitAssignment({
+        truckId: truck._id,
+        type: 'helper',
+        refId: helperId,
+        event: 'deassigned',
+        by: req.user && req.user._id,
+        endAt: endAtDate,
+      });
 
       const helper = await Helper.findById(helperId);
       if (helper) {

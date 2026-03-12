@@ -17,6 +17,8 @@ const payrollSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'Truck'
     },
+    vanReg:{type: String,},
+    workingWith: {type:String},
     totalHoursWorked: { type: Number, default: 0 }, // Total hours worked
     regularHours: { type: Number, default: 0 }, // Regular hours (up to 8h)
     extraHours: { type: Number, default: 0 }, // Extra hours (after 8h)

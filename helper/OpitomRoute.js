@@ -70,10 +70,13 @@ const createOptimoOrders = async (tasks) => {
 };
 
 // Helper function to create or update vehicle
+const truckVehicleId = (truck) =>
+  truck.name || (truck.vanId && (truck.vanId.matricule || truck.vanId.name)) || truck._id.toString();
+
 const createOrUpdateVehicle = async (truck) => {
   const vehicle = {
-    vehicleId: truck.name,
-    name: truck.name,
+    vehicleId: truckVehicleId(truck),
+    name: truckVehicleId(truck),
     startLocation: {
       address: truck.startingLocation?.address || "Default Start Location",
       latitude: truck.startingLocation?.coordinates[1] || 51.5074,
@@ -88,7 +91,7 @@ const createOrUpdateVehicle = async (truck) => {
       from: "08:00",
       to: "17:00"
     },
-    capacity: truck.loadCapacity || 500,
+    capacity: (truck.vanId && truck.vanId.loadCapacity) || 500,
     customField1: truck.registrationNumber || "",
     customField2: truck.model || ""
   };
@@ -170,7 +173,7 @@ const getRoutes = async (date) => {
 const optimizeRoute = async (truckId, date) => {
   try {
     // Find the truck and its tasks
-    const truck = await Truck.findById(truckId);
+    const truck = await Truck.findById(truckId).populate('vanId');
     if (!truck) {
       throw new Error('Truck not found');
     }
@@ -200,7 +203,7 @@ const optimizeRoute = async (truckId, date) => {
     const routes = await getRoutes(date);
 
     // Find the route for this truck
-    const truckRoute = routes.find(route => route.vehicleId === truck.name);
+    const truckRoute = routes.find(route => route.vehicleId === truckVehicleId(truck));
     if (!truckRoute) {
       throw new Error('No route found for this truck');
     }

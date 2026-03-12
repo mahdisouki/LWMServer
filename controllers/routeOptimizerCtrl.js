@@ -6,6 +6,7 @@
 const axios = require('axios');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
+const { truckDisplayName } = require('../utils/truckHelpers');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
 //https://routeoptimiser.duckdns.org
@@ -384,7 +385,7 @@ async function calculateRoutesExternal(req, res) {
     const endOfDay = new Date(inputDate);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
-    const trucks = await Truck.find({ driverId: { $ne: null } }).populate('driverId');
+    const trucks = await Truck.find({ driverId: { $ne: null } }).populate('vanId').populate('driverId');
     if (!trucks.length) {
       return res.status(400).json({
         message: 'No trucks with drivers available for assignment',
@@ -393,7 +394,7 @@ async function calculateRoutesExternal(req, res) {
     console.log('[RouteOptimizer:external] date=%s trucks=%d', dateStr, trucks.length);
     trucks.forEach((t, i) => {
       const driverIdStr = t.driverId ? (t.driverId._id ? t.driverId._id.toString() : t.driverId.toString()) : 'none';
-      console.log('[RouteOptimizer:external] truck[%d] _id=%s name=%s driverId=%s', i, t._id.toString(), t.name, driverIdStr);
+      console.log('[RouteOptimizer:external] truck[%d] _id=%s name=%s driverId=%s', i, t._id.toString(), truckDisplayName(t), driverIdStr);
     });
 
     const tasks = await Task.find({
@@ -524,7 +525,7 @@ async function calculateRoutesExternal(req, res) {
         console.log('[RouteOptimizer:external] routeKey=%s no truck matched (skip)', routeKey);
         continue;
       }
-      console.log('[RouteOptimizer:external] routeKey=%s matched truck name=%s _id=%s (by %s)', routeKey, truck.name, truck._id.toString(), matchType);
+      console.log('[RouteOptimizer:external] routeKey=%s matched truck name=%s _id=%s (by %s)', routeKey, truckDisplayName(truck), truck._id.toString(), matchType);
       // Remove old routes for this date so we don't duplicate tasks
       if (!truck.tasks) truck.tasks = new Map();
       truck.tasks.set(dateStr, []);
@@ -545,9 +546,9 @@ async function calculateRoutesExternal(req, res) {
         assignedThisTruck += 1;
       }
       if (missingJobIds.length) {
-        console.log('[RouteOptimizer:external] truck %s: job_ids not in jobIdToTaskId: %s', truck.name, missingJobIds.join(', '));
+        console.log('[RouteOptimizer:external] truck %s: job_ids not in jobIdToTaskId: %s', truckDisplayName(truck), missingJobIds.join(', '));
       }
-      console.log('[RouteOptimizer:external] truck %s: assigned %d tasks (total so far %d)', truck.name, assignedThisTruck, assignedCount);
+      console.log('[RouteOptimizer:external] truck %s: assigned %d tasks (total so far %d)', truckDisplayName(truck), assignedThisTruck, assignedCount);
       await truck.save();
     }
     console.log('[RouteOptimizer:external] persist done assignedCount=%d', assignedCount);

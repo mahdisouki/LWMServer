@@ -1,6 +1,7 @@
 const TippingRequest = require('../models/TippingRequest');
 const { User } = require('../models/User');
 const Truck = require('../models/Truck');
+const { truckDisplayName } = require('../utils/truckHelpers');
 const APIfeatures = require('../utils/APIFeatures');
 const { emitEvent, emitNotificationToUser } = require('../socket');
 const Driver = require('../models/Driver');
@@ -58,7 +59,7 @@ const updateDailySheetForTippingRequest = async (tippingRequest) => {
         });
 
         if (!exists) {
-          console.log(`Adding tipping request ${tippingRequest._id} to truck ${truck.name} for date ${formattedDate}`);
+          console.log(`Adding tipping request ${tippingRequest._id} to truck ${truckDisplayName(truck)} for date ${formattedDate}`);
           truck.addTippingRequest(formattedDate, tippingRequest._id);
           await truck.save();
         }
@@ -129,7 +130,7 @@ const tippingController = {
       try {
         const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
         const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver/Helper';
-        const notificationMessage = `${userName} has created a new tipping request for ${truck.name}`;
+        const notificationMessage = `${userName} has created a new tipping request for ${truckDisplayName(truck)}`;
 
         // Send notification to all admins
         for (const admin of adminUsers) {
@@ -166,7 +167,7 @@ const tippingController = {
           status: newTippingRequest.status,
           createdAt: newTippingRequest.createdAt,
           userName: user.username,
-          truckName: truck.name,
+          truckName: truckDisplayName(truck),
         },
       };
 
@@ -272,7 +273,7 @@ const tippingController = {
           createdAt: newTippingRequest.createdAt,
           createdBy: admin.username, // Admin's name
           driverName: driver.username, // Driver's name
-          // truckName: truck.name, // Truck's name
+          // truckName: truckDisplayName(truck), // Truck's name
         },
       };
 

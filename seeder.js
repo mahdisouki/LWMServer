@@ -92,12 +92,8 @@ async function createTrucks() {
 
         const truck = new Truck({
             driverId: drivers[i]._id,
-            driverSpecificDays: { startDate: new Date(), endDate: new Date() },
             helperId: helpers[i]._id,
-            helperSpecificDays: { startDate: new Date(), endDate: new Date() },
             name: `Truck ${i + 1}`,
-            loadCapacity: 1000 + i * 100,
-            matricule: `TRUCK${i + 1}`,
             tasks: truckTasks,
         });
         await truck.save();

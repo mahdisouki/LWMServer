@@ -566,7 +566,7 @@ const driverManagement = {
       res.status(200).json({
         message: 'Tipping request added to truck tasks successfully',
         truckId: truck._id,
-        truckName: truck.name,
+        truckName: truck.name || (truck.vanId ? (truck.vanId.name || truck.vanId.matricule) : truck._id),
         date: date,
         order: order || 0
       });
@@ -644,13 +644,13 @@ const driverManagement = {
         },
         { $set: statusUpdate },
         { new: true, upsert: true, setDefaultsOnInsert: true }
-      ).populate('truckId', 'name matricule driverId helperId');
+      ).populate({ path: 'truckId', select: 'vanId driverId helperId', populate: { path: 'vanId', select: 'name matricule' } });
 
       // Send notification to all admins
       try {
         const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
         const truck = truckStatus?.truckId;
-        const truckName = truck?.name || truck?.matricule || 'Truck';
+        const truckName = truck && truck.vanId ? (truck.vanId.name || truck.vanId.matricule) : (truck ? truck._id.toString() : 'Truck');
 
         // Get driver name if available
         let driverName = '';
@@ -1587,7 +1587,8 @@ const driverManagement = {
         })
         .populate({
           path: 'truckId',
-          select: 'name matricule driverId helperId',
+          select: 'vanId driverId helperId',
+          populate: { path: 'vanId', select: 'name matricule' },
         });
 
       const staff = activePayrolls
@@ -1622,8 +1623,8 @@ const driverManagement = {
             truck: truck
               ? {
                 id: truck._id,
-                name: truck.name,
-                matricule: truck.matricule,
+                name: truck.name || (truck.vanId ? (truck.vanId.name || truck.vanId.matricule) : null),
+                matricule: truck.vanId ? truck.vanId.matricule : null,
                 driverId: truck.driverId,
                 helperId: truck.helperId,
               }

@@ -2,16 +2,10 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const truckSchema = new Schema({
+  name: { type: String, required: false }, // unit name (display / lookup)
+  vanId: { type: Schema.Types.ObjectId, ref: 'Van', required: false }, // optional until migration; Van holds asset data
   driverId: { type: Schema.Types.ObjectId, ref: 'Driver' },
-  driverSpecificDays: {
-    startDate: { type: Date },
-    endDate: { type: Date },
-  },
   helperId: { type: Schema.Types.ObjectId, ref: 'Helper' },
-  helperSpecificDays: {
-    startDate: { type: Date },
-    endDate: { type: Date },
-  },
   extraDrivers: [{
     driverId: { type: Schema.Types.ObjectId, ref: 'Driver', required: true },
     startDate: { type: Date },
@@ -28,23 +22,20 @@ const truckSchema = new Schema({
     type: Map,
     of: [{
       taskId: { type: Schema.Types.ObjectId },
-      type: { 
-        type: String, 
-        enum: ['task', 'TippingRequest'], 
-       
+      type: {
+        type: String,
+        enum: ['task', 'TippingRequest'],
       },
       order: { type: Number, default: 0 }
     }],
     default: new Map(),
     validate: {
       validator: function (tasks) {
-        // Validate that all entries are proper Map entries
         if (!(tasks instanceof Map)) return false;
         for (let [key, value] of tasks) {
           if (typeof key !== 'string' || !Array.isArray(value)) {
             return false;
           }
-          // Validate each item in the array
           for (let item of value) {
             if (!item.taskId || !item.type) {
               return false;
@@ -56,12 +47,11 @@ const truckSchema = new Schema({
       message: 'Tasks must be a valid Map with string keys and array values containing {taskId, type, order} objects'
     }
   },
-  name: { type: String, required: true, unique: true },
-  loadCapacity: { type: Number },
-  matricule: { type: String, required: true, unique: true },
-  fuelNumber: { type: String, required: true, unique: true },
-  vanHire: { type: Number, default: 0 }, // Daily van hire cost (Column E)
-  insurance: { type: Number, default: 0 }, // Daily insurance cost (Column F)
+  // Assignment log refs with date (unit assignment history)
+  assignmentLogs: [{
+    logId: { type: Schema.Types.ObjectId, ref: 'UnitAssignmentLog', required: true },
+    at: { type: Date, required: true },
+  }],
 });
 
 // Static method to clean up corrupted tasks data
