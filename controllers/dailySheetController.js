@@ -1,10 +1,11 @@
-const DailySheet = require('../models/DailySheet'); // Import the DailySheet model
+const DailySheet = require('../models/DailySheet');
 const Task = require('../models/Task');
 const TippingRequest = require('../models/TippingRequest');
 const Driver = require('../models/Driver');
 const APIfeatures = require('../utils/APIFeatures');
-const Truck = require('../models/Truck')
-const { User } = require('../models/User')
+const Truck = require('../models/Truck');
+const { User } = require('../models/User');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const Payroll = require('../models/Payroll');
 const dailySheetController = {
   generateDailySheetsForAllDrivers: async (req, res) => {
@@ -137,6 +138,9 @@ const dailySheetController = {
 
           const totalIncome = totalCashIncome + totalTippingIncome;
 
+          // Who was assigned to this truck on this day (from UnitAssignmentLogRange)? Fall back to truck if none.
+          const assigned = await getAssignedForDayFromRanges(truck._id, formattedDate);
+
           // Upsert daily sheet
           const dailySheet = await DailySheet.findOneAndUpdate(
             { 
@@ -145,8 +149,10 @@ const dailySheetController = {
               date: { $gte: startOfDay, $lte: endOfDay } 
             },
             {
-              driverId: driver._id,
+              driverId: assigned.driverId || driver._id,
               truckId: truck._id,
+              vanId: assigned.vanId || truck.vanId,
+              helperId: assigned.helperId || truck.helperId,
               date: new Date(formattedDate), // ensure correct format
               jobsDone: jobsDone.map(job => job._id),
               jobsPending: jobsPending.map(job => job._id),
@@ -195,6 +201,8 @@ const dailySheetController = {
       }).populate([
         { path: 'driverId' },
         { path: 'truckId' },
+        { path: 'vanId' },
+        { path: 'helperId' },
         { path: 'jobsDone' },
         { path: 'jobsPending' },
         { path: 'jobsCancelled' },
@@ -255,7 +263,7 @@ const dailySheetController = {
         { driverId, date, ...(req.body.truckId && { truckId: req.body.truckId }) },
         updates,
         { new: true },
-      ).populate('driverId truckId jobsDone jobsPending jobsCancelled tippingRequests');
+      ).populate('driverId truckId vanId helperId jobsDone jobsPending jobsCancelled tippingRequests');
 
       if (!dailySheet) {
         return res.status(404).json({ message: 'Daily sheet not found' });
@@ -283,7 +291,7 @@ const dailySheetController = {
         date: { $gte: startDate, $lte: endDate },
         ...(req.query.truckId && { truckId: req.query.truckId }),
       }).populate(
-        'driverId truckId jobsDone jobsPending jobsCancelled tippingRequests',
+        'driverId truckId vanId helperId jobsDone jobsPending jobsCancelled tippingRequests',
       ).populate({
         path: 'tippingRequests',
         populate: {
@@ -386,9 +394,13 @@ const dailySheetController = {
         });
 
         if (!targetDailySheet) {
-          // Create a new daily sheet for the new date
+          // Who was assigned to this truck on the new date (from UnitAssignmentLogRange)?
+          const assignedNew = await getAssignedForDayFromRanges(dailySheet.truckId, newDateObj);
           targetDailySheet = new DailySheet({
             driverId,
+            truckId: dailySheet.truckId,
+            vanId: assignedNew.vanId || dailySheet.vanId,
+            helperId: assignedNew.helperId || dailySheet.helperId,
             date: newDateObj,
             fuelLogs: [],
           });
@@ -688,8 +700,8 @@ const dailySheetController = {
       for (const driver of drivers) {
         const trucks = await Truck.find({ driverId: driver._id });
         for (const truck of trucks) {
+          // Find sheet by truckId + date (sheet driver may differ from truck.driverId when using UnitAssignmentLogRange)
           const existingDailySheet = await DailySheet.findOne({
-            driverId: driver._id,
             truckId: truck._id,
             date: { $gte: startOfDay, $lte: endOfDay },
           });
@@ -726,9 +738,13 @@ const dailySheetController = {
           const totalTippingIncome = tippingRequests.reduce((acc, tip) => (tip.status === 'Accepted' && tip.price ? acc + tip.price : acc), 0);
           const totalIncome = totalCashIncome + totalTippingIncome;
 
+          const assigned = await getAssignedForDayFromRanges(truck._id, formattedDate);
           const updatedDailySheet = await DailySheet.findByIdAndUpdate(
             existingDailySheet._id,
             {
+              driverId: assigned.driverId || existingDailySheet.driverId,
+              vanId: assigned.vanId || existingDailySheet.vanId,
+              helperId: assigned.helperId || existingDailySheet.helperId,
               jobsDone: jobsDone.map(job => job._id),
               jobsPending: jobsPending.map(job => job._id),
               jobsCancelled: jobsCancelled.map(job => job._id),

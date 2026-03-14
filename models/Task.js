@@ -4,6 +4,7 @@ const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si 
 const Counter = require('./Counter');
 const DailySheet = require('./DailySheet');
 const EWC_CODES = require('../config/ewcCodes');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 
 const taskSchema = new Schema(
   {
@@ -272,13 +273,21 @@ taskSchema.post('save', async function (doc) {
     });
 
     if (!dailySheet) {
+      const assigned = await getAssignedForDayFromRanges(truck._id, taskDate);
       dailySheet = new DailySheet({
-        driverId: truck.driverId,
+        driverId: assigned.driverId || truck.driverId,
         truckId: truck._id,
+        vanId: assigned.vanId || truck.vanId,
+        helperId: assigned.helperId || truck.helperId,
         date: doc.date,
         jobsPending: [doc._id]
       });
     } else {
+      // Sync driver/van/helper from assignment ranges for this day
+      const assigned = await getAssignedForDayFromRanges(truck._id, taskDate);
+      if (assigned.driverId) dailySheet.driverId = assigned.driverId;
+      if (assigned.vanId) dailySheet.vanId = assigned.vanId;
+      if (assigned.helperId) dailySheet.helperId = assigned.helperId;
       // Add task to jobsPending if not already in any of the job arrays
       if (!dailySheet.jobsDone.includes(doc._id) &&
         !dailySheet.jobsPending.includes(doc._id) &&

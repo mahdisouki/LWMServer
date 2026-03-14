@@ -5,18 +5,30 @@ const Truck = require('../models/Truck');
 const Payroll = require('../models/Payroll');
 const blueSheetController = require('./blueSheetController');
 
+// Format date to YYYY-MM-DD using local timezone (for payroll date matching)
+const toLocalDateStr = (d) => {
+    if (!d) return null;
+    const x = new Date(d);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
+
 const pcnDamageController = {
     // Helper function to recalculate payroll PCN/Damages
     recalculatePayrollPcnDamages: async (date, userId) => {
         try {
-            // Ensure date is a Date object
-            const targetDate = new Date(date);
-            const startDate = new Date(targetDate);
-            startDate.setHours(0, 0, 0, 0);
-            const endDate = new Date(targetDate);
-            endDate.setHours(23, 59, 59, 999);
+            // Parse date - support YYYY-MM-DD, DD/MM/YYYY, ISO
+            const parsed = new Date(date);
+            if (isNaN(parsed.getTime())) {
+                console.error('recalculatePayrollPcnDamages: invalid date', date);
+                return;
+            }
+            const y = parsed.getFullYear();
+            const m = parsed.getMonth();
+            const d = parsed.getDate();
+            const startDate = new Date(y, m, d, 0, 0, 0, 0);
+            const endDate = new Date(y, m, d, 23, 59, 59, 999);
 
-            // Find payroll records for this user on this date (using startTime to match the day)
+            // Find payroll records for this user on this date (startTime within day)
             const payrollRecords = await Payroll.find({
                 userId: userId,
                 startTime: { $gte: startDate, $lte: endDate }
@@ -24,36 +36,15 @@ const pcnDamageController = {
 
             if (payrollRecords.length === 0) {
                 console.log(`No payroll records found for user ${userId} on date ${date}`);
-                return; // No payroll records to update
+                return;
             }
 
-            // Get the daily sheet to find PCN/Damages
-            // For helpers, find via truck
-            let dailySheet = await DailySheet.findOne({
-                driverId: userId,
-                date: { $gte: startDate, $lte: endDate }
+            // Query PcnDamage by time (same local-day range) and deductedFromUserId
+            const pcnDamages = await PcnDamage.find({
+                time: { $gte: startDate, $lte: endDate },
+                deductedFromUserId: userId
             });
-
-            // If user is a helper and no daily sheet found, find via truck
-            if (!dailySheet) {
-                const truck = await Truck.findOne({ helperId: userId });
-                if (truck && truck.driverId) {
-                    dailySheet = await DailySheet.findOne({
-                        driverId: truck.driverId,
-                        date: { $gte: startDate, $lte: endDate }
-                    });
-                }
-            }
-
-            // Calculate total PCN/Damages for this user from the new PcnDamage model
-            let totalPcnDamages = 0;
-            if (dailySheet) {
-                const pcnDamages = await PcnDamage.find({
-                    dailySheetId: dailySheet._id,
-                    deductedFromUserId: userId
-                });
-                totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
-            }
+            const totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
 
             // Update all payroll records for this user on this date
             for (const payroll of payrollRecords) {
@@ -153,10 +144,10 @@ const pcnDamageController = {
                 }
             }
 
-            // Create new PcnDamage document
+            // Create new PcnDamage document (time = date; link via dailySheet.pcnDamages)
             const pcnDamage = new PcnDamage({
                 pcnReferenceNumber,
-                dailySheetId: dailySheet._id,
+                time: startDate,
                 reason,
                 amount,
                 deductedFromUserId,
@@ -166,6 +157,11 @@ const pcnDamageController = {
             });
 
             await pcnDamage.save();
+
+            // Add to daily sheet's pcnDamages array
+            dailySheet.pcnDamages = dailySheet.pcnDamages || [];
+            dailySheet.pcnDamages.push(pcnDamage._id);
+            await dailySheet.save();
 
             // Recalculate payroll for the user this PCN/Damage is deducted from
             await pcnDamageController.recalculatePayrollPcnDamages(date, deductedFromUserId);
@@ -185,63 +181,160 @@ const pcnDamageController = {
         }
     },
 
+    // Create PCN without a daily sheet (standalone)
+    addPcnDamageStandalone: async (req, res) => {
+        try {
+            const { date, pcnReferenceNumber, reason, amount, deductedFromUserId, addedBy, vanMatricule } = req.body;
+
+            if (!date || !reason || !deductedFromUserId) {
+                return res.status(400).json({
+                    message: 'date, reason and deductedFromUserId are required.'
+                });
+            }
+
+            const user = await User.findById(deductedFromUserId);
+            if (!user) {
+                return res.status(404).json({ message: 'User not found' });
+            }
+
+            const isDriver = user.role && (user.role.includes('Driver') || user.roleType === 'Driver');
+            const isHelper = user.role && (user.role.includes('Helper') || user.roleType === 'Helper');
+            if (!isDriver && !isHelper) {
+                return res.status(400).json({
+                    message: 'deductedFromUserId must be a Driver or Helper'
+                });
+            }
+
+            const proofUrl = req.file ? req.file.path : (req.body.proofUrl || null);
+
+            const dateObj = new Date(date);
+            dateObj.setHours(0, 0, 0, 0);
+
+            const pcnDamage = new PcnDamage({
+                pcnReferenceNumber,
+                time: dateObj,
+                reason,
+                amount,
+                deductedFromUserId,
+                proofUrl,
+                addedBy,
+                vanMatricule,
+            });
+
+            await pcnDamage.save();
+
+            await pcnDamageController.recalculatePayrollPcnDamages(date, deductedFromUserId);
+
+            res.status(201).json({
+                message: 'PCN/Damage created successfully (standalone)',
+                pcnDamage
+            });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({
+                message: 'Failed to create PCN/Damage',
+                error: error.message
+            });
+        }
+    },
+
+    // Add an existing PCN to a daily sheet
+    addPcnDamageToDailySheet: async (req, res) => {
+        try {
+            const { dailySheetId, pcnDamageId } = req.body;
+
+            if (!dailySheetId || !pcnDamageId) {
+                return res.status(400).json({
+                    message: 'dailySheetId and pcnDamageId are required.'
+                });
+            }
+
+            const dailySheet = await DailySheet.findById(dailySheetId);
+            if (!dailySheet) {
+                return res.status(404).json({ message: 'Daily sheet not found' });
+            }
+
+            const pcnDamage = await PcnDamage.findById(pcnDamageId);
+            if (!pcnDamage) {
+                return res.status(404).json({ message: 'PCN/Damage not found' });
+            }
+
+            dailySheet.pcnDamages = dailySheet.pcnDamages || [];
+            if (dailySheet.pcnDamages.some(id => id.toString() === pcnDamageId)) {
+                return res.status(400).json({
+                    message: 'PCN/Damage is already on this daily sheet'
+                });
+            }
+            dailySheet.pcnDamages.push(pcnDamage._id);
+            await dailySheet.save();
+
+            await blueSheetController.syncBlueSheetPcnDamages(dailySheet._id);
+
+            res.status(200).json({
+                message: 'PCN/Damage added to daily sheet',
+                dailySheet,
+                pcnDamage
+            });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({
+                message: 'Failed to add PCN/Damage to daily sheet',
+                error: error.message
+            });
+        }
+    },
+
     updatePcnDamage: async (req, res) => {
         try {
             const { driverId, date, pcnDamageId } = req.params;
             const { pcnReferenceNumber, reason, amount, deductedFromUserId, newDate, vanMatricule } = req.body;
 
-            const startDate = new Date(date);
-            startDate.setHours(0, 0, 0, 0);
-            const endDate = new Date(date);
-            endDate.setHours(23, 59, 59, 999);
-
-            const dailySheet = await DailySheet.findOne({
-                driverId,
-                date: { $gte: startDate, $lte: endDate },
-            });
-
-            if (!dailySheet) {
-                return res.status(404).json({ message: 'Daily sheet not found' });
-            }
-
-            const pcnDamage = await PcnDamage.findOne({
-                _id: pcnDamageId,
-                dailySheetId: dailySheet._id
-            });
-
+            // Find PCN by ID (works for both sheet-linked and standalone)
+            const pcnDamage = await PcnDamage.findById(pcnDamageId);
             if (!pcnDamage) {
                 return res.status(404).json({ message: 'PCN/Damage not found' });
             }
 
-            // Store old values before update
+            // Store old values before update (use local date for payroll matching)
             const oldDeductedFromUserId = pcnDamage.deductedFromUserId;
-            const oldDailySheetId = pcnDamage.dailySheetId;
-            const oldDate = date;
+            const oldDate = pcnDamage.time ? toLocalDateStr(pcnDamage.time) : date;
+            let dateToUse = oldDate;
+
+            // Find sheets that contain this PCN (for BlueSheet sync)
+            const sheetsWithPcn = await DailySheet.find({ pcnDamages: pcnDamageId });
 
             // Handle date update if newDate is provided
-            let newDailySheet = dailySheet;
-            let dateToUse = date;
-
             if (newDate) {
                 const newStartDate = new Date(newDate);
                 newStartDate.setHours(0, 0, 0, 0);
                 const newEndDate = new Date(newDate);
                 newEndDate.setHours(23, 59, 59, 999);
 
-                // Find the new daily sheet for the new date
-                newDailySheet = await DailySheet.findOne({
+                // Find the new daily sheet for the new date (driverId from params)
+                const newDailySheet = await DailySheet.findOne({
                     driverId,
                     date: { $gte: newStartDate, $lte: newEndDate },
                 });
 
-                if (!newDailySheet) {
-                    return res.status(404).json({
-                        message: 'Daily sheet not found for the new date. Please generate the daily sheet first.'
-                    });
+                if (newDailySheet) {
+                    // Remove from old sheet(s)
+                    for (const sheet of sheetsWithPcn) {
+                        sheet.pcnDamages = (sheet.pcnDamages || []).filter(
+                            id => id.toString() !== pcnDamageId
+                        );
+                        await sheet.save();
+                        await blueSheetController.syncBlueSheetPcnDamages(sheet._id);
+                    }
+                    // Add to new sheet
+                    newDailySheet.pcnDamages = newDailySheet.pcnDamages || [];
+                    if (!newDailySheet.pcnDamages.some(id => id.toString() === pcnDamageId)) {
+                        newDailySheet.pcnDamages.push(pcnDamage._id);
+                    }
+                    await newDailySheet.save();
+                    await blueSheetController.syncBlueSheetPcnDamages(newDailySheet._id);
                 }
 
-                // Update the dailySheetId
-                pcnDamage.dailySheetId = newDailySheet._id;
+                pcnDamage.time = newStartDate;
                 dateToUse = newDate;
             }
 
@@ -298,10 +391,10 @@ const pcnDamageController = {
                 }
             }
 
-            // Sync BlueSheet(s): current daily sheet and old one if it changed
-            await blueSheetController.syncBlueSheetPcnDamages(pcnDamage.dailySheetId);
-            if (oldDailySheetId && oldDailySheetId.toString() !== pcnDamage.dailySheetId.toString()) {
-                await blueSheetController.syncBlueSheetPcnDamages(oldDailySheetId);
+            // Sync BlueSheet(s) for any DailySheet that contains this PCN (query after update)
+            const sheetsContainingPcn = await DailySheet.find({ pcnDamages: pcnDamage._id });
+            for (const sheet of sheetsContainingPcn) {
+                await blueSheetController.syncBlueSheetPcnDamages(sheet._id);
             }
 
             res.status(200).json({ message: 'PCN/Damage updated', pcnDamage });
@@ -316,40 +409,35 @@ const pcnDamageController = {
 
     deletePcnDamage: async (req, res) => {
         try {
-            const { driverId, date, pcnDamageId } = req.params;
+            const { pcnDamageId } = req.params;
 
-            const startDate = new Date(date);
-            startDate.setHours(0, 0, 0, 0);
-            const endDate = new Date(date);
-            endDate.setHours(23, 59, 59, 999);
-
-            const dailySheet = await DailySheet.findOne({
-                driverId,
-                date: { $gte: startDate, $lte: endDate },
-            });
-
-            if (!dailySheet) {
-                return res.status(404).json({ message: 'Daily sheet not found' });
-            }
-
-            const pcnDamage = await PcnDamage.findOne({
-                _id: pcnDamageId,
-                dailySheetId: dailySheet._id
-            });
-
+            const pcnDamage = await PcnDamage.findById(pcnDamageId);
             if (!pcnDamage) {
                 return res.status(404).json({ message: 'PCN/Damage not found' });
             }
 
-            // Store the deductedFromUserId before deleting
             const deductedFromUserId = pcnDamage.deductedFromUserId;
+            const pcnDate = pcnDamage.time ? toLocalDateStr(pcnDamage.time) : null;
+
+            // Remove from any DailySheet.pcnDamages
+            const sheetsWithPcn = await DailySheet.find({ pcnDamages: pcnDamageId });
+            for (const sheet of sheetsWithPcn) {
+                sheet.pcnDamages = (sheet.pcnDamages || []).filter(
+                    id => id.toString() !== pcnDamageId
+                );
+                await sheet.save();
+            }
 
             await PcnDamage.findByIdAndDelete(pcnDamageId);
 
-            // Recalculate payroll for the user this PCN/Damage was deducted from
-            await pcnDamageController.recalculatePayrollPcnDamages(date, deductedFromUserId);
-            // Sync BlueSheet pcnDamages and pcnDamage total
-            await blueSheetController.syncBlueSheetPcnDamages(dailySheet._id);
+            // Recalculate payroll for the user
+            if (pcnDate) {
+                await pcnDamageController.recalculatePayrollPcnDamages(pcnDate, deductedFromUserId);
+            }
+            // Sync BlueSheet for any sheet that had this PCN
+            for (const sheet of sheetsWithPcn) {
+                await blueSheetController.syncBlueSheetPcnDamages(sheet._id);
+            }
 
             res.status(200).json({ message: 'PCN/Damage deleted' });
         } catch (error) {
@@ -373,7 +461,16 @@ const pcnDamageController = {
             const dailySheet = await DailySheet.findOne({
                 driverId,
                 date: { $gte: startDate, $lte: endDate },
-            }).select('_id driverId date');
+            })
+                .select('_id driverId date pcnDamages')
+                .populate({
+                    path: 'pcnDamages',
+                    populate: {
+                        path: 'deductedFromUserId',
+                        select: 'username firstName lastName role roleType'
+                    },
+                    options: { sort: { time: -1 } }
+                });
 
             if (!dailySheet) {
                 return res.status(404).json({
@@ -381,13 +478,7 @@ const pcnDamageController = {
                 });
             }
 
-            // Get all PCN/Damages for this daily sheet
-            const pcnDamages = await PcnDamage.find({
-                dailySheetId: dailySheet._id
-            }).populate({
-                path: 'deductedFromUserId',
-                select: 'username firstName lastName role roleType'
-            }).sort({ time: -1 });
+            const pcnDamages = dailySheet.pcnDamages || [];
 
             res.status(200).json({
                 message: 'PCN/Damages retrieved',
@@ -443,7 +534,7 @@ const pcnDamageController = {
                     _id: pcn._id,
                     pcnReferenceNumber: pcn.pcnReferenceNumber,
                     driverId: driverFromDailySheet?._id || driverFromDailySheet,
-                    date: pcn.dailySheetId?.date,
+                    date: pcn.time || pcn.dailySheetId?.date,
                     reason: pcn.reason,
                     amount: pcn.amount,
                     deductedFromUserId: pcn.deductedFromUserId?._id || pcn.deductedFromUserId,

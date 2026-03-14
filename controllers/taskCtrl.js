@@ -5413,6 +5413,61 @@ const taskCtrl = {
       });
     }
   },
+
+  getTop10ItemsOrdered: async (req, res) => {
+    try {
+      const result = await Task.aggregate([
+        { $match: { 'items.0': { $exists: true } } },
+        { $unwind: '$items' },
+        { $match: { 'items.standardItemId': { $exists: true, $ne: null } } },
+        {
+          $group: {
+            _id: '$items.standardItemId',
+            orderCount: { $sum: 1 },
+            totalQuantity: { $sum: { $ifNull: ['$items.quantity', 1] } },
+          },
+        },
+        { $sort: { orderCount: -1 } },
+        { $limit: 10 },
+        {
+          $lookup: {
+            from: 'standarditems',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'item',
+          },
+        },
+        { $unwind: { path: '$item', preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            itemId: '$_id',
+            itemName: '$item.itemName',
+            orderCount: 1,
+            totalQuantity: 1,
+            _id: 0,
+          },
+        },
+      ]);
+      res.json({ topItems: result });
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to get top items', error: err.message });
+    }
+  },
+
+  getTop10PostcodesInOrders: async (req, res) => {
+    try {
+      const result = await Task.aggregate([
+        { $match: { postcode: { $exists: true, $ne: '', $ne: null } } },
+        { $group: { _id: '$postcode', orderCount: { $sum: 1 } } },
+        { $sort: { orderCount: -1 } },
+        { $limit: 10 },
+        { $project: { postcode: '$_id', orderCount: 1, _id: 0 } },
+      ]);
+      res.json({ topPostcodes: result });
+    } catch (err) {
+      res.status(500).json({ message: 'Failed to get top postcodes', error: err.message });
+    }
+  },
 };
 
 module.exports = taskCtrl;

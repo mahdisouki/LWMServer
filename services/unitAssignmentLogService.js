@@ -1,9 +1,10 @@
 const UnitAssignmentLog = require('../models/UnitAssignmentLog');
+const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const Truck = require('../models/Truck');
 
 /**
  * Create a unit assignment log entry and push it onto the truck's assignmentLogs.
- * Assigned = start date/time, deassigned = end date/time.
+ * Also creates/updates UnitAssignmentLogRange: assigned = new range (startAt, no endAt); deassigned = close latest open range.
  */
 async function logUnitAssignment({ truckId, type, refId, event, by, note, startAt, endAt }) {
   const now = new Date();
@@ -25,6 +26,26 @@ async function logUnitAssignment({ truckId, type, refId, event, by, note, startA
   await Truck.findByIdAndUpdate(truckId, {
     $push: { assignmentLogs: { logId: log._id, at } },
   });
+
+  // Keep UnitAssignmentLogRange in sync: one range per continuous assignment (start → end).
+  if (event === 'assigned') {
+    await UnitAssignmentLogRange.create({
+      truckId,
+      type,
+      refId,
+      startAt: doc.startAt,
+      endAt: null,
+      by: doc.by,
+      note: doc.note,
+    });
+  } else {
+    const rangeEnd = doc.endAt || now;
+    await UnitAssignmentLogRange.findOneAndUpdate(
+      { truckId, type, refId, endAt: null },
+      { $set: { endAt: rangeEnd } },
+      { sort: { startAt: -1 } }
+    );
+  }
 }
 
 /**
@@ -75,6 +96,32 @@ async function getAssignmentsForUnitOnDay(unitId, date) {
 }
 
 /**
+ * Who was assigned to truck on the given day (from UnitAssignmentLogRange)?
+ * Returns { vanId, driverId, helperId } — the refId for each type that had a range overlapping the day.
+ * Picks the range with latest startAt that still overlaps the day (most recent assignment active that day).
+ */
+async function getAssignedForDayFromRanges(truckId, date) {
+  const { startOfDay, endOfDay } = getDayBounds(date);
+  const result = { vanId: null, driverId: null, helperId: null };
+
+  for (const type of ['van', 'driver', 'helper']) {
+    const range = await UnitAssignmentLogRange.findOne({
+      truckId,
+      type,
+      startAt: { $lte: endOfDay },
+      $or: [{ endAt: null }, { endAt: { $gte: startOfDay } }],
+    })
+      .sort({ startAt: -1 })
+      .lean();
+    if (range) {
+      const key = type === 'van' ? 'vanId' : type === 'driver' ? 'driverId' : 'helperId';
+      result[key] = range.refId;
+    }
+  }
+  return result;
+}
+
+/**
  * Who was on unit X at date/time T? Returns { vanId, driverId, helperId } (or null for each).
  */
 async function getAssignmentAtTime(unitId, dateTime) {
@@ -110,4 +157,4 @@ async function getAssignmentAtTime(unitId, dateTime) {
   return result;
 }
 
-module.exports = { logUnitAssignment, getAssignmentsForUnitOnDay, getAssignmentAtTime };
+module.exports = { logUnitAssignment, getAssignmentsForUnitOnDay, getAssignedForDayFromRanges, getAssignmentAtTime };

@@ -6,8 +6,8 @@ const pcnDamageSchema = new Schema({
     dailySheetId: {
         type: Schema.Types.ObjectId,
         ref: 'DailySheet',
-        required: true
-    }, // Reference to the DailySheet
+        required: false
+    }, // Optional - PCN can exist without a daily sheet
     reason: { type: String, required: true },       // Reason for PCN/Damage
     amount: { type: Number, required: false },       // Amount to deduct
     deductedFromUserId: {

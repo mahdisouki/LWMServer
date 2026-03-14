@@ -5,7 +5,8 @@ const dailySheetSchema = new Schema({
   driverId: { type: Schema.Types.ObjectId, ref: 'Driver', required: true },  // Reference to the Driver
   truckId: { type: Schema.Types.ObjectId, ref: 'Truck', required: true },  // Reference to the Truck
   date: { type: Date, default: Date.now, required: true },  // The date of the daily sheet
-
+  vanId: { type: Schema.Types.ObjectId, ref: 'Van', required: true },  // Reference to the Van
+  helperId: { type: Schema.Types.ObjectId, ref: 'Helper', required: true },  // Reference to the Helper
   // Jobs: group them by status
   jobsDone: [{ type: Schema.Types.ObjectId, ref: 'Task' }],      // List of completed jobs
   jobsPending: [{ type: Schema.Types.ObjectId, ref: 'Task' }],   // List of pending jobs
@@ -13,6 +14,7 @@ const dailySheetSchema = new Schema({
 
   // Tipping requests for the day
   tippingRequests: [{ type: Schema.Types.ObjectId, ref: 'TippingRequest' }],
+  pcnDamages: [{ type: Schema.Types.ObjectId, ref: 'PcnDamage' }],
   fuelLogs: [
     {
       amount: Number,         // price paid for fuel (e.g., 60.00)

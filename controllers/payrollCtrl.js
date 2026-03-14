@@ -254,15 +254,12 @@ const PayrollCtrl = {
         return sum;
       }, 0) : 0;
 
-      // Calculate PCN/Damages deductions for this user
-      let totalPcnDamages = 0;
-      if (dailySheet) {
-        const pcnDamages = await PcnDamage.find({
-          dailySheetId: dailySheet._id,
-          deductedFromUserId: userId
-        });
-        totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + pcn.amount, 0);
-      }
+      // Calculate PCN/Damages deductions for this user (query by date + user, independent of DailySheet)
+      const pcnDamages = await PcnDamage.find({
+        time: { $gte: today, $lt: tomorrow },
+        deductedFromUserId: userId
+      });
+      const totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
 
       payroll.endTime = end;
       payroll.totalHoursWorked = totalHoursWorked;
@@ -610,39 +607,17 @@ const PayrollCtrl = {
         // Use the manually provided value (admin override)
         payroll.totalPcnDamages = totalPcnDamages;
       } else if (payroll.startTime) {
-        // Calculate from daily sheet if not manually set
+        // Calculate from PcnDamage by date + user (independent of DailySheet)
         const payrollDate = new Date(payroll.startTime);
         payrollDate.setHours(0, 0, 0, 0);
         const nextDay = new Date(payrollDate);
         nextDay.setDate(payrollDate.getDate() + 1);
 
-        // Get the daily sheet for this date
-        let dailySheet = await DailySheet.findOne({
-          driverId: payroll.userId,
-          date: { $gte: payrollDate, $lt: nextDay }
+        const pcnDamages = await PcnDamage.find({
+          time: { $gte: payrollDate, $lt: nextDay },
+          deductedFromUserId: payroll.userId
         });
-
-        // If user is a helper and no daily sheet found, find via truck
-        if (!dailySheet) {
-          const truck = await Truck.findOne({ helperId: payroll.userId });
-          if (truck && truck.driverId) {
-            dailySheet = await DailySheet.findOne({
-              driverId: truck.driverId,
-              date: { $gte: payrollDate, $lt: nextDay }
-            });
-          }
-        }
-
-        // Calculate totalPcnDamages from daily sheet
-        if (dailySheet) {
-          const pcnDamages = await PcnDamage.find({
-            dailySheetId: dailySheet._id,
-            deductedFromUserId: payroll.userId
-          });
-          payroll.totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + pcn.amount, 0);
-        } else {
-          payroll.totalPcnDamages = 0;
-        }
+        payroll.totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
       }
 
       // Update status if provided
@@ -788,17 +763,13 @@ const PayrollCtrl = {
           }, 0) : 0;
         }
 
-        // Calculate totalPcnDamages from daily sheet (use provided value if manually set, otherwise calculate)
+        // Calculate totalPcnDamages from PcnDamage by date + user (independent of DailySheet)
         if (totalPcnDamages === undefined) {
-          if (dailySheet) {
-            const pcnDamages = await PcnDamage.find({
-              dailySheetId: dailySheet._id,
-              deductedFromUserId: userId
-            });
-            calculatedTotalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + pcn.amount, 0);
-          } else {
-            calculatedTotalPcnDamages = 0;
-          }
+          const pcnDamages = await PcnDamage.find({
+            time: { $gte: payrollDate, $lt: nextDay },
+            deductedFromUserId: userId
+          });
+          calculatedTotalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
         }
       }
 
@@ -990,20 +961,29 @@ const PayrollCtrl = {
   },
   getTopExtraHoursThisMonth: async (req, res) => {
     try {
-      const now = new Date();
+      const { from, to } = req.query;
+      let startOfRange;
+      let endOfRange;
 
-      // First day of the month
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      startOfMonth.setHours(0, 0, 0, 0);
-
-      // Last day of the month
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      endOfMonth.setHours(23, 59, 59, 999);
+      if (from && to) {
+        // Last month (or custom range): use provided from/to
+        startOfRange = new Date(from);
+        startOfRange.setHours(0, 0, 0, 0);
+        endOfRange = new Date(to);
+        endOfRange.setHours(23, 59, 59, 999);
+      } else {
+        // This month: current month
+        const now = new Date();
+        startOfRange = new Date(now.getFullYear(), now.getMonth(), 1);
+        startOfRange.setHours(0, 0, 0, 0);
+        endOfRange = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        endOfRange.setHours(23, 59, 59, 999);
+      }
 
       const topStaff = await Payroll.aggregate([
         {
           $match: {
-            startTime: { $gte: startOfMonth, $lte: endOfMonth },
+            startTime: { $gte: startOfRange, $lte: endOfRange },
           },
         },
         {

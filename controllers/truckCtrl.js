@@ -5,6 +5,7 @@ const TippingRequest = require('../models/TippingRequest');
 const APIfeatures = require('../utils/APIFeatures');
 const loggingService = require('../services/loggingService');
 const { logUnitAssignment, getAssignmentsForUnitOnDay, getAssignmentAtTime } = require('../services/unitAssignmentLogService');
+const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const { findTruckByTruckName } = require('../utils/truckHelpers');
 const formatDate = (date) => {
   const d = new Date(date);
@@ -385,6 +386,45 @@ const truckCtrl = {
       return res.status(200).json(data);
     } catch (error) {
       res.status(500).json({ message: 'Failed to get assignment at time', error: error.message });
+    }
+  },
+
+  getAllAssignmentRanges: async (req, res) => {
+    try {
+      const { truckId, type, refId, from, to, activeOnly } = req.query;
+      const query = {};
+      if (truckId) query.truckId = truckId;
+      if (type) query.type = type;
+      if (refId) query.refId = refId;
+      if (activeOnly === 'true' || activeOnly === '1') query.endAt = null;
+      if (from || to) {
+        query.startAt = {};
+        if (from) query.startAt.$gte = new Date(from);
+        if (to) query.startAt.$lte = new Date(to);
+      }
+      const ranges = await UnitAssignmentLogRange.find(query)
+        .sort({ startAt: -1 })
+        .populate('truckId', 'name')
+        .populate('by', 'username')
+        .lean();
+      // Populate refId from type: van → Van, driver/helper → User
+      const { User } = require('../models/User');
+      const vanIds = [...new Set(ranges.filter(r => r.type === 'van').map(r => r.refId?.toString()).filter(Boolean))];
+      const userIds = [...new Set(ranges.filter(r => r.type === 'driver' || r.type === 'helper').map(r => r.refId?.toString()).filter(Boolean))];
+      const [vans, users] = await Promise.all([
+        vanIds.length ? Van.find({ _id: { $in: vanIds } }).select('name matricule').lean() : [],
+        userIds.length ? User.find({ _id: { $in: userIds } }).select('username firstName lastName').lean() : [],
+      ]);
+      const vanMap = Object.fromEntries((vans || []).map(v => [v._id.toString(), v]));
+      const userMap = Object.fromEntries((users || []).map(u => [u._id.toString(), u]));
+      ranges.forEach(r => {
+        const id = r.refId?.toString();
+        if (r.type === 'van' && id) r.refId = vanMap[id] ?? r.refId;
+        else if ((r.type === 'driver' || r.type === 'helper') && id) r.refId = userMap[id] ?? r.refId;
+      });
+      res.status(200).json({ ranges, count: ranges.length });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to get assignment ranges', error: error.message });
     }
   },
 

@@ -212,6 +212,8 @@ router.post('/tasks/take-over/:taskId', isAuth, checkRole('Admin'), taskCtrl.tak
 router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
 router.get('/tasks', taskCtrl.getAllTasks);
+router.get('/tasks/stats/top-items', taskCtrl.getTop10ItemsOrdered);
+router.get('/tasks/stats/top-postcodes', taskCtrl.getTop10PostcodesInOrders);
 router.get('/task/:taskId', taskCtrl.getTaskById);
 router.get('/task/order-number/:orderNumber', taskCtrl.getTaskByOrderNumber);
 router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
