@@ -278,17 +278,16 @@ const blueSheetController = {
           tippingRequestIds = tippingRequests.map(tr => tr._id);
         }
 
-        // Get PCN/Damages for this truck and date (via this truck's DailySheet)
+        // Get PCN/Damages for this truck and date (via DailySheet.pcnDamages)
         let pcnDamageIds = [];
         let pcnDamageTotal = 0;
         const dailySheetForPcn = await DailySheet.findOne({
           truckId: truck._id,
           date: { $gte: startOfDay, $lte: endOfDay },
-        });
-        if (dailySheetForPcn) {
-          const pcnDamages = await PcnDamage.find({ dailySheetId: dailySheetForPcn._id });
-          pcnDamageIds = pcnDamages.map(p => p._id);
-          pcnDamageTotal = pcnDamages.reduce((sum, p) => sum + (p.amount || 0), 0);
+        }).populate('pcnDamages');
+        if (dailySheetForPcn && dailySheetForPcn.pcnDamages && dailySheetForPcn.pcnDamages.length > 0) {
+          pcnDamageIds = dailySheetForPcn.pcnDamages.map(p => p._id);
+          pcnDamageTotal = dailySheetForPcn.pcnDamages.reduce((sum, p) => sum + (p.amount || 0), 0);
         }
 
         // Create or update blue sheet
@@ -414,9 +413,8 @@ const blueSheetController = {
   // Sync pcnDamages array and pcnDamage total for the BlueSheet linked to this DailySheet (used when PCN/Damage add/update/delete)
   syncBlueSheetPcnDamages: async (dailySheetId) => {
     const DailySheet = require('../models/DailySheet');
-    const PcnDamage = require('../models/PcnDamage');
     const Truck = require('../models/Truck');
-    const dailySheet = await DailySheet.findById(dailySheetId).select('driverId date truckId');
+    const dailySheet = await DailySheet.findById(dailySheetId).select('driverId date truckId pcnDamages').populate('pcnDamages');
     if (!dailySheet) return;
     const truck = dailySheet.truckId
       ? await Truck.findById(dailySheet.truckId)
@@ -426,7 +424,7 @@ const blueSheetController = {
     if (!dateObj) return;
     const blueSheet = await BlueSheet.findOne({ truckId: truck._id, date: dateObj });
     if (!blueSheet) return;
-    const pcnDamages = await PcnDamage.find({ dailySheetId });
+    const pcnDamages = dailySheet.pcnDamages || [];
     blueSheet.pcnDamages = pcnDamages.map(p => p._id);
     blueSheet.pcnDamage = pcnDamages.reduce((sum, p) => sum + (p.amount || 0), 0);
     await blueSheet.save();
