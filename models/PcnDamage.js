@@ -19,6 +19,7 @@ const pcnDamageSchema = new Schema({
     addedBy: { type: String },                      // User name or ID who added this
     time: { type: Date, default: Date.now },        // Time of the PCN/Damage
     vanMatricule: { type: String },                 // Optional van registration / matricule
+    linkedToDailySheet: { type: Boolean, default: false }, // Whether PCN is linked to a DailySheet
 }, { timestamps: true });
 
 const PcnDamage = mongoose.model('PcnDamage', pcnDamageSchema);
