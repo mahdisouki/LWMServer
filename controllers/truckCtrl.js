@@ -4,7 +4,7 @@ const Van = require('../models/Van');
 const TippingRequest = require('../models/TippingRequest');
 const APIfeatures = require('../utils/APIFeatures');
 const loggingService = require('../services/loggingService');
-const { logUnitAssignment, getAssignmentsForUnitOnDay, getAssignmentAtTime } = require('../services/unitAssignmentLogService');
+const { logUnitAssignment, getAssignmentsForUnitOnDay, getAssignmentAtTime, getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const { findTruckByTruckName } = require('../utils/truckHelpers');
 const formatDate = (date) => {
@@ -26,8 +26,8 @@ function formatTippingRequestAsTask(tippingRequest) {
     phoneNumber: '',
     email: '',
     totalPrice: tippingRequest.price || 0,
-    taskStatus: tippingRequest.status === 'Accepted' ? 'Completed' : 
-                tippingRequest.status === 'Denied' ? 'Declined' : 'Processing',
+    taskStatus: tippingRequest.status === 'Accepted' ? 'Completed' :
+      tippingRequest.status === 'Denied' ? 'Declined' : 'Processing',
     paymentStatus: tippingRequest.status === 'Accepted' ? 'Paid' : 'Not_Paid',
     paymentMethod: 'cash',
     date: new Date(tippingRequest.createdAt).toISOString().split('T')[0],
@@ -464,6 +464,48 @@ const truckCtrl = {
       return res.status(200).json(data);
     } catch (error) {
       res.status(500).json({ message: 'Failed to get assignment at time', error: error.message });
+    }
+  },
+
+  // NEW: Who is assigned to this truck on a given day (van, driver, helper) from UnitAssignmentLogRange
+  getAssignedOnDayFromRanges: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { date } = req.query;
+
+      if (!date) {
+        return res.status(400).json({ message: 'Query parameter \"date\" is required (YYYY-MM-DD)' });
+      }
+
+      const truck = await Truck.findById(id);
+      if (!truck) {
+        return res.status(404).json({ message: 'Truck not found' });
+      }
+
+      const assigned = await getAssignedForDayFromRanges(id, date);
+
+      // Optionally populate basic info for van/driver/helper
+      const [van, driver, helper] = await Promise.all([
+        assigned.vanId ? Van.findById(assigned.vanId).select('matricule name') : null,
+        assigned.driverId ? require('../models/User').User.findById(assigned.driverId).select('firstName lastName username role roleType') : null,
+        assigned.helperId ? require('../models/User').User.findById(assigned.helperId).select('firstName lastName username role roleType') : null,
+      ]);
+
+      return res.status(200).json({
+        message: 'Assignments from ranges retrieved successfully',
+        truckId: id,
+        date,
+        assigned: {
+          vanId: assigned.vanId,
+          driverId: assigned.driverId,
+          helperId: assigned.helperId,
+          van,
+          driver,
+          helper,
+        },
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to get assigned resources from ranges', error: error.message });
     }
   },
 

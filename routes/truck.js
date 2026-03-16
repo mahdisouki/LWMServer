@@ -10,6 +10,7 @@ router.get('/trucks/matricules', truckCtrl.getTruckMatricules);
 router.get('/trucks/assignment-ranges', truckCtrl.getAllAssignmentRanges);
 router.get('/trucks/:id/assignments-on-day', truckCtrl.getAssignmentsOnDay);
 router.get('/trucks/:id/assignment-at', truckCtrl.getAssignmentAtTime);
+router.get('/trucks/:id/assigned-on-day', truckCtrl.getAssignedOnDayFromRanges);
 router.put('/trucks/:id', isAuth, checkRole('Admin'), truckCtrl.updateTruck);
 router.post('/trucks/assign-van', isAuth, checkRole('Admin'), truckCtrl.assignVanToTruck);
 router.post('/trucks/deassign-van', isAuth, checkRole('Admin'), truckCtrl.deassignVanFromTruck);
