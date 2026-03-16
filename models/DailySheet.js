@@ -6,7 +6,7 @@ const dailySheetSchema = new Schema({
   truckId: { type: Schema.Types.ObjectId, ref: 'Truck', required: true },  // Reference to the Truck
   date: { type: Date, default: Date.now, required: true },  // The date of the daily sheet
   vanId: { type: Schema.Types.ObjectId, ref: 'Van', required: true },  // Reference to the Van
-  helperId: { type: Schema.Types.ObjectId, ref: 'Helper', required: true },  // Reference to the Helper
+  helperId: { type: Schema.Types.ObjectId, ref: 'Helper', required: false },  // Reference to the Helper
   // Jobs: group them by status
   jobsDone: [{ type: Schema.Types.ObjectId, ref: 'Task' }],      // List of completed jobs
   jobsPending: [{ type: Schema.Types.ObjectId, ref: 'Task' }],   // List of pending jobs

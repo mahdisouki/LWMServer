@@ -3,9 +3,9 @@ const PcnDamage = require('../models/PcnDamage');
 const { User } = require('../models/User');
 const Truck = require('../models/Truck');
 const Van = require('../models/Van');
+const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const Payroll = require('../models/Payroll');
 const blueSheetController = require('./blueSheetController');
-const { getAssignmentAtTime } = require('../services/unitAssignmentLogService');
 
 // Format date to YYYY-MM-DD using local timezone (for payroll date matching)
 const toLocalDateStr = (d) => {
@@ -13,6 +13,55 @@ const toLocalDateStr = (d) => {
     const x = new Date(d);
     return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
 };
+
+// Helper: from vanId + dateTime → truckId + driverId using UnitAssignmentLogRange (source of truth)
+async function getTruckAndDriverFromVanAtTime(vanId, dateTime) {
+    const T = dateTime instanceof Date ? dateTime : new Date(dateTime);
+    const result = { truckId: null, driverId: null };
+
+    console.log('[PCN][getTruckAndDriverFromVanAtTime] vanId:', vanId?.toString(), 'at', T.toISOString());
+
+    // 1) Which truck was using this van at time T?
+    const vanRange = await UnitAssignmentLogRange.findOne({
+        type: 'van',
+        refId: vanId,
+        startAt: { $lte: T },
+        $or: [{ endAt: null }, { endAt: { $gt: T } }],
+    })
+        .sort({ startAt: -1 })
+        .lean();
+
+    console.log('[PCN][getTruckAndDriverFromVanAtTime] vanRange:', vanRange);
+
+    if (!vanRange) {
+        console.log('[PCN][getTruckAndDriverFromVanAtTime] No van range found for van at time', T.toISOString());
+        return result;
+    }
+
+    const truckId = vanRange.truckId;
+
+    // 2) Which driver was on that truck at time T?
+    const driverRange = await UnitAssignmentLogRange.findOne({
+        truckId,
+        type: 'driver',
+        startAt: { $lte: T },
+        $or: [{ endAt: null }, { endAt: { $gt: T } }],
+    })
+        .sort({ startAt: -1 })
+        .lean();
+
+    console.log('[PCN][getTruckAndDriverFromVanAtTime] driverRange:', driverRange);
+
+    result.truckId = truckId;
+    result.driverId = driverRange ? driverRange.refId : null;
+
+    console.log('[PCN][getTruckAndDriverFromVanAtTime] result:', {
+        truckId: result.truckId?.toString() || null,
+        driverId: result.driverId?.toString() || null,
+    });
+
+    return result;
+}
 
 const pcnDamageController = {
     // Helper function to recalculate payroll PCN/Damages
@@ -108,14 +157,6 @@ const pcnDamageController = {
                 });
             }
 
-            // Find Truck that has this vanId
-            const truck = await Truck.findOne({ vanId: van._id });
-            if (!truck) {
-                return res.status(404).json({
-                    message: `No truck found for van with matricule "${vanMatricule}".`
-                });
-            }
-
             // Combine date and time to create the exact datetime
             // Support both "HH:mm" and "HH:mm:ss" formats
             const timeStr = time.length === 5 ? `${time}:00` : time; // Add seconds if missing
@@ -126,15 +167,13 @@ const pcnDamageController = {
                 });
             }
 
-            // Get driver assignment at the specific date/time using unitAssignment
-            const assignment = await getAssignmentAtTime(truck._id, dateTime);
-            if (!assignment.driverId) {
+            // Get truck and driver assignment at the specific date/time using UnitAssignmentLogRange
+            const { truckId, driverId: targetDriverId } = await getTruckAndDriverFromVanAtTime(van._id, dateTime);
+            if (!truckId || !targetDriverId) {
                 return res.status(404).json({
                     message: `No driver was assigned to van "${vanMatricule}" at ${dateTime.toISOString()}.`
                 });
             }
-
-            const targetDriverId = assignment.driverId;
 
             // Create new PcnDamage document with exact dateTime from unitAssignment
             const pcnDamage = new PcnDamage({
@@ -218,14 +257,6 @@ const pcnDamageController = {
                 });
             }
 
-            // Find Truck that has this vanId
-            const truck = await Truck.findOne({ vanId: van._id });
-            if (!truck) {
-                return res.status(404).json({
-                    message: `No truck found for van with matricule "${vanMatricule}".`
-                });
-            }
-
             // Combine date and time to create the exact datetime
             const timeStr = time.length === 5 ? `${time}:00` : time;
             const dateTime = new Date(`${date}T${timeStr}`);
@@ -235,27 +266,32 @@ const pcnDamageController = {
                 });
             }
 
-            // Get driver assignment at the specific date/time using unitAssignment
-            const assignment = await getAssignmentAtTime(truck._id, dateTime);
+            // Get truck and driver assignment at the specific date/time using UnitAssignmentLogRange
+            const { truckId, driverId } = await getTruckAndDriverFromVanAtTime(van._id, dateTime);
 
-            if (!assignment.driverId) {
+            console.log('[PCN][getDriverFromVanAndTime] vanMatricule:', vanMatricule, 'dateTime:', dateTime.toISOString(), {
+                truckId: truckId?.toString() || null,
+                driverId: driverId?.toString() || null,
+            });
+
+            if (!truckId || !driverId) {
                 return res.status(404).json({
                     message: `No driver was assigned to van "${vanMatricule}" at ${dateTime.toISOString()}.`,
                     vanMatricule,
                     date,
                     time,
                     dateTime: dateTime.toISOString(),
-                    truckId: truck._id
+                    truckId: truckId,
                 });
             }
 
             // Populate driver details
-            const driver = await User.findById(assignment.driverId).select('firstName lastName username role roleType');
+            const driver = await User.findById(driverId).select('firstName lastName username role roleType');
 
             res.status(200).json({
                 message: 'Driver found successfully',
                 driver: {
-                    _id: assignment.driverId,
+                    _id: driverId,
                     firstName: driver?.firstName,
                     lastName: driver?.lastName,
                     username: driver?.username,
@@ -266,7 +302,7 @@ const pcnDamageController = {
                 date,
                 time,
                 dateTime: dateTime.toISOString(),
-                truckId: truck._id
+                truckId
             });
         } catch (error) {
             console.error(error);
@@ -318,14 +354,6 @@ const pcnDamageController = {
                 });
             }
 
-            // NEW: Find Truck that has this vanId
-            const truck = await Truck.findOne({ vanId: van._id });
-            if (!truck) {
-                return res.status(404).json({
-                    message: `No truck found for van with matricule "${vanMatricule}".`
-                });
-            }
-
             // NEW: Combine date and time to create the exact datetime
             // Support both "HH:mm" and "HH:mm:ss" formats
             const timeStr = time.length === 5 ? `${time}:00` : time; // Add seconds if missing
@@ -336,9 +364,9 @@ const pcnDamageController = {
                 });
             }
 
-            // NEW: Get driver assignment at the specific date/time using unitAssignment
-            const assignment = await getAssignmentAtTime(truck._id, dateTime);
-            if (!assignment.driverId) {
+            // NEW: Get truck and driver assignment at the specific date/time using UnitAssignmentLogRange
+            const { truckId, driverId } = await getTruckAndDriverFromVanAtTime(van._id, dateTime);
+            if (!truckId || !driverId) {
                 return res.status(404).json({
                     message: `No driver was assigned to van "${vanMatricule}" at ${dateTime.toISOString()}.`
                 });
@@ -362,7 +390,7 @@ const pcnDamageController = {
             res.status(201).json({
                 message: 'PCN/Damage created successfully (standalone)',
                 pcnDamage,
-                driverId: assignment.driverId, // Return the driver ID found from unitAssignment
+                driverId, // Return the driver ID found from UnitAssignmentLogRange
             });
         } catch (error) {
             console.error(error);
@@ -682,7 +710,7 @@ const pcnDamageController = {
                 })
                 .sort({ time: -1 });
 
-            // Filter by driver (if provided) - need to check unitAssignment for each PCN
+            // Filter by driver (if provided) - need to check UnitAssignmentLogRange for each PCN
             if (driverId) {
                 const filteredByDriver = [];
                 for (const pcn of pcnDamages) {
@@ -690,12 +718,12 @@ const pcnDamageController = {
                         try {
                             const van = await Van.findOne({ matricule: pcn.vanMatricule });
                             if (van) {
-                                const truck = await Truck.findOne({ vanId: van._id });
-                                if (truck) {
-                                    const assignment = await getAssignmentAtTime(truck._id, pcn.time);
-                                    if (assignment.driverId && assignment.driverId.toString() === driverId.toString()) {
-                                        filteredByDriver.push(pcn);
-                                    }
+                                const { truckId, driverId: assignedDriverId } = await getTruckAndDriverFromVanAtTime(
+                                    van._id,
+                                    pcn.time
+                                );
+                                if (truckId && assignedDriverId && assignedDriverId.toString() === driverId.toString()) {
+                                    filteredByDriver.push(pcn);
                                 }
                             }
                         } catch (error) {
