@@ -50,6 +50,14 @@ router.patch(
   incidentCtrl.updateStep
 );
 
+// Delete an incident (admin-only)
+router.delete(
+  '/incidents/:incidentId',
+  isAuth,
+  checkRole('Admin'),
+  incidentCtrl.deleteIncident
+);
+
 module.exports = router;
 
 
