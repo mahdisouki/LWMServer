@@ -89,7 +89,7 @@ const incidentController = {
     createIncidentAdmin: async (req, res) => {
         try {
             const {
-                truckId,
+                vanId,
                 driverId,
                 incidentTime,
                 helperId,
@@ -101,9 +101,9 @@ const incidentController = {
             const user = req.user;
 
             // Validate required fields
-            if (!truckId || !driverId || !incidentTime) {
+            if (!vanId || !driverId || !incidentTime) {
                 return res.status(400).json({
-                    message: 'truckId, driverId and incidentTime are required to create an incident.',
+                    message: 'vanId, driverId and incidentTime are required to create an incident.',
                 });
             }
 
@@ -120,7 +120,7 @@ const incidentController = {
             const steps = buildStepsFromTemplate(BREAKDOWN_TEMPLATE);
 
             const incident = await Incident.create({
-                truckId,
+                vanId,
                 driverId,
                 helperId,
                 incidentTime,
@@ -176,7 +176,7 @@ const incidentController = {
 
     /**
      * Staff (driver / helper) endpoint: create an incident for the logged-in user.
-     * - Uses req.user.truckId as the truck.
+     * - Uses req.user.truckId to infer the current truck and its vanId.
      * - If the user is a Driver, sets driverId = user._id.
      * - If the user is a Helper, sets helperId = user._id.
      * - Falls back to truck.driverId / truck.helperId where relevant.
@@ -201,15 +201,22 @@ const incidentController = {
             const isDriver = roles.includes('Driver');
             const isHelper = roles.includes('Helper');
 
-            let truckId = user.truckId;
-            if (!truckId) {
+            const userTruckId = user.truckId;
+            if (!userTruckId) {
                 return res.status(400).json({
                     message: 'No truck assigned to this user. Cannot create incident.',
                 });
             }
 
-            // Fetch driver/helper from the assigned truck, if any
-            const truck = await Truck.findById(truckId).select('driverId helperId');
+            // Fetch driver/helper and van from the assigned truck, if any
+            const truck = await Truck.findById(userTruckId).select('driverId helperId vanId');
+            if (!truck || !truck.vanId) {
+                return res.status(400).json({
+                    message: 'No van linked to the assigned truck. Cannot create incident.',
+                });
+            }
+
+            const vanId = truck.vanId;
 
             let driverId;
             let helperId;
@@ -244,7 +251,7 @@ const incidentController = {
             maybeCompleteFirstStep(steps, notes, photos, user._id);
 
             const incident = await Incident.create({
-                truckId,
+                vanId,
                 driverId,
                 helperId,
                 incidentTime,
@@ -290,7 +297,7 @@ const incidentController = {
             if (status) query.status = status;
 
             const incidents = await Incident.find(query)
-                .populate('truckId', 'name matricule')
+                .populate('vanId', 'name matricule')
                 .populate('driverId', 'firstName lastName phone')
                 .sort({ createdAt: -1 });
 
@@ -312,7 +319,7 @@ const incidentController = {
         try {
             const { incidentId } = req.params;
             const incident = await Incident.findById(incidentId)
-                .populate('truckId', 'name matricule')
+                .populate('vanId', 'name matricule')
                 .populate('driverId', 'firstName lastName phone');
 
             if (!incident) {

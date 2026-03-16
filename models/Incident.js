@@ -24,7 +24,7 @@ const photoSchema = new Schema({
 
 const incidentSchema = new Schema(
     {
-        truckId: { type: Schema.Types.ObjectId, ref: 'Truck' },
+        vanId: { type: Schema.Types.ObjectId, ref: 'Van' },
         driverId: { type: Schema.Types.ObjectId, ref: 'Driver' },
         helperId: { type: Schema.Types.ObjectId, ref: 'Helper' },
 
