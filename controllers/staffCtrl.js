@@ -11,6 +11,7 @@ const { optimizeRoute } = require('../helper/OpitomRoute');
 const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
 const { logUnitAssignment } = require('../services/unitAssignmentLogService');
+const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -466,6 +467,21 @@ const staffManagement = {
         return res.status(400).json({ message: 'Invalid startAt date/time' });
       }
 
+      // Prevent assigning the same driver to two trucks on the same time/day
+      const driverConflict = await UnitAssignmentLogRange.findOne({
+        type: 'driver',
+        refId: driverId,
+        startAt: { $lte: startAtDate },
+        $or: [{ endAt: null }, { endAt: { $gte: startAtDate } }],
+        truckId: { $ne: truck._id },
+      }).populate('truckId', 'name');
+      if (driverConflict) {
+        return res.status(400).json({
+          message: 'This driver is already assigned to another truck for this time period.',
+          conflictTruck: driverConflict.truckId,
+        });
+      }
+
       truck.driverId = driverId;
       await truck.save();
 
@@ -540,6 +556,21 @@ const staffManagement = {
       const startAtDate = startAt ? new Date(startAt) : new Date();
       if (isNaN(startAtDate.getTime())) {
         return res.status(400).json({ message: 'Invalid startAt date/time' });
+      }
+
+      // Prevent assigning the same helper to two trucks on the same time/day
+      const helperConflict = await UnitAssignmentLogRange.findOne({
+        type: 'helper',
+        refId: helperId,
+        startAt: { $lte: startAtDate },
+        $or: [{ endAt: null }, { endAt: { $gte: startAtDate } }],
+        truckId: { $ne: truck._id },
+      }).populate('truckId', 'name');
+      if (helperConflict) {
+        return res.status(400).json({
+          message: 'This helper is already assigned to another truck for this time period.',
+          conflictTruck: helperConflict.truckId,
+        });
       }
 
       truck.helperId = helperId;

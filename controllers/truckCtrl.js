@@ -220,12 +220,76 @@ const truckCtrl = {
         if (newVan && newVan !== oldVan) await logUnitAssignment({ truckId: id, type: 'van', refId: toId(updatedTruck.vanId), event: 'assigned', by: userId, startAt: now });
       }
       if (updateFields.hasOwnProperty('driverId')) {
-        if (oldDriver && !newDriver) await logUnitAssignment({ truckId: id, type: 'driver', refId: toId(oldTruck.driverId), event: 'deassigned', by: userId, endAt: now });
-        if (newDriver && newDriver !== oldDriver) await logUnitAssignment({ truckId: id, type: 'driver', refId: toId(updatedTruck.driverId), event: 'assigned', by: userId, startAt: now });
+        if (oldDriver && !newDriver) {
+          await logUnitAssignment({
+            truckId: id,
+            type: 'driver',
+            refId: toId(oldTruck.driverId),
+            event: 'deassigned',
+            by: userId,
+            endAt: now,
+          });
+        }
+        if (newDriver && newDriver !== oldDriver) {
+          // Prevent assigning the same driver to two trucks at the same time
+          const driverConflict = await UnitAssignmentLogRange.findOne({
+            type: 'driver',
+            refId: toId(updatedTruck.driverId),
+            startAt: { $lte: now },
+            $or: [{ endAt: null }, { endAt: { $gte: now } }],
+            truckId: { $ne: id },
+          }).populate('truckId', 'name');
+          if (driverConflict) {
+            return res.status(400).json({
+              message: 'This driver is already assigned to another truck for this time period.',
+              conflictTruck: driverConflict.truckId,
+            });
+          }
+          await logUnitAssignment({
+            truckId: id,
+            type: 'driver',
+            refId: toId(updatedTruck.driverId),
+            event: 'assigned',
+            by: userId,
+            startAt: now,
+          });
+        }
       }
       if (updateFields.hasOwnProperty('helperId')) {
-        if (oldHelper && !newHelper) await logUnitAssignment({ truckId: id, type: 'helper', refId: toId(oldTruck.helperId), event: 'deassigned', by: userId, endAt: now });
-        if (newHelper && newHelper !== oldHelper) await logUnitAssignment({ truckId: id, type: 'helper', refId: toId(updatedTruck.helperId), event: 'assigned', by: userId, startAt: now });
+        if (oldHelper && !newHelper) {
+          await logUnitAssignment({
+            truckId: id,
+            type: 'helper',
+            refId: toId(oldTruck.helperId),
+            event: 'deassigned',
+            by: userId,
+            endAt: now,
+          });
+        }
+        if (newHelper && newHelper !== oldHelper) {
+          // Prevent assigning the same helper to two trucks at the same time
+          const helperConflict = await UnitAssignmentLogRange.findOne({
+            type: 'helper',
+            refId: toId(updatedTruck.helperId),
+            startAt: { $lte: now },
+            $or: [{ endAt: null }, { endAt: { $gte: now } }],
+            truckId: { $ne: id },
+          }).populate('truckId', 'name');
+          if (helperConflict) {
+            return res.status(400).json({
+              message: 'This helper is already assigned to another truck for this time period.',
+              conflictTruck: helperConflict.truckId,
+            });
+          }
+          await logUnitAssignment({
+            truckId: id,
+            type: 'helper',
+            refId: toId(updatedTruck.helperId),
+            event: 'assigned',
+            by: userId,
+            startAt: now,
+          });
+        }
       }
 
       await loggingService.createLog({
@@ -300,6 +364,20 @@ const truckCtrl = {
       const startAtDate = startAt ? new Date(startAt) : new Date();
       if (isNaN(startAtDate.getTime())) {
         return res.status(400).json({ message: 'Invalid startAt date/time' });
+      }
+      // Prevent assigning the same van to two trucks at the same time/day
+      const vanConflict = await UnitAssignmentLogRange.findOne({
+        type: 'van',
+        refId: vanId,
+        startAt: { $lte: startAtDate },
+        $or: [{ endAt: null }, { endAt: { $gte: startAtDate } }],
+        truckId: { $ne: truck._id },
+      }).populate('truckId', 'name');
+      if (vanConflict) {
+        return res.status(400).json({
+          message: 'This van is already assigned to another truck for this time period.',
+          conflictTruck: vanConflict.truckId,
+        });
       }
       truck.vanId = vanId;
       await truck.save();
