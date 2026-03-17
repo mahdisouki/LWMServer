@@ -5,6 +5,7 @@ const Truck = require('../models/Truck');
 const Task = require('../models/Task');
 const DailySheet = require('../models/DailySheet');
 const PcnDamage = require('../models/PcnDamage');
+const Expense = require('../models/Expense');
 
 const PayrollCtrl = {
   // Log start time at the beginning of the day
@@ -220,39 +221,23 @@ const PayrollCtrl = {
       tomorrow.setDate(today.getDate() + 1);
 
       // Get all tasks for today where the user received cash
+      // Match by userId stored in cashReceivedBy
       const tasks = await Task.find({
         date: { $gte: today, $lt: tomorrow },
-        cashReceivedBy: user.username,
+        cashReceivedBy: userId,
       });
-
-      // Get all expenses for today by this user
-      // For helpers, we need to get the driver's daily sheet via truck
-      let dailySheet = await DailySheet.findOne({
-        driverId: userId,
-        date: { $gte: today, $lt: tomorrow }
-      });
-
-      // If user is a helper and no daily sheet found, find via truck
-      if (!dailySheet) {
-        const truck = await Truck.findOne({ helperId: userId });
-        if (truck && truck.driverId) {
-          dailySheet = await DailySheet.findOne({
-            driverId: truck.driverId,
-            date: { $gte: today, $lt: tomorrow }
-          });
-        }
-      }
 
       // Calculate total cash received from tasks
       const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
 
-      // Calculate total expenses
-      const totalExpenses = dailySheet ? dailySheet.expenses.reduce((sum, expense) => {
-        if (expense.addedBy === user.username) {
-          return sum + expense.amount;
-        }
-        return sum;
-      }, 0) : 0;
+      // Calculate total expenses directly from Expense documents for this driver and date
+      let totalExpenses = 0;
+      const expenses = await Expense.find({
+        driverId: userId,
+        addedBy: user.username,
+        date: { $gte: today, $lt: tomorrow }
+      });
+      totalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
 
       // Calculate PCN/Damages deductions for this user (query by date + user, independent of DailySheet)
       const pcnDamages = await PcnDamage.find({
@@ -724,43 +709,25 @@ const PayrollCtrl = {
         const nextDay = new Date(payrollDate);
         nextDay.setDate(payrollDate.getDate() + 1);
 
-        // Get all tasks for the date where the user received cash
+        // Get all tasks for the date where the user received cash (by userId)
         const tasks = await Task.find({
           date: { $gte: payrollDate, $lt: nextDay },
-          cashReceivedBy: user.username,
+          cashReceivedBy: userId,
         });
-
-        // Get all expenses for the date by this user
-        // For helpers, we need to get the driver's daily sheet via truck
-        let dailySheet = await DailySheet.findOne({
-          driverId: userId,
-          date: { $gte: payrollDate, $lt: nextDay }
-        });
-
-        // If user is a helper and no daily sheet found, find via truck
-        if (!dailySheet) {
-          const truck = await Truck.findOne({ helperId: userId });
-          if (truck && truck.driverId) {
-            dailySheet = await DailySheet.findOne({
-              driverId: truck.driverId,
-              date: { $gte: payrollDate, $lt: nextDay }
-            });
-          }
-        }
 
         // Calculate total cash received from tasks (use provided value if specified, otherwise calculate)
         if (totalCash === undefined) {
           calculatedTotalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
         }
 
-        // Calculate total expenses (use provided value if specified, otherwise calculate)
+        // Calculate total expenses (use provided value if specified, otherwise calculate from Expense documents)
         if (totalExpenses === undefined) {
-          calculatedTotalExpenses = dailySheet ? dailySheet.expenses.reduce((sum, expense) => {
-            if (expense.addedBy === user.username) {
-              return sum + expense.amount;
-            }
-            return sum;
-          }, 0) : 0;
+          const expenses = await Expense.find({
+            driverId: userId,
+            addedBy: user.username,
+            date: { $gte: payrollDate, $lt: nextDay }
+          });
+          calculatedTotalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
         }
 
         // Calculate totalPcnDamages from PcnDamage by date + user (independent of DailySheet)
@@ -1024,6 +991,66 @@ const PayrollCtrl = {
     }
   },
 
+  /**
+   * Recalculate totalCash for all payroll records of a given user on a given date.
+   * Call when a task's cash (cashReceived / cashReceivedBy) is set or changed.
+   */
+  recalculatePayrollTotalCash: async (date, userId) => {
+    try {
+      if (!userId) return;
+      const parsed = new Date(date);
+      if (isNaN(parsed.getTime())) {
+        console.error('recalculatePayrollTotalCash: invalid date', date);
+        return;
+      }
+      const y = parsed.getFullYear();
+      const m = parsed.getMonth();
+      const d = parsed.getDate();
+      const startDate = new Date(y, m, d, 0, 0, 0, 0);
+      const endDate = new Date(y, m, d, 23, 59, 59, 999);
+
+      const payrollRecords = await Payroll.find({
+        userId,
+        startTime: { $gte: startDate, $lte: endDate },
+      });
+
+      if (payrollRecords.length === 0) {
+        console.log(
+          '[Payroll] recalculatePayrollTotalCash: no payroll records for user',
+          String(userId),
+          'on',
+          startDate.toISOString().slice(0, 10),
+        );
+        return;
+      }
+
+      const tasks = await Task.find({
+        date: { $gte: startDate, $lte: endDate },
+        cashReceivedBy: userId,
+      });
+      const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+
+      for (const payroll of payrollRecords) {
+        const before = payroll.totalCash || 0;
+        payroll.totalCash = totalCash;
+        await payroll.save();
+        console.log(
+          '[Payroll] totalCash updated for payroll',
+          payroll._id.toString(),
+          'user',
+          String(userId),
+          'date',
+          startDate.toISOString().slice(0, 10),
+          'from',
+          before,
+          'to',
+          totalCash,
+        );
+      }
+    } catch (error) {
+      console.error('Error recalculating payroll totalCash:', error);
+    }
+  },
 
 };
 

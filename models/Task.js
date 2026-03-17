@@ -159,7 +159,8 @@ const taskSchema = new Schema(
     finishDate: { type: Date },
     timeSpent: { type: Number },
     cashReceived: { type: Number },
-    cashReceivedBy: { type: String },
+    // Who actually took the cash for this task (User id)
+    cashReceivedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     customerSignature: { type: String }, // Path to customer signature image
     customerNotPresent: { type: Boolean, default: false }, // Driver can tick if customer is not present
     repeatCustomer: { type: Number, default: 0 },
@@ -188,6 +189,8 @@ const taskSchema = new Schema(
   },
   { timestamps: true }
 );
+
+
 // Add a pre-save hook to clean up empty items and validate data
 taskSchema.pre('save', function (next) {
   // Filter out items where both standardItemId is null and object is empty

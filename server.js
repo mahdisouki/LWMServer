@@ -190,6 +190,7 @@ const contactRequestRoutes = require('./routes/contactRequestRoutes');
 const serviceCategoryRoutes = require('./routes/serviceCategory');
 const notificationRoutes = require('./routes/notification');
 const incidentRoutes = require('./routes/incident');
+const expenseRoutes = require('./routes/expense');
 const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
 const customerRoutes = require('./routes/customerRoutes');
@@ -240,6 +241,7 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/instagram', instagramRoutes);
 app.use('/api', incidentRoutes);
 app.use('/api', vanRoutes);
+app.use('/api/expenses', expenseRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;

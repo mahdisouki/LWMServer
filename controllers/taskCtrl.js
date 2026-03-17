@@ -21,6 +21,7 @@ const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
+const payrollCtrl = require('./payrollCtrl');
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
 const CLIENT_URL = 'https://www.londonwastemanagement.com';
 const Handlebars = require('handlebars');
@@ -844,6 +845,24 @@ const taskCtrl = {
       } catch (err) {
         console.error('Error incrementing coupon usage on createTask (manual paid):', err);
         // Do not fail task creation if coupon increment fails
+      }
+
+      // Recalculate payroll totalCash for the driver/helper who received cash on this task
+      try {
+        if (savedTask.cashReceived != null && savedTask.cashReceivedBy) {
+          await payrollCtrl.recalculatePayrollTotalCash(savedTask.date, savedTask.cashReceivedBy);
+        }
+      } catch (err) {
+        console.error('Error recalculating payroll totalCash on createTask:', err);
+      }
+
+      // Recalculate DailySheet totalCash for any sheet that contains this task
+      try {
+        if (savedTask.cashReceived != null) {
+          await dailySheetController.recalculateDailySheetTotalCashForTask(savedTask._id);
+        }
+      } catch (err) {
+        console.error('Error recalculating DailySheet totalCash on createTask:', err);
       }
 
       // Create a log of the task creation
@@ -2260,6 +2279,34 @@ const taskCtrl = {
       } catch (err) {
         console.error('Error incrementing coupon usage on updateTask (manual paid):', err);
         // Do not fail update if coupon increment fails
+      }
+
+      // Recalculate payroll totalCash whenever task cash or "received by" is set or updated
+      try {
+        const cashFieldsUpdated = 'cashReceived' in updates || 'cashReceivedBy' in updates;
+        if (cashFieldsUpdated) {
+          const newUserId = updatedTask.cashReceivedBy ? String(updatedTask.cashReceivedBy) : null;
+          const oldUserId = oldTask.cashReceivedBy ? String(oldTask.cashReceivedBy) : null;
+          // Recalc for current assignee (so their payroll reflects latest sum for that date)
+          if (newUserId) {
+            await payrollCtrl.recalculatePayrollTotalCash(updatedTask.date, updatedTask.cashReceivedBy);
+          }
+          // Recalc for previous assignee if different person or date (so their payroll drops)
+          if (oldUserId && (oldUserId !== newUserId || (oldTask.date && updatedTask.date && oldTask.date.getTime() !== updatedTask.date.getTime()))) {
+            await payrollCtrl.recalculatePayrollTotalCash(oldTask.date, oldTask.cashReceivedBy);
+          }
+        }
+      } catch (err) {
+        console.error('Error recalculating payroll totalCash on updateTask:', err);
+      }
+
+      // Recalculate DailySheet totalCash for any sheet that contains this task
+      try {
+        if ('cashReceived' in updates || 'paymentMethod' in updates) {
+          await dailySheetController.recalculateDailySheetTotalCashForTask(updatedTask._id);
+        }
+      } catch (err) {
+        console.error('Error recalculating DailySheet totalCash on updateTask:', err);
       }
 
       console.log('Updated task:', JSON.stringify(updatedTask, null, 2));

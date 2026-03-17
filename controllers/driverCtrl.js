@@ -10,6 +10,7 @@ const Driver = require('../models/Driver');
 const { emitNotificationToUser, emitEvent } = require('../socket');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const dailySheetController = require('./dailySheetController');
+const payrollCtrl = require('./payrollCtrl');
 const adminId = "67cb6810c9e768ec25d39523"
 
 function getTodayDateRange() {
@@ -1117,7 +1118,8 @@ const driverManagement = {
       task.clientFeedbackScale = clientFeedbackScale;
       task.taskStatus = "Completed";
       task.cashReceived = cashAmount;
-      task.cashReceivedBy = userInfo.user.username;
+      // Store the user id who took the cash
+      task.cashReceivedBy = userInfo.user._id;
 
       // Save signature and customer presence status (same as other feedback fields)
       task.customerSignature = signaturePath || null;
@@ -1134,6 +1136,16 @@ const driverManagement = {
       // See: cron/sendReviewEmails.js
 
       await task.save();
+
+      // Recalculate payroll totalCash and DailySheet totalCash after setting cash on task
+      try {
+        if (task.cashReceivedBy) {
+          await payrollCtrl.recalculatePayrollTotalCash(task.date, task.cashReceivedBy);
+        }
+        await dailySheetController.recalculateDailySheetTotalCashForTask(task._id);
+      } catch (err) {
+        console.error('Error recalculating payroll/DailySheet totalCash after rateTask:', err);
+      }
 
       // Ensure Waste Transfer Note email is sent after rating/completion
       await sendWasteTransferNoteEmail(task._id);
