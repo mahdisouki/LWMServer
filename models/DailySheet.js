@@ -35,6 +35,8 @@ const dailySheetSchema = new Schema({
 // Pre-save hook to calculate total cash from all tasks
 dailySheetSchema.pre('save', async function (next) {
   try {
+    const previousTotalCash = this.isModified('totalCash') ? this.totalCash : (this.totalCash || 0);
+
     // Combine all job IDs from different statuses
     const allJobIds = [
       ...(this.jobsDone || []),
@@ -52,6 +54,14 @@ dailySheetSchema.pre('save', async function (next) {
 
       // Sum up cash received from all cash-paid tasks
       this.totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+      console.log(
+        '[DailySheet] totalCash recalculated for sheet',
+        this._id ? this._id.toString() : '(new)',
+        'from',
+        previousTotalCash,
+        'to',
+        this.totalCash,
+      );
     }
     next();
   } catch (error) {

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const DailySheet = require('../models/DailySheet');
 const Task = require('../models/Task');
 const TippingRequest = require('../models/TippingRequest');
@@ -139,6 +140,12 @@ const dailySheetController = {
 
           const totalIncome = totalCashIncome + totalTippingIncome;
 
+          // totalCash = sum of cashReceived from all jobs paid by cash (schema field used for payroll/sheets)
+          const allJobsForTotalCash = [...jobsDone, ...jobsPending, ...jobsCancelled];
+          const totalCash = allJobsForTotalCash
+            .filter((t) => (t.paymentMethod || '').toLowerCase() === 'cash')
+            .reduce((sum, t) => sum + (t.cashReceived || 0), 0);
+
           // Who was assigned to this truck on this day (from UnitAssignmentLogRange)? Fall back to truck if none.
           const assigned = await getAssignedForDayFromRanges(truck._id, formattedDate);
 
@@ -159,6 +166,7 @@ const dailySheetController = {
               jobsPending: jobsPending.map(job => job._id),
               jobsCancelled: jobsCancelled.map(job => job._id),
               tippingRequests: tippingRequests.map(tip => tip._id),
+              totalCash,
               income: {
                 cash: totalCashIncome,
                 tipping: totalTippingIncome,
@@ -675,6 +683,54 @@ const dailySheetController = {
   },
 
   // Function to update existing daily sheets when there are changes
+  recalculateDailySheetTotalCashForTask: async (taskId) => {
+    try {
+      if (!taskId) return;
+      const id = typeof taskId === 'string' ? new mongoose.Types.ObjectId(taskId) : taskId;
+      const sheets = await DailySheet.find({
+        $or: [
+          { jobsDone: id },
+          { jobsPending: id },
+          { jobsCancelled: id },
+        ],
+      });
+      if (sheets.length === 0) {
+        console.log('[DailySheet] recalculateDailySheetTotalCashForTask: no sheet contains task', String(taskId));
+        return;
+      }
+      for (const sheet of sheets) {
+        const allJobIds = [
+          ...(sheet.jobsDone || []),
+          ...(sheet.jobsPending || []),
+          ...(sheet.jobsCancelled || []),
+        ];
+        const tasks =
+          allJobIds.length > 0
+            ? await Task.find({
+                _id: { $in: allJobIds },
+                paymentMethod: 'cash',
+              })
+            : [];
+        const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+        const before = sheet.totalCash ?? 0;
+        sheet.totalCash = totalCash;
+        await sheet.save();
+        console.log(
+          '[DailySheet] totalCash updated for task',
+          String(taskId),
+          'sheet',
+          sheet._id.toString(),
+          'from',
+          before,
+          'to',
+          totalCash,
+        );
+      }
+    } catch (error) {
+      console.error('Error recalculating DailySheet totalCash for task:', error);
+    }
+  },
+
   updateExistingDailySheets: async (req, res) => {
     console.log('Updating existing daily sheets');
     try {
@@ -741,6 +797,12 @@ const dailySheetController = {
           const totalTippingIncome = tippingRequests.reduce((acc, tip) => (tip.status === 'Accepted' && tip.price ? acc + tip.price : acc), 0);
           const totalIncome = totalCashIncome + totalTippingIncome;
 
+          // totalCash = sum of cashReceived from all jobs (done/pending/cancelled) paid by cash
+          const allJobs = [...jobsDone, ...jobsPending, ...jobsCancelled];
+          const totalCash = allJobs
+            .filter((t) => (t.paymentMethod || '').toLowerCase() === 'cash')
+            .reduce((sum, t) => sum + (t.cashReceived || 0), 0);
+
           const assigned = await getAssignedForDayFromRanges(truck._id, formattedDate);
           const updatedDailySheet = await DailySheet.findByIdAndUpdate(
             existingDailySheet._id,
@@ -752,10 +814,14 @@ const dailySheetController = {
               jobsPending: jobsPending.map(job => job._id),
               jobsCancelled: jobsCancelled.map(job => job._id),
               tippingRequests: tippingRequests.map(tip => tip._id),
+              totalCash,
               income: { cash: totalCashIncome, tipping: totalTippingIncome, total: totalIncome },
             },
             { new: true }
           );
+          if (totalCash > 0 || existingDailySheet.totalCash !== totalCash) {
+            console.log('[DailySheet] totalCash set in updateExistingDailySheets for sheet', existingDailySheet._id.toString(), 'to', totalCash);
+          }
           updatedDailySheets.push(updatedDailySheet);
         }
       }

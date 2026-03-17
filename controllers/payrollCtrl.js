@@ -221,9 +221,10 @@ const PayrollCtrl = {
       tomorrow.setDate(today.getDate() + 1);
 
       // Get all tasks for today where the user received cash
+      // Match by userId stored in cashReceivedBy
       const tasks = await Task.find({
         date: { $gte: today, $lt: tomorrow },
-        cashReceivedBy: user.username,
+        cashReceivedBy: userId,
       });
 
       // Calculate total cash received from tasks
@@ -708,10 +709,10 @@ const PayrollCtrl = {
         const nextDay = new Date(payrollDate);
         nextDay.setDate(payrollDate.getDate() + 1);
 
-        // Get all tasks for the date where the user received cash
+        // Get all tasks for the date where the user received cash (by userId)
         const tasks = await Task.find({
           date: { $gte: payrollDate, $lt: nextDay },
-          cashReceivedBy: user.username,
+          cashReceivedBy: userId,
         });
 
         // Calculate total cash received from tasks (use provided value if specified, otherwise calculate)
@@ -990,6 +991,66 @@ const PayrollCtrl = {
     }
   },
 
+  /**
+   * Recalculate totalCash for all payroll records of a given user on a given date.
+   * Call when a task's cash (cashReceived / cashReceivedBy) is set or changed.
+   */
+  recalculatePayrollTotalCash: async (date, userId) => {
+    try {
+      if (!userId) return;
+      const parsed = new Date(date);
+      if (isNaN(parsed.getTime())) {
+        console.error('recalculatePayrollTotalCash: invalid date', date);
+        return;
+      }
+      const y = parsed.getFullYear();
+      const m = parsed.getMonth();
+      const d = parsed.getDate();
+      const startDate = new Date(y, m, d, 0, 0, 0, 0);
+      const endDate = new Date(y, m, d, 23, 59, 59, 999);
+
+      const payrollRecords = await Payroll.find({
+        userId,
+        startTime: { $gte: startDate, $lte: endDate },
+      });
+
+      if (payrollRecords.length === 0) {
+        console.log(
+          '[Payroll] recalculatePayrollTotalCash: no payroll records for user',
+          String(userId),
+          'on',
+          startDate.toISOString().slice(0, 10),
+        );
+        return;
+      }
+
+      const tasks = await Task.find({
+        date: { $gte: startDate, $lte: endDate },
+        cashReceivedBy: userId,
+      });
+      const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+
+      for (const payroll of payrollRecords) {
+        const before = payroll.totalCash || 0;
+        payroll.totalCash = totalCash;
+        await payroll.save();
+        console.log(
+          '[Payroll] totalCash updated for payroll',
+          payroll._id.toString(),
+          'user',
+          String(userId),
+          'date',
+          startDate.toISOString().slice(0, 10),
+          'from',
+          before,
+          'to',
+          totalCash,
+        );
+      }
+    } catch (error) {
+      console.error('Error recalculating payroll totalCash:', error);
+    }
+  },
 
 };
 
