@@ -172,6 +172,7 @@ const taskSchema = new Schema(
     retargetingCoupon10Id: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to 10% coupon
     reasonForCancellation: { type: String },
     applyMinFee: { type: Boolean, default: false }, // Admin option to apply minimum fee
+    applySundayFee: { type: Boolean, default: false }, // Admin option to apply Sunday fee
     quotationId: {
       type: Schema.Types.ObjectId,
       ref: 'QuotationRequest', // Reference to your Quotation model

@@ -457,6 +457,27 @@
                                 </td>
                               </tr>
                               {{/if}}
+                              {{#if showSundayFeeRow}}
+                              <tr>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  Sunday fee:
+                                </td>
+                                <td
+                                  style="
+                                    padding: 8px 0;
+                                    text-align: right;
+                                    border-bottom: 1px solid #e0e0e0;
+                                  "
+                                >
+                                  £{{sundayFee}}
+                                </td>
+                              </tr>
+                              {{/if}}
                               <!-- VAT -->
                               <tr>
                                 <td

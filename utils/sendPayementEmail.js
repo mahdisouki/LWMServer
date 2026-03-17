@@ -270,6 +270,17 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     callOutFeeRowHtml = `<p style="margin:0 0 8px; font-size:13px;">Call out fee<span style="float:right; font-weight:bold;">£${callOutFee.toFixed(2)}</span></p>`;
   }
 
+  // Sunday fee row (when task date is Sunday and public or applySundayFee)
+  let sundayFeeRowHtml = '';
+  const isSunday =
+    taskDetails.date instanceof Date &&
+    !isNaN(taskDetails.date.getTime()) &&
+    typeof taskDetails.date.getDay === 'function' &&
+    taskDetails.date.getDay() === 0;
+  if (isSunday && (taskDetails.createdByType === 'public' || taskDetails.applySundayFee === true)) {
+    sundayFeeRowHtml = `<p style="margin:0 0 8px; font-size:13px;">Sunday fee<span style="float:right; font-weight:bold;">£50.00</span></p>`;
+  }
+
   // Invoice summary box (right side of price breakdown)
   const summaryBoxHtml = `
       <div style="background:#34C759; padding:14px; color:#ffffff;">
@@ -280,6 +291,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
         ${discountRowHtml}
         ${couponDiscountHtml}
         ${callOutFeeRowHtml}
+        ${sundayFeeRowHtml}
         <p style="margin:0 0 8px; font-size:13px;">
           VAT
           <span style="float:right; font-weight:bold;">£${vatAmount.toFixed(2)}</span>

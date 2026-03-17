@@ -269,6 +269,20 @@ module.exports = {
       console.log('Minimum price NOT applied (Admin task without applyMinFee or subtotal >= 37.5)');
     }
 
+    // Sunday fee (+£50 before VAT)
+    let sundayFeeAmount = 0;
+    let showSundayFeeRow = false;
+    const isSunday =
+      task.date instanceof Date &&
+      !isNaN(task.date.getTime()) &&
+      typeof task.date.getDay === 'function' &&
+      task.date.getDay() === 0;
+    if (isSunday && (task.createdByType === 'public' || task.applySundayFee === true)) {
+      sundayFeeAmount = 50;
+      showSundayFeeRow = true;
+      subtotal += 50;
+    }
+
     console.log("subtotal", subtotal)
     vat = subtotal * 0.2;
     total = subtotal + vat;
@@ -407,6 +421,8 @@ module.exports = {
       // Call out fee when minimum fee is applied (difference between min amount and base amount)
       showCallOutFeeRow,
       callOutFee: callOutFee.toFixed(2),
+      showSundayFeeRow,
+      sundayFeeAmount: sundayFeeAmount.toFixed(2),
     };
 
     // Build discount columns for the table header based on discount type
@@ -430,6 +446,13 @@ module.exports = {
       callOutFeeRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div class="summary-row"><span class="summary-label">Call out fee</span><span class="summary-value">£${callOutFee.toFixed(2)}</span></div>`;
     }
     template = template.replace('{{callOutFeeRow}}', callOutFeeRow);
+
+    // Build Sunday fee row when task date is Sunday
+    let sundayFeeRow = '';
+    if (showSundayFeeRow && sundayFeeAmount > 0) {
+      sundayFeeRow = `<hr style="border: 1px solid #8dc044; margin: 10px 0;" />\n        <div class="summary-row"><span class="summary-label">Sunday fee</span><span class="summary-value">£${sundayFeeAmount.toFixed(2)}</span></div>`;
+    }
+    template = template.replace(/\{\{sundayFeeRow\}\}/g, sundayFeeRow).replace(/\[\[sundayFeeRow\]\]/g, sundayFeeRow);
 
     // Build bank transfer details section if payment method is BankTransfer
     let bankTransferDetails = '';

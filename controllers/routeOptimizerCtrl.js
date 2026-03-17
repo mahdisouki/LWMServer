@@ -6,9 +6,11 @@
 const axios = require('axios');
 const Task = require('../models/Task');
 const Truck = require('../models/Truck');
+const Driver = require('../models/Driver');
 const { truckDisplayName } = require('../utils/truckHelpers');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
   process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org';
@@ -385,21 +387,37 @@ async function calculateRoutesExternal(req, res) {
     const endOfDay = new Date(inputDate);
     endOfDay.setUTCHours(23, 59, 59, 999);
 
-    const trucks = await Truck.find({ driverId: { $ne: null } }).populate('vanId').populate('driverId');
-    if (!trucks.length) {
+    // Use UnitAssignmentLogRange to determine which driver is on which truck for this day
+    const allTrucks = await Truck.find().populate('vanId');
+    const trucksWithDrivers = [];
+    for (const t of allTrucks) {
+      const assignment = await getAssignedForDayFromRanges(t._id, dateStr);
+      if (assignment.driverId) {
+        const driver = await Driver.findById(assignment.driverId);
+        if (!driver) continue;
+        trucksWithDrivers.push({ truck: t, driver, driverId: assignment.driverId });
+      }
+    }
+
+    if (!trucksWithDrivers.length) {
       return res.status(400).json({
         message: 'No trucks with drivers available for assignment',
       });
     }
-    console.log('[RouteOptimizer:external] date=%s trucks=%d', dateStr, trucks.length);
-    trucks.forEach((t, i) => {
-      const driverIdStr = t.driverId ? (t.driverId._id ? t.driverId._id.toString() : t.driverId.toString()) : 'none';
-      console.log('[RouteOptimizer:external] truck[%d] _id=%s name=%s driverId=%s', i, t._id.toString(), truckDisplayName(t), driverIdStr);
+
+    console.log('[RouteOptimizer:external] date=%s trucksWithDrivers=%d', dateStr, trucksWithDrivers.length);
+    trucksWithDrivers.forEach(({ truck, driverId }, i) => {
+      console.log(
+        '[RouteOptimizer:external] truck[%d] _id=%s name=%s driverId=%s',
+        i,
+        truck._id.toString(),
+        truckDisplayName(truck),
+        driverId.toString()
+      );
     });
 
     const tasks = await Task.find({
       date: { $gte: startOfDay, $lte: endOfDay },
-      
       taskStatus: { $nin: ['Cancelled'] },
       'location.coordinates': { $exists: true, $ne: null },
     });
@@ -411,6 +429,8 @@ async function calculateRoutesExternal(req, res) {
     });
     console.log('[RouteOptimizer:external] tasks with coords=%d jobIdToTaskId keys=%s', tasksWithCoords.length, Object.keys(jobIdToTaskId).slice(0, 10).join(', ') + (Object.keys(jobIdToTaskId).length > 10 ? '...' : ''));
 
+    // We no longer send jobs to the external API, but we keep this data for mapping
+    // the returned route segment IDs back to Task IDs via jobIdToTaskId.
     const jobs = tasksWithCoords.map((t) => ({
       job_id: t._id.toString(),
       name: [t.firstName, t.lastName].filter(Boolean).join(' ') || 'Customer',
@@ -432,8 +452,7 @@ async function calculateRoutesExternal(req, res) {
       });
     }
 
-    const drivers = trucks.map((truck) => {
-      const driver = truck.driverId;
+    const drivers = trucksWithDrivers.map(({ truck, driver }) => {
       let startLat = routeOptimizerService.DEFAULT_DEPOT.lat;
       let startLng = routeOptimizerService.DEFAULT_DEPOT.lng;
       let endLat = startLat;
@@ -450,12 +469,14 @@ async function calculateRoutesExternal(req, res) {
           endLng = endCoords[0];
         }
       }
-      console.log({ driver_id: truck.driverId._id.toString(),
+      console.log({
+        driver_id: driver._id.toString(),
         start_location: { lat: startLat, lng: startLng },
         end_location: { lat: endLat, lng: endLng },
-        status: 'active',})
+        status: 'active',
+      });
       return {
-        driver_id: truck.driverId._id.toString(),
+        driver_id: driver._id.toString(),
         start_location: { lat: startLat, lng: startLng },
         end_location: { lat: endLat, lng: endLng },
         working_hours: { start: '08:00', end: '17:00' },
@@ -517,24 +538,34 @@ async function calculateRoutesExternal(req, res) {
     // Persist assignment: clear old routes for this date on each truck, then assign new order
     let assignedCount = 0;
     for (const routeKey of routeKeys) {
-      const truckById = trucks.find((t) => t._id.toString() === routeKey);
-      const truckByDriverId = trucks.find((t) => t.driverId && t.driverId._id && t.driverId._id.toString() === routeKey);
-      const truck = truckById || truckByDriverId;
-      const matchType = truckById ? 'truck._id' : (truckByDriverId ? 'driverId._id' : 'none');
-      if (!truck) {
-        console.log('[RouteOptimizer:external] routeKey=%s no truck matched (skip)', routeKey);
+      // New response: routeKey is the driver_id (Driver._id)
+      const entry = trucksWithDrivers.find(({ driverId }) => driverId.toString() === routeKey);
+      if (!entry) {
+        console.log('[RouteOptimizer:external] routeKey=%s no truck/driver assignment matched (skip)', routeKey);
         continue;
       }
-      console.log('[RouteOptimizer:external] routeKey=%s matched truck name=%s _id=%s (by %s)', routeKey, truckDisplayName(truck), truck._id.toString(), matchType);
+      const { truck } = entry;
+      console.log(
+        '[RouteOptimizer:external] routeKey=%s matched truck name=%s _id=%s (by driverId)',
+        routeKey,
+        truckDisplayName(truck),
+        truck._id.toString()
+      );
       // Remove old routes for this date so we don't duplicate tasks
       if (!truck.tasks) truck.tasks = new Map();
       truck.tasks.set(dateStr, []);
       truck.markModified('tasks');
-      const routeJobs = routes[routeKey].jobs || [];
+
+      // New response format: routes[driverId].route_segments is an array of IDs,
+      // mostly Task IDs, with a terminating 'End Position' marker.
+      const routeSegments = Array.isArray(routes[routeKey].route_segments)
+        ? routes[routeKey].route_segments
+        : [];
       let assignedThisTruck = 0;
       const missingJobIds = [];
-      for (let i = 0; i < routeJobs.length; i++) {
-        const jobId = routeJobs[i].job_id;
+      for (let i = 0; i < routeSegments.length; i++) {
+        const jobId = routeSegments[i];
+        if (!jobId || jobId === 'End Position') continue;
         const taskId = jobIdToTaskId[jobId];
         if (!taskId) {
           missingJobIds.push(jobId);

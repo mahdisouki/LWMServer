@@ -122,6 +122,8 @@ async function calculateTotalPrice({
   createdByType,
   available, // Add available parameter for discount calculation
   applyMinFee = false, // Admin option to apply minimum fee
+  applySundayFee = false, // Admin option to apply Sunday fee
+  taskDate = null, // Date of the task (for Sunday fee)
   couponCode = null, // Coupon code to apply
   customerEmail = null, // Customer email for custom coupon validation
 }) {
@@ -324,7 +326,19 @@ async function calculateTotalPrice({
     subtotal = 37.5;
   }
 
-  // 6. Add VAT (20%)
+  // 6. Apply Sunday fee before VAT: +£50 when date is Sunday
+  // - Public orders: always apply when Sunday
+  // - Admin orders: apply only when applySundayFee is true
+  let sundayFee = 0;
+  if (taskDate instanceof Date && !isNaN(taskDate.getTime())) {
+    const isSunday = taskDate.getDay && taskDate.getDay() === 0;
+    if (isSunday && (createdByType === 'public' || applySundayFee === true)) {
+      sundayFee = 50;
+      subtotal += sundayFee;
+    }
+  }
+
+  // 7. Add VAT (20%)
   const vat = subtotal * 0.2;
   const totalPrice = subtotal + vat;
 
@@ -511,6 +525,7 @@ const taskCtrl = {
       // ✅ Convert FormData string to boolean
       // FormData sends boolean values as strings 'true' or 'false'
       const applyMinFeeBoolean = applyMinFee === 'true' || applyMinFee === true;
+      let applySundayFeeBoolean = req.body.applySundayFee === 'true' || req.body.applySundayFee === true;
 
       // For debugging: see what you get from frontend
       console.log('Received items:', req.body.items);
@@ -524,6 +539,12 @@ const taskCtrl = {
       }
 
       const taskDate = new Date(date);
+      const isSunday =
+        !isNaN(taskDate.getTime()) && taskDate.getDay && taskDate.getDay() === 0;
+      // Public orders on Sunday always have Sunday fee applied
+      if (createdByType === 'public' && isSunday) {
+        applySundayFeeBoolean = true;
+      }
       const hasDiscount =
         (customDiscountPercent !== undefined &&
           !isNaN(customDiscountPercent) &&
@@ -628,6 +649,8 @@ const taskCtrl = {
         available,
         createdByType, // Pass createdByType for discount calculation
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
+        applySundayFee: applySundayFeeBoolean,
+        taskDate,
         couponCode: couponCode || null, // Pass coupon code
         customerEmail: email || null, // Pass customer email for custom coupon validation
         // customDiscountPercent !== undefined &&
@@ -745,6 +768,7 @@ const taskCtrl = {
         additionalNotes,
         privateNotes,
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
+        applySundayFee: applySundayFeeBoolean,
         quotationId: quotationId || null,
         taskDuration: taskDuration || undefined,
         spaceOfVan: taskVanSpacePercent,
@@ -2676,6 +2700,19 @@ const taskCtrl = {
         finalPrice = 37.5;
       }
 
+      // Apply Sunday fee (+£50 before VAT) when task date is Sunday
+      // - Public orders: always apply
+      // - Admin orders: only when applySundayFee is true
+      if (
+        task.date instanceof Date &&
+        !isNaN(task.date.getTime()) &&
+        typeof task.date.getDay === 'function' &&
+        task.date.getDay() === 0 &&
+        (task.createdByType === 'public' || task.applySundayFee === true)
+      ) {
+        finalPrice += 50;
+      }
+
       const vat = finalPrice * 0.2;
       finalPrice += vat;
 
@@ -3613,6 +3650,22 @@ const taskCtrl = {
         breakdown.push({
           description: 'Minimum price adjustment',
           amount: adjustment,
+        });
+      }
+
+      // Apply Sunday fee (+£50 before VAT) when task date is Sunday
+      // - Public orders: always apply
+      // - Admin orders: only when applySundayFee is true
+      const isSunday =
+        task.date instanceof Date &&
+        !isNaN(task.date.getTime()) &&
+        typeof task.date.getDay === 'function' &&
+        task.date.getDay() === 0;
+      if (isSunday && (task.createdByType === 'public' || task.applySundayFee === true)) {
+        subtotal += 50;
+        breakdown.push({
+          description: 'Sunday fee',
+          amount: 50,
         });
       }
 
@@ -4688,6 +4741,18 @@ const taskCtrl = {
         subtotal = MIN_BASE_AMOUNT;
       }
 
+      // Sunday fee (+£50 before VAT)
+      let showSundayFeeRow = false;
+      const isSundayInvoice =
+        task.date instanceof Date &&
+        !isNaN(task.date.getTime()) &&
+        typeof task.date.getDay === 'function' &&
+        task.date.getDay() === 0;
+      if (isSundayInvoice && (task.createdByType === 'public' || task.applySundayFee === true)) {
+        showSundayFeeRow = true;
+        subtotal += 50;
+      }
+
       const discountedSubtotal = subtotal - percentageDiscount;
       const vat = discountedSubtotal * 0.2;
       const total = discountedSubtotal + vat;
@@ -4803,6 +4868,8 @@ const taskCtrl = {
         paymentMethod: paymentMethod,
         showCallOutFeeRow: showCallOutFeeRow,
         callOutFee: callOutFee.toFixed(2),
+        showSundayFeeRow: showSundayFeeRow,
+        sundayFee: '50.00',
       });
       // Send the email with the generated PDF as attachment
       await transporter.sendMail({
