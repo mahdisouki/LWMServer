@@ -26,16 +26,8 @@ const dailySheetSchema = new Schema({
       },
     }
   ],
-  expenses: [
-    {
-      reason: { type: String, required: true },       // e.g., "Parking", "Toll"
-      amount: { type: Number, required: true },       // e.g., 12.5
-      location: { type: String },                     // Where the expense happened
-      receiptUrl: { type: String },                   // URL to uploaded receipt (e.g., from Cloudinary/S3)
-      addedBy: { type: String },                      // User name or ID
-      time: { type: Date, default: Date.now },        // Time of the expense
-    }
-  ],
+  // References to Expense documents
+  expenses: [{ type: Schema.Types.ObjectId, ref: 'Expense' }],
   // Total cash received from all tasks paid in cash
   totalCash: { type: Number, default: 0 }
 }, { timestamps: true });

@@ -7,6 +7,7 @@ const Truck = require('../models/Truck');
 const { User } = require('../models/User');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const Payroll = require('../models/Payroll');
+const Expense = require('../models/Expense');
 const dailySheetController = {
   generateDailySheetsForAllDrivers: async (req, res) => {
     try {
@@ -592,7 +593,8 @@ const dailySheetController = {
         return res.status(404).json({ message: 'Daily sheet not found for that date' });
       }
 
-      dailySheet.expenses.push({
+      const expense = await Expense.create({
+        dailySheetId: dailySheet._id,
         reason,
         amount,
         location,
@@ -600,9 +602,10 @@ const dailySheetController = {
         addedBy,
       });
 
+      dailySheet.expenses.push(expense._id);
       await dailySheet.save();
 
-      res.status(200).json({ message: 'Expense added', expenses: dailySheet.expenses });
+      res.status(200).json({ message: 'Expense added', expense });
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: 'Failed to add expense', error: error.message });
@@ -625,7 +628,7 @@ const dailySheetController = {
 
       if (!dailySheet) return res.status(404).json({ message: 'Daily sheet not found' });
 
-      const expense = dailySheet.expenses.id(expenseId);
+      const expense = await Expense.findOne({ _id: expenseId, dailySheetId: dailySheet._id });
       if (!expense) return res.status(404).json({ message: 'Expense not found' });
 
       if (reason !== undefined) expense.reason = reason;
@@ -633,7 +636,7 @@ const dailySheetController = {
       if (location !== undefined) expense.location = location;
       if (req.file) expense.receiptUrl = req.file.path;
 
-      await dailySheet.save();
+      await expense.save();
 
       res.status(200).json({ message: 'Expense updated', expense });
     } catch (error) {
@@ -657,11 +660,11 @@ const dailySheetController = {
 
       if (!dailySheet) return res.status(404).json({ message: 'Daily sheet not found' });
 
-      const exists = dailySheet.expenses.id(expenseId);
-      if (!exists) return res.status(404).json({ message: 'Expense not found' });
+      const expense = await Expense.findOneAndDelete({ _id: expenseId, dailySheetId: dailySheet._id });
+      if (!expense) return res.status(404).json({ message: 'Expense not found' });
 
-      dailySheet.expenses.pull({ _id: expenseId });
-
+      // Remove reference from daily sheet
+      dailySheet.expenses.pull(expenseId);
       await dailySheet.save();
 
       res.status(200).json({ message: 'Expense deleted' });

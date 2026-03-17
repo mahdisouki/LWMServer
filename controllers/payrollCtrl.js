@@ -5,6 +5,7 @@ const Truck = require('../models/Truck');
 const Task = require('../models/Task');
 const DailySheet = require('../models/DailySheet');
 const PcnDamage = require('../models/PcnDamage');
+const Expense = require('../models/Expense');
 
 const PayrollCtrl = {
   // Log start time at the beginning of the day
@@ -225,34 +226,17 @@ const PayrollCtrl = {
         cashReceivedBy: user.username,
       });
 
-      // Get all expenses for today by this user
-      // For helpers, we need to get the driver's daily sheet via truck
-      let dailySheet = await DailySheet.findOne({
-        driverId: userId,
-        date: { $gte: today, $lt: tomorrow }
-      });
-
-      // If user is a helper and no daily sheet found, find via truck
-      if (!dailySheet) {
-        const truck = await Truck.findOne({ helperId: userId });
-        if (truck && truck.driverId) {
-          dailySheet = await DailySheet.findOne({
-            driverId: truck.driverId,
-            date: { $gte: today, $lt: tomorrow }
-          });
-        }
-      }
-
       // Calculate total cash received from tasks
       const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
 
-      // Calculate total expenses
-      const totalExpenses = dailySheet ? dailySheet.expenses.reduce((sum, expense) => {
-        if (expense.addedBy === user.username) {
-          return sum + expense.amount;
-        }
-        return sum;
-      }, 0) : 0;
+      // Calculate total expenses directly from Expense documents for this driver and date
+      let totalExpenses = 0;
+      const expenses = await Expense.find({
+        driverId: userId,
+        addedBy: user.username,
+        date: { $gte: today, $lt: tomorrow }
+      });
+      totalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
 
       // Calculate PCN/Damages deductions for this user (query by date + user, independent of DailySheet)
       const pcnDamages = await PcnDamage.find({
@@ -730,37 +714,19 @@ const PayrollCtrl = {
           cashReceivedBy: user.username,
         });
 
-        // Get all expenses for the date by this user
-        // For helpers, we need to get the driver's daily sheet via truck
-        let dailySheet = await DailySheet.findOne({
-          driverId: userId,
-          date: { $gte: payrollDate, $lt: nextDay }
-        });
-
-        // If user is a helper and no daily sheet found, find via truck
-        if (!dailySheet) {
-          const truck = await Truck.findOne({ helperId: userId });
-          if (truck && truck.driverId) {
-            dailySheet = await DailySheet.findOne({
-              driverId: truck.driverId,
-              date: { $gte: payrollDate, $lt: nextDay }
-            });
-          }
-        }
-
         // Calculate total cash received from tasks (use provided value if specified, otherwise calculate)
         if (totalCash === undefined) {
           calculatedTotalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
         }
 
-        // Calculate total expenses (use provided value if specified, otherwise calculate)
+        // Calculate total expenses (use provided value if specified, otherwise calculate from Expense documents)
         if (totalExpenses === undefined) {
-          calculatedTotalExpenses = dailySheet ? dailySheet.expenses.reduce((sum, expense) => {
-            if (expense.addedBy === user.username) {
-              return sum + expense.amount;
-            }
-            return sum;
-          }, 0) : 0;
+          const expenses = await Expense.find({
+            driverId: userId,
+            addedBy: user.username,
+            date: { $gte: payrollDate, $lt: nextDay }
+          });
+          calculatedTotalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
         }
 
         // Calculate totalPcnDamages from PcnDamage by date + user (independent of DailySheet)
