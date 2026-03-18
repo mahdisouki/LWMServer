@@ -497,6 +497,8 @@ const taskCtrl = {
         quotationId,
         couponCode, // Coupon code to apply
       } = req.body;
+      // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
+      const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
       if (createdByType === 'public') {
         const dateObj = new Date(date);
         const now = new Date();
@@ -747,7 +749,7 @@ const taskCtrl = {
         createdBy,
         createdByType,
         cashReceived,
-        cashReceivedBy,
+        cashReceivedBy: cashReceivedBySanitized,
         paymentStatus: paymentStatus || 'Unpaid',
         billingAddress,
         collectionAddress,
@@ -2232,6 +2234,11 @@ const taskCtrl = {
       const itemsToUse = updates.items && updates.items.length > 0 ? updates.items : (oldTask.items || []);
       if (itemsToUse.length > 0) {
         updates.taskDuration = await calculateTaskDuration(itemsToUse);
+      }
+
+      // Sanitize ObjectId fields: empty string cannot be cast to ObjectId
+      if (updates.cashReceivedBy === '' || (typeof updates.cashReceivedBy === 'string' && !updates.cashReceivedBy.trim())) {
+        updates.cashReceivedBy = null;
       }
 
       console.log('=== FINAL UPDATE ===');
