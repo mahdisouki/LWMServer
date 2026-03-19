@@ -27,6 +27,7 @@ const CLIENT_URL = 'https://www.londonwastemanagement.com';
 const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
+const WebhookEventLog = require('../models/WebhookEventLog');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const nodemailer = require('nodemailer');
 const sendPayementEmail = require('../utils/sendPayementEmail');
@@ -4162,9 +4163,93 @@ const taskCtrl = {
   },
 
   handlePayPalWebhook: async (req, res) => {
+    // Persist webhook events so prod-only issues are debuggable without PayPal console access
+    const evt = req.body;
+    const paypalEventId =
+      evt?.id ||
+      evt?.event_id ||
+      `${evt?.event_type || 'unknown'}:${evt?.resource?.id || evt?.resource?.supplementary_data?.related_ids?.order_id || Date.now()}`;
+
+    let webhookLog = null;
     try {
-      const evt = req.body;
-      console.log('PayPal webhook:', evt.event_type, evt.resource?.id);
+      webhookLog = await WebhookEventLog.findOneAndUpdate(
+        { provider: 'paypal', eventId: String(paypalEventId) },
+        {
+          $setOnInsert: {
+            provider: 'paypal',
+            eventId: String(paypalEventId),
+            receivedAt: new Date(),
+          },
+          $set: {
+            eventType: evt?.event_type,
+            resourceId: evt?.resource?.id || evt?.resource?.supplementary_data?.related_ids?.order_id || null,
+            payload: evt,
+            status: 'received',
+          },
+        },
+        { upsert: true, new: true },
+      );
+    } catch (logErr) {
+      console.error('PayPal webhook: failed to persist event log:', logErr?.message || logErr);
+      // continue processing even if log fails
+    }
+
+    const markWebhook = async (status, extra = {}) => {
+      if (!webhookLog?._id) return;
+      try {
+        await WebhookEventLog.updateOne(
+          { _id: webhookLog._id },
+          {
+            $set: {
+              status,
+              processedAt: new Date(),
+              ...extra,
+            },
+          },
+        );
+      } catch (e) {
+        console.error('PayPal webhook: failed to update event log:', e?.message || e);
+      }
+    };
+
+    const safeAck = async (status, message) => {
+      await markWebhook(status, message ? { errorMessage: String(message) } : {});
+      return res.status(200).send(message || status);
+    };
+
+    // Best-effort: resolve orderId for CAPTURE.* events (payloads can vary in production)
+    const resolveOrderIdFromCapture = async (capture) => {
+      if (!capture) return null;
+      let orderId =
+        capture?.supplementary_data?.related_ids?.order_id ||
+        capture?.supplementary_data?.related_ids?.orderId ||
+        capture?.supplementary_data?.related_ids?.orderID ||
+        null;
+
+      if (!orderId && capture?.id) {
+        try {
+          // Fetch capture details to retrieve related order id
+          if (paypal?.payments?.CapturesGetRequest) {
+            const capGetReq = new paypal.payments.CapturesGetRequest(capture.id);
+            const capGetRes = await PayPalClient().execute(capGetReq);
+            orderId =
+              capGetRes?.result?.supplementary_data?.related_ids?.order_id ||
+              capGetRes?.result?.supplementary_data?.related_ids?.orderId ||
+              capGetRes?.result?.supplementary_data?.related_ids?.orderID ||
+              orderId;
+          } else {
+            console.warn('PayPal webhook: CapturesGetRequest not available in SDK; cannot resolve orderId from capture id.');
+          }
+        } catch (e) {
+          console.error('PayPal webhook: error resolving orderId from capture id:', e?.message || e);
+        }
+      }
+
+      return orderId || null;
+    };
+
+    try {
+      console.log('PayPal webhook:', evt?.event_type, evt?.resource?.id);
 
       switch (evt.event_type) {
         case 'CHECKOUT.ORDER.APPROVED': {
@@ -4190,10 +4275,16 @@ const taskCtrl = {
           const payerEmail = getRes.result.payer?.email_address;
           console.log('PayPal CHECKOUT.ORDER.APPROVED webhook - customIdRaw:', customIdRaw, 'paymentTypeMeta:', paymentTypeMeta);
 
-          if (!customId) return res.status(400).send('Missing custom_id');
+          if (!customId) {
+            console.error('PayPal webhook: Missing custom_id for order:', orderId);
+            return await safeAck('ignored', 'Ignored – missing custom_id');
+          }
 
           const task = await Task.findById(customId).populate('items.standardItemId');
-          if (!task) return res.status(404).send('Task not found');
+          if (!task) {
+            console.error('PayPal webhook: Task not found for custom_id:', customId);
+            return await safeAck('ignored', 'Ignored – task not found');
+          }
 
           // Calculate final price to verify if it's truly a partial payment
           const itemsForCalculation = task.items.map(item => ({
@@ -4285,41 +4376,58 @@ const taskCtrl = {
 
           await task.save();
 
-          await PaymentHistory.create({
-            taskId: task._id,
-            firstName: task.firstName,
-            lastName: task.lastName,
-            phoneNumber: task.phoneNumber,
-            amount: Number(cap.amount.value),        // store in GBP consistently
-            currency: cap.amount.currency_code,
+          // Idempotency: do not duplicate PaymentHistory if PayPal retries webhooks
+          const existingSuccess = await PaymentHistory.findOne({
             paymentType: 'PayPal',
-            paymentDate: new Date(cap.create_time),
-            transactionId: cap.id,
-            payerAccount: payerEmail || `PayPal ${cap.id}`,
+            transactionId: String(cap.id),
             status: 'success',
-            statusMessage: `Payment successful via PayPal. Transaction ID: ${cap.id}. Amount: ${cap.amount.currency_code} ${cap.amount.value}. Payment type: ${paymentTypeMeta === 'deposit' ? 'Deposit' : paymentTypeMeta === 'remaining' ? 'Remaining' : 'Full payment'}.`,
-          });
+          }).select('_id');
+
+          if (!existingSuccess) {
+            await PaymentHistory.create({
+              taskId: task._id,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              phoneNumber: task.phoneNumber,
+              amount: Number(cap.amount.value), // store in GBP consistently
+              currency: cap.amount.currency_code,
+              paymentType: 'PayPal',
+              paymentDate: new Date(cap.create_time),
+              transactionId: cap.id,
+              payerAccount: payerEmail || `PayPal ${cap.id}`,
+              status: 'success',
+              statusMessage: `Payment successful via PayPal. Transaction ID: ${cap.id}. Amount: ${cap.amount.currency_code} ${cap.amount.value}. Payment type: ${paymentTypeMeta === 'deposit' ? 'Deposit' : paymentTypeMeta === 'remaining' ? 'Remaining' : 'Full payment'}.`,
+            });
+          } else {
+            console.log('PayPal webhook: PaymentHistory already exists for transaction:', cap.id);
+          }
 
           // fire-and-forget the email (don't block webhook)
-          sendPaymentConfirmationEmail({
-            email: task.email, firstName: task.firstName, lastName: task.lastName,
-            orderId: String(task._id), paymentDate: new Date().toLocaleString(),
-            amount: Number(cap.amount.value), currency: cap.amount.currency_code,
-            paymentType: 'PayPal', taskDetails: task,
-            breakdown: task.items.map(i => ({
-              itemDescription: i.standardItemId ? i.standardItemId.itemName : i.object,
-              quantity: i.quantity || 1,
-              price: i.standardItemId ? i.standardItemId.price : i.price || 0,
-            })),
-          }).catch(console.error);
+          if (!existingSuccess) {
+            sendPaymentConfirmationEmail({
+              email: task.email, firstName: task.firstName, lastName: task.lastName,
+              orderId: String(task._id), paymentDate: new Date().toLocaleString(),
+              amount: Number(cap.amount.value), currency: cap.amount.currency_code,
+              paymentType: 'PayPal',
+              breakdown: task.items.map(i => ({
+                itemDescription: i.standardItemId ? i.standardItemId.itemName : i.object,
+                quantity: i.quantity || 1,
+                price: i.standardItemId ? i.standardItemId.price : i.price || 0,
+              })),
+            }).catch(console.error);
+          }
 
+          await markWebhook('processed', { meta: { orderId, taskId: String(task._id), transactionId: String(cap.id) } });
           return res.status(200).send('Captured');
         }
 
         case 'PAYMENT.CAPTURE.COMPLETED': {
           const capture = evt.resource;
-          const orderId = capture?.supplementary_data?.related_ids?.order_id;
-          if (!orderId) return res.status(400).send('Missing order id on capture');
+          const orderId = await resolveOrderIdFromCapture(capture);
+          if (!orderId) {
+            console.error('PayPal webhook: Missing order id on capture payload. capture.id:', capture?.id);
+            return await safeAck('ignored', 'Ignored – missing order id on capture');
+          }
 
           const client = PayPalClient();
           const getReq = new paypal.orders.OrdersGetRequest(orderId);
@@ -4329,10 +4437,16 @@ const taskCtrl = {
           const [customId, paymentTypeMeta] = (customIdRaw || '').split('|');
           const payerEmail = getRes.result.payer?.email_address;
           console.log('PayPal PAYMENT.CAPTURE.COMPLETED webhook - customIdRaw:', customIdRaw, 'paymentTypeMeta:', paymentTypeMeta, 'amountInGBP:', Number(capture.amount.value));
-          if (!customId) return res.status(400).send('Missing custom_id');
+          if (!customId) {
+            console.error('PayPal webhook: Missing custom_id for order:', orderId);
+            return await safeAck('ignored', 'Ignored – missing custom_id');
+          }
 
           const task = await Task.findById(customId).populate('items.standardItemId');
-          if (!task) return res.status(404).send('Task not found');
+          if (!task) {
+            console.error('PayPal webhook: Task not found for custom_id:', customId);
+            return await safeAck('ignored', 'Ignored – task not found');
+          }
 
           // Calculate final price to verify if it's truly a partial payment
           const itemsForCalculation = task.items.map(item => ({
@@ -4446,20 +4560,45 @@ const taskCtrl = {
           const paymentDate = new Date(capture.create_time);
 
           // Créer une entrée dans PaymentHistory
-          await PaymentHistory.create({
-            taskId: task._id,
-            firstName: task.firstName,
-            lastName: task.lastName,
-            phoneNumber: task.phoneNumber,
-            amount: Number(capture.amount.value),    // GBP
-            currency: capture.amount.currency_code,
+          const existingSuccess = await PaymentHistory.findOne({
             paymentType: 'PayPal',
-            paymentDate: new Date(capture.create_time),
-            transactionId: capture.id,
-            payerAccount: payerEmail || `PayPal ${capture.id}`,
+            transactionId: String(capture.id),
             status: 'success',
-            statusMessage: `Payment captured successfully via PayPal. Transaction ID: ${capture.id}. Amount: ${capture.amount.currency_code} ${capture.amount.value}. Payment type: ${paymentTypeMeta === 'deposit' ? 'Deposit' : paymentTypeMeta === 'remaining' ? 'Remaining' : 'Full payment'}.`,
-          });
+          }).select('_id');
+
+          if (!existingSuccess) {
+            await PaymentHistory.create({
+              taskId: task._id,
+              firstName: task.firstName,
+              lastName: task.lastName,
+              phoneNumber: task.phoneNumber,
+              amount: Number(capture.amount.value), // GBP
+              currency: capture.amount.currency_code,
+              paymentType: 'PayPal',
+              paymentDate: new Date(capture.create_time),
+              transactionId: capture.id,
+              payerAccount: payerEmail || `PayPal ${capture.id}`,
+              status: 'success',
+              statusMessage: `Payment captured successfully via PayPal. Transaction ID: ${capture.id}. Amount: ${capture.amount.currency_code} ${capture.amount.value}. Payment type: ${paymentTypeMeta === 'deposit' ? 'Deposit' : paymentTypeMeta === 'remaining' ? 'Remaining' : 'Full payment'}.`,
+            });
+          } else {
+            console.log('PayPal webhook: PaymentHistory already exists for transaction:', capture.id);
+          }
+
+          // fire-and-forget customer email (same behavior as CHECKOUT.ORDER.APPROVED)
+          if (!existingSuccess) {
+            sendPaymentConfirmationEmail({
+              email: task.email, firstName: task.firstName, lastName: task.lastName,
+              orderId: String(task._id), paymentDate: new Date().toLocaleString(),
+              amount: Number(capture.amount.value), currency: capture.amount.currency_code,
+              paymentType: 'PayPal',
+              breakdown: task.items.map(i => ({
+                itemDescription: i.standardItemId ? i.standardItemId.itemName : i.object,
+                quantity: i.quantity || 1,
+                price: i.standardItemId ? i.standardItemId.price : i.price || 0,
+              })),
+            }).catch(console.error);
+          }
 
           // Send notification to admins only
           const notificationMessage = `Payment confirmed for task #${task.orderNumber || task._id}`;
@@ -4470,7 +4609,7 @@ const taskCtrl = {
             }
           }
 
-          // (optional) send email async as above…
+          await markWebhook('processed', { meta: { orderId, taskId: String(task._id), transactionId: String(capture.id) } });
           return res.status(200).send('Processed');
         }
 
@@ -4479,8 +4618,8 @@ const taskCtrl = {
         case 'PAYMENT.CAPTURE.REVERSED': {
           try {
             const capture = evt.resource;
-            const orderId = capture?.supplementary_data?.related_ids?.order_id;
-            if (!orderId) return res.status(200).send('Ignored – no order id');
+            const orderId = await resolveOrderIdFromCapture(capture);
+            if (!orderId) return await safeAck('ignored', 'Ignored – no order id');
 
             const client = PayPalClient();
             const getReq = new paypal.orders.OrdersGetRequest(orderId);
@@ -4490,10 +4629,10 @@ const taskCtrl = {
             const [customId] = (customIdRaw || '').split('|');
             const payerEmail = getRes.result.payer?.email_address;
 
-            if (!customId) return res.status(200).send('Ignored – no custom_id');
+            if (!customId) return await safeAck('ignored', 'Ignored – no custom_id');
 
             const task = await Task.findById(customId);
-            if (!task) return res.status(200).send('Ignored – task not found');
+            if (!task) return await safeAck('ignored', 'Ignored – task not found');
 
             const amountValue = capture?.amount?.value;
             const currencyCode = capture?.amount?.currency_code || 'GBP';
@@ -4529,19 +4668,22 @@ const taskCtrl = {
               reason: failureReason,
             });
 
+            await markWebhook('processed', { meta: { orderId, taskId: String(task._id), transactionId: String(capture?.id || '') } });
             return res.status(200).send('PayPal failed payment handled');
           } catch (err) {
             console.error('Error handling PayPal failed payment webhook:', err);
+            await markWebhook('error', { errorMessage: String(err?.message || err) });
             return res.status(200).send('PayPal failed payment handling error (logged)');
           }
         }
 
         default:
-          return res.status(200).send('Ignored');
+          return await safeAck('ignored', 'Ignored');
       }
     } catch (err) {
       console.error('PayPal webhook error:', err);
-      return res.status(500).send('Webhook processing failed');
+      await markWebhook('error', { errorMessage: String(err?.message || err) });
+      return res.status(200).send('Webhook processing failed (logged)');
     }
   },
 
