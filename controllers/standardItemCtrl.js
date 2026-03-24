@@ -13,7 +13,83 @@ const paypal = require('@paypal/checkout-server-sdk');
 const { PayPalClient } = require('../services/paymentService.js');
 const loggingService = require('../services/loggingService');
 
-// Helper function to get logical sort order for items (smallest to largest)
+const getPopularityMapForItems = async () => {
+  const popularityRows = await Task.aggregate([
+    {
+      $match: {
+        paymentStatus: { $in: ['Paid', 'partial_Paid'] },
+        taskStatus: { $ne: 'Cancelled' },
+        'items.standardItemId': { $ne: null }
+      }
+    },
+    { $unwind: '$items' },
+    {
+      $match: {
+        'items.standardItemId': { $ne: null }
+      }
+    },
+    {
+      $group: {
+        _id: '$items.standardItemId',
+        purchasedCount: {
+          $sum: {
+            $cond: [
+              { $gt: ['$items.quantity', 0] },
+              '$items.quantity',
+              1
+            ]
+          }
+        },
+        timesPurchased: { $sum: 1 }
+      }
+    }
+  ]);
+
+  return new Map(
+    popularityRows.map((entry) => [String(entry._id), entry])
+  );
+};
+
+// If two items have close popularity, keep logical display order inside that "near" band.
+const POPULARITY_NEAR_BUCKET_SIZE = 3;
+const toPopularityBucket = (purchasedCount) =>
+  Math.floor((purchasedCount || 0) / POPULARITY_NEAR_BUCKET_SIZE);
+
+const sortItemsByPopularity = (items, popularityMap) => {
+  return items.sort((a, b) => {
+    const aPopularity = popularityMap.get(String(a._id));
+    const bPopularity = popularityMap.get(String(b._id));
+
+    const aPurchased = aPopularity?.purchasedCount || 0;
+    const bPurchased = bPopularity?.purchasedCount || 0;
+
+    const aBucket = toPopularityBucket(aPurchased);
+    const bBucket = toPopularityBucket(bPurchased);
+    if (bBucket !== aBucket) {
+      return bBucket - aBucket;
+    }
+
+    const aOrder = getItemSortOrder(a.itemName);
+    const bOrder = getItemSortOrder(b.itemName);
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
+
+    if (bPurchased !== aPurchased) {
+      return bPurchased - aPurchased;
+    }
+
+    const aTimes = aPopularity?.timesPurchased || 0;
+    const bTimes = bPopularity?.timesPurchased || 0;
+    if (bTimes !== aTimes) {
+      return bTimes - aTimes;
+    }
+
+    return a.itemName.localeCompare(b.itemName);
+  });
+};
+
+// Helper function to keep a natural item-size order inside the same popularity rank
 const SORT_GROUPS = [
   { keys: ['lamp', 'cushion'], base: 100 },
   { keys: ['chair', 'armchair'], base: 200 },
@@ -47,16 +123,16 @@ const getItemSortOrder = (itemName) => {
 
   const name = itemName.toLowerCase();
 
-  // 1️⃣ Group score
+  // Group score (e.g. sofa group)
   let base = 9000;
   for (const g of SORT_GROUPS) {
-    if (g.keys.some(k => name.includes(k))) {
+    if (g.keys.some((k) => name.includes(k))) {
       base = g.base;
       break;
     }
   }
 
-  // 2️⃣ Size score
+  // Size score from words
   let size = 5;
   for (const [key, val] of SIZE_ORDER) {
     if (name.includes(key)) {
@@ -65,13 +141,14 @@ const getItemSortOrder = (itemName) => {
     }
   }
 
-  // 3️⃣ Seater logic (overrides size)
-  const seaterMatch = name.match(/(\d)\s*seater/);
-  if (seaterMatch) size = parseInt(seaterMatch[1], 10);
+  // Seater count has priority over generic size words (2 seater before 3 seater)
+  const seaterMatch = name.match(/(\d+)\s*seater/);
+  if (seaterMatch) {
+    size = parseInt(seaterMatch[1], 10);
+  }
 
   return base + size;
 };
-
 
 const standardItemCtrl = {
   createStandardItem: async (req, res) => {
@@ -587,7 +664,6 @@ const standardItemCtrl = {
 
       // Determine sort option
       let sortOption = { createdAt: -1, _id: 1 }; // Default: newest first
-      let useCustomSort = false; // Flag for custom category-based sorting
 
       if (sort) {
         switch (sort) {
@@ -606,94 +682,75 @@ const standardItemCtrl = {
           default:
             sortOption = { createdAt: -1, _id: 1 };
         }
-      } else if (category) {
-        // When category is selected and no explicit sort, use custom logical sort
-        useCustomSort = true;
       }
 
       // Count total matching items
       const total = await StandardItem.countDocuments(filter);
 
-      // Build the query
-      let query = StandardItem.find(filter).populate('category');
+      // Popularity-first default ordering when no explicit sort is requested.
+      // If sort is provided, keep existing explicit behavior.
+      if (!sort) {
+        const allItems = await StandardItem.find(filter).populate('category').exec();
+        const popularityMap = await getPopularityMapForItems();
+        const sortedItems = sortItemsByPopularity(allItems, popularityMap);
 
-      let items;
+        if (isPaginationDisabled) {
+          return res.status(200).json({
+            message: 'All standard items fetched successfully',
+            items: sortedItems,
+            meta: {
+              currentPage: 1,
+              limit: total,
+              total,
+              count: sortedItems.length
+            }
+          });
+        }
 
-      if (useCustomSort) {
-        // Fetch all items for custom sorting (categories typically don't have many items)
-        const allItems = await query.exec();
+        const skip = (pageNum - 1) * limitNum;
+        const pagedItems = sortedItems.slice(skip, skip + limitNum);
 
-        // Apply custom logical sorting
-        allItems.sort((a, b) => {
-          const orderA = getItemSortOrder(a.itemName);
-          const orderB = getItemSortOrder(b.itemName);
-
-          // If same order, sort alphabetically
-          if (orderA === orderB) {
-            return a.itemName.localeCompare(b.itemName);
+        return res.status(200).json({
+          message: 'All standard items fetched successfully',
+          items: pagedItems,
+          meta: {
+            currentPage: pageNum,
+            limit: limitNum,
+            total,
+            count: pagedItems.length
           }
-
-          return orderA - orderB;
         });
-
-        // Apply pagination after sorting
-        if (isPaginationDisabled) {
-          items = allItems;
-          return res.status(200).json({
-            message: 'All standard items fetched successfully',
-            items,
-            meta: {
-              currentPage: 1,
-              limit: total,
-              total,
-              count: items.length
-            }
-          });
-        } else {
-          const skip = (pageNum - 1) * limitNum;
-          items = allItems.slice(skip, skip + limitNum);
-          return res.status(200).json({
-            message: 'All standard items fetched successfully',
-            items,
-            meta: {
-              currentPage: pageNum,
-              limit: limitNum,
-              total,
-              count: items.length
-            }
-          });
-        }
-      } else {
-        // Normal sorting (use MongoDB sort)
-        query = query.sort(sortOption);
-
-        if (isPaginationDisabled) {
-          items = await query.exec();
-          return res.status(200).json({
-            message: 'All standard items fetched successfully',
-            items,
-            meta: {
-              currentPage: 1,
-              limit: total,
-              total,
-              count: items.length
-            }
-          });
-        } else {
-          const skip = (pageNum - 1) * limitNum;
-          items = await query.skip(skip).limit(limitNum).exec();
-          return res.status(200).json({
-            message: 'All standard items fetched successfully',
-            items,
-            meta: {
-              currentPage: pageNum,
-              limit: limitNum,
-              total,
-              count: items.length
-            }
-          });
-        }
       }
+
+      // Normal explicit sorting (use MongoDB sort)
+      const query = StandardItem.find(filter).populate('category').sort(sortOption);
+
+      if (isPaginationDisabled) {
+        const items = await query.exec();
+        return res.status(200).json({
+          message: 'All standard items fetched successfully',
+          items,
+          meta: {
+            currentPage: 1,
+            limit: total,
+            total,
+            count: items.length
+          }
+        });
+      }
+
+      const skip = (pageNum - 1) * limitNum;
+      const items = await query.skip(skip).limit(limitNum).exec();
+      return res.status(200).json({
+        message: 'All standard items fetched successfully',
+        items,
+        meta: {
+          currentPage: pageNum,
+          limit: limitNum,
+          total,
+          count: items.length
+        }
+      });
     } catch (error) {
       console.error('Error fetching standard items:', error);
       res.status(500).json({
@@ -721,14 +778,14 @@ const standardItemCtrl = {
         query.category = category; // Add category filter to the query
       }
 
-      // Fetch items based on the query
-      const items = await StandardItem.find(query)
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .populate('category', 'name'); // Populate category details
+      // Fetch all category items first, then sort by popularity before pagination
+      const allItems = await StandardItem.find(query).populate('category', 'name');
+      const popularityMap = await getPopularityMapForItems();
+      const sortedItems = sortItemsByPopularity(allItems, popularityMap);
+      const items = sortedItems.slice((page - 1) * limit, page * limit);
 
       // Count total items based on the query
-      const totalItems = await StandardItem.countDocuments(query);
+      const totalItems = sortedItems.length;
 
       if (items.length === 0) {
         return res.status(404).json({ message: 'No standard items found' });
