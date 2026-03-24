@@ -314,6 +314,21 @@ taskSchema.pre('save', async function (next) {
       return next();
     }
 
+    // Increase truck used capacity once when task transitions to Completed
+    if (!this.isNew && this.truckId) {
+      const previousTask = await this.constructor.findById(this._id).select('taskStatus').lean();
+      const wasCompleted = previousTask?.taskStatus === 'Completed';
+      if (!wasCompleted && this.taskStatus === 'Completed') {
+        const usedSpace = Number(this.spaceOfVan || 0);
+        if (usedSpace > 0) {
+          await mongoose.model('Truck').updateOne(
+            { _id: this.truckId },
+            { $inc: { currentCapacity: usedSpace } }
+          );
+        }
+      }
+    }
+
     // Get the truck to find the driver
     const Truck = mongoose.model('Truck');
     const truck = await Truck.findById(this.truckId);

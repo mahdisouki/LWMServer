@@ -6,6 +6,7 @@ const truckSchema = new Schema({
   vanId: { type: Schema.Types.ObjectId, ref: 'Van', required: false }, // optional until migration; Van holds asset data
   driverId: { type: Schema.Types.ObjectId, ref: 'Driver' },
   helperId: { type: Schema.Types.ObjectId, ref: 'Helper' },
+  currentCapacity:{type : Number, default: 0},
   extraDrivers: [{
     driverId: { type: Schema.Types.ObjectId, ref: 'Driver', required: true },
     startDate: { type: Date },

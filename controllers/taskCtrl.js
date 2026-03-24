@@ -1,5 +1,6 @@
 const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
+const TippingRequest = require('../models/TippingRequest');
 const Truck = require('../models/Truck');
 const { findTruckByTruckName, truckDisplayName } = require('../utils/truckHelpers');
 const { User } = require('../models/User');
@@ -1393,6 +1394,22 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
+      // Keep Task / TippingRequest documents in sync with this truck schedule
+      const truckObjectId = mongoose.Types.ObjectId.isValid(truckId)
+        ? new mongoose.Types.ObjectId(truckId)
+        : truckId;
+      const assignmentUpdates = validatedTasks.map((t) => {
+        const normalizedType = t.type === 'Task' ? 'task' : t.type;
+        if (normalizedType === 'task') {
+          return Task.updateOne({ _id: t.taskId }, { $set: { truckId: truckObjectId } });
+        }
+        if (t.type === 'TippingRequest') {
+          return TippingRequest.updateOne({ _id: t.taskId }, { $set: { truckId: truckObjectId } });
+        }
+        return Promise.resolve();
+      });
+      await Promise.all(assignmentUpdates);
+
       // Update daily sheets for the driver
       try {
         if (updatedTruck.driverId) {
@@ -1483,6 +1500,15 @@ const taskCtrl = {
 
       // If the task status has just been switched to Completed, refresh daily sheets
       if (updatedTask && updatedTask.taskStatus === 'Completed') {
+        if (oldTask.taskStatus !== 'Completed' && updatedTask.truckId) {
+          const usedSpace = Number(updatedTask.spaceOfVan || 0);
+          if (usedSpace > 0) {
+            await Truck.updateOne(
+              { _id: updatedTask.truckId },
+              { $inc: { currentCapacity: usedSpace } }
+            );
+          }
+        }
         await updateDailySheetForTask(updatedTask);
         // Send Waste Transfer Note email once per task
         await sendWasteTransferNoteEmail(updatedTask._id);
