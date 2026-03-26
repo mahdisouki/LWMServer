@@ -117,7 +117,7 @@ const staffManagement = {
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
         };
-        if (role === 'Driver') {
+        if (role === 'Driver' || role === 'Helper') {
           if (start_location && start_location.coordinates && start_location.coordinates.length >= 2) {
             driverFields.start_location = start_location;
           } else if (startLat != null && startLng != null) {
@@ -379,8 +379,8 @@ const staffManagement = {
         updateData.password = await bcrypt.hash(updateData.password, 10);
       }
 
-      // Driver-only: build start_location / end_location from lat/lng if provided
-      if (oldUser.roleType === 'Driver') {
+      // Driver / Helper: build start_location / end_location from lat/lng if provided
+      if (oldUser.roleType === 'Driver' || oldUser.roleType === 'Helper') {
         if (updateData.startLat != null && updateData.startLng != null) {
           updateData.start_location = {
             type: 'Point',

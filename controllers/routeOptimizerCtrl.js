@@ -5,6 +5,7 @@
 
 const axios = require('axios');
 const Task = require('../models/Task');
+const TippingRequest = require('../models/TippingRequest');
 const Truck = require('../models/Truck');
 const Driver = require('../models/Driver');
 const { truckDisplayName } = require('../utils/truckHelpers');
@@ -13,7 +14,7 @@ const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.1.115:8000'//'https://routeoptimiser.duckdns.org';
 
 /**
  * POST /api/route-optimizer/assign-and-optimize
@@ -368,7 +369,7 @@ const EXTERNAL_ROUTE_OPTIMIZER_URL =
  * POST /api/route-optimizer/external/calculate-routes
  * Loads drivers (trucks) and unassigned jobs (tasks) from DB for the given date,
  * then forwards to external Route Optimizer API (e.g. https://routeoptimiser.duckdns.org).
- * Body: { date: string|Date, respect_time_slots?, job_priorities? }
+ * Body: { date: string|Date }
  * Returns: { success, routes, api_calls_used } from external API.
  */
 async function calculateRoutesExternal(req, res) {
@@ -379,9 +380,6 @@ async function calculateRoutesExternal(req, res) {
     }
 
     const dateStr = inputDate.toISOString().split('T')[0];
-    const respect_time_slots = Boolean(req.body.respect_time_slots ?? req.body.respectTimeSlots);
-    const job_priorities = req.body.job_priorities || null;
-
     const startOfDay = new Date(inputDate);
     startOfDay.setUTCHours(0, 0, 0, 0);
     const endOfDay = new Date(inputDate);
@@ -423,22 +421,12 @@ async function calculateRoutesExternal(req, res) {
     });
 
     const tasksWithCoords = tasks.filter((t) => t.location?.coordinates?.length >= 2);
-    const jobIdToTaskId = {};
-    tasksWithCoords.forEach((t) => {
-      jobIdToTaskId[t._id.toString()] = t._id;
-    });
-    console.log('[RouteOptimizer:external] tasks with coords=%d jobIdToTaskId keys=%s', tasksWithCoords.length, Object.keys(jobIdToTaskId).slice(0, 10).join(', ') + (Object.keys(jobIdToTaskId).length > 10 ? '...' : ''));
+    console.log('[RouteOptimizer:external] tasks with coords=%d', tasksWithCoords.length);
 
-    // We no longer send jobs to the external API, but we keep this data for mapping
-    // the returned route segment IDs back to Task IDs via jobIdToTaskId.
     const jobs = tasksWithCoords.map((t) => ({
       job_id: t._id.toString(),
-      name: [t.firstName, t.lastName].filter(Boolean).join(' ') || 'Customer',
       lat: t.location.coordinates[1],
       lng: t.location.coordinates[0],
-      duration_min: 10,
-      time_slot: t.available || 'AnyTime',
-      total_price: t.totalPrice || 0,
       taskDuration: typeof t.taskDuration === 'number' && t.taskDuration >= 0 ? t.taskDuration : 10,
     }));
 
@@ -452,55 +440,9 @@ async function calculateRoutesExternal(req, res) {
       });
     }
 
-    const drivers = trucksWithDrivers.map(({ truck, driver }) => {
-      let startLat = routeOptimizerService.DEFAULT_DEPOT.lat;
-      let startLng = routeOptimizerService.DEFAULT_DEPOT.lng;
-      let endLat = startLat;
-      let endLng = startLng;
-      if (driver) {
-        const startCoords = driver.start_location?.coordinates ?? driver.location?.coordinates;
-        const endCoords = driver.end_location?.coordinates ?? startCoords;
-        if (startCoords && startCoords.length >= 2) {
-          startLat = startCoords[1];
-          startLng = startCoords[0];
-        }
-        if (endCoords && endCoords.length >= 2) {
-          endLat = endCoords[1];
-          endLng = endCoords[0];
-        }
-      }
-      console.log({
-        driver_id: driver._id.toString(),
-        start_location: { lat: startLat, lng: startLng },
-        end_location: { lat: endLat, lng: endLng },
-        status: 'active',
-      });
-      return {
-        driver_id: driver._id.toString(),
-        start_location: { lat: startLat, lng: startLng },
-        end_location: { lat: endLat, lng: endLng },
-        working_hours: { start: '08:00', end: '17:00' },
-        max_route_duration_min: 480,
-        status: 'active',
-      };
-    });
-
-    const high_priority_jobs = {};
-    if (job_priorities && typeof job_priorities === 'object') {
-      for (const [driverId, priorities] of Object.entries(job_priorities)) {
-        if (priorities && typeof priorities === 'object') {
-          const highIds = Object.entries(priorities)
-            .filter(([, p]) => p === 'high')
-            .map(([jobId]) => jobId);
-          if (highIds.length) high_priority_jobs[driverId] = highIds;
-        }
-      }
-    }
-
     const payload = {
-      drivers,
+      truck_ids: trucksWithDrivers.map(({ truck }) => truck._id.toString()),
       jobs,
-      respect_time_slots: false
     };
     console.log("payload", payload);
     const { data, status } = await axios.post(
@@ -538,15 +480,15 @@ async function calculateRoutesExternal(req, res) {
     // Persist assignment: clear old routes for this date on each truck, then assign new order
     let assignedCount = 0;
     for (const routeKey of routeKeys) {
-      // New response: routeKey is the driver_id (Driver._id)
-      const entry = trucksWithDrivers.find(({ driverId }) => driverId.toString() === routeKey);
+      // New response: routeKey is truck_id (Truck._id)
+      const entry = trucksWithDrivers.find(({ truck }) => truck._id.toString() === routeKey);
       if (!entry) {
         console.log('[RouteOptimizer:external] routeKey=%s no truck/driver assignment matched (skip)', routeKey);
         continue;
       }
       const { truck } = entry;
       console.log(
-        '[RouteOptimizer:external] routeKey=%s matched truck name=%s _id=%s (by driverId)',
+        '[RouteOptimizer:external] routeKey=%s matched truck name=%s _id=%s (by truckId)',
         routeKey,
         truckDisplayName(truck),
         truck._id.toString()
@@ -556,28 +498,43 @@ async function calculateRoutesExternal(req, res) {
       truck.tasks.set(dateStr, []);
       truck.markModified('tasks');
 
-      // New response format: routes[driverId].route_segments is an array of IDs,
-      // mostly Task IDs, with a terminating 'End Position' marker.
+      // New response format: routes[truckId].route_segments is an array of objects:
+      // { taskId, type, order, ... }
       const routeSegments = Array.isArray(routes[routeKey].route_segments)
         ? routes[routeKey].route_segments
         : [];
       let assignedThisTruck = 0;
-      const missingJobIds = [];
+      const missingTaskIds = [];
       for (let i = 0; i < routeSegments.length; i++) {
-        const jobId = routeSegments[i];
-        if (!jobId || jobId === 'End Position') continue;
-        const taskId = jobIdToTaskId[jobId];
+        const segment = routeSegments[i];
+        if (!segment || typeof segment !== 'object') continue;
+
+        const rawTaskId = segment.taskId;
+        const taskId = typeof rawTaskId === 'string'
+          ? rawTaskId
+          : (rawTaskId && typeof rawTaskId === 'object' && rawTaskId.$oid ? rawTaskId.$oid : null);
+
         if (!taskId) {
-          missingJobIds.push(jobId);
+          missingTaskIds.push(String(rawTaskId));
           continue;
         }
-        await Task.findByIdAndUpdate(taskId, { truckId: truck._id });
-        truck.addTask(dateStr, taskId, i + 1);
+
+        const order = Number.isFinite(Number(segment.order)) ? Number(segment.order) : (i + 1);
+        const segType = segment.type === 'TippingRequest' ? 'TippingRequest' : 'task';
+
+        if (segType === 'TippingRequest') {
+          await TippingRequest.findByIdAndUpdate(taskId, { truckId: truck._id });
+          truck.addTippingRequest(dateStr, taskId, order);
+        } else {
+          await Task.findByIdAndUpdate(taskId, { truckId: truck._id });
+          truck.addTask(dateStr, taskId, order);
+        }
+
         assignedCount += 1;
         assignedThisTruck += 1;
       }
-      if (missingJobIds.length) {
-        console.log('[RouteOptimizer:external] truck %s: job_ids not in jobIdToTaskId: %s', truckDisplayName(truck), missingJobIds.join(', '));
+      if (missingTaskIds.length) {
+        console.log('[RouteOptimizer:external] truck %s: segments without valid taskId: %s', truckDisplayName(truck), missingTaskIds.join(', '));
       }
       console.log('[RouteOptimizer:external] truck %s: assigned %d tasks (total so far %d)', truckDisplayName(truck), assignedThisTruck, assignedCount);
       await truck.save();
