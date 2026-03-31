@@ -17,7 +17,7 @@ const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
   let template = fs.readFileSync(templatePath, 'utf8');
 
   // Prepare dynamic links
-  const trustpilotLink = `https://www.trustpilot.com/evaluate/www.londonwastemanagement.com`;
+  const trustpilotLink = `https://g.page/r/CXe5YobQgoekEAE/review`;
 
   // Encode the name for URL parameter
   const encodedName = encodeURIComponent(firstName);
