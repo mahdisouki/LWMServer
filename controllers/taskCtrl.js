@@ -2,6 +2,7 @@ const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
 const TippingRequest = require('../models/TippingRequest');
 const Truck = require('../models/Truck');
+const Van = require('../models/Van');
 const { findTruckByTruckName, truckDisplayName } = require('../utils/truckHelpers');
 const { User } = require('../models/User');
 const paypal = require('@paypal/checkout-server-sdk');
@@ -22,6 +23,7 @@ const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const payrollCtrl = require('./payrollCtrl');
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
 const CLIENT_URL = 'https://www.londonwastemanagement.com';
@@ -463,6 +465,69 @@ async function calculateVanLoadPercentage(task) {
     }
   }
   return Math.min(100, Math.round(total));
+}
+
+function round2(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
+/**
+ * Same logic as `calculateVanLoadPercentage`, but returns a per-item breakdown so we
+ * can update `Van.itemsInTruck` alongside `Van.currentCapacity` (unit's vanId → Van).
+ */
+async function resolveTaskVanLoadDetails(task) {
+  const items = task?.items;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return { usedSpace: 0, perItem: [] };
+  }
+
+  const perItemRaw = new Map(); // key -> { rawPercent, quantity }
+  let totalRawPercent = 0;
+
+  for (const item of items) {
+    const qty = Math.max(0, Number(item.quantity) || 1);
+
+    if (item.standardItemId) {
+      const standardItem = await StandardItem.findById(item.standardItemId).select('itemName spaceOfVan').lean();
+
+      let spaceOfVan = Number(item.spaceOfVan);
+      if (!Number.isFinite(spaceOfVan) || spaceOfVan <= 0) {
+        spaceOfVan = Number(standardItem?.spaceOfVan);
+      }
+
+      if (Number.isFinite(spaceOfVan) && spaceOfVan > 0) {
+        const percent = (qty / spaceOfVan) * 100;
+        totalRawPercent += percent;
+
+        const key = standardItem?.itemName || item.standardItemId.toString();
+        const prev = perItemRaw.get(key) || { rawPercent: 0, quantity: 0 };
+        perItemRaw.set(key, { rawPercent: prev.rawPercent + percent, quantity: prev.quantity + qty });
+      }
+    } else if (item.vanLoadOption && VAN_LOAD_OPTION_PERCENT[item.vanLoadOption] != null) {
+      const percent = qty * VAN_LOAD_OPTION_PERCENT[item.vanLoadOption];
+      totalRawPercent += percent;
+
+      const key = item.object || item.vanLoadOption || 'Custom';
+      const prev = perItemRaw.get(key) || { rawPercent: 0, quantity: 0 };
+      perItemRaw.set(key, { rawPercent: prev.rawPercent + percent, quantity: prev.quantity + qty });
+    }
+  }
+
+  if (totalRawPercent <= 0) {
+    return { usedSpace: 0, perItem: [] };
+  }
+
+  const totalCappedPercent = Math.min(100, totalRawPercent);
+  const usedSpace = Math.round(totalCappedPercent);
+  const scale = totalCappedPercent / totalRawPercent;
+
+  const perItem = [...perItemRaw.entries()].map(([itemKey, v]) => ({
+    item: itemKey,
+    quantity: v.quantity,
+    spaceOfVan: round2(v.rawPercent * scale),
+  }));
+
+  return { usedSpace, perItem };
 }
 
 const taskCtrl = {
@@ -1500,13 +1565,33 @@ const taskCtrl = {
 
       // If the task status has just been switched to Completed, refresh daily sheets
       if (updatedTask && updatedTask.taskStatus === 'Completed') {
-        if (oldTask.taskStatus !== 'Completed' && updatedTask.truckId) {
-          const usedSpace = Number(updatedTask.spaceOfVan || 0);
-          if (usedSpace > 0) {
-            await Truck.updateOne(
-              { _id: updatedTask.truckId },
-              { $inc: { currentCapacity: usedSpace } }
-            );
+        if (oldTask.taskStatus !== 'Completed' && updatedTask.truckId && updatedTask.date) {
+          const dateStr = new Date(updatedTask.date).toISOString().split('T')[0];
+          const assigned = await getAssignedForDayFromRanges(updatedTask.truckId, dateStr);
+          const truckRow = await Truck.findById(updatedTask.truckId).select('vanId').lean();
+          const vanId = assigned.vanId || truckRow?.vanId;
+          if (vanId) {
+            const van = await Van.findById(vanId);
+            if (van) {
+              const { usedSpace, perItem } = await resolveTaskVanLoadDetails(updatedTask);
+              if (usedSpace > 0) {
+                van.currentCapacity = Number(van.currentCapacity || 0) + usedSpace;
+                van.itemsInTruck = Array.isArray(van.itemsInTruck) ? van.itemsInTruck : [];
+
+                for (const entry of perItem) {
+                  if (!entry?.item || !Number.isFinite(entry.spaceOfVan) || entry.spaceOfVan <= 0) continue;
+                  const idx = van.itemsInTruck.findIndex((x) => x.item === entry.item);
+                  if (idx >= 0) {
+                    van.itemsInTruck[idx].quantity = Number(van.itemsInTruck[idx].quantity || 0) + Number(entry.quantity || 0);
+                    van.itemsInTruck[idx].spaceOfVan = Number(van.itemsInTruck[idx].spaceOfVan || 0) + entry.spaceOfVan;
+                  } else {
+                    van.itemsInTruck.push({ item: entry.item, quantity: Number(entry.quantity || 0), spaceOfVan: entry.spaceOfVan });
+                  }
+                }
+
+                await van.save();
+              }
+            }
           }
         }
         await updateDailySheetForTask(updatedTask);

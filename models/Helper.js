@@ -17,6 +17,28 @@
         required: false,
       },
     },
+    start_location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        required: false,
+      },
+      coordinates: {
+        type: [Number],
+        required: false,
+      },
+    },
+    end_location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        required: false,
+      },
+      coordinates: {
+        type: [Number],
+        required: false,
+      },
+    },
     driverId: { type: mongoose.Schema.Types.ObjectId, ref: 'Driver' }  // Reference to Driver
   });
   

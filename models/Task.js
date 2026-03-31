@@ -5,6 +5,82 @@ const Counter = require('./Counter');
 const DailySheet = require('./DailySheet');
 const EWC_CODES = require('../config/ewcCodes');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
+const Van = require('./Van');
+
+const VAN_LOAD_OPTION_PERCENT = {
+  '1/4 Load': 25,
+  '1/2 Load': 50,
+  '3/4 Load': 75,
+  'Full Load / Large Load': 100,
+};
+
+function round2(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
+/**
+ * Compute van-load usage from `task.items` (0–100) and per-item breakdown.
+ * - Standard items: (qty / spaceOfVan) * 100
+ * - Custom items with vanLoadOption: qty * mapped percentage
+ *
+ * Total is capped at 100; per-item percents are scaled proportionally to match the cap.
+ */
+async function resolveTaskVanLoadDetails(task) {
+  const items = task?.items;
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return { usedSpace: 0, perItem: [] };
+  }
+
+  const perItemRaw = new Map(); // key -> { rawPercent, quantity }
+  let totalRawPercent = 0;
+
+  for (const item of items) {
+    const qty = Math.max(0, Number(item.quantity) || 1);
+
+    if (item.standardItemId) {
+      const std = await StandardItem.findById(item.standardItemId)
+        .select('itemName spaceOfVan')
+        .lean();
+
+      let spaceOfVan = Number(item.spaceOfVan);
+      if (!Number.isFinite(spaceOfVan) || spaceOfVan <= 0) {
+        spaceOfVan = Number(std?.spaceOfVan);
+      }
+
+      if (Number.isFinite(spaceOfVan) && spaceOfVan > 0) {
+        const percent = (qty / spaceOfVan) * 100;
+        totalRawPercent += percent;
+
+        const key = std?.itemName || item.standardItemId.toString();
+        const prev = perItemRaw.get(key) || { rawPercent: 0, quantity: 0 };
+        perItemRaw.set(key, { rawPercent: prev.rawPercent + percent, quantity: prev.quantity + qty });
+      }
+    } else if (item.vanLoadOption && VAN_LOAD_OPTION_PERCENT[item.vanLoadOption] != null) {
+      const percent = qty * VAN_LOAD_OPTION_PERCENT[item.vanLoadOption];
+      totalRawPercent += percent;
+
+      const key = item.object || item.vanLoadOption || 'Custom';
+      const prev = perItemRaw.get(key) || { rawPercent: 0, quantity: 0 };
+      perItemRaw.set(key, { rawPercent: prev.rawPercent + percent, quantity: prev.quantity + qty });
+    }
+  }
+
+  if (totalRawPercent <= 0) {
+    return { usedSpace: 0, perItem: [] };
+  }
+
+  const totalCappedPercent = Math.min(100, totalRawPercent);
+  const usedSpace = Math.round(totalCappedPercent);
+  const scale = totalCappedPercent / totalRawPercent;
+
+  const perItem = [...perItemRaw.entries()].map(([itemKey, v]) => ({
+    item: itemKey,
+    quantity: v.quantity,
+    spaceOfVan: round2(v.rawPercent * scale),
+  }));
+
+  return { usedSpace, perItem };
+}
 
 const taskSchema = new Schema(
   {
@@ -314,17 +390,42 @@ taskSchema.pre('save', async function (next) {
       return next();
     }
 
-    // Increase truck used capacity once when task transitions to Completed
+    // Increase van load once when task transitions to Completed (capacity lives on Van, not Truck/unit)
     if (!this.isNew && this.truckId) {
       const previousTask = await this.constructor.findById(this._id).select('taskStatus').lean();
       const wasCompleted = previousTask?.taskStatus === 'Completed';
       if (!wasCompleted && this.taskStatus === 'Completed') {
-        const usedSpace = Number(this.spaceOfVan || 0);
+        const { usedSpace, perItem } = await resolveTaskVanLoadDetails(this);
         if (usedSpace > 0) {
-          await mongoose.model('Truck').updateOne(
-            { _id: this.truckId },
-            { $inc: { currentCapacity: usedSpace } }
-          );
+          const taskDate = this.date.toISOString().split('T')[0];
+          const assigned = await getAssignedForDayFromRanges(this.truckId, taskDate);
+          const truckRow = await mongoose.model('Truck').findById(this.truckId).select('vanId').lean();
+          const vanId = assigned.vanId || truckRow?.vanId;
+          if (vanId) {
+            const van = await Van.findById(vanId);
+            if (van) {
+              van.currentCapacity = Number(van.currentCapacity || 0) + usedSpace;
+              van.itemsInTruck = Array.isArray(van.itemsInTruck) ? van.itemsInTruck : [];
+
+              for (const entry of perItem) {
+                if (!entry?.item || !Number.isFinite(entry.spaceOfVan) || entry.spaceOfVan <= 0) continue;
+
+                const idx = van.itemsInTruck.findIndex((x) => x.item === entry.item);
+                if (idx >= 0) {
+                  van.itemsInTruck[idx].quantity = Number(van.itemsInTruck[idx].quantity || 0) + Number(entry.quantity || 0);
+                  van.itemsInTruck[idx].spaceOfVan = Number(van.itemsInTruck[idx].spaceOfVan || 0) + entry.spaceOfVan;
+                } else {
+                  van.itemsInTruck.push({
+                    item: entry.item,
+                    quantity: Number(entry.quantity || 0),
+                    spaceOfVan: entry.spaceOfVan,
+                  });
+                }
+              }
+
+              await van.save();
+            }
+          }
         }
       }
     }

@@ -6,6 +6,7 @@ const APIfeatures = require('../utils/APIFeatures');
 const loggingService = require('../services/loggingService');
 const { logUnitAssignment, getAssignmentsForUnitOnDay, getAssignmentAtTime, getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
+const { User } = require('../models/User');
 const { findTruckByTruckName } = require('../utils/truckHelpers');
 const formatDate = (date) => {
   const d = new Date(date);
@@ -485,10 +486,12 @@ const truckCtrl = {
       const assigned = await getAssignedForDayFromRanges(id, date);
 
       // Optionally populate basic info for van/driver/helper
+      const staffGeoSelect =
+        'firstName lastName username role roleType start_location end_location';
       const [van, driver, helper] = await Promise.all([
         assigned.vanId ? Van.findById(assigned.vanId).select('matricule name') : null,
-        assigned.driverId ? require('../models/User').User.findById(assigned.driverId).select('firstName lastName username role roleType') : null,
-        assigned.helperId ? require('../models/User').User.findById(assigned.helperId).select('firstName lastName username role roleType') : null,
+        assigned.driverId ? User.findById(assigned.driverId).select(staffGeoSelect) : null,
+        assigned.helperId ? User.findById(assigned.helperId).select(staffGeoSelect) : null,
       ]);
 
       return res.status(200).json({

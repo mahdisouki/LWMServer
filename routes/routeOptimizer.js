@@ -40,5 +40,13 @@ router.post(
   routeOptimizerCtrl.calculateRoutesExternal
 );
 
+/**
+ * POST /api/route-optimizer/external/recalculate-truck
+ * Body: { truckId, date, persist?: boolean }
+ */
+router.post(
+  '/external/recalculate-truck',
+  routeOptimizerCtrl.recalculateTruckRoute
+);
 
 module.exports = router;
