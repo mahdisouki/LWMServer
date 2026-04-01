@@ -90,9 +90,9 @@ const pcnDamageController = {
                 return;
             }
 
-            // Query PcnDamage by time (same local-day range) and deductedFromUserId
+            // Query PcnDamage by creation date (same local-day range) and deductedFromUserId
             const pcnDamages = await PcnDamage.find({
-                time: { $gte: startDate, $lte: endDate },
+                createdAt: { $gte: startDate, $lte: endDate },
                 deductedFromUserId: userId
             });
             const totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
@@ -189,10 +189,11 @@ const pcnDamageController = {
 
             await pcnDamage.save();
 
-            // Try to find DailySheet for that date - if it exists, link PCN to it
-            const startDate = new Date(date);
+            // Try to find DailySheet for PCN creation date - if it exists, link PCN to it
+            const sheetDate = pcnDamage.createdAt || new Date();
+            const startDate = new Date(sheetDate);
             startDate.setHours(0, 0, 0, 0);
-            const endDate = new Date(date);
+            const endDate = new Date(sheetDate);
             endDate.setHours(23, 59, 59, 999);
 
             const dailySheet = await DailySheet.findOne({
@@ -218,8 +219,9 @@ const pcnDamageController = {
             // If DailySheet doesn't exist, PCN is created standalone (linkedToDailySheet = false by default)
             // It can be linked later using /add-to-sheet endpoint
 
-            // Recalculate payroll for the user this PCN/Damage is deducted from
-            await pcnDamageController.recalculatePayrollPcnDamages(date, deductedFromUserId);
+            // Recalculate payroll by PCN creation date (createdAt), not offense date
+            const payrollDate = pcnDamage.createdAt ? toLocalDateStr(pcnDamage.createdAt) : date;
+            await pcnDamageController.recalculatePayrollPcnDamages(payrollDate, deductedFromUserId);
 
             res.status(200).json({
                 message: linkedToDailySheet
@@ -385,12 +387,40 @@ const pcnDamageController = {
 
             await pcnDamage.save();
 
-            await pcnDamageController.recalculatePayrollPcnDamages(date, deductedFromUserId);
+            // Recalculate payroll by PCN creation date (createdAt), not offense date
+            const payrollDate = pcnDamage.createdAt ? toLocalDateStr(pcnDamage.createdAt) : date;
+            await pcnDamageController.recalculatePayrollPcnDamages(payrollDate, deductedFromUserId);
+
+            // Try to find DailySheet for PCN creation date - if it exists, link PCN to it
+            const sheetDate = pcnDamage.createdAt || new Date();
+            const startDate = new Date(sheetDate);
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(sheetDate);
+            endDate.setHours(23, 59, 59, 999);
+
+            const dailySheet = await DailySheet.findOne({
+                driverId,
+                date: { $gte: startDate, $lte: endDate },
+            });
+
+            let linkedToDailySheet = false;
+            if (dailySheet) {
+                dailySheet.pcnDamages = dailySheet.pcnDamages || [];
+                if (!dailySheet.pcnDamages.some(id => id.toString() === pcnDamage._id.toString())) {
+                    dailySheet.pcnDamages.push(pcnDamage._id);
+                    await dailySheet.save();
+                }
+                pcnDamage.linkedToDailySheet = true;
+                await pcnDamage.save();
+                await blueSheetController.syncBlueSheetPcnDamages(dailySheet._id);
+                linkedToDailySheet = true;
+            }
 
             res.status(201).json({
                 message: 'PCN/Damage created successfully (standalone)',
                 pcnDamage,
                 driverId, // Return the driver ID found from UnitAssignmentLogRange
+                linkedToDailySheet,
             });
         } catch (error) {
             console.error(error);
@@ -462,59 +492,18 @@ const pcnDamageController = {
                 return res.status(404).json({ message: 'PCN/Damage not found' });
             }
 
-            // Store old values before update (use local date for payroll matching)
+            // Store old values before update (use local creation date for payroll matching)
             const oldDeductedFromUserId = pcnDamage.deductedFromUserId;
-            const oldDate = pcnDamage.time ? toLocalDateStr(pcnDamage.time) : date;
+            const oldDate = pcnDamage.createdAt ? toLocalDateStr(pcnDamage.createdAt) : date;
             let dateToUse = oldDate;
 
-            // Find sheets that contain this PCN (for BlueSheet sync)
-            const sheetsWithPcn = await DailySheet.find({ pcnDamages: pcnDamageId });
-
-            // Handle date update if newDate is provided
+            // Handle offense date update if newDate is provided (DailySheet linking remains based on createdAt)
             if (newDate) {
                 const newStartDate = new Date(newDate);
-                newStartDate.setHours(0, 0, 0, 0);
-                const newEndDate = new Date(newDate);
-                newEndDate.setHours(23, 59, 59, 999);
-
-                // Find the new daily sheet for the new date (driverId from params)
-                const newDailySheet = await DailySheet.findOne({
-                    driverId,
-                    date: { $gte: newStartDate, $lte: newEndDate },
-                });
-
-                if (newDailySheet) {
-                    // Remove from old sheet(s)
-                    for (const sheet of sheetsWithPcn) {
-                        sheet.pcnDamages = (sheet.pcnDamages || []).filter(
-                            id => id.toString() !== pcnDamageId
-                        );
-                        await sheet.save();
-                        await blueSheetController.syncBlueSheetPcnDamages(sheet._id);
-                    }
-                    // Add to new sheet
-                    newDailySheet.pcnDamages = newDailySheet.pcnDamages || [];
-                    if (!newDailySheet.pcnDamages.some(id => id.toString() === pcnDamageId)) {
-                        newDailySheet.pcnDamages.push(pcnDamage._id);
-                    }
-                    await newDailySheet.save();
-                    await blueSheetController.syncBlueSheetPcnDamages(newDailySheet._id);
-                    // Update PCN's linkedToDailySheet field
-                    pcnDamage.linkedToDailySheet = true;
-                } else {
-                    // If newDailySheet doesn't exist, remove from all sheets and set to false
-                    for (const sheet of sheetsWithPcn) {
-                        sheet.pcnDamages = (sheet.pcnDamages || []).filter(
-                            id => id.toString() !== pcnDamageId
-                        );
-                        await sheet.save();
-                        await blueSheetController.syncBlueSheetPcnDamages(sheet._id);
-                    }
-                    pcnDamage.linkedToDailySheet = false;
-                }
-
                 pcnDamage.time = newStartDate;
-                dateToUse = newDate;
+                // Payroll deduction day is based on PCN createdAt, not offense date.
+                // Keep payroll recalculation date anchored to creation date.
+                dateToUse = oldDate;
             }
 
             // Update other fields
@@ -604,7 +593,7 @@ const pcnDamageController = {
             }
 
             const deductedFromUserId = pcnDamage.deductedFromUserId;
-            const pcnDate = pcnDamage.time ? toLocalDateStr(pcnDamage.time) : null;
+            const pcnDate = pcnDamage.createdAt ? toLocalDateStr(pcnDamage.createdAt) : null;
 
             // Remove from any DailySheet.pcnDamages
             const sheetsWithPcn = await DailySheet.find({ pcnDamages: pcnDamageId });
