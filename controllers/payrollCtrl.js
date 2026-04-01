@@ -239,9 +239,9 @@ const PayrollCtrl = {
       });
       totalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
 
-      // Calculate PCN/Damages deductions for this user (query by date + user, independent of DailySheet)
+      // Calculate PCN/Damages deductions for this user by PCN creation date + user
       const pcnDamages = await PcnDamage.find({
-        time: { $gte: today, $lt: tomorrow },
+        createdAt: { $gte: today, $lt: tomorrow },
         deductedFromUserId: userId
       });
       const totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
@@ -592,14 +592,14 @@ const PayrollCtrl = {
         // Use the manually provided value (admin override)
         payroll.totalPcnDamages = totalPcnDamages;
       } else if (payroll.startTime) {
-        // Calculate from PcnDamage by date + user (independent of DailySheet)
+        // Calculate from PcnDamage by creation date + user
         const payrollDate = new Date(payroll.startTime);
         payrollDate.setHours(0, 0, 0, 0);
         const nextDay = new Date(payrollDate);
         nextDay.setDate(payrollDate.getDate() + 1);
 
         const pcnDamages = await PcnDamage.find({
-          time: { $gte: payrollDate, $lt: nextDay },
+          createdAt: { $gte: payrollDate, $lt: nextDay },
           deductedFromUserId: payroll.userId
         });
         payroll.totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
@@ -730,10 +730,10 @@ const PayrollCtrl = {
           calculatedTotalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
         }
 
-        // Calculate totalPcnDamages from PcnDamage by date + user (independent of DailySheet)
+        // Calculate totalPcnDamages from PcnDamage by creation date + user
         if (totalPcnDamages === undefined) {
           const pcnDamages = await PcnDamage.find({
-            time: { $gte: payrollDate, $lt: nextDay },
+            createdAt: { $gte: payrollDate, $lt: nextDay },
             deductedFromUserId: userId
           });
           calculatedTotalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
