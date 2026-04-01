@@ -512,6 +512,13 @@ module.exports = {
     const paymentStatusPaidDisplay = (isRefund || isDeposit) ? 'none' : (isFullyPaid ? 'block' : 'none');
     const paymentStatusUnpaidDisplay = (isRefund || isDeposit) ? 'none' : (!isFullyPaid ? 'block' : 'none');
 
+    const depositAmount = Math.max(0, Number(task.paidAmount?.amount) || 0);
+    const remainingToPayRaw = Number(task.remainingAmount?.amount);
+    const remainingToPay = Number.isFinite(remainingToPayRaw)
+      ? Math.max(0, remainingToPayRaw)
+      : Math.max(0, total - depositAmount);
+    const showRemainingToPayRow = task.paymentStatus === 'partial_Paid' && remainingToPay > 0 ? 'block' : 'none';
+
     const vars = {
       billingName: `${task.firstName} ${task.lastName}`,
       billingAddress: task.billingAddress,
@@ -579,6 +586,9 @@ module.exports = {
       showPartialRefundBadge,
       showRefundRow,
       refundAmount: refundAmount ? refundAmount.toFixed(2) : '0.00',
+      // Remaining balance (for partial paid)
+      showRemainingToPayRow,
+      remainingToPay: remainingToPay.toFixed(2),
       fullRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994713/king_q_2_3_r6ij4f.png',
       partialRefundBadgeUrl: 'https://res.cloudinary.com/dehzhd6xs/image/upload/v1763994706/king_q_2_4_vu3kji.png',
       // Deposit badge information
