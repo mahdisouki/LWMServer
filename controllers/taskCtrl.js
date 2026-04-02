@@ -3911,6 +3911,7 @@ const taskCtrl = {
         amountToPay,
         breakdown,
         paymentType,
+        orderNumber,
       );
 
       // Send email with payment links and paymentType

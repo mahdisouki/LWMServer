@@ -207,7 +207,7 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
     return session.url;
 };
 
-const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentType = 'total') => {
+const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentType = 'total', orderNumber = null) => {
     console.log("Generating PayPal link for items:", breakdown);
     let itemDetails = breakdown.filter(item => item.price != null && !isNaN(item.price)).map(item => ({
         name: item.itemDescription || "Item",
@@ -247,7 +247,8 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
         intent: "CAPTURE",
         purchase_units: [{
             custom_id: `${taskId}|${paymentType}`,
-            description: `Payment for Task #${taskId}`,
+            invoice_id: orderNumber || undefined,
+            description: `Payment for Task #${orderNumber || taskId}`,
             amount: {
                 currency_code: "GBP",
                 value: finalAmount.toFixed(2),
@@ -303,6 +304,7 @@ async function createPayPalOrder(amountInPence, taskId, fullBreakdown, task, pay
         purchase_units: [{
             // Include paymentAmountType in custom_id so webhook can detect partial payments
             custom_id: `${taskId}|${paymentAmountType}`,
+            invoice_id: task?.orderNumber || undefined,
             amount: { currency_code: 'GBP', value: (amountInPence / 100).toFixed(2) }
         }],
         application_context: {
