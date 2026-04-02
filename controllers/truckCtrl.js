@@ -65,15 +65,9 @@ const truckCtrl = {
   createTruck: async (req, res) => {
     try {
       const { name, vanId, driverId, helperId, extraDrivers, extraHelpers } = req.body;
-      if (!vanId) {
-        return res.status(400).json({ message: 'vanId is required' });
-      }
-      const van = await Van.findById(vanId);
-      if (!van) {
-        return res.status(404).json({ message: 'Van not found' });
-      }
+     
       const newTruck = new Truck({
-        name: name || van.matricule || van.name,
+        name,
         vanId,
         driverId: driverId || undefined,
         helperId: helperId || undefined,
@@ -82,16 +76,7 @@ const truckCtrl = {
       });
       await newTruck.save();
 
-      if (newTruck.vanId) {
-        await logUnitAssignment({
-          truckId: newTruck._id,
-          type: 'van',
-          refId: newTruck.vanId,
-          event: 'assigned',
-          by: req.user && req.user._id,
-          startAt: new Date(),
-        });
-      }
+     
 
       await loggingService.createLog({
         userId: req.user._id,
