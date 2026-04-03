@@ -26,6 +26,9 @@ router.post('/add', parser.single('proof'), pcnDamageController.addPcnDamage);
 // Update a PCN/Damage
 router.patch('/:driverId/:date/:pcnDamageId', parser.single('proof'), pcnDamageController.updatePcnDamage);
 
+// Update only payment status for a PCN/Damage
+router.patch('/:pcnDamageId/payment-status', pcnDamageController.updatePcnPaymentStatus);
+
 // Delete a PCN/Damage
 router.delete('/:driverId/:date/:pcnDamageId', pcnDamageController.deletePcnDamage);
 

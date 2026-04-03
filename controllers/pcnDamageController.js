@@ -14,6 +14,28 @@ const toLocalDateStr = (d) => {
     return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
 };
 
+/** Trim; empty string becomes undefined so sparse unique index allows multiple PCNs without a ref */
+const normalizePcnReferenceNumber = (value) => {
+    if (value === undefined || value === null) return undefined;
+    const s = String(value).trim();
+    return s === '' ? undefined : s;
+};
+
+/** Mongo duplicate key on pcnReferenceNumber → 409 with a clear message */
+const respondIfDuplicatePcnReference = (error, res) => {
+    if (!error || error.code !== 11000) return false;
+    const keyPattern = error.keyPattern || {};
+    if (!keyPattern.pcnReferenceNumber) return false;
+    const conflictingValue = error.keyValue && error.keyValue.pcnReferenceNumber;
+    res.status(409).json({
+        message:
+            'This PCN reference number is already in use. Please use a different reference number, or leave it blank if the PCN does not have one yet.',
+        field: 'pcnReferenceNumber',
+        ...(conflictingValue != null && conflictingValue !== '' && { conflictingValue: String(conflictingValue) }),
+    });
+    return true;
+};
+
 // Helper: from vanId + dateTime → truckId + driverId using UnitAssignmentLogRange (source of truth)
 async function getTruckAndDriverFromVanAtTime(vanId, dateTime) {
     const T = dateTime instanceof Date ? dateTime : new Date(dateTime);
@@ -111,7 +133,8 @@ const pcnDamageController = {
 
     addPcnDamage: async (req, res) => {
         try {
-            const { date, pcnReferenceNumber, reason, amount, deductedFromUserId, addedBy, vanMatricule, time } = req.body;
+            const { date, pcnReferenceNumber, reason, amount, deductedFromUserId, addedBy, vanMatricule, time, paymentStatus } = req.body;
+            const ref = normalizePcnReferenceNumber(pcnReferenceNumber);
 
             // Validate required fields
             if (!reason || !deductedFromUserId) {
@@ -177,11 +200,12 @@ const pcnDamageController = {
 
             // Create new PcnDamage document with exact dateTime from unitAssignment
             const pcnDamage = new PcnDamage({
-                pcnReferenceNumber,
+                ...(ref !== undefined && { pcnReferenceNumber: ref }),
                 time: dateTime, // Use exact dateTime from unitAssignment
                 reason,
                 amount,
                 deductedFromUserId,
+                paymentStatus,
                 proofUrl,
                 addedBy,
                 vanMatricule,
@@ -203,23 +227,17 @@ const pcnDamageController = {
 
             let linkedToDailySheet = false;
             if (dailySheet) {
-                // DailySheet exists - link PCN to it
                 dailySheet.pcnDamages = dailySheet.pcnDamages || [];
                 dailySheet.pcnDamages.push(pcnDamage._id);
                 await dailySheet.save();
 
-                // Update PCN's linkedToDailySheet field in database
                 pcnDamage.linkedToDailySheet = true;
                 await pcnDamage.save();
 
-                // Sync BlueSheet pcnDamages and pcnDamage total
                 await blueSheetController.syncBlueSheetPcnDamages(dailySheet._id);
                 linkedToDailySheet = true;
             }
-            // If DailySheet doesn't exist, PCN is created standalone (linkedToDailySheet = false by default)
-            // It can be linked later using /add-to-sheet endpoint
 
-            // Recalculate payroll by PCN creation date (createdAt), not offense date
             const payrollDate = pcnDamage.createdAt ? toLocalDateStr(pcnDamage.createdAt) : date;
             await pcnDamageController.recalculatePayrollPcnDamages(payrollDate, deductedFromUserId);
 
@@ -229,10 +247,11 @@ const pcnDamageController = {
                     : 'PCN/Damage added successfully (standalone - use /add-to-sheet to link when DailySheet is generated)',
                 pcnDamage,
                 driverId: targetDriverId, // Return the driver ID found from unitAssignment
-                linkedToDailySheet: linkedToDailySheet,
+                linkedToDailySheet,
             });
         } catch (error) {
             console.error(error);
+            if (respondIfDuplicatePcnReference(error, res)) return;
             res.status(500).json({
                 message: 'Failed to add PCN/Damage',
                 error: error.message
@@ -318,7 +337,8 @@ const pcnDamageController = {
     // Create PCN without a daily sheet (standalone)
     addPcnDamageStandalone: async (req, res) => {
         try {
-            const { date, time, vanMatricule, pcnReferenceNumber, reason, amount, deductedFromUserId, addedBy } = req.body;
+            const { date, time, vanMatricule, pcnReferenceNumber, reason, amount, deductedFromUserId, addedBy, paymentStatus } = req.body;
+            const ref = normalizePcnReferenceNumber(pcnReferenceNumber);
 
             if (!date || !reason || !deductedFromUserId) {
                 return res.status(400).json({
@@ -375,11 +395,12 @@ const pcnDamageController = {
             }
 
             const pcnDamage = new PcnDamage({
-                pcnReferenceNumber,
+                ...(ref !== undefined && { pcnReferenceNumber: ref }),
                 time: dateTime, // Use the exact dateTime
                 reason,
                 amount,
                 deductedFromUserId,
+                paymentStatus,
                 proofUrl,
                 addedBy,
                 vanMatricule,
@@ -424,6 +445,7 @@ const pcnDamageController = {
             });
         } catch (error) {
             console.error(error);
+            if (respondIfDuplicatePcnReference(error, res)) return;
             res.status(500).json({
                 message: 'Failed to create PCN/Damage',
                 error: error.message
@@ -484,7 +506,7 @@ const pcnDamageController = {
     updatePcnDamage: async (req, res) => {
         try {
             const { driverId, date, pcnDamageId } = req.params;
-            const { pcnReferenceNumber, reason, amount, deductedFromUserId, newDate, vanMatricule } = req.body;
+            const { pcnReferenceNumber, reason, amount, deductedFromUserId, newDate, vanMatricule, paymentStatus } = req.body;
 
             // Find PCN by ID (works for both sheet-linked and standalone)
             const pcnDamage = await PcnDamage.findById(pcnDamageId);
@@ -506,8 +528,11 @@ const pcnDamageController = {
                 dateToUse = oldDate;
             }
 
-            // Update other fields
-            if (pcnReferenceNumber !== undefined) pcnDamage.pcnReferenceNumber = pcnReferenceNumber;
+            // Update other fields (clear ref when empty string / whitespace)
+            if (pcnReferenceNumber !== undefined) {
+                const nextRef = normalizePcnReferenceNumber(pcnReferenceNumber);
+                pcnDamage.pcnReferenceNumber = nextRef;
+            }
             if (reason !== undefined) pcnDamage.reason = reason;
             if (amount !== undefined) pcnDamage.amount = amount;
             if (deductedFromUserId !== undefined) {
@@ -531,6 +556,9 @@ const pcnDamageController = {
             }
             if (vanMatricule !== undefined) {
                 pcnDamage.vanMatricule = vanMatricule;
+            }
+            if (paymentStatus !== undefined) {
+                pcnDamage.paymentStatus = paymentStatus;
             }
             // Handle proof: accepts file upload (image/PDF) or URL string
             // req.file.path contains Cloudinary URL for uploaded files (images/PDFs)
@@ -576,8 +604,48 @@ const pcnDamageController = {
             res.status(200).json({ message: 'PCN/Damage updated', pcnDamage });
         } catch (error) {
             console.error(error);
+            if (respondIfDuplicatePcnReference(error, res)) return;
             res.status(500).json({
                 message: 'Failed to update PCN/Damage',
+                error: error.message
+            });
+        }
+    },
+
+    updatePcnPaymentStatus: async (req, res) => {
+        try {
+            const { pcnDamageId } = req.params;
+            const { paymentStatus } = req.body;
+
+            if (!paymentStatus) {
+                return res.status(400).json({
+                    message: 'paymentStatus is required'
+                });
+            }
+
+            const allowedStatuses = ['Unpaid', 'Paid'];
+            if (!allowedStatuses.includes(paymentStatus)) {
+                return res.status(400).json({
+                    message: "paymentStatus must be either 'Unpaid' or 'Paid'"
+                });
+            }
+
+            const pcnDamage = await PcnDamage.findById(pcnDamageId);
+            if (!pcnDamage) {
+                return res.status(404).json({ message: 'PCN/Damage not found' });
+            }
+
+            pcnDamage.paymentStatus = paymentStatus;
+            await pcnDamage.save();
+
+            res.status(200).json({
+                message: 'PCN payment status updated',
+                pcnDamage
+            });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({
+                message: 'Failed to update PCN payment status',
                 error: error.message
             });
         }
@@ -671,7 +739,7 @@ const pcnDamageController = {
 
     getAllPcnDamages: async (req, res) => {
         try {
-            const { date, driverId, linkedToDailySheet } = req.query;
+            const { date, driverId, linkedToDailySheet, paymentStatus, pcnReferenceNumber, page = 1, limit = 10 } = req.query;
 
             // Build query filters
             const query = {};
@@ -689,6 +757,17 @@ const pcnDamageController = {
             if (linkedToDailySheet !== undefined) {
                 const isLinked = linkedToDailySheet === 'true' || linkedToDailySheet === true;
                 query.linkedToDailySheet = isLinked;
+            }
+
+            // Filter by paymentStatus (if provided)
+            if (paymentStatus !== undefined) {
+                query.paymentStatus = paymentStatus;
+            }
+
+            // Filter by PCN reference number (exact match, trimmed)
+            const refFilter = normalizePcnReferenceNumber(pcnReferenceNumber);
+            if (refFilter !== undefined) {
+                query.pcnReferenceNumber = refFilter;
             }
 
             // Get all PCN/Damages with filters
@@ -724,8 +803,17 @@ const pcnDamageController = {
                 pcnDamages = filteredByDriver;
             }
 
+            // Pagination
+            const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
+            const parsedLimit = Math.max(parseInt(limit, 10) || 10, 1);
+            const totalItems = pcnDamages.length;
+            const totalPages = Math.max(Math.ceil(totalItems / parsedLimit), 1);
+            const startIndex = (parsedPage - 1) * parsedLimit;
+            const endIndex = startIndex + parsedLimit;
+            const paginatedPcnDamages = pcnDamages.slice(startIndex, endIndex);
+
             // Use stored linkedToDailySheet field from database (already filtered at query level)
-            const pcnDamagesWithLinkStatus = pcnDamages.map((pcn) => {
+            const pcnDamagesWithLinkStatus = paginatedPcnDamages.map((pcn) => {
                 return {
                     ...pcn.toObject(),
                     linkedToDailySheet: pcn.linkedToDailySheet || false // Use stored value from database
@@ -735,10 +823,20 @@ const pcnDamageController = {
             res.status(200).json({
                 message: 'PCN/Damages retrieved',
                 count: pcnDamagesWithLinkStatus.length,
+                totalItems,
+                pagination: {
+                    page: parsedPage,
+                    limit: parsedLimit,
+                    totalPages,
+                    hasNextPage: parsedPage < totalPages,
+                    hasPrevPage: parsedPage > 1
+                },
                 filters: {
                     date: date || null,
                     driverId: driverId || null,
-                    linkedToDailySheet: linkedToDailySheet !== undefined ? (linkedToDailySheet === 'true' || linkedToDailySheet === true) : null
+                    linkedToDailySheet: linkedToDailySheet !== undefined ? (linkedToDailySheet === 'true' || linkedToDailySheet === true) : null,
+                    paymentStatus: paymentStatus || null,
+                    pcnReferenceNumber: refFilter ?? null
                 },
                 pcnDamages: pcnDamagesWithLinkStatus,
             });
