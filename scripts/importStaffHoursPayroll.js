@@ -8,6 +8,8 @@ const Payroll = require('../models/Payroll');
 const { User } = require('../models/User');
 const Truck = require('../models/Truck');
 const Van = require('../models/Van');
+const Task = require('../models/Task');
+const PcnDamage = require('../models/PcnDamage');
 
 // Parse "DD/MM/YYYY" + "HH:mm:ss" into a JS Date
 function parseUkDateTime(dateStr, timeStr) {
@@ -16,6 +18,64 @@ function parseUkDateTime(dateStr, timeStr) {
   const [hh, mm, ss] = String(timeStr).split(':').map(Number);
   const date = new Date(year, month - 1, day, hh, mm, ss || 0);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+// Parse "DD/MM/YYYY" into local day range
+function ukDayRange(dateStr) {
+  if (!dateStr) return null;
+  const [day, month, year] = String(dateStr).split('/').map(Number);
+  if (!day || !month || !year) return null;
+  const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const end = new Date(year, month - 1, day, 23, 59, 59, 999);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  return { start, end };
+}
+
+async function getCashAndPcnTotalsForDay({ userId, dateStr, cache }) {
+  const range = ukDayRange(dateStr);
+  if (!range) {
+    throw new Error(`Invalid UK date "${dateStr}"`);
+  }
+  const cacheKey = `${String(userId)}|${String(range.start.toISOString().slice(0, 10))}`;
+  if (cache && cache.has(cacheKey)) return cache.get(cacheKey);
+
+  const [cashAgg, pcnAgg] = await Promise.all([
+    Task.aggregate([
+      {
+        $match: {
+          date: { $gte: range.start, $lte: range.end },
+          cashReceivedBy: userId,
+          cashReceived: { $gt: 0 },
+        },
+      },
+      { $group: { _id: null, totalCash: { $sum: '$cashReceived' } } },
+    ]),
+    PcnDamage.aggregate([
+      {
+        $match: {
+          deductedFromUserId: userId,
+          time: { $gte: range.start, $lte: range.end },
+          amount: { $gt: 0 },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalPcnDamages: { $sum: '$amount' },
+          pcnDamages: { $push: '$_id' },
+        },
+      },
+    ]),
+  ]);
+
+  const result = {
+    totalCash: cashAgg && cashAgg.length ? Number(cashAgg[0].totalCash || 0) : 0,
+    totalPcnDamages: pcnAgg && pcnAgg.length ? Number(pcnAgg[0].totalPcnDamages || 0) : 0,
+    pcnDamages: pcnAgg && pcnAgg.length ? pcnAgg[0].pcnDamages || [] : [],
+  };
+
+  if (cache) cache.set(cacheKey, result);
+  return result;
 }
 
 // "£100.00" -> 100
@@ -42,7 +102,7 @@ async function resolveTruckIdFromVanUsed(vanUsed) {
   return truck ? truck._id : null;
 }
 
-async function processRow(row, username) {
+async function processRow(row, username, totalsCache) {
   // 1) Find user by username from filename, case-insensitive (e.g. "Eduart" matches "eduart")
   const user = await User.findOne({
     username: { $regex: new RegExp(`^${String(username).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
@@ -94,6 +154,12 @@ async function processRow(row, username) {
   if (otAmount > 0) extraNotesParts.push(`OT amount: £${otAmount.toFixed(2)}`);
   const combinedNotes = extraNotesParts.length > 0 ? extraNotesParts.join(' | ') : null;
 
+  const { totalCash, totalPcnDamages, pcnDamages } = await getCashAndPcnTotalsForDay({
+    userId: user._id,
+    dateStr: row.Date,
+    cache: totalsCache,
+  });
+
   // 8) Create Payroll document.
   const payroll = new Payroll({
     userId: user._id,
@@ -108,8 +174,9 @@ async function processRow(row, username) {
     extraHours,
     totalSalary,
     totalExpenses: 0,
-    totalPcnDamages: 0,
-    totalCash: 0,
+    totalPcnDamages,
+    totalCash,
+    pcnDamages,
     status,
   });
 
@@ -136,11 +203,12 @@ async function importCsv(filePath) {
       .on('data', (row) => rows.push(row))
       .on('end', async () => {
         console.log(`📄 Read ${rows.length} rows from CSV for user "${username}"`);
+        const totalsCache = new Map();
         try {
           for (const row of rows) {
             if (!row.Date || !row.Start || !row.End) continue;
             // eslint-disable-next-line no-await-in-loop
-            await processRow(row, username);
+            await processRow(row, username, totalsCache);
           }
           console.log('🎉 Import finished');
           resolve();

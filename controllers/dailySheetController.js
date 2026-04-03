@@ -9,6 +9,7 @@ const { User } = require('../models/User');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const Payroll = require('../models/Payroll');
 const Expense = require('../models/Expense');
+const Fuel = require('../models/Fuel');
 const dailySheetController = {
   generateDailySheetsForAllDrivers: async (req, res) => {
     try {
@@ -223,6 +224,8 @@ const dailySheetController = {
             match: {},
           },
         },
+        { path: 'fuelLogs' },
+        { path: 'expenses' },
       ]);
       const total = await DailySheet.countDocuments(query);
 
@@ -299,8 +302,8 @@ const dailySheetController = {
         driverId,
         date: { $gte: startDate, $lte: endDate },
         ...(req.query.truckId && { truckId: req.query.truckId }),
-      }).populate(
-        'driverId truckId vanId helperId jobsDone jobsPending jobsCancelled tippingRequests',
+      }      ).populate(
+        'driverId truckId vanId helperId jobsDone jobsPending jobsCancelled tippingRequests fuelLogs expenses',
       ).populate({
         path: 'tippingRequests',
         populate: {
@@ -328,7 +331,11 @@ const dailySheetController = {
   addFuelLog: async (req, res) => {
     try {
       const { driverId, date } = req.params;
-      const { amount, litres, station, addedBy } = req.body;
+      const { amount, litres, station, addedBy, time: timeBody } = req.body;
+
+      if (amount == null || Number.isNaN(Number(amount))) {
+        return res.status(400).json({ message: 'amount is required and must be a number' });
+      }
 
       const startDate = new Date(date);
       startDate.setHours(0, 0, 0, 0);
@@ -344,16 +351,23 @@ const dailySheetController = {
         return res.status(404).json({ message: 'Daily sheet not found for that date' });
       }
 
-      dailySheet.fuelLogs.push({
-        amount,
-        litres,
+      const fuel = await Fuel.create({
+        driverId: dailySheet.driverId,
+        dailySheetId: dailySheet._id,
+        amount: Number(amount),
+        litres: litres != null ? Number(litres) : undefined,
         station,
         addedBy,
+        time: timeBody ? new Date(timeBody) : new Date(),
+        date: dailySheet.date || startDate,
+        linkedToDailySheet: true,
       });
 
+      dailySheet.fuelLogs.push(fuel._id);
       await dailySheet.save();
 
-      res.status(200).json({ message: 'Fuel log added', fuelLogs: dailySheet.fuelLogs });
+      const fuelLogs = await Fuel.find({ _id: { $in: dailySheet.fuelLogs } }).sort({ time: 1 });
+      res.status(200).json({ message: 'Fuel log added', fuelLogs });
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: 'Failed to add fuel log', error: error.message });
@@ -378,17 +392,11 @@ const dailySheetController = {
         return res.status(404).json({ message: 'Daily sheet not found' });
       }
 
-      const log = dailySheet.fuelLogs.id(fuelLogId);
-      if (!log) {
+      const fuel = await Fuel.findOne({ _id: fuelLogId, dailySheetId: dailySheet._id });
+      if (!fuel) {
         return res.status(404).json({ message: 'Fuel log not found' });
       }
 
-      // Optional: authorize only admin or original user
-      // if (String(log.addedBy) !== String(req.user._id) && req.user.role !== 'admin') {
-      //   return res.status(403).json({ message: 'Not authorized to edit this log' });
-      // }
-
-      // If a new date is provided, move the fuel log to that date's daily sheet
       if (newDate !== undefined) {
         const newDateObj = new Date(newDate);
         const newStartDate = new Date(newDateObj);
@@ -396,14 +404,12 @@ const dailySheetController = {
         const newEndDate = new Date(newDateObj);
         newEndDate.setHours(23, 59, 59, 999);
 
-        // Find or create the daily sheet for the new date
         let targetDailySheet = await DailySheet.findOne({
           driverId,
           date: { $gte: newStartDate, $lte: newEndDate },
         });
 
         if (!targetDailySheet) {
-          // Who was assigned to this truck on the new date (from UnitAssignmentLogRange)?
           const assignedNew = await getAssignedForDayFromRanges(dailySheet.truckId, newDateObj);
           targetDailySheet = new DailySheet({
             driverId,
@@ -411,41 +417,45 @@ const dailySheetController = {
             vanId: assignedNew.vanId || dailySheet.vanId,
             helperId: assignedNew.helperId || dailySheet.helperId,
             date: newDateObj,
-            fuelLogs: [],
           });
+          await targetDailySheet.save();
         }
 
-        // Save the current log data before removing it
-        const logData = {
-          amount: amount !== undefined ? amount : log.amount,
-          litres: litres !== undefined ? litres : log.litres,
-          station: station !== undefined ? station : log.station,
-          time: time !== undefined ? new Date(time) : log.time,
-          addedBy: log.addedBy,
-        };
+        const sameSheet = targetDailySheet._id.equals(dailySheet._id);
+        if (sameSheet) {
+          if (amount !== undefined) fuel.amount = Number(amount);
+          if (litres !== undefined) fuel.litres = Number(litres);
+          if (station !== undefined) fuel.station = station;
+          if (time !== undefined) fuel.time = new Date(time);
+          await fuel.save();
+          return res
+            .status(200)
+            .json({ message: 'Fuel log updated', fuelLog: fuel });
+        }
 
-        // Remove the log from the current daily sheet
-        dailySheet.fuelLogs.pull({ _id: fuelLogId });
+        dailySheet.fuelLogs.pull(fuelLogId);
         await dailySheet.save();
 
-        // Add the log to the new daily sheet with updated data
-        targetDailySheet.fuelLogs.push(logData);
+        if (amount !== undefined) fuel.amount = Number(amount);
+        if (litres !== undefined) fuel.litres = Number(litres);
+        if (station !== undefined) fuel.station = station;
+        if (time !== undefined) fuel.time = new Date(time);
+        fuel.dailySheetId = targetDailySheet._id;
+        fuel.date = targetDailySheet.date || newDateObj;
+        await fuel.save();
+
+        targetDailySheet.fuelLogs.push(fuel._id);
         await targetDailySheet.save();
 
-        // Get the newly added log for response
-        const newLog = targetDailySheet.fuelLogs[targetDailySheet.fuelLogs.length - 1];
-
-        res.status(200).json({ message: 'Fuel log updated and moved to new date', fuelLog: newLog });
+        res.status(200).json({ message: 'Fuel log updated and moved to new date', fuelLog: fuel });
       } else {
-        // Just update the properties without moving
-        if (amount !== undefined) log.amount = amount;
-        if (litres !== undefined) log.litres = litres;
-        if (station !== undefined) log.station = station;
-        if (time !== undefined) log.time = new Date(time);
+        if (amount !== undefined) fuel.amount = Number(amount);
+        if (litres !== undefined) fuel.litres = Number(litres);
+        if (station !== undefined) fuel.station = station;
+        if (time !== undefined) fuel.time = new Date(time);
+        await fuel.save();
 
-        await dailySheet.save();
-
-        res.status(200).json({ message: 'Fuel log updated', fuelLog: log });
+        res.status(200).json({ message: 'Fuel log updated', fuelLog: fuel });
       }
     } catch (err) {
       console.error(err);
@@ -469,12 +479,11 @@ const dailySheetController = {
       if (!dailySheet)
         return res.status(404).json({ message: 'Daily sheet not found' });
 
-      const logExists = dailySheet.fuelLogs.id(fuelLogId);
-      if (!logExists)
-        return res.status(404).json({ message: 'Fuel log not found' });
+      const fuel = await Fuel.findOne({ _id: fuelLogId, dailySheetId: dailySheet._id });
+      if (!fuel) return res.status(404).json({ message: 'Fuel log not found' });
 
-
-      dailySheet.fuelLogs.pull({ _id: fuelLogId }); // ✅ FIXED
+      await Fuel.findByIdAndDelete(fuelLogId);
+      dailySheet.fuelLogs.pull(fuelLogId);
       await dailySheet.save();
 
       res.status(200).json({ message: 'Fuel log deleted' });
@@ -487,24 +496,21 @@ const dailySheetController = {
   },
   getAllFuelLogs: async (req, res) => {
     try {
-      const pipeline = [
-        { $unwind: '$fuelLogs' },
-        {
-          $project: {
-            _id: '$fuelLogs._id',
-            driverId: 1,
-            date: 1,
-            amount: '$fuelLogs.amount',
-            litres: '$fuelLogs.litres',
-            time: '$fuelLogs.time',
-            station: '$fuelLogs.station',
-            addedBy: '$fuelLogs.addedBy',
-          },
-        },
-        { $sort: { time: -1 } },
-      ];
+      const fuels = await Fuel.find({})
+        .sort({ time: -1 })
+        .populate({ path: 'dailySheetId', select: 'driverId date' })
+        .lean();
 
-      const fuelLogs = await DailySheet.aggregate(pipeline);
+      const fuelLogs = fuels.map((f) => ({
+        _id: f._id,
+        driverId: f.dailySheetId ? f.dailySheetId.driverId : f.driverId,
+        date: f.dailySheetId ? f.dailySheetId.date : f.date,
+        amount: f.amount,
+        litres: f.litres,
+        time: f.time,
+        station: f.station,
+        addedBy: f.addedBy,
+      }));
 
       res.status(200).json({
         message: 'All fuel logs retrieved',
@@ -530,7 +536,9 @@ const dailySheetController = {
       const dailySheet = await DailySheet.findOne({
         driverId,
         date: { $gte: startDate, $lte: endDate },
-      }).select('fuelLogs driverId date');
+      })
+        .select('fuelLogs driverId date')
+        .populate('fuelLogs');
 
       if (!dailySheet) {
         return res

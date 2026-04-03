@@ -193,7 +193,7 @@ const blueSheetController = {
         const dailySheetForFuel = await DailySheet.findOne({
           truckId: truck._id,
           date: { $gte: startOfDay, $lt: endOfDay },
-        });
+        }).populate('fuelLogs');
         if (dailySheetForFuel && dailySheetForFuel.fuelLogs && dailySheetForFuel.fuelLogs.length > 0) {
           fuel = dailySheetForFuel.fuelLogs.reduce((sum, log) => sum + (log.amount || 0), 0);
         }

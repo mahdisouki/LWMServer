@@ -15,17 +15,7 @@ const dailySheetSchema = new Schema({
   // Tipping requests for the day
   tippingRequests: [{ type: Schema.Types.ObjectId, ref: 'TippingRequest' }],
   pcnDamages: [{ type: Schema.Types.ObjectId, ref: 'PcnDamage' }],
-  fuelLogs: [
-    {
-      amount: Number,         // price paid for fuel (e.g., 60.00)
-      litres: Number,         // optional: litres of fuel
-      time: { type: Date, default: Date.now },  // time of refueling
-      station: String,        // optional: station name
-      addedBy: {
-        type: String,
-      },
-    }
-  ],
+  fuelLogs: [{ type: Schema.Types.ObjectId, ref: 'Fuel' }],
   // References to Expense documents
   expenses: [{ type: Schema.Types.ObjectId, ref: 'Expense' }],
   // Total cash received from all tasks paid in cash
