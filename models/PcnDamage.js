@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const pcnDamageSchema = new Schema({
-    pcnReferenceNumber: { type: String }, // PCN reference number from request body
+    // Unique when set; optional PCNs omit this field (sparse index)
+    pcnReferenceNumber: { type: String, trim: true, sparse: true, unique: true },
     dailySheetId: {
         type: Schema.Types.ObjectId,
         ref: 'DailySheet',
@@ -14,7 +15,8 @@ const pcnDamageSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'User',
         required: true
-    },                                              // User ID (Driver or Helper) to deduct from
+    },
+    paymentStatus: { type: String, enum: ['Unpaid', 'Paid'], default: 'Unpaid' }, // Payment status
     proofUrl: { type: String },                     // URL to uploaded proof (image/PDF/URL)
     addedBy: { type: String },                      // User name or ID who added this
     time: { type: Date, default: Date.now },        // Time of the PCN/Damage
