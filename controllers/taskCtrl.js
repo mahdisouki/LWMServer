@@ -52,6 +52,7 @@ const transporter = nodemailer.createTransport({
 const cloudinary = require('../helper/cloudinaryConfig');
 const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } = require('../services/calendarService');
 const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
+const { syncRepeatCustomerForEmail } = require('../utils/repeatCustomerSync');
 
 /**
  * Calculate task van space as percentage from items.
@@ -849,39 +850,15 @@ const taskCtrl = {
       /**
        * 🔁 Repeat customer handling
        * If a new task is created with an email that has been used before,
-       * increment `repeatCustomer` on ALL tasks for that email.
-       *
-       * This way, `repeatCustomer` reflects how many times this customer has
-       * become a "repeat" (2nd order, 3rd order, etc.), and it is updated
-       * immediately when the order is created – not delayed to the review-email cron.
+       * set `repeatCustomer` on ALL tasks for that email.
+       * Tasks with paymentStatus 'Failed' are excluded from the count (see repeatCustomerSync).
        */
       try {
         if (savedTask.email) {
-          const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const emailNormalized = String(savedTask.email).trim().toLowerCase();
-          const emailExactCi = new RegExp(`^${escapeRegExp(emailNormalized)}$`, 'i');
-
-          /**
-           * Use an idempotent approach:
-           * repeatCustomer = (number of tasks with this email) - 1
-           *
-           * This avoids race conditions where two orders created concurrently could
-           * double-increment with `$inc`.
-           */
-          const tasksCountForEmail = await Task.countDocuments({ email: emailExactCi });
-          if (tasksCountForEmail > 1) {
-            const repeatCustomerValue = Math.max(0, tasksCountForEmail - 1);
-            const repeatUpdateResult = await Task.updateMany(
-              { email: emailExactCi },
-              { $set: { repeatCustomer: repeatCustomerValue } },
-            );
-            console.log(
-              `[RepeatCustomer] Set repeatCustomer=${repeatCustomerValue} for ${repeatUpdateResult.modifiedCount} tasks of customer ${savedTask.email}`,
-            );
-          }
+          await syncRepeatCustomerForEmail(savedTask.email);
         }
       } catch (err) {
-        console.error('[RepeatCustomer] Error incrementing repeatCustomer on createTask:', err);
+        console.error('[RepeatCustomer] Error syncing repeatCustomer on createTask:', err);
         // Do not fail task creation if repeat-customer update fails
       }
 
@@ -2428,6 +2405,17 @@ const taskCtrl = {
         console.error('Error recalculating DailySheet totalCash on updateTask:', err);
       }
 
+      try {
+        const paymentStatusChanged =
+          Object.prototype.hasOwnProperty.call(updates, 'paymentStatus') ||
+          String(oldTask.paymentStatus || '') !== String(updatedTask.paymentStatus || '');
+        if (updatedTask.email && paymentStatusChanged) {
+          await syncRepeatCustomerForEmail(updatedTask.email);
+        }
+      } catch (err) {
+        console.error('[RepeatCustomer] Error syncing repeatCustomer on updateTask:', err);
+      }
+
       console.log('Updated task:', JSON.stringify(updatedTask, null, 2));
 
       // Update Google Calendar event if it exists and relevant fields changed
@@ -2972,6 +2960,9 @@ const taskCtrl = {
 
       // Sauvegarder les montants mis à jour
       await task.save();
+      if (task.email) {
+        await syncRepeatCustomerForEmail(task.email);
+      }
 
       // Créer la session de paiement
       switch (paymentType) {
@@ -3232,6 +3223,9 @@ const taskCtrl = {
         }
 
         await task.save(); // ✅ Sauvegarder SEULEMENT après confirmation
+        if (task.email) {
+          await syncRepeatCustomerForEmail(task.email);
+        }
 
         // Récupérer les informations du paiement
         const charges = await stripe.charges.list({
@@ -3510,6 +3504,9 @@ const taskCtrl = {
         }
 
         await task.save();
+        if (task.email) {
+          await syncRepeatCustomerForEmail(task.email);
+        }
         const transactionId =
           capture.result.purchase_units[0].payments.captures[0].id;
         const payerAccount = capture.result.payer.email_address;
@@ -4114,6 +4111,9 @@ const taskCtrl = {
         }
 
         await task.save();
+        if (task.email) {
+          await syncRepeatCustomerForEmail(task.email);
+        }
         console.log('Task payment status updated:', {
           taskId,
           paymentAmountType,
@@ -4487,6 +4487,9 @@ const taskCtrl = {
           }
 
           await task.save();
+          if (task.email) {
+            await syncRepeatCustomerForEmail(task.email);
+          }
 
           // Idempotency: do not duplicate PaymentHistory if PayPal retries webhooks
           const existingSuccess = await PaymentHistory.findOne({
@@ -4665,6 +4668,9 @@ const taskCtrl = {
           }
 
           await task.save();
+          if (task.email) {
+            await syncRepeatCustomerForEmail(task.email);
+          }
 
           const payerAccount =
             capture.payer?.email_address ||

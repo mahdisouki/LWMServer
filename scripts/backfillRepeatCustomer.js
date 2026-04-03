@@ -1,6 +1,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const Task = require('../models/Task');
+const { syncRepeatCustomerForEmail } = require('../utils/repeatCustomerSync');
 
 /**
  * Connect to MongoDB using the same env vars as other scripts.
@@ -27,69 +28,33 @@ const connectDB = async () => {
 /**
  * Backfill repeatCustomer for existing tasks.
  *
- * For each email with more than one task:
- *   repeatCustomer = (number of tasks with that email) - 1
+ * For each distinct email on tasks:
+ *   repeatCustomer = max(0, qualifyingCount - 1)
+ * where qualifying tasks are those with paymentStatus !== 'Failed',
  * for ALL tasks with that email (case-insensitive match),
- * mirroring the logic used in taskCtrl.createTask.
+ * mirroring utils/repeatCustomerSync / taskCtrl.
  */
 const backfillRepeatCustomer = async () => {
     try {
         console.log('🚀 Starting repeatCustomer backfill...\n');
 
-        // Group tasks by email and count how many tasks per email
-        const groups = await Task.aggregate([
-            {
-                $match: {
-                    email: { $exists: true, $ne: null, $ne: '' },
-                },
-            },
-            {
-                $group: {
-                    _id: '$email',
-                    count: { $sum: 1 },
-                },
-            },
-            {
-                $match: {
-                    count: { $gt: 1 }, // only emails with repeats
-                },
-            },
-        ]);
+        const emails = await Task.distinct('email', {
+            email: { $exists: true, $nin: [null, ''] },
+        });
 
-        console.log(`📊 Found ${groups.length} email(s) with repeat tasks\n`);
+        console.log(`📊 Found ${emails.length} distinct email(s)\n`);
 
-        let totalUpdatedDocs = 0;
-
-        // Helper for safe regex, same approach as in taskCtrl.createTask
-        const escapeRegExp = (s) =>
-            String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-        for (const group of groups) {
-            const rawEmail = group._id;
-            const count = group.count;
-            const repeatCustomerValue = Math.max(0, count - 1);
-
-            const emailNormalized = String(rawEmail).trim().toLowerCase();
-            const emailExactCi = new RegExp(
-                `^${escapeRegExp(emailNormalized)}$`,
-                'i',
-            );
-
-            const result = await Task.updateMany(
-                { email: emailExactCi },
-                { $set: { repeatCustomer: repeatCustomerValue } },
-            );
-
-            const modifiedCount = result.modifiedCount || result.nModified || 0;
-            totalUpdatedDocs += modifiedCount;
-
-            console.log(
-                `✅ Email ${rawEmail} -> count=${count}, repeatCustomer=${repeatCustomerValue}, updated ${modifiedCount} task(s)`,
-            );
+        let processed = 0;
+        for (const email of emails) {
+            await syncRepeatCustomerForEmail(email);
+            processed += 1;
+            if (processed % 100 === 0) {
+                console.log(`… processed ${processed}/${emails.length} emails`);
+            }
         }
 
         console.log('\n✅ Backfill complete');
-        console.log(`📊 Total tasks updated: ${totalUpdatedDocs}`);
+        console.log(`📊 Emails processed: ${processed}`);
     } catch (error) {
         console.error('❌ Error during backfill:', error);
         throw error;
@@ -113,5 +78,3 @@ if (require.main === module) {
 }
 
 module.exports = { backfillRepeatCustomer };
-
-
