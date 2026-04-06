@@ -14,6 +14,41 @@ const toLocalDateStr = (d) => {
     return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
 };
 
+// Normalize date-like input into a local-day [start, end] range (ignores time part if present)
+const getLocalDayRangeFromInput = (value) => {
+    if (!value) return null;
+    const raw = String(value).trim();
+    if (!raw) return null;
+
+    // If input starts with YYYY-MM-DD, use only that date part to avoid time/tz shifts.
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    let baseDate;
+    if (match) {
+        const year = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10) - 1;
+        const day = parseInt(match[3], 10);
+        baseDate = new Date(year, month, day);
+    } else {
+        baseDate = new Date(raw);
+    }
+
+    if (isNaN(baseDate.getTime())) return null;
+
+    const startDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0, 0);
+    const endDate = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 23, 59, 59, 999);
+    return { startDate, endDate };
+};
+
+// Normalize payment status variants into canonical enum values used by the DB.
+const normalizePaymentStatus = (value) => {
+    if (value === undefined || value === null) return undefined;
+    const cleaned = String(value).trim().toLowerCase();
+    if (!cleaned) return undefined;
+    if (cleaned === 'paid') return 'Paid';
+    if (cleaned === 'unpaid' || cleaned === 'unplaid') return 'Unpaid';
+    return undefined;
+};
+
 /** Trim; empty string becomes undefined so sparse unique index allows multiple PCNs without a ref */
 const normalizePcnReferenceNumber = (value) => {
     if (value === undefined || value === null) return undefined;
@@ -617,16 +652,17 @@ const pcnDamageController = {
             const { pcnDamageId } = req.params;
             const { paymentStatus } = req.body;
 
+            const normalizedPaymentStatus = normalizePaymentStatus(paymentStatus);
+
             if (!paymentStatus) {
                 return res.status(400).json({
                     message: 'paymentStatus is required'
                 });
             }
 
-            const allowedStatuses = ['Unpaid', 'Paid'];
-            if (!allowedStatuses.includes(paymentStatus)) {
+            if (!normalizedPaymentStatus) {
                 return res.status(400).json({
-                    message: "paymentStatus must be either 'Unpaid' or 'Paid'"
+                    message: "paymentStatus must be one of: paid, unpaid (or common misspelling: unplaid)"
                 });
             }
 
@@ -635,7 +671,7 @@ const pcnDamageController = {
                 return res.status(404).json({ message: 'PCN/Damage not found' });
             }
 
-            pcnDamage.paymentStatus = paymentStatus;
+            pcnDamage.paymentStatus = normalizedPaymentStatus;
             await pcnDamage.save();
 
             res.status(200).json({
@@ -746,11 +782,13 @@ const pcnDamageController = {
 
             // Filter by date (if provided)
             if (date) {
-                const startDate = new Date(date);
-                startDate.setHours(0, 0, 0, 0);
-                const endDate = new Date(date);
-                endDate.setHours(23, 59, 59, 999);
-                query.time = { $gte: startDate, $lte: endDate };
+                const dayRange = getLocalDayRangeFromInput(date);
+                if (!dayRange) {
+                    return res.status(400).json({
+                        message: 'Invalid date format. Use YYYY-MM-DD or any valid date string.'
+                    });
+                }
+                query.time = { $gte: dayRange.startDate, $lte: dayRange.endDate };
             }
 
             // Filter by linkedToDailySheet (if provided) - use stored field from database
@@ -761,13 +799,24 @@ const pcnDamageController = {
 
             // Filter by paymentStatus (if provided)
             if (paymentStatus !== undefined) {
-                query.paymentStatus = paymentStatus;
+                const normalizedPaymentStatus = normalizePaymentStatus(paymentStatus);
+                if (!normalizedPaymentStatus) {
+                    return res.status(400).json({
+                        message: "Invalid paymentStatus. Use paid or unpaid (also accepts unplaid)."
+                    });
+                }
+                query.paymentStatus = normalizedPaymentStatus;
             }
 
             // Filter by PCN reference number (exact match, trimmed)
             const refFilter = normalizePcnReferenceNumber(pcnReferenceNumber);
             if (refFilter !== undefined) {
                 query.pcnReferenceNumber = refFilter;
+            }
+
+            // Filter by driver (stored directly on PCN as deductedFromUserId)
+            if (driverId) {
+                query.deductedFromUserId = driverId;
             }
 
             // Get all PCN/Damages with filters
@@ -777,31 +826,6 @@ const pcnDamageController = {
                     select: 'username firstName lastName role roleType'
                 })
                 .sort({ time: -1 });
-
-            // Filter by driver (if provided) - need to check UnitAssignmentLogRange for each PCN
-            if (driverId) {
-                const filteredByDriver = [];
-                for (const pcn of pcnDamages) {
-                    if (pcn.vanMatricule && pcn.time) {
-                        try {
-                            const van = await Van.findOne({ matricule: pcn.vanMatricule });
-                            if (van) {
-                                const { truckId, driverId: assignedDriverId } = await getTruckAndDriverFromVanAtTime(
-                                    van._id,
-                                    pcn.time
-                                );
-                                if (truckId && assignedDriverId && assignedDriverId.toString() === driverId.toString()) {
-                                    filteredByDriver.push(pcn);
-                                }
-                            }
-                        } catch (error) {
-                            // If unitAssignment lookup fails, skip this PCN
-                            console.warn(`Could not check driver assignment for PCN ${pcn._id}:`, error.message);
-                        }
-                    }
-                }
-                pcnDamages = filteredByDriver;
-            }
 
             // Pagination
             const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
