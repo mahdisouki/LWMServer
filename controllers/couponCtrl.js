@@ -1,6 +1,93 @@
 const Coupon = require('../models/Coupon');
 const loggingService = require('../services/loggingService');
 
+const parseBooleanQuery = (value) => {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'boolean') return value;
+
+  const normalized = String(value).trim().toLowerCase();
+  if (['true', '1', 'yes'].includes(normalized)) return true;
+  if (['false', '0', 'no'].includes(normalized)) return false;
+
+  return undefined;
+};
+
+const buildCouponFilter = (query = {}) => {
+  const {
+    isExpired,
+    isActive,
+    type,
+    code,
+    createdFrom,
+    createdTo,
+    validFrom,
+    validTo,
+    minUsage,
+    maxUsage
+  } = query;
+
+  const filter = {};
+
+  const parsedIsExpired = parseBooleanQuery(isExpired);
+  const parsedIsActive = parseBooleanQuery(isActive);
+
+  if (parsedIsExpired !== undefined) {
+    const now = new Date();
+    if (parsedIsExpired) {
+      filter.$or = [
+        { isExpired: true },
+        { expiresAt: { $lt: now } }
+      ];
+    } else {
+      filter.$and = [
+        { isExpired: false },
+        { expiresAt: { $gte: now } }
+      ];
+    }
+  }
+  if (parsedIsActive !== undefined) {
+    filter.isActive = parsedIsActive;
+  }
+  if (type !== undefined) {
+    filter.type = type;
+  }
+  if (code !== undefined && code.trim() !== '') {
+    filter.code = { $regex: code.trim(), $options: 'i' };
+  }
+
+  if (createdFrom || createdTo) {
+    filter.createdAt = {};
+    if (createdFrom) {
+      filter.createdAt.$gte = new Date(createdFrom);
+    }
+    if (createdTo) {
+      filter.createdAt.$lte = new Date(createdTo);
+    }
+  }
+
+  if (validFrom || validTo) {
+    filter.expiresAt = {};
+    if (validFrom) {
+      filter.expiresAt.$gte = new Date(validFrom);
+    }
+    if (validTo) {
+      filter.expiresAt.$lte = new Date(validTo);
+    }
+  }
+
+  if (minUsage !== undefined || maxUsage !== undefined) {
+    filter.usageCount = {};
+    if (minUsage !== undefined) {
+      filter.usageCount.$gte = Number(minUsage);
+    }
+    if (maxUsage !== undefined) {
+      filter.usageCount.$lte = Number(maxUsage);
+    }
+  }
+
+  return filter;
+};
+
 const couponCtrl = {
   // Create a new coupon
   createCoupon: async (req, res) => {
@@ -159,26 +246,39 @@ const couponCtrl = {
   // Get all coupons
   getAllCoupons: async (req, res) => {
     try {
-      const { page = '1', limit = '10', isExpired, isActive } = req.query;
+      const {
+        page = '1',
+        limit = '10',
+        isExpired,
+        isActive,
+        type,
+        code,
+        createdFrom,
+        createdTo,
+        validFrom,
+        validTo,
+        minUsage,
+        maxUsage,
+        sortBy = 'createdAt',
+        sortOrder = 'desc'
+      } = req.query;
       const pageNum = parseInt(page, 10);
       const limitNum = parseInt(limit, 10);
       const skip = (pageNum - 1) * limitNum;
 
-      // Build filter
-      const filter = {};
-      if (isExpired !== undefined) {
-        filter.isExpired = isExpired === 'true';
-      }
-      if (isActive !== undefined) {
-        filter.isActive = isActive === 'true';
-      }
+      const filter = buildCouponFilter(req.query);
+
+      const allowedSortFields = ['createdAt', 'expiresAt', 'usageCount', 'code'];
+      const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
+      const sortDirection = sortOrder === 'asc' ? 1 : -1;
+      const sort = { [sortField]: sortDirection };
 
       // Get total count
       const total = await Coupon.countDocuments(filter);
 
       // Get coupons
       const coupons = await Coupon.find(filter)
-        .sort({ createdAt: -1 })
+        .sort(sort)
         .skip(skip)
         .limit(limitNum);
 
@@ -189,13 +289,127 @@ const couponCtrl = {
           currentPage: pageNum,
           limit: limitNum,
           total,
-          totalPages: Math.ceil(total / limitNum)
+          totalPages: Math.ceil(total / limitNum),
+          filters: {
+            isExpired,
+            isActive,
+            type,
+            code,
+            createdFrom,
+            createdTo,
+            validFrom,
+            validTo,
+            minUsage,
+            maxUsage
+          },
+          sorting: {
+            sortBy: sortField,
+            sortOrder: sortDirection === 1 ? 'asc' : 'desc'
+          }
         }
       });
     } catch (error) {
       console.error('Error fetching coupons:', error);
       res.status(500).json({
         message: 'Failed to fetch coupons',
+        error: error.message
+      });
+    }
+  },
+
+  // Get coupon stats (uses the same filter builder as getAllCoupons)
+  getCouponStats: async (req, res) => {
+    try {
+      const {
+        isExpired,
+        isActive,
+        type,
+        code,
+        createdFrom,
+        createdTo,
+        validFrom,
+        validTo,
+        minUsage,
+        maxUsage
+      } = req.query;
+
+      const statsFilter = buildCouponFilter(req.query);
+
+      const now = new Date();
+
+      const [
+        totalCoupons,
+        activeCoupons,
+        inactiveCoupons,
+        manuallyExpiredCoupons,
+        dateExpiredCoupons,
+        randomCoupons,
+        customCoupons,
+        usageStats,
+        topUsedCoupons
+      ] = await Promise.all([
+        Coupon.countDocuments(statsFilter),
+        Coupon.countDocuments({ ...statsFilter, isActive: true }),
+        Coupon.countDocuments({ ...statsFilter, isActive: false }),
+        Coupon.countDocuments({ ...statsFilter, isExpired: true }),
+        Coupon.countDocuments({ ...statsFilter, expiresAt: { $lt: now } }),
+        Coupon.countDocuments({ ...statsFilter, type: 'random' }),
+        Coupon.countDocuments({ ...statsFilter, type: 'custom' }),
+        Coupon.aggregate([
+          { $match: statsFilter },
+          {
+            $group: {
+              _id: null,
+              totalUsage: { $sum: '$usageCount' },
+              averageUsage: { $avg: '$usageCount' },
+              maxUsageSeen: { $max: '$usageCount' }
+            }
+          }
+        ]),
+        Coupon.find(statsFilter)
+          .sort({ usageCount: -1, createdAt: -1 })
+          .limit(5)
+          .select('code type usageCount isActive isExpired expiresAt')
+      ]);
+
+      const usage = usageStats[0] || {
+        totalUsage: 0,
+        averageUsage: 0,
+        maxUsageSeen: 0
+      };
+
+      res.status(200).json({
+        message: 'Coupon stats retrieved successfully',
+        stats: {
+          totalCoupons,
+          activeCoupons,
+          inactiveCoupons,
+          manuallyExpiredCoupons,
+          dateExpiredCoupons,
+          randomCoupons,
+          customCoupons,
+          totalUsage: usage.totalUsage || 0,
+          averageUsage: Number((usage.averageUsage || 0).toFixed(2)),
+          maxUsageSeen: usage.maxUsageSeen || 0
+        },
+        topUsedCoupons,
+        filters: {
+          isExpired: isExpired ?? null,
+          isActive: isActive ?? null,
+          type: type ?? null,
+          code: code ?? null,
+          createdFrom: createdFrom ?? null,
+          createdTo: createdTo ?? null,
+          validFrom: validFrom ?? null,
+          validTo: validTo ?? null,
+          minUsage: minUsage ?? null,
+          maxUsage: maxUsage ?? null
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching coupon stats:', error);
+      res.status(500).json({
+        message: 'Failed to fetch coupon stats',
         error: error.message
       });
     }
