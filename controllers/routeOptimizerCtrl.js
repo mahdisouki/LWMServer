@@ -14,7 +14,7 @@ const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://10.215.177.2:8000'//'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.1.115:8000'//'https://routeoptimiser.duckdns.org';
 
 function normalizeMongoId(value) {
   if (value == null) return null;
@@ -542,16 +542,28 @@ async function recalculateTruckRoute(req, res) {
     };
 
     const optimizerUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/recalculate-route`;
-    const { data, status } = await axios.post(optimizerUrl, payload, {
+    const startedAtMs = Date.now();
+    const { data, status, headers: responseHeaders } = await axios.post(optimizerUrl, payload, {
       timeout: 120000,
       validateStatus: () => true,
       headers: { 'Content-Type': 'application/json' },
     });
+    const elapsedMs = Date.now() - startedAtMs;
+
+    const responseBodyPreview =
+      typeof data === 'string'
+        ? data
+        : JSON.stringify(data);
 
     console.log(logPrefix, 'optimizer API response', {
       url: optimizerUrl,
       httpStatus: status,
+      elapsedMs,
+      responseHeaders,
       body: data,
+      bodyPreview: responseBodyPreview && responseBodyPreview.length > 4000
+        ? `${responseBodyPreview.slice(0, 4000)}...[truncated]`
+        : responseBodyPreview,
     });
 
     if (status !== 200) {
@@ -561,8 +573,20 @@ async function recalculateTruckRoute(req, res) {
       });
     }
 
-    const routes = data.routes || {};
-    const truckRoute = routes[routeKey] || null;
+    const hasSingularRouteShape = data && typeof data.route === 'object' && data.route !== null;
+    const hasPluralRoutesShape = data && typeof data.routes === 'object' && data.routes !== null;
+
+    if (!hasSingularRouteShape && !hasPluralRoutesShape) {
+      return res.status(502).json({
+        message: 'External route optimizer response shape is invalid (expected route or routes)',
+        detail: data,
+      });
+    }
+
+    const routes = hasPluralRoutesShape ? data.routes : {};
+    const truckRoute = hasSingularRouteShape
+      ? data.route
+      : (routes[routeKey] || null);
 
     let persisted = false;
     if (persist !== false && truckRoute && Array.isArray(truckRoute.route_segments)) {
@@ -617,7 +641,9 @@ async function recalculateTruckRoute(req, res) {
       skipped,
       persisted,
       route: truckRoute,
-      routes,
+      routes: hasPluralRoutesShape
+        ? routes
+        : { [routeKey]: truckRoute },
       api_calls_used: data.api_calls_used ?? 0,
       summary: data.summary && typeof data.summary === 'object' ? data.summary : undefined,
     });
