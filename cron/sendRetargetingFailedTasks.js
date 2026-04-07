@@ -7,12 +7,32 @@ const {
 
 async function sendScheduledRetargetingEmails() {
   try {
+    // Ensure automated emails are sent at 13:00 London time on the day after creation.
+    const todayLondon = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/London',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+
     const tasksToProcess = await Task.find({
       createdByType: 'public',
       paymentStatus: 'Failed',
       retargetingEmailSent: { $ne: true },
       repeatCustomer: 0,
       email: { $exists: true, $nin: [null, ''] },
+      $expr: {
+        $lt: [
+          {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt',
+              timezone: 'Europe/London',
+            },
+          },
+          todayLondon,
+        ],
+      },
     }).sort({ createdAt: 1 });
 
     console.log(`[Retargeting Cron] Found ${tasksToProcess.length} failed task(s) to process`);
