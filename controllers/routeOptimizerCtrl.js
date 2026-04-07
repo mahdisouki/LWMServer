@@ -8,6 +8,7 @@ const Task = require('../models/Task');
 const TippingRequest = require('../models/TippingRequest');
 const Truck = require('../models/Truck');
 const Driver = require('../models/Driver');
+const Helper = require('../models/Helper');
 const { truckDisplayName } = require('../utils/truckHelpers');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
@@ -37,6 +38,17 @@ function plainTruckRouteSegment(entry) {
     order: doc.order,
     type,
   };
+}
+
+function toLatLngFromGeoPoint(point) {
+  if (!point || !Array.isArray(point.coordinates) || point.coordinates.length < 2) {
+    return null;
+  }
+  const [lng, lat] = point.coordinates;
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+    return null;
+  }
+  return { lat: Number(lat), lng: Number(lng) };
 }
 
 function isOptimizerTransportFailure(error) {
@@ -188,9 +200,18 @@ async function calculateRoutesExternal(req, res) {
     for (const t of allTrucks) {
       const assignment = await getAssignedForDayFromRanges(t._id, dateStr);
       if (assignment.driverId) {
-        const driver = await Driver.findById(assignment.driverId);
+        const driver = await Driver.findById(assignment.driverId).select('_id');
         if (!driver) continue;
-        trucksWithDrivers.push({ truck: t, driver, driverId: assignment.driverId });
+        let helper = null;
+        if (assignment.helperId) {
+          helper = await Helper.findById(assignment.helperId).select('start_location end_location');
+        }
+        trucksWithDrivers.push({
+          truck: t,
+          driverId: assignment.driverId,
+          startLocation: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
+          endLocation: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+        });
       }
     }
 
@@ -238,8 +259,14 @@ async function calculateRoutesExternal(req, res) {
     }
 
     const payload = {
-      truck_ids: trucksWithDrivers.map(({ truck }) => truck._id.toString()),
       jobs,
+      truck_contexts: trucksWithDrivers.map(
+        ({ truck, startLocation, endLocation }) => ({
+          truck_id: truck._id.toString(),
+          start_location: startLocation,
+          end_location: endLocation,
+        })
+      ),
     };
     console.log("payload", payload);
     const { data, status } = await axios.post(
@@ -536,9 +563,21 @@ async function recalculateTruckRoute(req, res) {
       });
     }
 
+    const assignment = await getAssignedForDayFromRanges(truck._id, dateStr);
+    let helper = null;
+    if (assignment.helperId) {
+      helper = await Helper.findById(assignment.helperId).select('start_location end_location');
+    }
+
     const payload = {
-      truck_ids: [truck._id.toString()],
       jobs,
+      truck_contexts: [
+        {
+          truck_id: truck._id.toString(),
+          start_location: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
+          end_location: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+        },
+      ],
     };
 
     const optimizerUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/recalculate-route`;
