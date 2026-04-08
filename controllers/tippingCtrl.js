@@ -11,6 +11,17 @@ const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
 const adminId = "67cb6810c9e768ec25d39523";
 
+const toBooleanOrUndefined = (value) => {
+  if (value === undefined) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  return undefined;
+};
+
 // Helper function to update daily sheets when tipping request changes
 const updateDailySheetForTippingRequest = async (tippingRequest) => {
   try {
@@ -77,7 +88,7 @@ const updateDailySheetForTippingRequest = async (tippingRequest) => {
 const tippingController = {
   createTippingRequest: async (req, res) => {
     const userId = req.user._id;
-    const { notes, tipdate } = req.body;
+    const { notes, tipdate, emptyTipping } = req.body;
 
     try {
       const user = await User.findById(userId);
@@ -103,6 +114,7 @@ const tippingController = {
         notes: notes,
         status: 'Pending',
         tipdate: Date.now(), // Set tipdate to current date when created by non-admin
+        emptyTipping: toBooleanOrUndefined(emptyTipping),
       });
       console.log(newTippingRequest);
       await newTippingRequest.save();
@@ -165,6 +177,7 @@ const tippingController = {
           userId: newTippingRequest.userId.toString(),
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
+          emptyTipping: newTippingRequest.emptyTipping,
           createdAt: newTippingRequest.createdAt,
           userName: user.username,
           truckName: truckDisplayName(truck),
@@ -184,7 +197,7 @@ const tippingController = {
   createTippingRequestByAdmin: async (req, res) => {
     const adminId = req.user._id;
     // const { driverId, truckId, tippingPlace, notes, status } = req.body;
-    const { driverId, notes, status, tipdate, price, tippingPlace, isShipped } = req.body;
+    const { driverId, notes, status, tipdate, price, tippingPlace, isShipped, emptyTipping } = req.body;
 
     // Handle file uploads for tipping proof
     let tippingProof = [];
@@ -229,6 +242,7 @@ const tippingController = {
         notes: notes,
         status: status,
         isShipped: isShipped,
+        emptyTipping: toBooleanOrUndefined(emptyTipping),
         tipdate: tipdate || Date.now(), // Tip date set by admin, default to current date if not provided
         tippingProof: tippingProof.length > 0 ? tippingProof : undefined, // Tipping proof images from files
         price: price, // Price
@@ -266,6 +280,7 @@ const tippingController = {
           tippingPlace: newTippingRequest.tippingPlace,
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
+          emptyTipping: newTippingRequest.emptyTipping,
           tipdate: newTippingRequest.tipdate,
           tippingProof: newTippingRequest.tippingProof,
           isShipped: newTippingRequest.isShipped,
@@ -705,7 +720,7 @@ const tippingController = {
   },
   updateTippingRequest: async (req, res) => {
     const { id } = req.params;  // Tipping request ID
-    const { price, tipdate, tippingPlace, ...otherFields } = req.body;  // Fields to update
+    const { price, tipdate, tippingPlace, emptyTipping, ...otherFields } = req.body;  // Fields to update
 
     try {
       // Get the old request before updating
@@ -742,6 +757,15 @@ const tippingController = {
       if (price !== undefined) updateFields.price = price;
       if (tipdate !== undefined) updateFields.tipdate = tipdate;
       if (tippingPlace !== undefined) updateFields.tippingPlace = tippingPlace;
+      if (emptyTipping !== undefined) {
+        const parsedEmptyTipping = toBooleanOrUndefined(emptyTipping);
+        if (parsedEmptyTipping === undefined) {
+          return res.status(400).json({
+            message: 'emptyTipping must be a boolean',
+          });
+        }
+        updateFields.emptyTipping = parsedEmptyTipping;
+      }
 
       // Find and update the tipping request
       const updatedRequest = await TippingRequest.findByIdAndUpdate(

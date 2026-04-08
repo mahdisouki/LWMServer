@@ -25,6 +25,10 @@ const tippingRequestSchema = new Schema({
         type: Boolean,
         default: false
     },
+    emptyTipping: {
+        type: Boolean,
+        default: false
+    },
     tippingProof: {
         type: [String]
     },

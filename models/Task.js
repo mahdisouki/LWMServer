@@ -250,6 +250,11 @@ const taskSchema = new Schema(
     reasonForCancellation: { type: String },
     applyMinFee: { type: Boolean, default: false }, // Admin option to apply minimum fee
     applySundayFee: { type: Boolean, default: false }, // Admin option to apply Sunday fee
+    priority:{
+      type:String,
+      enum: ['low', 'medium', 'high'],
+      default: 'low',
+    },
     quotationId: {
       type: Schema.Types.ObjectId,
       ref: 'QuotationRequest', // Reference to your Quotation model

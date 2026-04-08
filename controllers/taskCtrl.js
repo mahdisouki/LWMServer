@@ -2265,21 +2265,37 @@ const taskCtrl = {
           console.log('No coupon code to use (neither in update nor in existing task)');
         }
 
-        // Add VAT (after coupon discount)
-        let vat = subtotal * 0.2;
-        let totalPrice = subtotal + vat;
-
-        // Apply minimum fee if needed
+        // Apply minimum fee if needed (before Sunday fee / VAT)
         const enforceMinimumPrice = populatedTask.createdByType !== 'Admin' || populatedTask.applyMinFee === true;
         if (enforceMinimumPrice && subtotal < 37.5) {
           subtotal = 37.5;
-          vat = subtotal * 0.2;
-          totalPrice = subtotal + vat;
           console.log('Applied minimum price adjustment in updateTask');
         }
 
+        // Apply Sunday fee before VAT: +£50 on Sundays
+        // - Public orders: always apply on Sunday
+        // - Admin orders: apply only when applySundayFee is true
+        let sundayFee = 0;
+        const taskDateForUpdate = updates.date ? new Date(updates.date) : new Date(populatedTask.date);
+        if (!isNaN(taskDateForUpdate.getTime())) {
+          const isSunday = taskDateForUpdate.getDay && taskDateForUpdate.getDay() === 0;
+          const applySundayFeeFlag =
+            updates.applySundayFee !== undefined
+              ? updates.applySundayFee === true || updates.applySundayFee === 'true'
+              : populatedTask.applySundayFee === true;
+          if (isSunday && (populatedTask.createdByType === 'public' || applySundayFeeFlag)) {
+            sundayFee = 50;
+            subtotal += sundayFee;
+          }
+        }
+
+        // Add VAT (after discounts / minimum fee / sunday fee)
+        let vat = subtotal * 0.2;
+        let totalPrice = subtotal + vat;
+
         console.log('Final subtotal:', subtotal);
         console.log('VAT:', vat);
+        console.log('Sunday fee:', sundayFee);
         console.log('Calculated totalPrice with VAT:', totalPrice);
 
         updates.totalPrice = totalPrice;
