@@ -117,6 +117,16 @@ function validateBreakdown(breakdown) {
     );
   }
 }
+
+const TASK_PRIORITIES = ['low', 'medium', 'high'];
+
+function normalizeTaskPriority(value) {
+  if (value === undefined || value === null) return undefined;
+  const s = String(value).trim().toLowerCase();
+  if (s === '') return undefined;
+  if (!TASK_PRIORITIES.includes(s)) return null;
+  return s;
+}
 // Fonction auxiliaire pour traiter les événements de commande approuvés
 async function calculateTotalPrice({
   standardItems = [],
@@ -564,6 +574,7 @@ const taskCtrl = {
         orderNumber, // Optional order number (for migrations or manual entry)
         quotationId,
         couponCode, // Coupon code to apply
+        priority,
       } = req.body;
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
@@ -803,6 +814,18 @@ const taskCtrl = {
       const taskDuration = await calculateTaskDuration(allItems);
       const taskVanSpacePercent = await calculateTaskVanSpacePercent(allItems);
 
+      let priorityToSet;
+      if (priority !== undefined && priority !== null && String(priority).trim() !== '') {
+        const pNorm = normalizeTaskPriority(priority);
+        if (pNorm === null) {
+          return res.status(400).json({
+            message: 'Invalid priority. Allowed values: low, medium, high.',
+            error: 'INVALID_PRIORITY',
+          });
+        }
+        priorityToSet = pNorm;
+      }
+
       // Create the task
       const newTask = new Task({
         firstName,
@@ -843,6 +866,7 @@ const taskCtrl = {
         quotationId: quotationId || null,
         taskDuration: taskDuration || undefined,
         spaceOfVan: taskVanSpacePercent,
+        ...(priorityToSet ? { priority: priorityToSet } : {}),
       });
 
       const savedTask = await newTask.save();
@@ -1092,6 +1116,67 @@ const taskCtrl = {
         message: 'All tasks retrieved successfully',
         tasks: tasksWithTrucks,
         meta: meta,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to retrieve tasks',
+        error: error.message,
+      });
+    }
+  },
+
+  /**
+   * GET /api/tasks/by-date?date=YYYY-MM-DD
+   * Same collection-date semantics as paginateQuery date filter; returns a slim task shape for routing/UI.
+   */
+  getTasksByDateLite: async (req, res) => {
+    try {
+      const dateVal =
+        req.query.date || req.query.collectionDate || req.query.collectiondate;
+      if (!dateVal) {
+        return res.status(400).json({
+          message: 'date query parameter is required (e.g. YYYY-MM-DD)',
+        });
+      }
+
+      const parsedDate = new Date(dateVal);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid date format' });
+      }
+
+      const nextDay = new Date(parsedDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const tasks = await Task.find({
+        date: {
+          $gte: parsedDate.toISOString(),
+          $lt: nextDay.toISOString(),
+        },
+      })
+        .select(
+          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority',
+        )
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const tasksOut = tasks.map((t) => {
+        const name = [t.firstName, t.lastName].filter(Boolean).join(' ').trim();
+        return {
+          location: t.location,
+          date: t.date,
+          spaceOfVan: t.spaceOfVan,
+          totalPrice: t.totalPrice,
+          timeSlot: t.available,
+          taskDuration: t.taskDuration,
+          priority: t.priority,
+          name: name || null,
+        };
+      });
+
+      res.status(200).json({
+        message: 'Tasks retrieved successfully',
+        tasks: tasksOut,
+        count: tasksOut.length,
       });
     } catch (error) {
       res.status(500).json({
@@ -2344,6 +2429,22 @@ const taskCtrl = {
       // Sanitize ObjectId fields: empty string cannot be cast to ObjectId
       if (updates.cashReceivedBy === '' || (typeof updates.cashReceivedBy === 'string' && !updates.cashReceivedBy.trim())) {
         updates.cashReceivedBy = null;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(updates, 'priority')) {
+        const rawPriority = updates.priority;
+        if (rawPriority === '' || rawPriority === null) {
+          delete updates.priority;
+        } else {
+          const pNorm = normalizeTaskPriority(rawPriority);
+          if (pNorm === null) {
+            return res.status(400).json({
+              message: 'Invalid priority. Allowed values: low, medium, high.',
+              error: 'INVALID_PRIORITY',
+            });
+          }
+          updates.priority = pNorm;
+        }
       }
 
       console.log('=== FINAL UPDATE ===');

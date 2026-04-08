@@ -160,8 +160,8 @@ function responseFromOptimizerNetworkError(error, contextLabel) {
 
 /**
  * POST /api/route-optimizer/external/calculate-routes
- * Loads drivers (trucks) and unassigned jobs (tasks) from DB for the given date,
- * then forwards to external Route Optimizer API (e.g. https://routeoptimiser.duckdns.org).
+ * Loads trucks with drivers for the given date and forwards date + truck_contexts to the external API;
+ * the optimizer service resolves jobs for that date.
  * Body: { date: string|Date }
  * Returns: { success, routes, api_calls_used } from external API.
  */
@@ -232,34 +232,8 @@ async function calculateRoutesExternal(req, res) {
       );
     });
 
-    const tasks = await Task.find({
-      date: { $gte: startOfDay, $lte: endOfDay },
-      taskStatus: { $nin: ['Cancelled'] },
-      'location.coordinates': { $exists: true, $ne: null },
-    });
-
-    const tasksWithCoords = tasks.filter((t) => t.location?.coordinates?.length >= 2);
-    console.log('[RouteOptimizer:external] tasks with coords=%d', tasksWithCoords.length);
-
-    const jobs = tasksWithCoords.map((t) => ({
-      job_id: t._id.toString(),
-      lat: t.location.coordinates[1],
-      lng: t.location.coordinates[0],
-      taskDuration: typeof t.taskDuration === 'number' && t.taskDuration >= 0 ? t.taskDuration : 10,
-    }));
-
-    if (!jobs.length) {
-      return res.status(200).json({
-        message: 'No unassigned tasks with location for this date',
-        success: true,
-        routes: {},
-        api_calls_used: 0,
-        summary: { date: dateStr, total_drivers: 0, total_distance_km: 0, total_time_min: 0 },
-      });
-    }
-
     const payload = {
-      jobs,
+      date: dateStr,
       truck_contexts: trucksWithDrivers.map(
         ({ truck, startLocation, endLocation }) => ({
           truck_id: truck._id.toString(),
