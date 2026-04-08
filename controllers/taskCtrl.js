@@ -1154,7 +1154,7 @@ const taskCtrl = {
         },
       })
         .select(
-          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority',
+          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority _id',
         )
         .sort({ createdAt: -1 })
         .lean();
@@ -1169,6 +1169,7 @@ const taskCtrl = {
           timeSlot: t.available,
           taskDuration: t.taskDuration,
           priority: t.priority,
+          _id: t._id,
           name: name || null,
         };
       });
