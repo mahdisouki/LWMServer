@@ -775,7 +775,7 @@ const pcnDamageController = {
 
     getAllPcnDamages: async (req, res) => {
         try {
-            const { date, driverId, linkedToDailySheet, paymentStatus, pcnReferenceNumber, page = 1, limit = 10 } = req.query;
+            const { date, creationDate, driverId, linkedToDailySheet, paymentStatus, pcnReferenceNumber, page = 1, limit = 10 } = req.query;
 
             // Build query filters
             const query = {};
@@ -789,6 +789,17 @@ const pcnDamageController = {
                     });
                 }
                 query.time = { $gte: dayRange.startDate, $lte: dayRange.endDate };
+            }
+
+            // Filter by creation date (if provided)
+            if (creationDate) {
+                const creationDayRange = getLocalDayRangeFromInput(creationDate);
+                if (!creationDayRange) {
+                    return res.status(400).json({
+                        message: 'Invalid creationDate format. Use YYYY-MM-DD or any valid date string.'
+                    });
+                }
+                query.createdAt = { $gte: creationDayRange.startDate, $lte: creationDayRange.endDate };
             }
 
             // Filter by linkedToDailySheet (if provided) - use stored field from database
@@ -857,6 +868,7 @@ const pcnDamageController = {
                 },
                 filters: {
                     date: date || null,
+                    creationDate: creationDate || null,
                     driverId: driverId || null,
                     linkedToDailySheet: linkedToDailySheet !== undefined ? (linkedToDailySheet === 'true' || linkedToDailySheet === true) : null,
                     paymentStatus: paymentStatus || null,

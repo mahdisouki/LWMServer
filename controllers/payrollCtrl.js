@@ -7,6 +7,8 @@ const DailySheet = require('../models/DailySheet');
 const PcnDamage = require('../models/PcnDamage');
 const Expense = require('../models/Expense');
 
+const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
 const PayrollCtrl = {
   // Log start time at the beginning of the day
   logStartTime: async (req, res) => {
@@ -179,7 +181,7 @@ const PayrollCtrl = {
           .json({ message: 'End time must be after start time.' });
       }
 
-      const totalHoursWorked = (end - start) / (1000 * 3600); // Convert milliseconds to hours
+      const totalHoursWorked = round2((end - start) / (1000 * 3600)); // Convert milliseconds to hours
 
       const user = await User.findById(userId);
       if (!user) {
@@ -202,16 +204,16 @@ const PayrollCtrl = {
 
       if (totalHoursWorked <= REGULAR_HOURS_LIMIT) {
         // If driver works <= regular hours, get the day price (flat rate)
-        regularHours = totalHoursWorked;
+        regularHours = round2(totalHoursWorked);
         overtimeHours = 0;
         totalSalary = user.hourPrice; // dayPrice (flat rate)
       } else {
         // If driver works > regular hours, get day price + extra hours * extra hour price
-        regularHours = REGULAR_HOURS_LIMIT;
-        overtimeHours = totalHoursWorked - REGULAR_HOURS_LIMIT;
+        regularHours = round2(REGULAR_HOURS_LIMIT);
+        overtimeHours = round2(totalHoursWorked - REGULAR_HOURS_LIMIT);
         const dayPrice = user.hourPrice; // dayPrice (regular hours rate becomes day rate)
-        const overtimeSalary = overtimeHours * user.extraHourPrice;
-        totalSalary = dayPrice + overtimeSalary;
+        const overtimeSalary = round2(overtimeHours * user.extraHourPrice);
+        totalSalary = round2(dayPrice + overtimeSalary);
       }
 
       // Get today's tasks and expenses for the user
@@ -228,7 +230,7 @@ const PayrollCtrl = {
       });
 
       // Calculate total cash received from tasks
-      const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+      const totalCash = round2(tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0));
 
       // Calculate total expenses directly from Expense documents for this driver and date
       let totalExpenses = 0;
@@ -237,27 +239,27 @@ const PayrollCtrl = {
         addedBy: user.username,
         date: { $gte: today, $lt: tomorrow }
       });
-      totalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+      totalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
 
       // Calculate PCN/Damages deductions for this user by PCN creation date + user
       const pcnDamages = await PcnDamage.find({
         createdAt: { $gte: today, $lt: tomorrow },
         deductedFromUserId: userId
       });
-      const totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
+      const totalPcnDamages = round2(pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0));
 
       payroll.endTime = end;
       payroll.totalHoursWorked = totalHoursWorked;
-      payroll.regularHours = regularHours;
-      payroll.extraHours = overtimeHours;
-      payroll.totalSalary = totalSalary;
+      payroll.regularHours = round2(regularHours);
+      payroll.extraHours = round2(overtimeHours);
+      payroll.totalSalary = round2(totalSalary);
       payroll.totalExpenses = totalExpenses;
       payroll.totalPcnDamages = totalPcnDamages;
       payroll.totalCash = totalCash;
 
       // Update the user's total hours worked and total salary
-      user.totalHoursWorked += totalHoursWorked;
-      user.totalSalary += payroll.totalSalary;
+      user.totalHoursWorked = round2((user.totalHoursWorked || 0) + totalHoursWorked);
+      user.totalSalary = round2((user.totalSalary || 0) + payroll.totalSalary);
 
       await payroll.save();
       await user.save(); // Save updated user totals
@@ -318,13 +320,22 @@ const PayrollCtrl = {
       if (endBreak) payroll.endBreak = new Date(endBreak);
       if (totalBreak !== undefined) payroll.totalBreak = totalBreak;
       if (notes) payroll.notes = notes;
-      // Recalculate hours worked and salary
+      // Recalculate hours worked and salary with day-rate policy:
+      // totalSalary = day rate + (extraHours * overtime hour rate)
       const hoursWorked =
-        (new Date(payroll.endTime) - new Date(payroll.startTime)) /
-        (1000 * 3600);
+        round2((new Date(payroll.endTime) - new Date(payroll.startTime)) /
+        (1000 * 3600));
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found.' });
+      }
+      const regularHoursLimit = user.regularHours || 8;
+      const regularHours = round2(Math.min(hoursWorked, regularHoursLimit));
+      const extraHours = round2(Math.max(hoursWorked - regularHoursLimit, 0));
       payroll.totalHoursWorked = hoursWorked;
-      payroll.totalSalary =
-        hoursWorked * (await User.findById(userId)).hourPrice;
+      payroll.regularHours = regularHours;
+      payroll.extraHours = extraHours;
+      payroll.totalSalary = round2((user.hourPrice || 0) + (extraHours * (user.extraHourPrice || 0)));
 
       await payroll.save();
 
@@ -557,35 +568,67 @@ const PayrollCtrl = {
       if (endBreak) payroll.endBreak = new Date(endBreak);
       if (totalBreak !== undefined) payroll.totalBreak = totalBreak;
       if (notes) payroll.notes = notes;
-      // Validate time order if both times are provided
-      if (startTime && endTime && new Date(endTime) <= new Date(startTime)) {
+      // Validate effective time order after applying incoming updates
+      if (payroll.startTime && payroll.endTime && new Date(payroll.endTime) <= new Date(payroll.startTime)) {
         return res.status(400).json({ message: 'End time must be after start time.' });
       }
 
-      // Calculate hours worked if both times are provided
-      if (startTime && endTime) {
-        const hoursWorked = (new Date(endTime) - new Date(startTime)) / (1000 * 3600);
-        payroll.totalHoursWorked = hoursWorked;
-      }
-
-      // Update hours if provided
-      if (regularHours !== undefined) payroll.regularHours = regularHours;
-      if (extraHours !== undefined) payroll.extraHours = extraHours;
-
-      // Update financial fields if provided
-      if (totalExpenses !== undefined) payroll.totalExpenses = totalExpenses;
-      if (totalCash !== undefined) payroll.totalCash = totalCash;
-
-      // Calculate salary based on hours and user's rates
+      // Calculate salary based on day-rate policy and overtime rate
       const user = await User.findById(payroll.userId);
       if (!user) {
         return res.status(404).json({ message: 'Associated user not found.' });
       }
 
-      // Calculate total salary based on regular and extra hours
-      const regularSalary = (payroll.regularHours || 0) * user.hourPrice;
+      // Recalculate worked hours on every update when times are present
+      if (payroll.startTime && payroll.endTime) {
+        payroll.totalHoursWorked = round2(
+          (new Date(payroll.endTime) - new Date(payroll.startTime)) / (1000 * 3600),
+        );
+      }
+
+      // Keep regular/extra hours consistent with totalHoursWorked on every update.
+      // If admin overrides one side, derive the other side to avoid stale mismatches.
+      const hasWorkedHours = Number.isFinite(payroll.totalHoursWorked);
+      if (hasWorkedHours) {
+        const hoursWorked = round2(Math.max(payroll.totalHoursWorked, 0));
+        const regularHoursLimit = round2(Math.max(user.regularHours || 8, 0));
+        const defaultRegular = round2(Math.min(hoursWorked, regularHoursLimit));
+        const defaultExtra = round2(Math.max(hoursWorked - regularHoursLimit, 0));
+
+        if (regularHours !== undefined && extraHours !== undefined) {
+          const regInput = round2(Math.max(Number(regularHours) || 0, 0));
+          const extInput = round2(Math.max(Number(extraHours) || 0, 0));
+          const totalInput = round2(regInput + extInput);
+          // If frontend sends inconsistent pair, enforce consistency from worked hours.
+          if (totalInput !== hoursWorked) {
+            payroll.regularHours = defaultRegular;
+            payroll.extraHours = defaultExtra;
+          } else {
+            payroll.regularHours = regInput;
+            payroll.extraHours = extInput;
+          }
+        } else if (regularHours !== undefined) {
+          const reg = round2(Math.min(Math.max(Number(regularHours) || 0, 0), hoursWorked));
+          payroll.regularHours = reg;
+          payroll.extraHours = round2(Math.max(hoursWorked - reg, 0));
+        } else if (extraHours !== undefined) {
+          const ext = round2(Math.min(Math.max(Number(extraHours) || 0, 0), hoursWorked));
+          payroll.extraHours = ext;
+          payroll.regularHours = round2(Math.max(hoursWorked - ext, 0));
+        } else {
+          payroll.regularHours = defaultRegular;
+          payroll.extraHours = defaultExtra;
+        }
+      }
+
+      // Update financial fields if provided
+      if (totalExpenses !== undefined) payroll.totalExpenses = totalExpenses;
+      if (totalCash !== undefined) payroll.totalCash = totalCash;
+
+      // Day-rate covers regular hours; only extra hours add overtime pay
+      const regularSalary = user.hourPrice || 0;
       const extraSalary = (payroll.extraHours || 0) * user.extraHourPrice;
-      payroll.totalSalary = regularSalary + extraSalary;
+      payroll.totalSalary = round2(regularSalary + extraSalary);
 
       // Update totalPcnDamages: use provided value if manually set, otherwise calculate from daily sheet
       if (totalPcnDamages !== undefined) {
@@ -602,7 +645,7 @@ const PayrollCtrl = {
           createdAt: { $gte: payrollDate, $lt: nextDay },
           deductedFromUserId: payroll.userId
         });
-        payroll.totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
+        payroll.totalPcnDamages = round2(pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0));
       }
 
       // Update status if provided
@@ -672,29 +715,29 @@ const PayrollCtrl = {
       let calculatedExtraHours = 0;
 
       if (startTime && endTime) {
-        calculatedTotalHours = (new Date(endTime) - new Date(startTime)) / (1000 * 3600);
+        calculatedTotalHours = round2((new Date(endTime) - new Date(startTime)) / (1000 * 3600));
 
         const REGULAR_HOURS_LIMIT = user.regularHours || 8;
 
         if (calculatedTotalHours <= REGULAR_HOURS_LIMIT) {
-          calculatedRegularHours = calculatedTotalHours;
+          calculatedRegularHours = round2(calculatedTotalHours);
           calculatedExtraHours = 0;
         } else {
-          calculatedRegularHours = REGULAR_HOURS_LIMIT;
-          calculatedExtraHours = calculatedTotalHours - REGULAR_HOURS_LIMIT;
+          calculatedRegularHours = round2(REGULAR_HOURS_LIMIT);
+          calculatedExtraHours = round2(calculatedTotalHours - REGULAR_HOURS_LIMIT);
         }
       }
 
       // Use provided values or calculated values
-      const finalTotalHours = calculatedTotalHours || 0;
-      const finalRegularHours = regularHours !== undefined ? regularHours : calculatedRegularHours;
-      const finalExtraHours = extraHours !== undefined ? extraHours : calculatedExtraHours;
+      const finalTotalHours = round2(calculatedTotalHours || 0);
+      const finalRegularHours = round2(regularHours !== undefined ? regularHours : calculatedRegularHours);
+      const finalExtraHours = round2(extraHours !== undefined ? extraHours : calculatedExtraHours);
 
       // Calculate salary based on user's rates
       // Using the same logic as updatePayrollAdmin: hourly rate for regular hours + extra hour price for extra hours
       const regularSalary = user.hourPrice;
       const extraSalary = finalExtraHours * user.extraHourPrice;
-      const calculatedSalary = regularSalary + extraSalary;
+      const calculatedSalary = round2(regularSalary + extraSalary);
 
       // Optionally calculate totalCash, totalExpenses, and totalPcnDamages if date is provided
       let calculatedTotalCash = totalCash !== undefined ? totalCash : 0;
@@ -717,7 +760,7 @@ const PayrollCtrl = {
 
         // Calculate total cash received from tasks (use provided value if specified, otherwise calculate)
         if (totalCash === undefined) {
-          calculatedTotalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+          calculatedTotalCash = round2(tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0));
         }
 
         // Calculate total expenses (use provided value if specified, otherwise calculate from Expense documents)
@@ -727,7 +770,7 @@ const PayrollCtrl = {
             addedBy: user.username,
             date: { $gte: payrollDate, $lt: nextDay }
           });
-          calculatedTotalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+          calculatedTotalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
         }
 
         // Calculate totalPcnDamages from PcnDamage by creation date + user
@@ -736,7 +779,7 @@ const PayrollCtrl = {
             createdAt: { $gte: payrollDate, $lt: nextDay },
             deductedFromUserId: userId
           });
-          calculatedTotalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
+          calculatedTotalPcnDamages = round2(pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0));
         }
       }
 
@@ -822,28 +865,28 @@ const PayrollCtrl = {
       if (!payroll) throw new Error('Payroll not found');
 
       // Check if the payroll is already marked as paid
-      if (payroll.status === 'paid') {
+      if (payroll.status === 'Paid') {
         throw new Error('Payroll is already marked as paid');
       }
-
-      // Recalculate hours worked and salary before marking as paid
-      const totalHoursWorked =
-        (new Date(payroll.endTime) - new Date(payroll.startTime)) /
-        (1000 * 3600);
-      const regularHours = Math.min(totalHoursWorked, 8);
-      const extraHours = Math.max(totalHoursWorked - 8, 0);
 
       // Fetch user to get the hourly rate
       const user = await User.findById(payroll.userId);
       if (!user) throw new Error('User not found');
 
+      // Recalculate hours worked and salary before marking as paid
+      // using day-rate + overtime-rate policy
+      const totalHoursWorked =
+        round2((new Date(payroll.endTime) - new Date(payroll.startTime)) /
+        (1000 * 3600));
+      const regularHoursLimit = user.regularHours || 8;
+      const extraHours = round2(Math.max(totalHoursWorked - regularHoursLimit, 0));
+
       // Calculate salary
-      const totalSalary =
-        regularHours * user.hourPrice + extraHours * user.hourPrice * 1.5;
+      const totalSalary = round2((user.hourPrice || 0) + (extraHours * (user.extraHourPrice || 0)));
 
       // Deduct hours and salary from user's total
-      user.totalHoursWorked = (user.totalHoursWorked || 0) - totalHoursWorked;
-      user.totalSalary = (user.totalSalary || 0) - totalSalary;
+      user.totalHoursWorked = round2((user.totalHoursWorked || 0) - totalHoursWorked);
+      user.totalSalary = round2((user.totalSalary || 0) - totalSalary);
 
       // Mark payroll as paid
       payroll.status = 'Paid';

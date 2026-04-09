@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
+const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
 const payrollSchema = new Schema({
     userId: {
@@ -27,12 +28,27 @@ const payrollSchema = new Schema({
     totalExpenses: { type: Number, default: 0 }, // Total expenses incurred by the driver
     totalPcnDamages: { type: Number, default: 0 }, // Total PCN/Damages deducted
     totalCash: { type: Number, default: 0 }, // Total cash received by the driver
+    netSalary: { type: Number, default: 0 }, // Persisted net salary: salary - pcn - (cash - expenses)
     status: { type: String, enum: ['Pending', 'Paid'], default: 'Pending' }, // New status field to track payment status
 }, { timestamps: true });
 
-// Virtual for net salary (totalSalary - totalPcnDamages )
-payrollSchema.virtual('netSalary').get(function () {
-    return (this.totalSalary || 0) - (this.totalPcnDamages || 0);
+// Keep net salary persisted in MongoDB based on payroll policy:
+// net = totalSalary - totalPcnDamages - (totalCash - totalExpenses)
+payrollSchema.pre('save', function (next) {
+    this.totalHoursWorked = round2(this.totalHoursWorked || 0);
+    this.regularHours = round2(this.regularHours || 0);
+    this.extraHours = round2(this.extraHours || 0);
+    this.totalSalary = round2(this.totalSalary || 0);
+    this.totalPcnDamages = round2(this.totalPcnDamages || 0);
+    this.totalCash = round2(this.totalCash || 0);
+    this.totalExpenses = round2(this.totalExpenses || 0);
+
+    const totalSalary = this.totalSalary;
+    const totalPcnDamages = this.totalPcnDamages;
+    const totalCash = this.totalCash;
+    const totalExpenses = this.totalExpenses;
+    this.netSalary = round2(totalSalary - totalPcnDamages - (totalCash - totalExpenses));
+    next();
 });
 
 // Ensure virtual fields are included in JSON
