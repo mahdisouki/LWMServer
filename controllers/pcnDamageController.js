@@ -836,7 +836,7 @@ const pcnDamageController = {
                     path: 'deductedFromUserId',
                     select: 'username firstName lastName role roleType'
                 })
-                .sort({ time: -1 });
+                .sort({ createdAt: -1 });
 
             // Pagination
             const parsedPage = Math.max(parseInt(page, 10) || 1, 1);
