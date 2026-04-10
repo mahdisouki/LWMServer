@@ -505,10 +505,27 @@ const truckCtrl = {
       if (type) query.type = type;
       if (refId) query.refId = refId;
       if (activeOnly === 'true' || activeOnly === '1') query.endAt = null;
-      if (from || to) {
-        query.startAt = {};
-        if (from) query.startAt.$gte = new Date(from);
-        if (to) query.startAt.$lte = new Date(to);
+      const fromDate = from ? new Date(from) : null;
+      const toDate = to ? new Date(to) : null;
+      if (from && Number.isNaN(fromDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid "from" date. Use an ISO date-time string.' });
+      }
+      if (to && Number.isNaN(toDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid "to" date. Use an ISO date-time string.' });
+      }
+      if (fromDate && toDate && fromDate > toDate) {
+        return res.status(400).json({ message: '"from" must be less than or equal to "to".' });
+      }
+      if (fromDate && toDate) {
+        // Overlap in [from, to]: startAt <= to AND (endAt is null OR endAt >= from)
+        query.$and = [
+          { startAt: { $lte: toDate } },
+          { $or: [{ endAt: null }, { endAt: { $gte: fromDate } }] },
+        ];
+      } else if (fromDate) {
+        query.$or = [{ endAt: null }, { endAt: { $gte: fromDate } }];
+      } else if (toDate) {
+        query.startAt = { $lte: toDate };
       }
       const ranges = await UnitAssignmentLogRange.find(query)
         .sort({ startAt: -1 })
