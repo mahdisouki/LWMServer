@@ -59,29 +59,92 @@ const analyticsCtrl = {
   /**
    * Get aggregated analytics data
    * GET /api/analytics/interest-analytics
-   * Query params: startDate, endDate (optional)
+   * Query params:
+   * - date: single business date (optional)
+   * - startDate, endDate: createdAt date range (optional)
+   * - type: sundays | night_shift (optional, supports comma-separated values)
+   * - page, limit: pagination for dailyBreakdown (optional)
    */
   getInterestAnalytics: async (req, res) => {
     try {
-      const { startDate, endDate } = req.query;
+      const { date, startDate, endDate, type } = req.query;
+      const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 200);
+      const skip = (page - 1) * limit;
 
-      // Build date filter
-      const dateFilter = {};
+      // Build filter:
+      // - date => business date (single day)
+      // - startDate/endDate => createdAt range
+      const matchFilter = {};
+      const typeMap = {
+        sundays: 'sunday_click',
+        sunday_click: 'sunday_click',
+        night_shift: 'night_slot_click',
+        'night shift': 'night_slot_click',
+        night_slot_click: 'night_slot_click'
+      };
+
+      if (type) {
+        const requestedTypes = String(type)
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter(Boolean);
+
+        const mappedTypes = requestedTypes.map((item) => typeMap[item]);
+        const invalidTypes = requestedTypes.filter((_, idx) => !mappedTypes[idx]);
+
+        if (invalidTypes.length > 0) {
+          return res.status(400).json({
+            message: 'Invalid type filter. Use: sundays, night_shift'
+          });
+        }
+
+        const uniqueTypes = [...new Set(mappedTypes)];
+        matchFilter.type = uniqueTypes.length === 1 ? uniqueTypes[0] : { $in: uniqueTypes };
+      }
+
+      if (date) {
+        const businessDate = new Date(date);
+        if (isNaN(businessDate.getTime())) {
+          return res.status(400).json({
+            message: 'Invalid business date format'
+          });
+        }
+
+        const dayStart = new Date(businessDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(businessDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        matchFilter.date = { $gte: dayStart, $lte: dayEnd };
+      }
+
       if (startDate || endDate) {
-        dateFilter.date = {};
+        matchFilter.createdAt = {};
         if (startDate) {
-          dateFilter.date.$gte = new Date(startDate);
+          const createdStart = new Date(startDate);
+          if (isNaN(createdStart.getTime())) {
+            return res.status(400).json({
+              message: 'Invalid startDate format'
+            });
+          }
+          matchFilter.createdAt.$gte = createdStart;
         }
         if (endDate) {
-          const end = new Date(endDate);
-          end.setHours(23, 59, 59, 999); // Include entire end date
-          dateFilter.date.$lte = end;
+          const createdEnd = new Date(endDate);
+          if (isNaN(createdEnd.getTime())) {
+            return res.status(400).json({
+              message: 'Invalid endDate format'
+            });
+          }
+          createdEnd.setHours(23, 59, 59, 999); // Include entire end date
+          matchFilter.createdAt.$lte = createdEnd;
         }
       }
 
       // Aggregate data by type
       const aggregation = await InterestTracking.aggregate([
-        { $match: dateFilter },
+        { $match: matchFilter },
         {
           $group: {
             _id: '$type',
@@ -98,68 +161,89 @@ const analyticsCtrl = {
             count: 1,
             firstSeen: 1,
             lastSeen: 1,
-            uniqueDates: { $size: { $setUnion: ['$dates'] } }
+            uniqueDates: { $size: { $setUnion: ['$dates'] } },
+            firstCreatedAt: '$firstSeen',
+            lastCreatedAt: '$lastSeen',
+            uniqueBusinessDates: { $size: { $setUnion: ['$dates'] } }
           }
         }
       ]);
 
       // Get total count
-      const totalCount = await InterestTracking.countDocuments(dateFilter);
+      const totalCount = await InterestTracking.countDocuments(matchFilter);
 
-      // Get daily breakdown for the last 30 days if no date filter
-      let dailyBreakdown = [];
-      if (!startDate && !endDate) {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
-        dailyBreakdown = await InterestTracking.aggregate([
-          {
-            $match: {
-              ...dateFilter,
-              createdAt: { $gte: thirtyDaysAgo }
-            }
-          },
-          {
-            $group: {
-              _id: {
-                type: '$type',
-                date: {
-                  $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
-                }
+      // Build daily breakdown filter from active query filters only.
+      const dailyMatch = { ...matchFilter };
+
+      const baseDailyPipeline = [
+        { $match: dailyMatch },
+        {
+          $group: {
+            _id: {
+              type: '$type',
+              createdAtDate: {
+                $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
               },
-              count: { $sum: 1 }
-            }
-          },
-          {
-            $group: {
-              _id: '$_id.date',
-              clicks: {
-                $push: {
-                  type: '$_id.type',
-                  count: '$count'
-                }
-              },
-              total: { $sum: '$count' }
-            }
-          },
-          { $sort: { _id: -1 } },
+              businessDate: {
+                $dateToString: { format: '%Y-%m-%d', date: '$date' }
+              }
+            },
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $group: {
+            _id: '$_id.createdAtDate',
+            businessDates: { $addToSet: '$_id.businessDate' },
+            clicks: {
+              $push: {
+                type: '$_id.type',
+                count: '$count',
+                businessDate: '$_id.businessDate'
+              }
+            },
+            total: { $sum: '$count' }
+          }
+        },
+        { $sort: { _id: -1 } }
+      ];
+
+      const [dailyCountResult, dailyBreakdown] = await Promise.all([
+        InterestTracking.aggregate([
+          ...baseDailyPipeline,
+          { $count: 'totalItems' }
+        ]),
+        InterestTracking.aggregate([
+          ...baseDailyPipeline,
+          { $skip: skip },
+          { $limit: limit },
           {
             $project: {
               _id: 0,
-              date: '$_id',
+              createdAtDate: '$_id',
+              businessDates: 1,
               clicks: 1,
               total: 1
             }
           }
-        ]);
-      }
+        ])
+      ]);
+
+      const totalDailyItems = dailyCountResult[0]?.totalItems || 0;
+      const totalPages = Math.ceil(totalDailyItems / limit) || 0;
 
       res.status(200).json({
         message: 'Analytics retrieved successfully',
         data: {
           summary: aggregation,
           totalCount,
-          dailyBreakdown
+          dailyBreakdown,
+          pagination: {
+            page,
+            limit,
+            totalItems: totalDailyItems,
+            totalPages
+          }
         }
       });
     } catch (error) {
