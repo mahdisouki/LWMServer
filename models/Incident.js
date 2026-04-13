@@ -36,10 +36,43 @@ const incidentSchema = new Schema(
         },
 
         incidentTime: { type: Date },
+        reportedAt: { type: Date },
         location: { type: String },
         notes: { type: String },
+        vanRegistration: { type: String },
+
+        // Accident-specific flat fields
+        otherDriverName: { type: String },
+        otherDriverContactInfo: { type: String },
+        otherDriverEmail: { type: String },
+        otherDriverPhone: { type: String },
+        otherVehicleRegistration: { type: String },
+        isDriverInjured: { type: Boolean },
+        canContinueWorking: { type: Boolean },
+        isVehicleDrivable: { type: Boolean },
+        needsRecoveryService: { type: Boolean },
+
+        // Breakdown-specific flat fields
+        breakdownIssueType: {
+            type: String,
+            enum: [
+                'tyre_puncture',
+                'tyre_blowout',
+                'not_starting',
+                'tail_lift',
+                'wont_raise',
+                'wont_lower',
+                'other',
+            ],
+        },
+        canSelfFix: { type: Boolean },
+        needsBreakdownAssistance: { type: Boolean },
 
         photos: [photoSchema],
+        vehicleMedia: [photoSchema],
+        otherVehicleMedia: [photoSchema],
+        otherLicenseMedia: [photoSchema],
+        breakdownMedia: [photoSchema],
 
         status: {
             type: String,

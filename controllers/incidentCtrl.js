@@ -70,7 +70,7 @@ function maybeCompleteFirstStep(steps, notes, photos, userId) {
     if (!steps || steps.length === 0) return;
 
     if (notes || (Array.isArray(photos) && photos.length > 0)) {
-        const firstStep = steps.find((s) => s.order === 1);
+        const firstStep = steps.find((s) => s.order === 0);
         if (firstStep) {
             firstStep.status = 'DONE';
             firstStep.completedAt = new Date();
@@ -79,6 +79,75 @@ function maybeCompleteFirstStep(steps, notes, photos, userId) {
             }
         }
     }
+}
+
+function parseBoolean(value) {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === 'true') return true;
+        if (normalized === 'false') return false;
+    }
+    return undefined;
+}
+
+function mapFilesToPhotos(files = []) {
+    return files
+        .filter((file) => !!file.path)
+        .map((file) => ({
+            url: file.path,
+        }));
+}
+
+function getUploadedPhotos(reqFiles, fieldName) {
+    if (!reqFiles) return [];
+
+    if (Array.isArray(reqFiles)) {
+        if (fieldName !== 'photos') return [];
+        return mapFilesToPhotos(reqFiles);
+    }
+
+    const filesForField = Array.isArray(reqFiles[fieldName]) ? reqFiles[fieldName] : [];
+    return mapFilesToPhotos(filesForField);
+}
+
+function normalizeMediaInput(rawValue) {
+    if (typeof rawValue === 'undefined') return undefined;
+
+    let parsed = rawValue;
+
+    if (typeof rawValue === 'string') {
+        try {
+            parsed = JSON.parse(rawValue);
+        } catch {
+            parsed = rawValue ? [rawValue] : [];
+        }
+    }
+
+    if (Array.isArray(parsed)) {
+        return parsed
+            .filter(Boolean)
+            .map((item) =>
+                typeof item === 'string' ? { url: item } : item && item.url ? { url: item.url } : null
+            )
+            .filter(Boolean);
+    }
+
+    if (parsed && typeof parsed === 'object' && parsed.url) {
+        return [{ url: parsed.url }];
+    }
+
+    return [];
+}
+
+function dedupeMediaByUrl(mediaItems = []) {
+    const seen = new Set();
+    return mediaItems.filter((item) => {
+        if (!item || !item.url) return false;
+        if (seen.has(item.url)) return false;
+        seen.add(item.url);
+        return true;
+    });
 }
 
 const incidentController = {
@@ -92,13 +161,28 @@ const incidentController = {
                 vanId,
                 driverId,
                 incidentTime,
+                reportedAt,
                 helperId,
                 location,
                 notes,
-                type, // 'incident' or 'breakdown'
+                vanRegistration,
+                otherDriverName,
+                otherDriverContactInfo,
+                otherDriverEmail,
+                otherDriverPhone,
+                otherVehicleRegistration,
+                isDriverInjured,
+                canContinueWorking,
+                isVehicleDrivable,
+                needsRecoveryService,
+                breakdownIssueType,
+                canSelfFix,
+                needsBreakdownAssistance,
+                type, // 'accident' or 'breakdown'
             } = req.body;
 
             const user = req.user;
+            const parsedType = type || 'breakdown';
 
             // Validate required fields
             if (!vanId || !driverId || !incidentTime) {
@@ -107,15 +191,39 @@ const incidentController = {
                 });
             }
 
-            // Build photos array from uploaded files (Cloudinary) if present
-            let photos = [];
-            if (Array.isArray(req.files) && req.files.length > 0) {
-                photos = req.files
-                    .filter((file) => !!file.path)
-                    .map((file) => ({
-                        url: file.path,
-                    }));
+            if (!['accident', 'breakdown'].includes(parsedType)) {
+                return res.status(400).json({
+                    message: 'type must be either accident or breakdown.',
+                });
             }
+
+            if (!location || !notes) {
+                return res.status(400).json({
+                    message: 'location and notes are required.',
+                });
+            }
+
+            if (
+                (parsedType === 'accident' || parsedType === 'breakdown') &&
+                parseBoolean(isVehicleDrivable) === undefined
+            ) {
+                return res.status(400).json({
+                    message: 'isVehicleDrivable is required for accident and breakdown reports.',
+                });
+            }
+
+            if (parsedType === 'breakdown' && !breakdownIssueType) {
+                return res.status(400).json({
+                    message: 'breakdownIssueType is required for breakdown reports.',
+                });
+            }
+
+            // Build photo arrays from uploaded files (Cloudinary)
+            const photos = getUploadedPhotos(req.files, 'photos');
+            const vehicleMedia = getUploadedPhotos(req.files, 'vehicleMedia');
+            const otherVehicleMedia = getUploadedPhotos(req.files, 'otherVehicleMedia');
+            const otherLicenseMedia = getUploadedPhotos(req.files, 'otherLicenseMedia');
+            const breakdownMedia = getUploadedPhotos(req.files, 'breakdownMedia');
 
             const steps = buildStepsFromTemplate(BREAKDOWN_TEMPLATE);
 
@@ -124,11 +232,29 @@ const incidentController = {
                 driverId,
                 helperId,
                 incidentTime,
+                reportedAt: reportedAt || incidentTime,
                 location,
                 notes,
+                vanRegistration,
+                otherDriverName,
+                otherDriverContactInfo,
+                otherDriverEmail,
+                otherDriverPhone,
+                otherVehicleRegistration,
+                isDriverInjured: parseBoolean(isDriverInjured),
+                canContinueWorking: parseBoolean(canContinueWorking),
+                isVehicleDrivable: parseBoolean(isVehicleDrivable),
+                needsRecoveryService: parseBoolean(needsRecoveryService),
+                breakdownIssueType,
+                canSelfFix: parseBoolean(canSelfFix),
+                needsBreakdownAssistance: parseBoolean(needsBreakdownAssistance),
                 photos,
+                vehicleMedia,
+                otherVehicleMedia,
+                otherLicenseMedia,
+                breakdownMedia,
                 steps,
-                type, // will fall back to schema default if undefined
+                type: parsedType,
                 createdBy: user && user._id ? user._id : undefined,
             });
 
@@ -186,14 +312,56 @@ const incidentController = {
             const {
                 location,
                 notes,
-                type, // 'incident' or 'breakdown'
+                reportedAt,
+                vanRegistration,
+                otherDriverName,
+                otherDriverContactInfo,
+                otherDriverEmail,
+                otherDriverPhone,
+                otherVehicleRegistration,
+                isDriverInjured,
+                canContinueWorking,
+                isVehicleDrivable,
+                needsRecoveryService,
+                breakdownIssueType,
+                canSelfFix,
+                needsBreakdownAssistance,
+                type, // 'accident' or 'breakdown'
             } = req.body;
 
             const user = req.user;
+            const parsedType = type || 'breakdown';
 
             if (!user) {
                 return res.status(401).json({
                     message: 'Unauthorized',
+                });
+            }
+
+            if (!['accident', 'breakdown'].includes(parsedType)) {
+                return res.status(400).json({
+                    message: 'type must be either accident or breakdown.',
+                });
+            }
+
+            if (!location || !notes) {
+                return res.status(400).json({
+                    message: 'location and notes are required.',
+                });
+            }
+
+            if (
+                (parsedType === 'accident' || parsedType === 'breakdown') &&
+                parseBoolean(isVehicleDrivable) === undefined
+            ) {
+                return res.status(400).json({
+                    message: 'isVehicleDrivable is required for accident and breakdown reports.',
+                });
+            }
+
+            if (parsedType === 'breakdown' && !breakdownIssueType) {
+                return res.status(400).json({
+                    message: 'breakdownIssueType is required for breakdown reports.',
                 });
             }
 
@@ -235,42 +403,72 @@ const incidentController = {
 
             const incidentTime = new Date();
 
-            // Build photos array from uploaded files (Cloudinary) if present
-            let photos = [];
-            if (Array.isArray(req.files) && req.files.length > 0) {
-                photos = req.files
-                    .filter((file) => !!file.path)
-                    .map((file) => ({
-                        url: file.path,
-                    }));
-            }
+            // Build photo arrays from uploaded files (Cloudinary)
+            const photos = getUploadedPhotos(req.files, 'photos');
+            const vehicleMedia = getUploadedPhotos(req.files, 'vehicleMedia');
+            const otherVehicleMedia = getUploadedPhotos(req.files, 'otherVehicleMedia');
+            const otherLicenseMedia = getUploadedPhotos(req.files, 'otherLicenseMedia');
+            const breakdownMedia = getUploadedPhotos(req.files, 'breakdownMedia');
 
             const steps = buildStepsFromTemplate(BREAKDOWN_TEMPLATE);
 
             // Optionally auto-complete the first step if we already have initial info
-            maybeCompleteFirstStep(steps, notes, photos, user._id);
+            maybeCompleteFirstStep(
+                steps,
+                notes,
+                photos.concat(vehicleMedia, otherVehicleMedia, otherLicenseMedia, breakdownMedia),
+                user._id
+            );
 
             const incident = await Incident.create({
                 vanId,
                 driverId,
                 helperId,
                 incidentTime,
+                reportedAt: reportedAt || incidentTime,
                 location,
                 notes,
+                vanRegistration,
+                otherDriverName,
+                otherDriverContactInfo,
+                otherDriverEmail,
+                otherDriverPhone,
+                otherVehicleRegistration,
+                isDriverInjured: parseBoolean(isDriverInjured),
+                canContinueWorking: parseBoolean(canContinueWorking),
+                isVehicleDrivable: parseBoolean(isVehicleDrivable),
+                needsRecoveryService: parseBoolean(needsRecoveryService),
+                breakdownIssueType,
+                canSelfFix: parseBoolean(canSelfFix),
+                needsBreakdownAssistance: parseBoolean(needsBreakdownAssistance),
                 photos,
+                vehicleMedia,
+                otherVehicleMedia,
+                otherLicenseMedia,
+                breakdownMedia,
                 steps,
-                type, // will fall back to schema default if undefined
+                type: parsedType,
                 createdBy: user._id,
             });
 
             // Optional: notify admins that a new incident is active
             try {
-                await Notification.create({
-                    userId: user._id,
-                    type: 'Incidents',
-                    message: 'New incident created',
-                    senderName: user.fullName || 'System',
-                });
+                const admins = await User.find({ role: 'Admin' }).select('_id firstName lastName');
+                const senderName =
+                    user.fullName ||
+                    [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+                    'System';
+
+                await Promise.all(
+                    admins.map((admin) =>
+                        Notification.create({
+                            userId: admin._id,
+                            type: 'Incidents',
+                            message: 'New incident created',
+                            senderName,
+                        })
+                    )
+                );
             } catch (notifyError) {
                 // Do not fail incident creation if notification fails
                 console.error('Error creating incident notification', notifyError);
@@ -339,13 +537,12 @@ const incidentController = {
         }
     },
 
-    // Update basic incident fields (location, notes, etc.) and handle photos in a predictable way.
-    // - Body fields update primitives as usual.
-    // - Photos follow this logic:
-    //   1) If `photos` is provided in the body (array / JSON string / single URL), it is treated as
-    //      the *authoritative* list from the frontend (supports deletions). This becomes the base set.
-    //   2) Any uploaded files in `req.files` (field: "photos") are *appended* to that base set.
-    //   3) If no `photos` in body and no files are uploaded, existing photos remain unchanged.
+    // Update basic incident fields and media arrays in a predictable way.
+    // Media fields (`photos`, `vehicleMedia`, `otherVehicleMedia`, `otherLicenseMedia`, `breakdownMedia`):
+    //   1) If a field is provided in body (array / JSON string / single URL), it is treated as the
+    //      authoritative list from frontend (supports deletions) and normalized to [{ url }].
+    //   2) Uploaded files for each field are appended.
+    //   3) If a field is not provided and no uploads for it exist, existing values remain unchanged.
     updateIncident: async (req, res) => {
         try {
             const { incidentId } = req.params;
@@ -357,80 +554,41 @@ const incidentController = {
                 return res.status(404).json({ message: 'Incident not found' });
             }
 
-            // Extract any photos from the body; they represent the remaining photos as seen by the frontend.
-            // We'll convert them into a base array and THEN append any newly uploaded files.
-            let bodyPhotosRaw;
-            if (Object.prototype.hasOwnProperty.call(update, 'photos')) {
-                bodyPhotosRaw = update.photos;
-                delete update.photos;
-            }
+            const mediaFields = [
+                'photos',
+                'vehicleMedia',
+                'otherVehicleMedia',
+                'otherLicenseMedia',
+                'breakdownMedia',
+            ];
+
+            const bodyMediaRaw = {};
+            mediaFields.forEach((field) => {
+                if (Object.prototype.hasOwnProperty.call(update, field)) {
+                    bodyMediaRaw[field] = update[field];
+                    delete update[field];
+                }
+            });
 
             // Apply primitive/body updates
             Object.assign(incident, update);
 
-            // Build base photos:
-            // - If body provided `photos`, normalize and use that (supports deletions).
-            // - Otherwise, start from existing incident.photos.
-            let basePhotos;
+            mediaFields.forEach((field) => {
+                const normalizedFromBody = normalizeMediaInput(bodyMediaRaw[field]);
+                let baseMedia =
+                    typeof normalizedFromBody !== 'undefined'
+                        ? normalizedFromBody
+                        : Array.isArray(incident[field])
+                            ? incident[field].slice()
+                            : [];
 
-            if (typeof bodyPhotosRaw !== 'undefined') {
-                let parsed = bodyPhotosRaw;
-
-                // Accept JSON string or array
-                if (typeof bodyPhotosRaw === 'string') {
-                    try {
-                        const tmp = JSON.parse(bodyPhotosRaw);
-                        parsed = tmp;
-                    } catch {
-                        // If not valid JSON, treat as single URL string
-                        parsed = bodyPhotosRaw ? [bodyPhotosRaw] : [];
-                    }
+                const uploadedMedia = getUploadedPhotos(req.files, field);
+                if (uploadedMedia.length > 0) {
+                    baseMedia = baseMedia.concat(uploadedMedia);
                 }
 
-                if (Array.isArray(parsed)) {
-                    // Array of URLs or objects; normalize to [{ url }]
-                    basePhotos = parsed
-                        .filter(Boolean)
-                        .map((item) =>
-                            typeof item === 'string'
-                                ? { url: item }
-                                : item && item.url
-                                    ? { url: item.url }
-                                    : null
-                        )
-                        .filter(Boolean);
-                } else if (parsed && typeof parsed === 'object' && parsed.url) {
-                    basePhotos = [{ url: parsed.url }];
-                } else {
-                    // Explicitly clear photos if body indicates no remaining ones
-                    basePhotos = [];
-                }
-            } else {
-                // No photos provided in body -> keep existing as base
-                basePhotos = Array.isArray(incident.photos) ? incident.photos.slice() : [];
-            }
-
-            // Append new photos from uploaded files (Cloudinary) if present
-            if (Array.isArray(req.files) && req.files.length > 0) {
-                const uploadedPhotos = req.files
-                    .filter((file) => !!file.path)
-                    .map((file) => ({
-                        url: file.path,
-                    }));
-
-                basePhotos = basePhotos.concat(uploadedPhotos);
-            }
-
-            // De-duplicate by URL and assign back
-            if (basePhotos) {
-                const seen = new Set();
-                incident.photos = basePhotos.filter((p) => {
-                    if (!p || !p.url) return false;
-                    if (seen.has(p.url)) return false;
-                    seen.add(p.url);
-                    return true;
-                });
-            }
+                incident[field] = dedupeMediaByUrl(baseMedia);
+            });
 
             await incident.save();
 

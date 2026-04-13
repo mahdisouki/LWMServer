@@ -6,13 +6,21 @@ const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
 
+const incidentMediaFields = [
+  { name: 'photos', maxCount: 20 }, // backwards compatibility
+  { name: 'vehicleMedia', maxCount: 20 },
+  { name: 'otherVehicleMedia', maxCount: 20 },
+  { name: 'otherLicenseMedia', maxCount: 20 },
+  { name: 'breakdownMedia', maxCount: 20 },
+];
+
 // Admin: create a new incident/breakdown record for any truck/driver/helper
 // Accepts photos uploaded via Cloudinary (field name: "photos")
 router.post(
   '/incidents',
   isAuth,
   checkRole('Admin'),
-  multer.array('photos', 20),
+  multer.fields(incidentMediaFields),
   incidentCtrl.createIncidentAdmin
 );
 
@@ -22,7 +30,7 @@ router.post(
 router.post(
   '/driver/incidents',
   isAuth,
-  multer.array('photos', 20),
+  multer.fields(incidentMediaFields),
   incidentCtrl.createIncident
 );
 
@@ -33,12 +41,12 @@ router.get('/incidents', isAuth, checkRole('Admin'), incidentCtrl.listIncidents)
 router.get('/incidents/:incidentId', isAuth, incidentCtrl.getIncidentById);
 
 // Update base incident info and optionally append new photos (admin-only).
-// Accepts files via Cloudinary (field: "photos")
+// Accepts files via Cloudinary (photos, vehicleMedia, otherVehicleMedia, otherLicenseMedia, breakdownMedia)
 router.put(
   '/incidents/:incidentId',
   isAuth,
   checkRole('Admin'),
-  multer.array('photos', 20),
+  multer.fields(incidentMediaFields),
   incidentCtrl.updateIncident
 );
 

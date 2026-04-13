@@ -6,6 +6,7 @@
     "start": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed": "node seeder.js && npm start",
+    "backfill:payroll:pcn-array": "node scripts/backfillPayrollPcnDamagesArray.js",
     "postinstall": "npx playwright install-deps chromium && npx playwright install chromium"
   },
   "author": "",

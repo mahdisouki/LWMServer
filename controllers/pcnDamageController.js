@@ -151,12 +151,14 @@ const pcnDamageController = {
             const pcnDamages = await PcnDamage.find({
                 createdAt: { $gte: startDate, $lte: endDate },
                 deductedFromUserId: userId
-            });
+            }).select('_id amount');
             const totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
+            const pcnDamageIds = pcnDamages.map((pcn) => pcn._id);
 
             // Update all payroll records for this user on this date
             for (const payroll of payrollRecords) {
                 payroll.totalPcnDamages = totalPcnDamages;
+                payroll.pcnDamages = pcnDamageIds;
                 await payroll.save();
                 console.log(`Updated payroll ${payroll._id} with totalPcnDamages: ${totalPcnDamages}`);
             }
