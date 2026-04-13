@@ -5843,7 +5843,27 @@ const taskCtrl = {
     try {
       const result = await Task.aggregate([
         { $match: { postcode: { $exists: true, $ne: '', $ne: null } } },
-        { $group: { _id: '$postcode', orderCount: { $sum: 1 } } },
+        {
+          $project: {
+            postcodePrefix: {
+              $toUpper: {
+                $arrayElemAt: [
+                  {
+                    $split: [
+                      {
+                        $trim: { input: '$postcode' }
+                      },
+                      ' '
+                    ]
+                  },
+                  0
+                ]
+              }
+            }
+          }
+        },
+        { $match: { postcodePrefix: { $ne: '' } } },
+        { $group: { _id: '$postcodePrefix', orderCount: { $sum: 1 } } },
         { $sort: { orderCount: -1 } },
         { $limit: 10 },
         { $project: { postcode: '$_id', orderCount: 1, _id: 0 } },
