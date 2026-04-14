@@ -56,6 +56,22 @@ const normalizePcnReferenceNumber = (value) => {
     return s === '' ? undefined : s;
 };
 
+const getMonthRange = (date) => {
+    const base = new Date(date);
+    if (isNaN(base.getTime())) return null;
+    const start = new Date(base.getFullYear(), base.getMonth(), 1, 0, 0, 0, 0);
+    const end = new Date(base.getFullYear(), base.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { start, end };
+};
+
+const getDayRange = (date) => {
+    const base = new Date(date);
+    if (isNaN(base.getTime())) return null;
+    const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0);
+    const end = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 23, 59, 59, 999);
+    return { start, end };
+};
+
 /** Mongo duplicate key on pcnReferenceNumber → 409 with a clear message */
 const respondIfDuplicatePcnReference = (error, res) => {
     if (!error || error.code !== 11000) return false;
@@ -124,43 +140,98 @@ const pcnDamageController = {
     // Helper function to recalculate payroll PCN/Damages
     recalculatePayrollPcnDamages: async (date, userId) => {
         try {
-            // Parse date - support YYYY-MM-DD, DD/MM/YYYY, ISO
             const parsed = new Date(date);
             if (isNaN(parsed.getTime())) {
                 console.error('recalculatePayrollPcnDamages: invalid date', date);
                 return;
             }
-            const y = parsed.getFullYear();
-            const m = parsed.getMonth();
-            const d = parsed.getDate();
-            const startDate = new Date(y, m, d, 0, 0, 0, 0);
-            const endDate = new Date(y, m, d, 23, 59, 59, 999);
+            const monthRange = getMonthRange(parsed);
+            if (!monthRange) return;
 
-            // Find payroll records for this user on this date (startTime within day)
-            const payrollRecords = await Payroll.find({
-                userId: userId,
-                startTime: { $gte: startDate, $lte: endDate }
-            });
+            const [payrollRecords, pcnDamages] = await Promise.all([
+                Payroll.find({
+                    userId,
+                    startTime: { $gte: monthRange.start, $lte: monthRange.end },
+                }).sort({ startTime: 1 }),
+                PcnDamage.find({
+                    deductedFromUserId: userId,
+                    createdAt: { $gte: monthRange.start, $lte: monthRange.end },
+                }).sort({ createdAt: 1 }).select('_id amount createdAt')
+            ]);
 
             if (payrollRecords.length === 0) {
-                console.log(`No payroll records found for user ${userId} on date ${date}`);
+                for (const pcn of pcnDamages) {
+                    const pcnDate = toLocalDateStr(pcn.createdAt);
+                    pcn.deductionTargetPayrollId = null;
+                    pcn.deductionNote = `PCN created on ${pcnDate} and not assigned to any payroll date this month yet.`;
+                    await pcn.save();
+                }
+                console.log(`No payroll records found for user ${userId} in month ${toLocalDateStr(parsed)}. Marked ${pcnDamages.length} PCN(s) as pending deduction.`);
                 return;
             }
 
-            // Query PcnDamage by creation date (same local-day range) and deductedFromUserId
-            const pcnDamages = await PcnDamage.find({
-                createdAt: { $gte: startDate, $lte: endDate },
-                deductedFromUserId: userId
-            }).select('_id amount');
-            const totalPcnDamages = pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
-            const pcnDamageIds = pcnDamages.map((pcn) => pcn._id);
-
-            // Update all payroll records for this user on this date
+            const payrollMap = new Map();
             for (const payroll of payrollRecords) {
-                payroll.totalPcnDamages = totalPcnDamages;
-                payroll.pcnDamages = pcnDamageIds;
+                payrollMap.set(payroll._id.toString(), []);
+            }
+
+            for (const pcn of pcnDamages) {
+                const dayRange = getDayRange(pcn.createdAt);
+                if (!dayRange) continue;
+
+                const sameDayPayrolls = payrollRecords.filter((p) =>
+                    p.startTime && p.startTime >= dayRange.start && p.startTime <= dayRange.end
+                );
+
+                let targetPayroll = sameDayPayrolls[0] || null;
+                let deductionNote = '';
+
+                if (!targetPayroll) {
+                    const prevPayrolls = payrollRecords.filter((p) => p.startTime && p.startTime < dayRange.start);
+                    const prevPayroll = prevPayrolls.length > 0 ? prevPayrolls[prevPayrolls.length - 1] : null;
+                    if (prevPayroll) {
+                        targetPayroll = prevPayroll;
+                        const payrollDate = toLocalDateStr(prevPayroll.startTime);
+                        const pcnDate = toLocalDateStr(pcn.createdAt);
+                        deductionNote = `PCN created on ${pcnDate} deducted from previous payroll ${payrollDate} .`;
+                    }
+                }
+
+                if (!targetPayroll) {
+                    const nextPayroll = payrollRecords.find((p) => p.startTime && p.startTime > dayRange.end);
+                    if (nextPayroll) {
+                        targetPayroll = nextPayroll;
+                        const payrollDate = toLocalDateStr(nextPayroll.startTime);
+                        const pcnDate = toLocalDateStr(pcn.createdAt);
+                        deductionNote = `PCN created on ${pcnDate} deducted from next payroll ${payrollDate} .`;
+                    }
+                }
+
+                if (!targetPayroll) {
+                    const pcnDate = toLocalDateStr(pcn.createdAt);
+                    pcn.deductionTargetPayrollId = null;
+                    pcn.deductionNote = `PCN created on ${pcnDate} and not assigned to any payroll date this month yet.`;
+                    await pcn.save();
+                    continue;
+                }
+
+                if (!deductionNote) {
+                    const payrollDate = toLocalDateStr(targetPayroll.startTime);
+                    const pcnDate = toLocalDateStr(pcn.createdAt);
+                    deductionNote = `PCN created on ${pcnDate} deducted on payroll ${payrollDate}.`;
+                }
+
+                pcn.deductionTargetPayrollId = targetPayroll._id;
+                pcn.deductionNote = deductionNote;
+                await pcn.save();
+                payrollMap.get(targetPayroll._id.toString()).push(pcn);
+            }
+
+            for (const payroll of payrollRecords) {
+                const assignedPcns = payrollMap.get(payroll._id.toString()) || [];
+                payroll.pcnDamages = assignedPcns.map((pcn) => pcn._id);
+                payroll.totalPcnDamages = assignedPcns.reduce((sum, pcn) => sum + (pcn.amount || 0), 0);
                 await payroll.save();
-                console.log(`Updated payroll ${payroll._id} with totalPcnDamages: ${totalPcnDamages}`);
             }
         } catch (error) {
             console.error('Error recalculating payroll PCN/Damages:', error);

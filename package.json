@@ -8,6 +8,8 @@
     "seed": "node seeder.js && npm start",
     "backfill:payroll:pcn-array": "node scripts/backfillPayrollPcnDamagesArray.js",
     "backfill:payroll:inconsistent": "node scripts/backfillPayrollInconsistentRows.js",
+    "backfill:pcn-deduction-routing": "node scripts/backfillPcnDeductionRouting.js",
+    "backfill:pcn-deduction-routing:dry": "node scripts/backfillPcnDeductionRouting.js --dry-run",
     "postinstall": "npx playwright install-deps chromium && npx playwright install chromium"
   },
   "author": "",

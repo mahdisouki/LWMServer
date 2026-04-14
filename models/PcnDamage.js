@@ -22,6 +22,8 @@ const pcnDamageSchema = new Schema({
     time: { type: Date, default: Date.now },        // Time of the PCN/Damage
     vanMatricule: { type: String },                 // Optional van registration / matricule
     linkedToDailySheet: { type: Boolean, default: false }, // Whether PCN is linked to a DailySheet
+    deductionTargetPayrollId: { type: Schema.Types.ObjectId, ref: 'Payroll', default: null }, // Payroll where this PCN is deducted
+    deductionNote: { type: String, default: '' }, // Human-readable deduction routing note
 }, { timestamps: true });
 
 const PcnDamage = mongoose.model('PcnDamage', pcnDamageSchema);

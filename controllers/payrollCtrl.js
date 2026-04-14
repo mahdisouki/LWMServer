@@ -6,6 +6,7 @@ const Task = require('../models/Task');
 const DailySheet = require('../models/DailySheet');
 const PcnDamage = require('../models/PcnDamage');
 const Expense = require('../models/Expense');
+const pcnDamageController = require('./pcnDamageController');
 
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
@@ -38,6 +39,8 @@ const PayrollCtrl = {
       });
 
       await newPayroll.save();
+      await pcnDamageController.recalculatePayrollPcnDamages(newPayroll.startTime, userId);
+      await newPayroll.populate('pcnDamages');
 
       res.status(201).json({
         message: 'Start time logged successfully.',
@@ -241,10 +244,9 @@ const PayrollCtrl = {
       });
       totalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
 
-      // Calculate PCN/Damages deductions for this user by PCN creation date + user
+      // Calculate PCN/Damages from the payroll assigned PCNs
       const pcnDamages = await PcnDamage.find({
-        createdAt: { $gte: today, $lt: tomorrow },
-        deductedFromUserId: userId
+        _id: { $in: payroll.pcnDamages || [] }
       });
       const totalPcnDamages = round2(pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0));
 
@@ -327,7 +329,7 @@ const PayrollCtrl = {
       // totalSalary = day rate + (extraHours * overtime hour rate)
       const hoursWorked =
         round2((new Date(payroll.endTime) - new Date(payroll.startTime)) /
-        (1000 * 3600));
+          (1000 * 3600));
       const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({ message: 'User not found.' });
@@ -501,7 +503,7 @@ const PayrollCtrl = {
         })
         .populate({
           path: 'pcnDamages',
-          select: 'pcnReferenceNumber proofUrl reason amount deductedFromUserId paymentStatus time vanMatricule linkedToDailySheet createdAt updatedAt',
+          select: 'pcnReferenceNumber proofUrl reason amount deductedFromUserId paymentStatus time vanMatricule linkedToDailySheet createdAt updatedAt deductionNote deductionTargetPayrollId',
         });
 
       // Pagination
@@ -640,20 +642,13 @@ const PayrollCtrl = {
       const extraSalary = (payroll.extraHours || 0) * user.extraHourPrice;
       payroll.totalSalary = round2(regularSalary + extraSalary);
 
-      // Update totalPcnDamages: use provided value if manually set, otherwise calculate from daily sheet
+      // Update totalPcnDamages: use provided value if manually set, otherwise calculate from assigned PCNs
       if (totalPcnDamages !== undefined) {
         // Use the manually provided value (admin override)
         payroll.totalPcnDamages = totalPcnDamages;
       } else if (payroll.startTime) {
-        // Calculate from PcnDamage by creation date + user
-        const payrollDate = new Date(payroll.startTime);
-        payrollDate.setHours(0, 0, 0, 0);
-        const nextDay = new Date(payrollDate);
-        nextDay.setDate(payrollDate.getDate() + 1);
-
         const pcnDamages = await PcnDamage.find({
-          createdAt: { $gte: payrollDate, $lt: nextDay },
-          deductedFromUserId: payroll.userId
+          _id: { $in: payroll.pcnDamages || [] }
         });
         payroll.totalPcnDamages = round2(pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0));
       }
@@ -664,6 +659,10 @@ const PayrollCtrl = {
       }
 
       await payroll.save();
+      if (payroll.startTime) {
+        await pcnDamageController.recalculatePayrollPcnDamages(payroll.startTime, payroll.userId);
+        await payroll.populate('pcnDamages');
+      }
       await payroll.populate('pcnDamages');
 
       res.status(200).json({
@@ -784,14 +783,7 @@ const PayrollCtrl = {
           calculatedTotalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
         }
 
-        // Calculate totalPcnDamages from PcnDamage by creation date + user
-        if (totalPcnDamages === undefined) {
-          const pcnDamages = await PcnDamage.find({
-            createdAt: { $gte: payrollDate, $lt: nextDay },
-            deductedFromUserId: userId
-          });
-          calculatedTotalPcnDamages = round2(pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0));
-        }
+        // totalPcnDamages is resolved by assignment policy after payroll is created.
       }
 
       // Get truckId if not provided but user has a truck
@@ -824,6 +816,9 @@ const PayrollCtrl = {
       });
 
       await newPayroll.save();
+      if (newPayroll.startTime) {
+        await pcnDamageController.recalculatePayrollPcnDamages(newPayroll.startTime, userId);
+      }
 
       // Populate user and truck details for response
       await newPayroll.populate({
@@ -891,7 +886,7 @@ const PayrollCtrl = {
       // using day-rate + overtime-rate policy
       const totalHoursWorked =
         round2((new Date(payroll.endTime) - new Date(payroll.startTime)) /
-        (1000 * 3600));
+          (1000 * 3600));
       const regularHoursLimit = user.regularHours || 8;
       const extraHours = round2(Math.max(totalHoursWorked - regularHoursLimit, 0));
 
