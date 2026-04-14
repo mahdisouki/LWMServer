@@ -501,6 +501,7 @@ const PayrollCtrl = {
         })
         .populate({
           path: 'pcnDamages',
+          select: 'pcnReferenceNumber proofUrl reason amount deductedFromUserId paymentStatus time vanMatricule linkedToDailySheet createdAt updatedAt',
         });
 
       // Pagination
