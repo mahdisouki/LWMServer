@@ -263,6 +263,7 @@ const PayrollCtrl = {
 
       await payroll.save();
       await user.save(); // Save updated user totals
+      await payroll.populate('pcnDamages');
 
       res.status(200).json({
         message: 'End time logged and salary calculated successfully.',
@@ -281,7 +282,9 @@ const PayrollCtrl = {
     const userId = req.user._id;
 
     try {
-      const payrolls = await Payroll.find({ userId }).sort({ startTime: -1 });
+      const payrolls = await Payroll.find({ userId })
+        .populate('pcnDamages')
+        .sort({ startTime: -1 });
       if (!payrolls || payrolls.length === 0) {
         return res
           .status(404)
@@ -338,6 +341,7 @@ const PayrollCtrl = {
       payroll.totalSalary = round2((user.hourPrice || 0) + (extraHours * (user.extraHourPrice || 0)));
 
       await payroll.save();
+      await payroll.populate('pcnDamages');
 
       res.status(200).json({
         message: 'Payroll record updated successfully.',
@@ -494,6 +498,9 @@ const PayrollCtrl = {
         .populate({
           path: 'truckId',
           select: 'name',
+        })
+        .populate({
+          path: 'pcnDamages',
         });
 
       // Pagination
@@ -532,7 +539,9 @@ const PayrollCtrl = {
       if (startDate && endDate) {
         query.startTime = { $gte: new Date(startDate), $lte: new Date(endDate) };
       }
-      const payrolls = await Payroll.find(query).populate('userId', 'username email roleType truckId');
+      const payrolls = await Payroll.find(query)
+        .populate('userId', 'username email roleType truckId')
+        .populate('pcnDamages');
       if (!payrolls || payrolls.length === 0) {
         return res
           .status(404)
@@ -654,6 +663,7 @@ const PayrollCtrl = {
       }
 
       await payroll.save();
+      await payroll.populate('pcnDamages');
 
       res.status(200).json({
         message: 'Payroll updated successfully.',
@@ -822,6 +832,9 @@ const PayrollCtrl = {
       await newPayroll.populate({
         path: 'truckId',
         select: 'name'
+      });
+      await newPayroll.populate({
+        path: 'pcnDamages'
       });
 
       res.status(201).json({
