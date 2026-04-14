@@ -777,7 +777,18 @@ const pcnDamageController = {
 
     getAllPcnDamages: async (req, res) => {
         try {
-            const { date, creationDate, driverId, linkedToDailySheet, paymentStatus, pcnReferenceNumber, page = 1, limit = 10 } = req.query;
+            const {
+                date,
+                creationDate,
+                creationDateFrom,
+                creationDateTo,
+                driverId,
+                linkedToDailySheet,
+                paymentStatus,
+                pcnReferenceNumber,
+                page = 1,
+                limit = 10
+            } = req.query;
 
             // Build query filters
             const query = {};
@@ -793,8 +804,34 @@ const pcnDamageController = {
                 query.time = { $gte: dayRange.startDate, $lte: dayRange.endDate };
             }
 
-            // Filter by creation date (if provided)
-            if (creationDate) {
+            // Filter by creation date:
+            // - Legacy single-day: creationDate
+            // - Range: creationDateFrom and/or creationDateTo
+            if (creationDateFrom || creationDateTo) {
+                const createdAtRange = {};
+
+                if (creationDateFrom) {
+                    const fromRange = getLocalDayRangeFromInput(creationDateFrom);
+                    if (!fromRange) {
+                        return res.status(400).json({
+                            message: 'Invalid creationDateFrom format. Use YYYY-MM-DD or any valid date string.'
+                        });
+                    }
+                    createdAtRange.$gte = fromRange.startDate;
+                }
+
+                if (creationDateTo) {
+                    const toRange = getLocalDayRangeFromInput(creationDateTo);
+                    if (!toRange) {
+                        return res.status(400).json({
+                            message: 'Invalid creationDateTo format. Use YYYY-MM-DD or any valid date string.'
+                        });
+                    }
+                    createdAtRange.$lte = toRange.endDate;
+                }
+
+                query.createdAt = createdAtRange;
+            } else if (creationDate) {
                 const creationDayRange = getLocalDayRangeFromInput(creationDate);
                 if (!creationDayRange) {
                     return res.status(400).json({
@@ -871,6 +908,8 @@ const pcnDamageController = {
                 filters: {
                     date: date || null,
                     creationDate: creationDate || null,
+                    creationDateFrom: creationDateFrom || null,
+                    creationDateTo: creationDateTo || null,
                     driverId: driverId || null,
                     linkedToDailySheet: linkedToDailySheet !== undefined ? (linkedToDailySheet === 'true' || linkedToDailySheet === true) : null,
                     paymentStatus: paymentStatus || null,
