@@ -1,6 +1,8 @@
 const Incident = require('../models/Incident');
 const Notification = require('../models/Notification');
 const Truck = require('../models/Truck');
+const Van = require('../models/Van');
+const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const { User } = require('../models/User');
 
 // Static breakdown procedure definition – mirrors your paper checklist
@@ -66,10 +68,10 @@ function buildStepsFromTemplate(template) {
 }
 
 // Shared helper to optionally auto-complete the first step
-function maybeCompleteFirstStep(steps, notes, photos, userId) {
+function maybeCompleteFirstStep(steps, notes, mediaItems, userId) {
     if (!steps || steps.length === 0) return;
 
-    if (notes || (Array.isArray(photos) && photos.length > 0)) {
+    if (notes || (Array.isArray(mediaItems) && mediaItems.length > 0)) {
         const firstStep = steps.find((s) => s.order === 0);
         if (firstStep) {
             firstStep.status = 'DONE';
@@ -103,7 +105,6 @@ function getUploadedPhotos(reqFiles, fieldName) {
     if (!reqFiles) return [];
 
     if (Array.isArray(reqFiles)) {
-        if (fieldName !== 'photos') return [];
         return mapFilesToPhotos(reqFiles);
     }
 
@@ -218,8 +219,7 @@ const incidentController = {
                 });
             }
 
-            // Build photo arrays from uploaded files (Cloudinary)
-            const photos = getUploadedPhotos(req.files, 'photos');
+            // Build media arrays from uploaded files (Cloudinary)
             const vehicleMedia = getUploadedPhotos(req.files, 'vehicleMedia');
             const otherVehicleMedia = getUploadedPhotos(req.files, 'otherVehicleMedia');
             const otherLicenseMedia = getUploadedPhotos(req.files, 'otherLicenseMedia');
@@ -248,7 +248,6 @@ const incidentController = {
                 breakdownIssueType,
                 canSelfFix: parseBoolean(canSelfFix),
                 needsBreakdownAssistance: parseBoolean(needsBreakdownAssistance),
-                photos,
                 vehicleMedia,
                 otherVehicleMedia,
                 otherLicenseMedia,
@@ -403,8 +402,7 @@ const incidentController = {
 
             const incidentTime = new Date();
 
-            // Build photo arrays from uploaded files (Cloudinary)
-            const photos = getUploadedPhotos(req.files, 'photos');
+            // Build media arrays from uploaded files (Cloudinary)
             const vehicleMedia = getUploadedPhotos(req.files, 'vehicleMedia');
             const otherVehicleMedia = getUploadedPhotos(req.files, 'otherVehicleMedia');
             const otherLicenseMedia = getUploadedPhotos(req.files, 'otherLicenseMedia');
@@ -416,7 +414,7 @@ const incidentController = {
             maybeCompleteFirstStep(
                 steps,
                 notes,
-                photos.concat(vehicleMedia, otherVehicleMedia, otherLicenseMedia, breakdownMedia),
+                vehicleMedia.concat(otherVehicleMedia, otherLicenseMedia, breakdownMedia),
                 user._id
             );
 
@@ -441,7 +439,6 @@ const incidentController = {
                 breakdownIssueType,
                 canSelfFix: parseBoolean(canSelfFix),
                 needsBreakdownAssistance: parseBoolean(needsBreakdownAssistance),
-                photos,
                 vehicleMedia,
                 otherVehicleMedia,
                 otherLicenseMedia,
@@ -537,8 +534,112 @@ const incidentController = {
         }
     },
 
+    // Get van registration (matricule) by driver and date
+    getVanFromDriverAndDate: async (req, res) => {
+        try {
+            const { date } = req.query;
+            const driverId = req.user && req.user._id;
+
+            if (!driverId) {
+                return res.status(401).json({
+                    message: 'Unauthorized: driver could not be resolved from token.',
+                });
+            }
+
+            if (!date) {
+                return res.status(400).json({
+                    message: 'date is required as a query parameter.',
+                });
+            }
+
+            const baseDate = new Date(date);
+            if (Number.isNaN(baseDate.getTime())) {
+                return res.status(400).json({
+                    message: 'Invalid date format. Use YYYY-MM-DD or any valid date string.',
+                });
+            }
+
+            const startDate = new Date(baseDate);
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(baseDate);
+            endDate.setHours(23, 59, 59, 999);
+
+            // Find driver's assignment range that overlaps the provided day.
+            const driverRange = await UnitAssignmentLogRange.findOne({
+                type: 'driver',
+                refId: driverId,
+                startAt: { $lte: endDate },
+                $or: [{ endAt: null }, { endAt: { $gte: startDate } }],
+            })
+                .sort({ startAt: -1 })
+                .lean();
+
+            if (!driverRange || !driverRange.truckId) {
+                return res.status(404).json({
+                    message: 'No truck assignment found for that driver and date.',
+                    driverId,
+                    date,
+                });
+            }
+
+            // Resolve van assigned to the same truck during that day.
+            const vanRange = await UnitAssignmentLogRange.findOne({
+                type: 'van',
+                truckId: driverRange.truckId,
+                startAt: { $lte: endDate },
+                $or: [{ endAt: null }, { endAt: { $gte: startDate } }],
+            })
+                .sort({ startAt: -1 })
+                .lean();
+
+            if (!vanRange || !vanRange.refId) {
+                return res.status(404).json({
+                    message: 'No van assignment found for that driver and date.',
+                    driverId,
+                    date,
+                    truckId: driverRange.truckId,
+                });
+            }
+
+            const van = await Van.findById(vanRange.refId).select('matricule name').lean();
+            if (!van) {
+                return res.status(404).json({
+                    message: 'Assigned van not found.',
+                    driverId,
+                    date,
+                    vanId: vanRange.refId,
+                });
+            }
+
+            return res.status(200).json({
+                message: 'Van found successfully',
+                driverId,
+                date,
+                vanId: vanRange.refId,
+                vanRegNumber: van.matricule,
+                vanMatricule: van.matricule,
+                vanName: van.name,
+                truckId: driverRange.truckId,
+                assignment: {
+                    driverRangeId: driverRange._id,
+                    vanRangeId: vanRange._id,
+                    driverRangeStartAt: driverRange.startAt,
+                    driverRangeEndAt: driverRange.endAt,
+                    vanRangeStartAt: vanRange.startAt,
+                    vanRangeEndAt: vanRange.endAt,
+                },
+            });
+        } catch (error) {
+            console.error('Error fetching van from driver/date', error);
+            return res.status(500).json({
+                message: 'Failed to get van',
+                error: error.message,
+            });
+        }
+    },
+
     // Update basic incident fields and media arrays in a predictable way.
-    // Media fields (`photos`, `vehicleMedia`, `otherVehicleMedia`, `otherLicenseMedia`, `breakdownMedia`):
+    // Media fields (`vehicleMedia`, `otherVehicleMedia`, `otherLicenseMedia`, `breakdownMedia`):
     //   1) If a field is provided in body (array / JSON string / single URL), it is treated as the
     //      authoritative list from frontend (supports deletions) and normalized to [{ url }].
     //   2) Uploaded files for each field are appended.
@@ -555,7 +656,6 @@ const incidentController = {
             }
 
             const mediaFields = [
-                'photos',
                 'vehicleMedia',
                 'otherVehicleMedia',
                 'otherLicenseMedia',
@@ -637,9 +737,13 @@ const incidentController = {
                 step.data = data;
             }
 
-            // If all required steps are now DONE, auto-resolve the incident
+            // Recompute incident status from required steps after each step update:
+            // - all required DONE => RESOLVED
+            // - otherwise => PENDING_RESOLUTION (re-open from RESOLVED if needed)
             if (incident.canResolve()) {
                 incident.status = 'RESOLVED';
+            } else {
+                incident.status = 'PENDING_RESOLUTION';
             }
 
             await incident.save();

@@ -7,6 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "seed": "node seeder.js && npm start",
     "backfill:payroll:pcn-array": "node scripts/backfillPayrollPcnDamagesArray.js",
+    "backfill:payroll:inconsistent": "node scripts/backfillPayrollInconsistentRows.js",
     "postinstall": "npx playwright install-deps chromium && npx playwright install chromium"
   },
   "author": "",

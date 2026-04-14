@@ -7,7 +7,6 @@ const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
 
 const incidentMediaFields = [
-  { name: 'photos', maxCount: 20 }, // backwards compatibility
   { name: 'vehicleMedia', maxCount: 20 },
   { name: 'otherVehicleMedia', maxCount: 20 },
   { name: 'otherLicenseMedia', maxCount: 20 },
@@ -15,7 +14,7 @@ const incidentMediaFields = [
 ];
 
 // Admin: create a new incident/breakdown record for any truck/driver/helper
-// Accepts photos uploaded via Cloudinary (field name: "photos")
+// Accepts incident media uploaded via Cloudinary
 router.post(
   '/incidents',
   isAuth,
@@ -25,7 +24,7 @@ router.post(
 );
 
 // Staff (driver/helper): create a new incident/breakdown record linked to the logged-in user
-// Accepts photos uploaded via Cloudinary (field name: "photos")
+// Accepts incident media uploaded via Cloudinary
 // This mirrors how other driver mobile routes are prefixed with /driver/...
 router.post(
   '/driver/incidents',
@@ -37,11 +36,14 @@ router.post(
 // List incidents – admin view for notifications page
 router.get('/incidents', isAuth, checkRole('Admin'), incidentCtrl.listIncidents);
 
+// Get van registration for a specific driver and date
+router.get('/incidents/get-van', isAuth, incidentCtrl.getVanFromDriverAndDate);
+
 // Get a single incident with full procedure
 router.get('/incidents/:incidentId', isAuth, incidentCtrl.getIncidentById);
 
-// Update base incident info and optionally append new photos (admin-only).
-// Accepts files via Cloudinary (photos, vehicleMedia, otherVehicleMedia, otherLicenseMedia, breakdownMedia)
+// Update base incident info and optionally append new media (admin-only).
+// Accepts files via Cloudinary (vehicleMedia, otherVehicleMedia, otherLicenseMedia, breakdownMedia)
 router.put(
   '/incidents/:incidentId',
   isAuth,

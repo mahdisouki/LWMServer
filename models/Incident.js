@@ -68,7 +68,6 @@ const incidentSchema = new Schema(
         canSelfFix: { type: Boolean },
         needsBreakdownAssistance: { type: Boolean },
 
-        photos: [photoSchema],
         vehicleMedia: [photoSchema],
         otherVehicleMedia: [photoSchema],
         otherLicenseMedia: [photoSchema],
