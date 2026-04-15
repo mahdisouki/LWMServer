@@ -562,7 +562,22 @@ const PayrollCtrl = {
 
   // Admin - Update a payroll record for a user
   updatePayrollAdmin: async (req, res) => {
-    const { startTime, endTime, startBreak, endBreak, totalBreak, regularHours, extraHours, totalExpenses, totalPcnDamages, totalCash, status, notes } = req.body;
+    const {
+      startTime,
+      endTime,
+      startBreak,
+      endBreak,
+      totalBreak,
+      regularHours,
+      extraHours,
+      totalExpenses,
+      totalPcnDamages,
+      totalCash,
+      status,
+      notes,
+      vanReg,
+      workingWith,
+    } = req.body;
     const { payrollId } = req.params;
 
     try {
@@ -580,6 +595,8 @@ const PayrollCtrl = {
       if (endBreak) payroll.endBreak = new Date(endBreak);
       if (totalBreak !== undefined) payroll.totalBreak = totalBreak;
       if (notes) payroll.notes = notes;
+      if (vanReg !== undefined) payroll.vanReg = vanReg;
+      if (workingWith !== undefined) payroll.workingWith = workingWith;
       // Validate effective time order after applying incoming updates
       if (payroll.startTime && payroll.endTime && new Date(payroll.endTime) <= new Date(payroll.startTime)) {
         return res.status(400).json({ message: 'End time must be after start time.' });
@@ -688,6 +705,8 @@ const PayrollCtrl = {
       endBreak,
       totalBreak,
       truckId,
+      vanReg,
+      workingWith,
       regularHours,
       extraHours,
       totalExpenses,
@@ -804,6 +823,8 @@ const PayrollCtrl = {
         endBreak: endBreak ? new Date(endBreak) : undefined,
         totalBreak: totalBreak !== undefined ? totalBreak : 0,
         truckId: finalTruckId,
+        vanReg: vanReg !== undefined ? vanReg : undefined,
+        workingWith: workingWith !== undefined ? workingWith : undefined,
         totalHoursWorked: finalTotalHours,
         regularHours: finalRegularHours,
         extraHours: finalExtraHours,
