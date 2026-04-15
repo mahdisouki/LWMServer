@@ -1081,13 +1081,7 @@ const driverManagement = {
 
   rateTask: async (req, res) => {
     const { taskId } = req.params;
-    const {
-      clientFeedback,
-      clientFeedbackScale,
-      cashAmount,
-      extraCashAmount,
-      customerNotPresent,
-    } = req.body;
+    const { clientFeedback, clientFeedbackScale, cashAmount, customerNotPresent } = req.body;
     const userId = req.user._id;
 
     try {
@@ -1124,7 +1118,6 @@ const driverManagement = {
       task.clientFeedbackScale = clientFeedbackScale;
       task.taskStatus = "Completed";
       task.cashReceived = cashAmount;
-      task.extraCashReceived = extraCashAmount || 0;
       // Store the user id who took the cash
       task.cashReceivedBy = userInfo.user._id;
 

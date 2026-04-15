@@ -42,11 +42,8 @@ dailySheetSchema.pre('save', async function (next) {
         paymentMethod: 'cash'
       });
 
-      // Sum up cash received from all cash-paid tasks (cash + extra cash)
-      this.totalCash = tasks.reduce(
-        (sum, task) => sum + (task.cashReceived || 0) + (task.extraCashReceived || 0),
-        0,
-      );
+      // Sum up cash received from all cash-paid tasks
+      this.totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
       console.log(
         '[DailySheet] totalCash recalculated for sheet',
         this._id ? this._id.toString() : '(new)',

@@ -235,7 +235,6 @@ const taskSchema = new Schema(
     finishDate: { type: Date },
     timeSpent: { type: Number },
     cashReceived: { type: Number },
-    extraCashReceived: { type: Number, default: 0 },
     // Who actually took the cash for this task (User id)
     cashReceivedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     customerSignature: { type: String }, // Path to customer signature image

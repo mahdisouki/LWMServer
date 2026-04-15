@@ -141,11 +141,11 @@ const dailySheetController = {
 
           const totalIncome = totalCashIncome + totalTippingIncome;
 
-          // totalCash = sum of cashReceived + extraCashReceived from all jobs paid by cash (schema field used for payroll/sheets)
+          // totalCash = sum of cashReceived from all jobs paid by cash (schema field used for payroll/sheets)
           const allJobsForTotalCash = [...jobsDone, ...jobsPending, ...jobsCancelled];
           const totalCash = allJobsForTotalCash
             .filter((t) => (t.paymentMethod || '').toLowerCase() === 'cash')
-            .reduce((sum, t) => sum + (t.cashReceived || 0) + (t.extraCashReceived || 0), 0);
+            .reduce((sum, t) => sum + (t.cashReceived || 0), 0);
 
           // Who was assigned to this truck on this day (from UnitAssignmentLogRange)? Fall back to truck if none.
           const assigned = await getAssignedForDayFromRanges(truck._id, formattedDate);
@@ -708,10 +708,7 @@ const dailySheetController = {
                 paymentMethod: 'cash',
               })
             : [];
-        const totalCash = tasks.reduce(
-          (sum, task) => sum + (task.cashReceived || 0) + (task.extraCashReceived || 0),
-          0,
-        );
+        const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
         const before = sheet.totalCash ?? 0;
         sheet.totalCash = totalCash;
         await sheet.save();
@@ -797,11 +794,11 @@ const dailySheetController = {
           const totalTippingIncome = tippingRequests.reduce((acc, tip) => (tip.status === 'Accepted' && tip.price ? acc + tip.price : acc), 0);
           const totalIncome = totalCashIncome + totalTippingIncome;
 
-          // totalCash = sum of cashReceived + extraCashReceived from all jobs (done/pending/cancelled) paid by cash
+          // totalCash = sum of cashReceived from all jobs (done/pending/cancelled) paid by cash
           const allJobs = [...jobsDone, ...jobsPending, ...jobsCancelled];
           const totalCash = allJobs
             .filter((t) => (t.paymentMethod || '').toLowerCase() === 'cash')
-            .reduce((sum, t) => sum + (t.cashReceived || 0) + (t.extraCashReceived || 0), 0);
+            .reduce((sum, t) => sum + (t.cashReceived || 0), 0);
 
           const assigned = await getAssignedForDayFromRanges(truck._id, formattedDate);
           const updatedDailySheet = await DailySheet.findByIdAndUpdate(
