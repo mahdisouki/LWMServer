@@ -90,6 +90,29 @@ const vanCtrl = {
     }
   },
 
+  getVanItemsInTruck: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const van = await Van.findById(id)
+        .select('itemsInTruck currentCapacity matricule')
+        .lean();
+      if (!van) {
+        return res.status(404).json({ message: 'Van not found' });
+      }
+      res.status(200).json({
+        message: 'Van items in truck retrieved successfully',
+        itemsInTruck: van.itemsInTruck || [],
+        currentCapacity: van.currentCapacity ?? 0,
+        matricule: van.matricule,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to retrieve items in truck',
+        error: error.message,
+      });
+    }
+  },
+
   updateVan: async (req, res) => {
     try {
       const { id } = req.params;
