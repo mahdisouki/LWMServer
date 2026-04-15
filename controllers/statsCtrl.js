@@ -32,7 +32,12 @@ const calculateIncomeForDate = async (startDate, endDate) => {
       },
       {
         $addFields: {
-          netIncome: { $max: [0, { $subtract: ['$totalPrice', '$totalRefunded'] }] }
+          netIncome: {
+            $add: [
+              { $max: [0, { $subtract: ['$totalPrice', '$totalRefunded'] }] },
+              { $ifNull: ['$extraCashReceived', 0] }
+            ]
+          }
         }
       },
       {

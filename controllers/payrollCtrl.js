@@ -232,8 +232,10 @@ const PayrollCtrl = {
         cashReceivedBy: userId,
       });
 
-      // Calculate total cash received from tasks
-      const totalCash = round2(tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0));
+      // Calculate total cash received from tasks (cash + extra cash)
+      const totalCash = round2(
+        tasks.reduce((sum, task) => sum + (task.cashReceived || 0) + (task.extraCashReceived || 0), 0),
+      );
 
       // Calculate total expenses directly from Expense documents for this driver and date
       let totalExpenses = 0;
@@ -770,7 +772,9 @@ const PayrollCtrl = {
 
         // Calculate total cash received from tasks (use provided value if specified, otherwise calculate)
         if (totalCash === undefined) {
-          calculatedTotalCash = round2(tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0));
+          calculatedTotalCash = round2(
+            tasks.reduce((sum, task) => sum + (task.cashReceived || 0) + (task.extraCashReceived || 0), 0),
+          );
         }
 
         // Calculate total expenses (use provided value if specified, otherwise calculate from Expense documents)
@@ -1080,7 +1084,10 @@ const PayrollCtrl = {
         date: { $gte: startDate, $lte: endDate },
         cashReceivedBy: userId,
       });
-      const totalCash = tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0);
+      const totalCash = tasks.reduce(
+        (sum, task) => sum + (task.cashReceived || 0) + (task.extraCashReceived || 0),
+        0,
+      );
 
       for (const payroll of payrollRecords) {
         const before = payroll.totalCash || 0;

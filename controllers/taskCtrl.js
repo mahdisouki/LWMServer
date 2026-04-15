@@ -557,6 +557,7 @@ const taskCtrl = {
         createdBy,
         createdByType,
         cashReceived,
+        extraCashReceived,
         cashReceivedBy,
         billingAddress,
         collectionAddress,
@@ -840,6 +841,7 @@ const taskCtrl = {
         createdBy,
         createdByType,
         cashReceived,
+        extraCashReceived,
         cashReceivedBy: cashReceivedBySanitized,
         paymentStatus: paymentStatus || 'Unpaid',
         billingAddress,
@@ -919,7 +921,7 @@ const taskCtrl = {
 
       // Recalculate payroll totalCash for the driver/helper who received cash on this task
       try {
-        if (savedTask.cashReceived != null && savedTask.cashReceivedBy) {
+        if ((savedTask.cashReceived != null || savedTask.extraCashReceived != null) && savedTask.cashReceivedBy) {
           await payrollCtrl.recalculatePayrollTotalCash(savedTask.date, savedTask.cashReceivedBy);
         }
       } catch (err) {
@@ -928,7 +930,7 @@ const taskCtrl = {
 
       // Recalculate DailySheet totalCash for any sheet that contains this task
       try {
-        if (savedTask.cashReceived != null) {
+        if (savedTask.cashReceived != null || savedTask.extraCashReceived != null) {
           await dailySheetController.recalculateDailySheetTotalCashForTask(savedTask._id);
         }
       } catch (err) {
@@ -2497,7 +2499,10 @@ const taskCtrl = {
 
       // Recalculate payroll totalCash whenever task cash or "received by" is set or updated
       try {
-        const cashFieldsUpdated = 'cashReceived' in updates || 'cashReceivedBy' in updates;
+        const cashFieldsUpdated =
+          'cashReceived' in updates ||
+          'extraCashReceived' in updates ||
+          'cashReceivedBy' in updates;
         if (cashFieldsUpdated) {
           const newUserId = updatedTask.cashReceivedBy ? String(updatedTask.cashReceivedBy) : null;
           const oldUserId = oldTask.cashReceivedBy ? String(oldTask.cashReceivedBy) : null;
@@ -2516,7 +2521,7 @@ const taskCtrl = {
 
       // Recalculate DailySheet totalCash for any sheet that contains this task
       try {
-        if ('cashReceived' in updates || 'paymentMethod' in updates) {
+        if ('cashReceived' in updates || 'extraCashReceived' in updates || 'paymentMethod' in updates) {
           await dailySheetController.recalculateDailySheetTotalCashForTask(updatedTask._id);
         }
       } catch (err) {
