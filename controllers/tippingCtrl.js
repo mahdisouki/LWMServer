@@ -1,6 +1,8 @@
 const TippingRequest = require('../models/TippingRequest');
 const { User } = require('../models/User');
 const Truck = require('../models/Truck');
+const Van = require('../models/Van');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const { truckDisplayName } = require('../utils/truckHelpers');
 const APIfeatures = require('../utils/APIFeatures');
 const { emitEvent, emitNotificationToUser } = require('../socket');
@@ -21,6 +23,75 @@ const toBooleanOrUndefined = (value) => {
   }
   return undefined;
 };
+
+/**
+ * Subtract removed items from the van tied to truckId on the given day (assignment ranges + truck.vanId fallback).
+ * Throws on invalid payload or inconsistent van state.
+ */
+async function subtractRemovedItemsFromVanForTruck({ truckId, dateAnchor, removedItems }) {
+  if (!truckId) {
+    throw new Error('truckId is required to update van load');
+  }
+  if (!dateAnchor) {
+    throw new Error('tipdate or createdAt is required to resolve van assignment');
+  }
+  if (!Array.isArray(removedItems) || removedItems.length === 0) {
+    throw new Error('removedItems must be a non-empty array when marking tipping as shipped');
+  }
+
+  const dateStr = new Date(dateAnchor).toISOString().split('T')[0];
+  const assigned = await getAssignedForDayFromRanges(truckId, dateStr);
+  const truckRow = await Truck.findById(truckId).select('vanId').lean();
+  const vanId = assigned.vanId || truckRow?.vanId;
+  if (!vanId) {
+    throw new Error('No van assigned for this truck on the tipping date');
+  }
+
+  const van = await Van.findById(vanId);
+  if (!van) {
+    throw new Error('Van not found');
+  }
+
+  van.itemsInTruck = Array.isArray(van.itemsInTruck) ? van.itemsInTruck : [];
+
+  let totalRemovedSpace = 0;
+
+  for (const r of removedItems) {
+    const itemName = String(r?.item ?? '').trim();
+    const qtyToRemove = Number(r?.quantity);
+    const spaceToRemove = Number(r?.spaceOfVan);
+
+    if (!itemName || !Number.isFinite(qtyToRemove) || qtyToRemove <= 0) {
+      throw new Error(`Invalid quantity for item "${itemName || '(unknown)'}"`);
+    }
+    if (!Number.isFinite(spaceToRemove) || spaceToRemove <= 0) {
+      throw new Error(`Invalid spaceOfVan for item "${itemName}"`);
+    }
+
+    const idx = van.itemsInTruck.findIndex((x) => String(x.item).trim() === itemName);
+    if (idx < 0) {
+      throw new Error(`Item "${itemName}" not found on van`);
+    }
+
+    const currentQty = Number(van.itemsInTruck[idx].quantity || 0);
+    const currentSpace = Number(van.itemsInTruck[idx].spaceOfVan || 0);
+
+    if (qtyToRemove > currentQty || spaceToRemove > currentSpace) {
+      throw new Error(`Cannot remove more than on-van quantity/space for "${itemName}"`);
+    }
+
+    van.itemsInTruck[idx].quantity = currentQty - qtyToRemove;
+    van.itemsInTruck[idx].spaceOfVan = currentSpace - spaceToRemove;
+    totalRemovedSpace += spaceToRemove;
+  }
+
+  van.itemsInTruck = van.itemsInTruck.filter(
+    (x) => Number(x.quantity || 0) > 0 && Number(x.spaceOfVan || 0) > 0,
+  );
+
+  van.currentCapacity = Math.max(0, Number(van.currentCapacity || 0) - totalRemovedSpace);
+  await van.save();
+}
 
 // Helper function to update daily sheets when tipping request changes
 const updateDailySheetForTippingRequest = async (tippingRequest) => {
@@ -720,7 +791,15 @@ const tippingController = {
   },
   updateTippingRequest: async (req, res) => {
     const { id } = req.params;  // Tipping request ID
-    const { price, tipdate, tippingPlace, emptyTipping, ...otherFields } = req.body;  // Fields to update
+    const {
+      price,
+      tipdate,
+      tippingPlace,
+      emptyTipping,
+      isShipped,
+      removedItems,
+      ...otherFields
+    } = req.body;
 
     try {
       // Get the old request before updating
@@ -765,6 +844,43 @@ const tippingController = {
           });
         }
         updateFields.emptyTipping = parsedEmptyTipping;
+      }
+
+      if (isShipped !== undefined) {
+        const parsedIsShipped = toBooleanOrUndefined(isShipped);
+        if (parsedIsShipped === undefined) {
+          return res.status(400).json({
+            message: 'isShipped must be a boolean',
+          });
+        }
+        updateFields.isShipped = parsedIsShipped;
+      }
+
+      const wasShipped = Boolean(oldRequest.isShipped);
+      const nextIsShipped =
+        updateFields.isShipped !== undefined ? updateFields.isShipped : oldRequest.isShipped;
+      const willShip = nextIsShipped === true && !wasShipped;
+
+      if (willShip) {
+        const effectiveTruckId = oldRequest.truckId || updateFields.truckId;
+        if (!effectiveTruckId) {
+          return res.status(400).json({
+            message: 'Cannot mark as shipped: truckId is missing for this tipping request.',
+          });
+        }
+        const dateAnchor =
+          updateFields.tipdate !== undefined ? updateFields.tipdate : oldRequest.tipdate || oldRequest.createdAt;
+        try {
+          await subtractRemovedItemsFromVanForTruck({
+            truckId: effectiveTruckId,
+            dateAnchor,
+            removedItems,
+          });
+        } catch (err) {
+          return res.status(400).json({
+            message: err.message || 'Failed to update van load for shipped tipping.',
+          });
+        }
       }
 
       // Find and update the tipping request
