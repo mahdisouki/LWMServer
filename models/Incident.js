@@ -75,8 +75,8 @@ const incidentSchema = new Schema(
 
         status: {
             type: String,
-            enum: ['ACTIVE', 'PENDING_RESOLUTION', 'RESOLVED'],
-            default: 'ACTIVE',
+            enum: ['New', 'PENDING_RESOLUTION', 'RESOLVED'],
+            default: 'New',
         },
 
         steps: [stepSchema],

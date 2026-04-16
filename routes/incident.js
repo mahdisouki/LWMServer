@@ -5,6 +5,7 @@ const incidentCtrl = require('../controllers/incidentCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
+const multerLib = require('multer');
 
 const incidentMediaFields = [
   { name: 'vehicleMedia', maxCount: 20 },
@@ -13,13 +14,57 @@ const incidentMediaFields = [
   { name: 'breakdownMedia', maxCount: 20 },
 ];
 
+const handleIncidentUpload = (multerMiddleware) => (req, res, next) => {
+  const handleUploadError = (err) => {
+    if (!err) return next();
+    if (res.headersSent) return next(err);
+
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({
+        message: 'One or more files exceed the 100MB upload limit.',
+        code: err.code,
+      });
+    }
+
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        message: `Unexpected upload field: ${err.field || 'unknown'}.`,
+        code: err.code,
+      });
+    }
+
+    if (err instanceof multerLib.MulterError) {
+      return res.status(400).json({
+        message: 'Incident file upload failed.',
+        code: err.code || 'MULTER_ERROR',
+      });
+    }
+
+    return res.status(400).json({
+      message: err.message || 'Incident media upload failed before controller execution.',
+      code: 'UPLOAD_ERROR',
+    });
+  };
+
+  try {
+    const maybePromise = multerMiddleware(req, res, handleUploadError);
+
+    // Some storage engines can reject asynchronously instead of using callback.
+    if (maybePromise && typeof maybePromise.then === 'function') {
+      maybePromise.catch(handleUploadError);
+    }
+  } catch (err) {
+    handleUploadError(err);
+  }
+};
+
 // Admin: create a new incident/breakdown record for any truck/driver/helper
 // Accepts incident media uploaded via Cloudinary
 router.post(
   '/incidents',
   isAuth,
   checkRole('Admin'),
-  multer.fields(incidentMediaFields),
+  handleIncidentUpload(multer.fields(incidentMediaFields)),
   incidentCtrl.createIncidentAdmin
 );
 
@@ -29,7 +74,7 @@ router.post(
 router.post(
   '/driver/incidents',
   isAuth,
-  multer.fields(incidentMediaFields),
+  handleIncidentUpload(multer.fields(incidentMediaFields)),
   incidentCtrl.createIncident
 );
 
@@ -48,7 +93,7 @@ router.put(
   '/incidents/:incidentId',
   isAuth,
   checkRole('Admin'),
-  multer.fields(incidentMediaFields),
+  handleIncidentUpload(multer.fields(incidentMediaFields)),
   incidentCtrl.updateIncident
 );
 

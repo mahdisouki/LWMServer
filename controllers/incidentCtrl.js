@@ -67,22 +67,6 @@ function buildStepsFromTemplate(template) {
         }));
 }
 
-// Shared helper to optionally auto-complete the first step
-function maybeCompleteFirstStep(steps, notes, mediaItems, userId) {
-    if (!steps || steps.length === 0) return;
-
-    if (notes || (Array.isArray(mediaItems) && mediaItems.length > 0)) {
-        const firstStep = steps.find((s) => s.order === 0);
-        if (firstStep) {
-            firstStep.status = 'DONE';
-            firstStep.completedAt = new Date();
-            if (userId) {
-                firstStep.completedBy = userId;
-            }
-        }
-    }
-}
-
 function parseBoolean(value) {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'string') {
@@ -253,6 +237,7 @@ const incidentController = {
                 otherLicenseMedia,
                 breakdownMedia,
                 steps,
+                status: 'New',
                 type: parsedType,
                 createdBy: user && user._id ? user._id : undefined,
             });
@@ -410,14 +395,6 @@ const incidentController = {
 
             const steps = buildStepsFromTemplate(BREAKDOWN_TEMPLATE);
 
-            // Optionally auto-complete the first step if we already have initial info
-            maybeCompleteFirstStep(
-                steps,
-                notes,
-                vehicleMedia.concat(otherVehicleMedia, otherLicenseMedia, breakdownMedia),
-                user._id
-            );
-
             const incident = await Incident.create({
                 vanId,
                 driverId,
@@ -444,6 +421,7 @@ const incidentController = {
                 otherLicenseMedia,
                 breakdownMedia,
                 steps,
+                status: 'New',
                 type: parsedType,
                 createdBy: user._id,
             });
@@ -762,7 +740,7 @@ const incidentController = {
     },
 
 
-    // Update the overall incident status (e.g. ACTIVE -> PENDING_RESOLUTION -> RESOLVED)
+    // Update the overall incident status (e.g. New -> PENDING_RESOLUTION -> RESOLVED)
     updateStatus: async (req, res) => {
         try {
             const { incidentId } = req.params;
