@@ -157,4 +157,33 @@ async function getAssignmentAtTime(unitId, dateTime) {
   return result;
 }
 
-module.exports = { logUnitAssignment, getAssignmentsForUnitOnDay, getAssignedForDayFromRanges, getAssignmentAtTime };
+/**
+ * Full UnitAssignmentLog rows for the given calendar day (UTC).
+ * A row is included if startAt, endAt, or createdAt falls on that day (inclusive bounds).
+ * Optional truckId limits to one unit; omit for all trucks.
+ */
+async function getUnitAssignmentLogsByDate({ truckId, date }) {
+  const { startOfDay, endOfDay } = getDayBounds(date);
+  const dayClause = { $gte: startOfDay, $lte: endOfDay };
+  const filter = {
+    ...(truckId && { truckId }),
+    $or: [
+      { startAt: dayClause },
+      { endAt: dayClause },
+      { createdAt: dayClause },
+    ],
+  };
+  const logs = await UnitAssignmentLog.find(filter)
+    .sort({ createdAt: 1 })
+    .populate('by', 'username email')
+    .lean();
+  return { logs, startOfDay, endOfDay };
+}
+
+module.exports = {
+  logUnitAssignment,
+  getAssignmentsForUnitOnDay,
+  getAssignedForDayFromRanges,
+  getAssignmentAtTime,
+  getUnitAssignmentLogsByDate,
+};
