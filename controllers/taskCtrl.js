@@ -148,7 +148,7 @@ async function createPersistentPaymentLink({
 
 const TASK_PRIORITIES = ['low', 'medium', 'high'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 30 * 1000;
-const PAYMENT_LINK_BASE_URL = (process.env.PAYMENT_LINK_BASE_URL || NGROK_URL || '').replace(/\/$/, '');
+const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
 function hashPaymentToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
