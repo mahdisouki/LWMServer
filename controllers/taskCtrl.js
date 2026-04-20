@@ -163,6 +163,40 @@ function parsePayPalCustomId(customIdRaw) {
   return { taskId, paymentType, paymentLinkId };
 }
 
+function isPaymentTypeAlreadySettled(task, paymentTypeRaw) {
+  const paymentType = String(paymentTypeRaw || '').toLowerCase();
+  if (paymentType === 'deposit') {
+    return task?.paidAmount?.status === 'Paid';
+  }
+
+  if (paymentType === 'remaining') {
+    return task?.remainingAmount?.status === 'Paid';
+  }
+
+  return task?.paymentStatus === 'Paid';
+}
+
+async function invalidateSiblingPaymentLinks({ taskId, paymentType, excludePaymentLinkId = null }) {
+  const query = {
+    taskId,
+    paymentType,
+    status: 'active',
+    usedAt: null,
+  };
+
+  if (excludePaymentLinkId && mongoose.Types.ObjectId.isValid(excludePaymentLinkId)) {
+    query._id = { $ne: excludePaymentLinkId };
+  }
+
+  await PaymentLink.updateMany(query, {
+    $set: {
+      status: 'cancelled',
+      'metadata.cancelReason': 'completed_via_other_provider',
+      'metadata.cancelledAt': new Date(),
+    },
+  });
+}
+
 function sendPaymentLinkError(res, req, statusCode, title, message) {
   const acceptsHtml = String(req.headers.accept || '').includes('text/html');
   if (acceptsHtml) {
@@ -4190,6 +4224,26 @@ const taskCtrl = {
         );
       }
 
+      if (isPaymentTypeAlreadySettled(task, paymentLink.paymentType)) {
+        await PaymentLink.findOneAndUpdate(
+          { _id: paymentLink._id, status: 'active', usedAt: null },
+          {
+            $set: {
+              status: 'cancelled',
+              'metadata.cancelReason': 'already_paid',
+              'metadata.cancelledAt': new Date(),
+            },
+          },
+        );
+        return sendPaymentLinkError(
+          res,
+          req,
+          410,
+          'Payment Already Completed',
+          'This payment has already been completed. This link is no longer active.',
+        );
+      }
+
       let providerUrl = null;
       if (normalizedProvider === 'stripe') {
         providerUrl = await createStripePaymentLink(
@@ -4413,6 +4467,11 @@ const taskCtrl = {
               },
             },
           );
+          await invalidateSiblingPaymentLinks({
+            taskId: task._id,
+            paymentType: paymentAmountType,
+            excludePaymentLinkId: paymentLinkId,
+          });
         }
         if (task.email) {
           await syncRepeatCustomerForEmail(task.email);
@@ -4805,6 +4864,11 @@ const taskCtrl = {
                 },
               },
             );
+            await invalidateSiblingPaymentLinks({
+              taskId: task._id,
+              paymentType: paymentTypeMeta,
+              excludePaymentLinkId: paymentLinkId,
+            });
           }
           if (task.email) {
             await syncRepeatCustomerForEmail(task.email);
@@ -5002,6 +5066,11 @@ const taskCtrl = {
                 },
               },
             );
+            await invalidateSiblingPaymentLinks({
+              taskId: task._id,
+              paymentType: paymentTypeMeta,
+              excludePaymentLinkId: paymentLinkId,
+            });
           }
           if (task.email) {
             await syncRepeatCustomerForEmail(task.email);
