@@ -1729,8 +1729,11 @@ const taskCtrl = {
           }
         }
         await updateDailySheetForTask(updatedTask);
-        // Send Waste Transfer Note email once per task
-        await sendWasteTransferNoteEmail(updatedTask._id);
+        // Send Waste Transfer Note only when the completed task is already paid.
+        // Otherwise, noon cron will send it once payment becomes Paid.
+        if (updatedTask.paymentStatus === 'Paid') {
+          await sendWasteTransferNoteEmail(updatedTask._id);
+        }
       }
 
       // Update Google Calendar event if it exists
@@ -2798,8 +2801,11 @@ const taskCtrl = {
         task.timeSpent = timeElapsed;
         await task.save();
 
-        // Send Waste Transfer Note email after task is successfully completed
-        await sendWasteTransferNoteEmail(task._id);
+        // Send Waste Transfer Note only when the completed task is already paid.
+        // Otherwise, noon cron will send it once payment becomes Paid.
+        if (task.paymentStatus === 'Paid') {
+          await sendWasteTransferNoteEmail(task._id);
+        }
 
         // Create a log of the status change
         if (req.user) {

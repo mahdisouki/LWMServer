@@ -1033,8 +1033,9 @@ const driverManagement = {
       task.taskStatus = taskStatus;
       await task.save();
 
-      // When job is completed, send Waste Transfer Note email
-      if (task.taskStatus === 'Completed') {
+      // Send Waste Transfer Note only when completed and already paid.
+      // Otherwise, noon cron will send it once payment becomes Paid.
+      if (task.taskStatus === 'Completed' && task.paymentStatus === 'Paid') {
         await sendWasteTransferNoteEmail(task._id);
       }
 
@@ -1147,8 +1148,11 @@ const driverManagement = {
         console.error('Error recalculating payroll/DailySheet totalCash after rateTask:', err);
       }
 
-      // Ensure Waste Transfer Note email is sent after rating/completion
-      await sendWasteTransferNoteEmail(task._id);
+      // Send Waste Transfer Note only when completed and already paid.
+      // Otherwise, noon cron will send it once payment becomes Paid.
+      if (task.paymentStatus === 'Paid') {
+        await sendWasteTransferNoteEmail(task._id);
+      }
       res.status(200).json({
         message: `Task rated successfully`,
         task,
