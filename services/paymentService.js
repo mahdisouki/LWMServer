@@ -160,7 +160,7 @@ const calculateTotalPriceUpdate = async (taskId) => {
     return { total: Math.round(finalPrice * 100) / 100 };
 };
 
-const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentType, orderNumber) => {
+const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentType, orderNumber, paymentLinkId = null) => {
     // VAT is already included in amountToPay, so we just convert to pence
     const amountInPence = Math.round(amountToPay * 100);
     console.log('amountInPence:', amountInPence);
@@ -188,6 +188,7 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
     const metadata = {
         taskId: String(taskId),
         paymentAmountType: paymentType || '',
+        paymentLinkId: paymentLinkId ? String(paymentLinkId) : '',
     };
 
     const session = await stripe.checkout.sessions.create({
@@ -207,7 +208,7 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
     return session.url;
 };
 
-const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentType = 'total', orderNumber = null) => {
+const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentType = 'total', orderNumber = null, paymentLinkId = null) => {
     console.log("Generating PayPal link for items:", breakdown);
     let itemDetails = breakdown.filter(item => item.price != null && !isNaN(item.price)).map(item => ({
         name: item.itemDescription || "Item",
@@ -246,7 +247,7 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
     request.requestBody({
         intent: "CAPTURE",
         purchase_units: [{
-            custom_id: `${taskId}|${paymentType}`,
+            custom_id: paymentLinkId ? `${taskId}|${paymentType}|${paymentLinkId}` : `${taskId}|${paymentType}`,
             invoice_id: orderNumber || undefined,
             description: `Payment for Task #${orderNumber || taskId}`,
             amount: {

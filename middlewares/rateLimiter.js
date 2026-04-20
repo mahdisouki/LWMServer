@@ -10,6 +10,42 @@ const getRealIP = (req) => {
          'unknown';
 };
 
+const sendRateLimitResponse = (req, res, message, retryAfterSeconds = null) => {
+  const acceptsHtml = String(req.headers.accept || '').includes('text/html');
+  if (acceptsHtml) {
+    const retryLine = retryAfterSeconds
+      ? `<p class="hint">Please try again in about ${retryAfterSeconds} seconds.</p>`
+      : '<p class="hint">Please wait a bit and then retry.</p>';
+    return res.status(429).type('html').send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Too Many Requests</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f7f8fb; color: #222; margin: 0; }
+    .card { max-width: 560px; margin: 10vh auto; background: #fff; border: 1px solid #e4e7ee; border-radius: 12px; padding: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.05); }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    p { margin: 0 0 10px; line-height: 1.5; }
+    .hint { color: #667085; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Too Many Requests</h1>
+    <p>${message}</p>
+    ${retryLine}
+  </main>
+</body>
+</html>`);
+  }
+
+  const payload = { message };
+  if (retryAfterSeconds) payload.retryAfter = retryAfterSeconds;
+  return res.status(429).json(payload);
+};
+
 // General API rate limiter
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -43,10 +79,54 @@ const formLimiter = rateLimit({
   skipSuccessfulRequests: false, // Count all requests, even successful ones
   skipFailedRequests: false, // Count all requests, even failed ones
   handler: (req, res) => {
-    res.status(429).json({
-      message: 'Too many form submissions from this IP, please try again later.',
-      retryAfter: 3600, // Retry after 1 hour in seconds
-    });
+    return sendRateLimitResponse(
+      req,
+      res,
+      'Too many form submissions from this IP, please try again later.',
+      3600,
+    );
+  },
+});
+
+// Payment link resolver IP limiter
+const paymentLinkIpLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 30, // Limit each IP to 30 attempts per window
+  message: 'Too many payment link attempts from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getRealIP(req),
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  handler: (req, res) => {
+    return sendRateLimitResponse(
+      req,
+      res,
+      'Too many payment link attempts from this IP, please try again later.',
+    );
+  },
+});
+
+// Payment link resolver token limiter (token + IP)
+const paymentLinkTokenLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5, // Limit each token+IP pair to 5 attempts per minute
+  message: 'Too many attempts for this payment link, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const ip = getRealIP(req);
+    const token = String(req.params?.token || '');
+    return `${ip}:${token}`;
+  },
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  handler: (req, res) => {
+    return sendRateLimitResponse(
+      req,
+      res,
+      'Too many attempts for this payment link, please try again later.',
+    );
   },
 });
 
@@ -54,5 +134,7 @@ module.exports = {
   apiLimiter,
   strictLimiter,
   formLimiter,
+  paymentLinkIpLimiter,
+  paymentLinkTokenLimiter,
 };
 

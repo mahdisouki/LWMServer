@@ -41,6 +41,7 @@ const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentF
 const { sendRetargetingEmailForTask } = require('../services/retargetingService');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { generateOfficialInvoicePDF } = require('../services/emailsService');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -53,6 +54,7 @@ const cloudinary = require('../helper/cloudinaryConfig');
 const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } = require('../services/calendarService');
 const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
 const { syncRepeatCustomerForEmail } = require('../utils/repeatCustomerSync');
+const PaymentLink = require('../models/PaymentLink');
 
 /**
  * Calculate task van space as percentage from items.
@@ -118,7 +120,76 @@ function validateBreakdown(breakdown) {
   }
 }
 
+async function createPersistentPaymentLink({
+  taskId,
+  provider,
+  paymentType,
+  amountToPay,
+  orderNumber,
+}) {
+  const token = generatePaymentToken();
+  const tokenHash = hashPaymentToken(token);
+
+  const paymentLink = await PaymentLink.create({
+    taskId,
+    provider,
+    tokenHash,
+    paymentType,
+    amountToPay,
+    status: 'active',
+    metadata: {
+      orderNumber,
+    },
+  });
+
+  const stableLink = `${PAYMENT_LINK_BASE_URL}/api/payment-link/${encodeURIComponent(token)}/${provider}`;
+  return { paymentLink, stableLink };
+}
+
 const TASK_PRIORITIES = ['low', 'medium', 'high'];
+const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 30 * 1000;
+const PAYMENT_LINK_BASE_URL = (process.env.PAYMENT_LINK_BASE_URL || NGROK_URL || '').replace(/\/$/, '');
+
+function hashPaymentToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
+}
+
+function generatePaymentToken() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function parsePayPalCustomId(customIdRaw) {
+  const [taskId, paymentType, paymentLinkId] = String(customIdRaw || '').split('|');
+  return { taskId, paymentType, paymentLinkId };
+}
+
+function sendPaymentLinkError(res, req, statusCode, title, message) {
+  const acceptsHtml = String(req.headers.accept || '').includes('text/html');
+  if (acceptsHtml) {
+    return res.status(statusCode).type('html').send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title}</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f7f8fb; color: #222; margin: 0; }
+    .card { max-width: 560px; margin: 10vh auto; background: #fff; border: 1px solid #e4e7ee; border-radius: 12px; padding: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.05); }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    p { margin: 0; line-height: 1.5; color: #344054; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>${title}</h1>
+    <p>${message}</p>
+  </main>
+</body>
+</html>`);
+  }
+  return res.status(statusCode).json({ message });
+}
 
 function normalizeTaskPriority(value) {
   if (value === undefined || value === null) return undefined;
@@ -4013,21 +4084,21 @@ const taskCtrl = {
         totalPrice,
       );
       const orderNumber = task.orderNumber;
-      // Generate payment links for the specified amount
-      const stripeLink = await createStripePaymentLink(
-        taskId,
-        amountToPay,
-        breakdown,
+      // Generate stable links. Provider URLs are refreshed only when customer clicks.
+      const { stableLink: stripeLink } = await createPersistentPaymentLink({
+        taskId: task._id,
+        provider: 'stripe',
         paymentType,
-        orderNumber,
-      );
-      const paypalLink = await createPaypalPaymentLink(
-        taskId,
         amountToPay,
-        breakdown,
-        paymentType,
         orderNumber,
-      );
+      });
+      const { stableLink: paypalLink } = await createPersistentPaymentLink({
+        taskId: task._id,
+        provider: 'paypal',
+        paymentType,
+        amountToPay,
+        orderNumber,
+      });
 
       // Send email with payment links and paymentType
       await sendPayementEmail({
@@ -4060,6 +4131,97 @@ const taskCtrl = {
     }
   },
 
+  resolvePaymentLink: async (req, res) => {
+    try {
+      const { token, provider } = req.params;
+      const normalizedProvider = String(provider || '').toLowerCase();
+      if (!['stripe', 'paypal'].includes(normalizedProvider)) {
+        return sendPaymentLinkError(res, req, 400, 'Invalid Link', 'Invalid payment provider.');
+      }
+
+      const tokenHash = hashPaymentToken(token);
+      const paymentLink = await PaymentLink.findOne({
+        tokenHash,
+        provider: normalizedProvider,
+      });
+
+      if (!paymentLink) {
+        return sendPaymentLinkError(res, req, 404, 'Link Not Found', 'Payment link not found.');
+      }
+
+      if (paymentLink.status !== 'active' || paymentLink.usedAt) {
+        return sendPaymentLinkError(
+          res,
+          req,
+          410,
+          'Link No Longer Active',
+          'This payment link has already been used or deactivated.',
+        );
+      }
+
+      const now = Date.now();
+      if (
+        paymentLink.lastRefreshedAt &&
+        now - paymentLink.lastRefreshedAt.getTime() < PAYMENT_LINK_REFRESH_COOLDOWN_MS
+      ) {
+        return sendPaymentLinkError(
+          res,
+          req,
+          429,
+          'Please Wait',
+          'Please wait a few seconds and try again.',
+        );
+      }
+
+      const task = await Task.findById(paymentLink.taskId);
+      if (!task) {
+        return sendPaymentLinkError(
+          res,
+          req,
+          404,
+          'Task Not Found',
+          'Task not found for this payment link.',
+        );
+      }
+
+      let providerUrl = null;
+      if (normalizedProvider === 'stripe') {
+        providerUrl = await createStripePaymentLink(
+          task._id,
+          paymentLink.amountToPay,
+          [],
+          paymentLink.paymentType,
+          task.orderNumber,
+          paymentLink._id,
+        );
+      } else {
+        providerUrl = await createPaypalPaymentLink(
+          task._id,
+          paymentLink.amountToPay,
+          [],
+          paymentLink.paymentType,
+          task.orderNumber,
+          paymentLink._id,
+        );
+      }
+
+      paymentLink.lastRefreshedAt = new Date();
+      paymentLink.refreshCount = (paymentLink.refreshCount || 0) + 1;
+      await paymentLink.save();
+
+      return res.redirect(providerUrl);
+    } catch (error) {
+      console.error('Error resolving payment link:', error);
+      return sendPaymentLinkError(
+        res,
+        req,
+        500,
+        'Payment Page Unavailable',
+        'We could not open this payment link right now. Please try again shortly.',
+      );
+    }
+  },
+
   // Update payment status logic in the Stripe webhook handler
   handleStripeWebhook: async (req, res) => {
     const sig = req.headers['stripe-signature'];
@@ -4074,6 +4236,7 @@ const taskCtrl = {
       if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
         const taskId = session.metadata.taskId;
+        const paymentLinkId = session.metadata?.paymentLinkId || null;
         const paymentAmountType = session.metadata.paymentAmountType || 'full payment'; // Get payment type from metadata
         if (!taskId) {
           console.error('Task ID missing in session metadata');
@@ -4229,6 +4392,22 @@ const taskCtrl = {
         }
 
         await task.save();
+        if (paymentLinkId && mongoose.Types.ObjectId.isValid(paymentLinkId)) {
+          await PaymentLink.findOneAndUpdate(
+            {
+              _id: paymentLinkId,
+              provider: 'stripe',
+              status: 'active',
+              usedAt: null,
+            },
+            {
+              $set: {
+                status: 'used',
+                usedAt: new Date(),
+              },
+            },
+          );
+        }
         if (task.email) {
           await syncRepeatCustomerForEmail(task.email);
         }
@@ -4500,8 +4679,8 @@ const taskCtrl = {
           const getReq = new paypal.orders.OrdersGetRequest(orderId);
           const getRes = await client.execute(getReq);
           const pu = getRes.result.purchase_units?.[0];
-          const customIdRaw = pu?.custom_id; // could be "<taskId>|<paymentType>"
-          const [customId, paymentTypeMeta] = (customIdRaw || '').split('|');
+          const customIdRaw = pu?.custom_id; // "<taskId>|<paymentType>|<paymentLinkId>"
+          const { taskId: customId, paymentType: paymentTypeMeta, paymentLinkId } = parsePayPalCustomId(customIdRaw);
           const payerEmail = getRes.result.payer?.email_address;
           console.log('PayPal CHECKOUT.ORDER.APPROVED webhook - customIdRaw:', customIdRaw, 'paymentTypeMeta:', paymentTypeMeta);
 
@@ -4605,6 +4784,22 @@ const taskCtrl = {
           }
 
           await task.save();
+          if (paymentLinkId && mongoose.Types.ObjectId.isValid(paymentLinkId)) {
+            await PaymentLink.findOneAndUpdate(
+              {
+                _id: paymentLinkId,
+                provider: 'paypal',
+                status: 'active',
+                usedAt: null,
+              },
+              {
+                $set: {
+                  status: 'used',
+                  usedAt: new Date(),
+                },
+              },
+            );
+          }
           if (task.email) {
             await syncRepeatCustomerForEmail(task.email);
           }
@@ -4667,7 +4862,7 @@ const taskCtrl = {
           const getRes = await client.execute(getReq);
           const pu = getRes.result.purchase_units?.[0];
           const customIdRaw = pu?.custom_id;
-          const [customId, paymentTypeMeta] = (customIdRaw || '').split('|');
+          const { taskId: customId, paymentType: paymentTypeMeta, paymentLinkId } = parsePayPalCustomId(customIdRaw);
           const payerEmail = getRes.result.payer?.email_address;
           console.log('PayPal PAYMENT.CAPTURE.COMPLETED webhook - customIdRaw:', customIdRaw, 'paymentTypeMeta:', paymentTypeMeta, 'amountInGBP:', Number(capture.amount.value));
           if (!customId) {
@@ -4786,6 +4981,22 @@ const taskCtrl = {
           }
 
           await task.save();
+          if (paymentLinkId && mongoose.Types.ObjectId.isValid(paymentLinkId)) {
+            await PaymentLink.findOneAndUpdate(
+              {
+                _id: paymentLinkId,
+                provider: 'paypal',
+                status: 'active',
+                usedAt: null,
+              },
+              {
+                $set: {
+                  status: 'used',
+                  usedAt: new Date(),
+                },
+              },
+            );
+          }
           if (task.email) {
             await syncRepeatCustomerForEmail(task.email);
           }
@@ -4862,7 +5073,7 @@ const taskCtrl = {
             const getRes = await client.execute(getReq);
             const pu = getRes.result.purchase_units?.[0];
             const customIdRaw = pu?.custom_id;
-            const [customId] = (customIdRaw || '').split('|');
+            const { taskId: customId } = parsePayPalCustomId(customIdRaw);
             const payerEmail = getRes.result.payer?.email_address;
 
             if (!customId) return await safeAck('ignored', 'Ignored – no custom_id');
