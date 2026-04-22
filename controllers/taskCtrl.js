@@ -120,6 +120,268 @@ function validateBreakdown(breakdown) {
   }
 }
 
+function toArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  return [];
+}
+
+async function normalizeLinkedAdditionalTaskItems(rawItems) {
+  const allowedPositions = ['Inside', 'Outside', 'InsideWithDismantling'];
+  const parsedItems = toArray(rawItems);
+  if (!parsedItems.length) {
+    throw new Error('At least one item is required');
+  }
+
+  const normalizedItems = [];
+  for (const item of parsedItems) {
+    if (!item || typeof item !== 'object') {
+      throw new Error('Each item must be an object');
+    }
+
+    const quantity = Number(item.quantity);
+    const normalizedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    const Objectsposition = allowedPositions.includes(item.Objectsposition)
+      ? item.Objectsposition
+      : 'Outside';
+
+    let unitPrice = null;
+    let normalizedItem = {
+      quantity: normalizedQuantity,
+      Objectsposition,
+    };
+
+    if (item.standardItemId) {
+      normalizedItem.standardItemId = item.standardItemId;
+      if (item.object) {
+        normalizedItem.object = String(item.object).trim();
+      }
+
+      const customPrice = Number(item.customPrice);
+      const explicitPrice = Number(item.price);
+      if (Number.isFinite(customPrice) && customPrice >= 0) {
+        normalizedItem.customPrice = customPrice;
+        unitPrice = customPrice;
+      } else if (Number.isFinite(explicitPrice) && explicitPrice >= 0) {
+        normalizedItem.price = explicitPrice;
+        unitPrice = explicitPrice;
+      } else {
+        const standardItem = await StandardItem.findById(item.standardItemId)
+          .select('price insidePrice insideWithDismantlingPrice')
+          .lean();
+        if (!standardItem) {
+          throw new Error(`Standard item not found: ${item.standardItemId}`);
+        }
+
+        const basePrice = Number(standardItem.price) || 0;
+        let positionFee = 0;
+        if (Objectsposition === 'Inside') {
+          positionFee = Number(standardItem.insidePrice) || 0;
+        } else if (Objectsposition === 'InsideWithDismantling') {
+          positionFee = Number(standardItem.insideWithDismantlingPrice) || 0;
+        }
+        unitPrice = basePrice + positionFee;
+        normalizedItem.price = unitPrice;
+      }
+    } else {
+      const normalizedObject = String(item.object || '').trim();
+      const customPrice = Number(item.customPrice);
+      const explicitPrice = Number(item.price);
+      unitPrice = Number.isFinite(customPrice) ? customPrice : explicitPrice;
+
+      if (!normalizedObject) {
+        throw new Error('Custom item object is required');
+      }
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new Error(`Custom item "${normalizedObject}" requires a valid price`);
+      }
+
+      normalizedItem = {
+        ...normalizedItem,
+        standardItemId: null,
+        object: normalizedObject,
+        price: unitPrice,
+      };
+    }
+
+    if (item.ewcCode) normalizedItem.ewcCode = item.ewcCode;
+    if (item.spaceOfVan !== undefined) normalizedItem.spaceOfVan = Number(item.spaceOfVan);
+    if (item.timespentOutside !== undefined) normalizedItem.timespentOutside = Number(item.timespentOutside);
+    if (item.timespentInside !== undefined) normalizedItem.timespentInside = Number(item.timespentInside);
+    if (item.timespentInsdiewithDis !== undefined) normalizedItem.timespentInsdiewithDis = Number(item.timespentInsdiewithDis);
+    if (item.vanLoadOption) normalizedItem.vanLoadOption = item.vanLoadOption;
+
+    normalizedItems.push(normalizedItem);
+  }
+
+  return {
+    items: normalizedItems,
+  };
+}
+
+function buildNextLinkedOrderNumber(parentOrderNumber, existingChildrenCount) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const idx = existingChildrenCount;
+  if (idx < alphabet.length) {
+    return `${parentOrderNumber}${alphabet[idx]}`;
+  }
+  const rollover = Math.floor(idx / alphabet.length);
+  const letter = alphabet[idx % alphabet.length];
+  return `${parentOrderNumber}${letter}${rollover}`;
+}
+
+async function placeChildTaskNextToParentInTruckSequence(parentTask, childTaskId) {
+  if (!parentTask?.truckId || !parentTask?.date) return;
+
+  const taskDate = new Date(parentTask.date).toISOString().split('T')[0];
+  const truck = await Truck.findById(parentTask.truckId);
+  if (!truck) return;
+
+  const tasksByDate = truck.tasks instanceof Map
+    ? Object.fromEntries(truck.tasks)
+    : (truck.tasks || {});
+
+  const existing = Array.isArray(tasksByDate[taskDate]) ? tasksByDate[taskDate] : [];
+  const normalized = existing.map((entry, idx) => {
+    if (entry && typeof entry === 'object' && entry.taskId) {
+      return {
+        taskId: entry.taskId,
+        type: entry.type === 'Task' ? 'task' : (entry.type || 'task'),
+        order: Number(entry.order) || (idx + 1),
+      };
+    }
+    return {
+      taskId: entry,
+      type: 'task',
+      order: idx + 1,
+    };
+  });
+
+  const parentIdStr = String(parentTask._id);
+  const childIdStr = String(childTaskId);
+  const withoutChild = normalized.filter((e) => String(e.taskId) !== childIdStr);
+  const parentIndex = withoutChild.findIndex((e) => String(e.taskId) === parentIdStr);
+
+  const childEntry = { taskId: childTaskId, type: 'task' };
+  if (parentIndex >= 0) {
+    withoutChild.splice(parentIndex + 1, 0, childEntry);
+  } else {
+    withoutChild.push(childEntry);
+  }
+
+  const resequenced = withoutChild.map((entry, idx) => ({
+    taskId: entry.taskId,
+    type: entry.type === 'Task' ? 'task' : (entry.type || 'task'),
+    order: idx + 1,
+  }));
+
+  tasksByDate[taskDate] = resequenced;
+  truck.tasks = new Map(Object.entries(tasksByDate));
+  await truck.save();
+}
+
+
+
+async function createDirectLinkedAdditionalTaskFromItems({
+  parentTask,
+  media,
+  items,
+  createdByUser,
+  pricingOptions = {},
+}) {
+  const childrenCount = await Task.countDocuments({ parentTaskId: parentTask._id });
+  const childOrderNumber = buildNextLinkedOrderNumber(parentTask.orderNumber, childrenCount);
+  const normalizedMedia = Array.isArray(media) ? media.filter(Boolean) : [];
+  const normalizedItemPayload = await normalizeLinkedAdditionalTaskItems(items);
+  const normalizedItems = normalizedItemPayload.items;
+  if (!normalizedItems.length) {
+    throw new Error('At least one valid item is required');
+  }
+  const applyMinFee = pricingOptions.applyMinFee === true;
+  const applySundayFee = pricingOptions.applySundayFee === true;
+  const customDiscountPercent = pricingOptions.customDiscountPercent;
+  const discountType = pricingOptions.discountType;
+  const hasDiscount = pricingOptions.hasDiscount;
+  const couponCode = pricingOptions.couponCode || null;
+  const customerEmail = pricingOptions.customerEmail || null;
+  const available = pricingOptions.available || parentTask.available || 'AnyTime';
+  const pricingItems = normalizedItems
+    .filter((item) => item.standardItemId)
+    .map((item) => ({
+      standardItemId: item.standardItemId,
+      quantity: item.quantity || 1,
+      Objectsposition: item.Objectsposition || 'Outside',
+      price: item.price,
+      customPrice: item.customPrice,
+    }));
+  const pricingObjects = normalizedItems
+    .filter((item) => !item.standardItemId && item.object)
+    .map((item) => ({
+      object: item.object,
+      quantity: item.quantity || 1,
+      price: item.customPrice !== undefined ? item.customPrice : item.price,
+    }));
+  const { totalPrice: calculatedTotalPrice } = await calculateTotalPrice({
+    items: pricingItems,
+    objects: pricingObjects,
+    createdByType: 'Admin',
+    available,
+    customDiscountPercent,
+    discountType,
+    hasDiscount,
+    applyMinFee,
+    applySundayFee,
+    taskDate: parentTask.date ? new Date(parentTask.date) : null,
+    couponCode,
+    customerEmail,
+  });
+
+  const childTask = await Task.create({
+    orderNumber: childOrderNumber,
+    parentTaskId: parentTask._id,
+    linkedTaskType: 'additional_items',
+    truckId: parentTask.truckId || null,
+    firstName: parentTask.firstName,
+    lastName: parentTask.lastName,
+    bussinessName: parentTask.bussinessName,
+    billingAddress: parentTask.billingAddress,
+    collectionAddress: parentTask.collectionAddress,
+    phoneNumber: parentTask.phoneNumber,
+    phoneNumber2: parentTask.phoneNumber2,
+    email: parentTask.email,
+    postcode: parentTask.postcode,
+    location: parentTask.location,
+    available: parentTask.available,
+    date: parentTask.date,
+    createdBy: createdByUser?.username || 'system',
+    createdByType: 'Admin',
+    paymentStatus: 'Unpaid',
+    paymentMethod: 'cash',
+    clientObjectPhotos: normalizedMedia,
+    totalPrice: calculatedTotalPrice,
+    items: normalizedItems,
+    taskStatus: 'New',
+  });
+
+  // Keep child directly after parent in the truck daily sequence.
+  try {
+    await placeChildTaskNextToParentInTruckSequence(parentTask, childTask._id);
+  } catch (err) {
+    console.error('Failed to position child task next to parent in truck sequence:', err);
+  }
+
+  return { childTask };
+}
+
+
 async function createPersistentPaymentLink({
   taskId,
   provider,
@@ -2194,11 +2456,33 @@ const taskCtrl = {
         console.log('Populated task items:', JSON.stringify(populatedTask.items, null, 2));
 
         let subtotal = 0;
+        const effectiveHasDiscount = updates.hasDiscount !== undefined
+          ? (updates.hasDiscount === true || updates.hasDiscount === 'true')
+          : populatedTask.hasDiscount;
+        const effectiveDiscountType = updates.discountType !== undefined
+          ? updates.discountType
+          : populatedTask.discountType;
+        const effectiveCustomDiscountPercent = updates.customDiscountPercent !== undefined
+          ? Number(updates.customDiscountPercent)
+          : Number(populatedTask.customDiscountPercent || 0);
+        const effectiveCreatedByType = updates.createdByType !== undefined
+          ? updates.createdByType
+          : populatedTask.createdByType;
+        const effectiveAvailable = updates.available !== undefined
+          ? updates.available
+          : populatedTask.available;
+        const effectiveApplyMinFee = updates.applyMinFee !== undefined
+          ? (updates.applyMinFee === true || updates.applyMinFee === 'true')
+          : populatedTask.applyMinFee === true;
+        const effectiveApplySundayFee = updates.applySundayFee !== undefined
+          ? (updates.applySundayFee === true || updates.applySundayFee === 'true')
+          : populatedTask.applySundayFee === true;
+        const effectiveTaskDate = updates.date ? new Date(updates.date) : new Date(populatedTask.date);
 
         console.log('=== PRICE CALCULATION ===');
-        console.log('Task hasDiscount:', populatedTask.hasDiscount);
-        console.log('Task discountType:', populatedTask.discountType);
-        console.log('Task customDiscountPercent:', populatedTask.customDiscountPercent);
+        console.log('Task hasDiscount (effective):', effectiveHasDiscount);
+        console.log('Task discountType (effective):', effectiveDiscountType);
+        console.log('Task customDiscountPercent (effective):', effectiveCustomDiscountPercent);
 
         // Calculate subtotal with discount handling
         for (const item of populatedTask.items) {
@@ -2248,15 +2532,15 @@ const taskCtrl = {
 
           // Handle item-specific discount if discountType is "perItem"
           const discountCondition = (
-            populatedTask.hasDiscount &&
-            populatedTask.discountType === 'perItem' &&
+            effectiveHasDiscount &&
+            effectiveDiscountType === 'perItem' &&
             item.customPrice !== undefined &&
             item.customPrice !== null
           );
 
           console.log('Discount condition check:');
-          console.log('- hasDiscount:', populatedTask.hasDiscount);
-          console.log('- discountType === "perItem":', populatedTask.discountType === 'perItem');
+          console.log('- hasDiscount:', effectiveHasDiscount);
+          console.log('- discountType === "perItem":', effectiveDiscountType === 'perItem');
           console.log('- customPrice !== undefined:', item.customPrice !== undefined);
           console.log('- customPrice !== null:', item.customPrice !== null);
           console.log('- Final discount condition:', discountCondition);
@@ -2286,11 +2570,11 @@ const taskCtrl = {
 
         // Handle percentage discount if discountType is "percentage"
         if (
-          populatedTask.hasDiscount &&
-          populatedTask.discountType === 'percentage' &&
-          populatedTask.customDiscountPercent > 0
+          effectiveHasDiscount &&
+          effectiveDiscountType === 'percentage' &&
+          effectiveCustomDiscountPercent > 0
         ) {
-          const percentageDiscount = (subtotal * populatedTask.customDiscountPercent) / 100;
+          const percentageDiscount = (subtotal * effectiveCustomDiscountPercent) / 100;
           subtotal -= percentageDiscount;
           console.log('Applied percentage discount:', percentageDiscount, 'New subtotal:', subtotal);
         }
@@ -2460,7 +2744,7 @@ const taskCtrl = {
         }
 
         // Apply minimum fee if needed (before Sunday fee / VAT)
-        const enforceMinimumPrice = populatedTask.createdByType !== 'Admin' || populatedTask.applyMinFee === true;
+        const enforceMinimumPrice = effectiveCreatedByType !== 'Admin' || effectiveApplyMinFee === true;
         if (enforceMinimumPrice && subtotal < 37.5) {
           subtotal = 37.5;
           console.log('Applied minimum price adjustment in updateTask');
@@ -2470,14 +2754,10 @@ const taskCtrl = {
         // - Public orders: always apply on Sunday
         // - Admin orders: apply only when applySundayFee is true
         let sundayFee = 0;
-        const taskDateForUpdate = updates.date ? new Date(updates.date) : new Date(populatedTask.date);
+        const taskDateForUpdate = effectiveTaskDate;
         if (!isNaN(taskDateForUpdate.getTime())) {
           const isSunday = taskDateForUpdate.getDay && taskDateForUpdate.getDay() === 0;
-          const applySundayFeeFlag =
-            updates.applySundayFee !== undefined
-              ? updates.applySundayFee === true || updates.applySundayFee === 'true'
-              : populatedTask.applySundayFee === true;
-          if (isSunday && (populatedTask.createdByType === 'public' || applySundayFeeFlag)) {
+          if (isSunday && (effectiveCreatedByType === 'public' || effectiveApplySundayFee)) {
             sundayFee = 50;
             subtotal += sundayFee;
           }
@@ -6080,6 +6360,63 @@ const taskCtrl = {
     } catch (error) {
       res.status(500).json({
         message: 'Failed to take over order',
+        error: error.message,
+      });
+    }
+  },
+
+  createDirectAdditionalLinkedTask: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const {
+        media,
+        available,
+        customDiscountPercent,
+        discountType,
+        hasDiscount,
+        couponCode,
+        customerEmail,
+      } = req.body;
+      const items = toArray(req.body.items);
+      const applyMinFee = req.body.applyMinFee === true || req.body.applyMinFee === 'true';
+      const applySundayFee = req.body.applySundayFee === true || req.body.applySundayFee === 'true';
+
+      const parentTask = await Task.findById(taskId);
+      if (!parentTask) {
+        return res.status(404).json({ message: 'Parent task not found' });
+      }
+      if (!parentTask.truckId) {
+        return res.status(400).json({ message: 'Parent task must be assigned before creating linked task' });
+      }
+
+      if (!items.length) {
+        return res.status(400).json({ message: 'items array is required' });
+      }
+
+      const { childTask } = await createDirectLinkedAdditionalTaskFromItems({
+        parentTask,
+        media: Array.isArray(media) ? media.filter(Boolean) : [],
+        items,
+        createdByUser: req.user,
+        pricingOptions: {
+          available,
+          customDiscountPercent,
+          discountType,
+          hasDiscount,
+          couponCode,
+          customerEmail: customerEmail || parentTask.email || null,
+          applyMinFee,
+          applySundayFee,
+        },
+      });
+
+      res.status(201).json({
+        message: 'Linked additional task created successfully',
+        childTask,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to create linked additional task',
         error: error.message,
       });
     }

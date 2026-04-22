@@ -261,6 +261,16 @@ const taskSchema = new Schema(
       required: false, // Make it optional
       default: null
     },
+    parentTaskId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Task',
+      default: null,
+    },
+    linkedTaskType: {
+      type: String,
+      enum: ['main', 'additional_items'],
+      default: 'main',
+    },
     taskDuration: { type: Number, required: false },
     spaceOfVan: { type: Number, required: false },
     googleCalendarEventId: {

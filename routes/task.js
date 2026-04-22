@@ -247,4 +247,5 @@ router.post('/task/:taskId/send-waste-transfer-note', taskCtrl.sendWasteTransfer
 router.post('/task/send-retargeting-email', isAuth, checkRole('Admin'), taskCtrl.sendRetargetingEmailWithCoupon);
 router.put('/task/:taskId/prevent-review-email', isAuth, taskCtrl.togglePreventReviewEmail);
 router.put('/tasks/update-status', isAuth, checkRole('Admin'), taskCtrl.updateMultipleTasksStatus);
+router.post('/task/:taskId/additional-items/direct-create', isAuth, checkRole('Admin'), taskCtrl.createDirectAdditionalLinkedTask);
 module.exports = router;
