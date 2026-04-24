@@ -1105,7 +1105,14 @@ const driverManagement = {
 
   rateTask: async (req, res) => {
     const { taskId } = req.params;
-    const { clientFeedback, clientFeedbackScale, cashAmount, customerNotPresent } = req.body;
+    const {
+      clientFeedback,
+      clientFeedbackScale,
+      cashAmount,
+      cashReceived,
+      cashRecived,
+      customerNotPresent
+    } = req.body;
     const userId = req.user._id;
 
     try {
@@ -1115,7 +1122,13 @@ const driverManagement = {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      console.log("username", userInfo.user.username, "cashAmount", cashAmount);
+      const normalizedCashReceived = Number(
+        cashAmount ?? cashReceived ?? cashRecived ?? 0
+      );
+      const normalizedFeedbackScale = Number(clientFeedbackScale);
+      const isCustomerNotPresent = customerNotPresent === 'true' || customerNotPresent === true;
+
+      console.log("username", userInfo.user.username, "cashAmount", normalizedCashReceived);
       const task = await Task.findById(taskId);
       if (!task) {
         console.log("task not found");
@@ -1129,8 +1142,6 @@ const driverManagement = {
       }
 
       // Validate: if customer is not present, signature should not be provided
-      const isCustomerNotPresent = customerNotPresent === 'true' || customerNotPresent === true;
-
       if (isCustomerNotPresent && signaturePath) {
         return res.status(400).json({
           message: 'Cannot have signature when customer is not present'
@@ -1139,11 +1150,11 @@ const driverManagement = {
 
       // Update task with the client satisfaction rating and feedback
       task.clientFeedback = clientFeedback;
-      task.clientFeedbackScale = clientFeedbackScale;
+      task.clientFeedbackScale = Number.isFinite(normalizedFeedbackScale) ? normalizedFeedbackScale : undefined;
       task.taskStatus = "Completed";
-      task.cashReceived = cashAmount;
-      // Store the user id who took the cash
-      task.cashReceivedBy = userInfo.user._id;
+      task.cashReceived = Number.isFinite(normalizedCashReceived) ? normalizedCashReceived : 0;
+      // Store the user id who took the cash (for payroll and daily-sheet cash totals)
+      task.cashReceivedBy = userInfo.user._id || req.user._id;
 
       // Save signature and customer presence status (same as other feedback fields)
       task.customerSignature = signaturePath || null;
