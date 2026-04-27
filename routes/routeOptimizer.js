@@ -49,4 +49,13 @@ router.post(
   routeOptimizerCtrl.recalculateTruckRoute
 );
 
+/**
+ * POST /api/route-optimizer/external/request-tipping
+ * Body: { truck_id, van_id?, jobs_date, remaining_jobs, last_completed_job_location? }
+ */
+router.post(
+  '/external/request-tipping',
+  routeOptimizerCtrl.requestBestTippingPlace
+);
+
 module.exports = router;
