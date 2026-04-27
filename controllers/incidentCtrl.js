@@ -1,6 +1,5 @@
 const Incident = require('../models/Incident');
 const Notification = require('../models/Notification');
-const Truck = require('../models/Truck');
 const Van = require('../models/Van');
 const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const { User } = require('../models/User');
@@ -285,15 +284,16 @@ const incidentController = {
     },
 
     /**
-     * Staff (driver / helper) endpoint: create an incident for the logged-in user.
-     * - Uses req.user.truckId to infer the current truck and its vanId.
-     * - If the user is a Driver, sets driverId = user._id.
-     * - If the user is a Helper, sets helperId = user._id.
-     * - Falls back to truck.driverId / truck.helperId where relevant.
+     * Staff endpoint: create an incident without inferring assignment IDs.
+     * Expects vanId/driverId/helperId (as needed) to come explicitly from the request body.
      */
     createIncident: async (req, res) => {
         try {
             const {
+                vanId,
+                driverId,
+                helperId,
+                incidentTime,
                 location,
                 notes,
                 reportedAt,
@@ -334,6 +334,12 @@ const incidentController = {
                 });
             }
 
+            if (!vanId) {
+                return res.status(400).json({
+                    message: 'vanId is required.',
+                });
+            }
+
             if (
                 (parsedType === 'accident' || parsedType === 'breakdown') &&
                 parseBoolean(isVehicleDrivable) === undefined
@@ -349,43 +355,7 @@ const incidentController = {
                 });
             }
 
-            const roles = Array.isArray(user.role) ? user.role : [];
-            const isDriver = roles.includes('Driver');
-            const isHelper = roles.includes('Helper');
-
-            const userTruckId = user.truckId;
-            if (!userTruckId) {
-                return res.status(400).json({
-                    message: 'No truck assigned to this user. Cannot create incident.',
-                });
-            }
-
-            // Fetch driver/helper and van from the assigned truck, if any
-            const truck = await Truck.findById(userTruckId).select('driverId helperId vanId');
-            if (!truck || !truck.vanId) {
-                return res.status(400).json({
-                    message: 'No van linked to the assigned truck. Cannot create incident.',
-                });
-            }
-
-            const vanId = truck.vanId;
-
-            let driverId;
-            let helperId;
-
-            if (isDriver) {
-                driverId = user._id;
-            } else if (truck && truck.driverId) {
-                driverId = truck.driverId;
-            }
-
-            if (isHelper) {
-                helperId = user._id;
-            } else if (truck && truck.helperId) {
-                helperId = truck.helperId;
-            }
-
-            const incidentTime = new Date();
+            const parsedIncidentTime = incidentTime || new Date();
 
             // Build media arrays from uploaded files (Cloudinary)
             const vehicleMedia = getUploadedPhotos(req.files, 'vehicleMedia');
@@ -399,8 +369,8 @@ const incidentController = {
                 vanId,
                 driverId,
                 helperId,
-                incidentTime,
-                reportedAt: reportedAt || incidentTime,
+                incidentTime: parsedIncidentTime,
+                reportedAt: reportedAt || parsedIncidentTime,
                 location,
                 notes,
                 vanRegistration,
