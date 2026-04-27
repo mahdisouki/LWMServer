@@ -1357,9 +1357,11 @@ const initSocket = (server) => {
 };
 
 // Function to emit a notification to a specific user by userId
-const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null) => {
+const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null, metadata = null) => {
   const socketId = userSocketMap[userId];
   console.log('entered to not fun');
+  const payloadMetadata = metadata && typeof metadata === 'object' ? metadata : null;
+  const notificationType = payloadMetadata?.type || type;
   
   // Generate title based on type
   const titleMap = {
@@ -1389,6 +1391,7 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
       type,
       message: notificationMessage,
       senderName: senderName,
+      metadata: payloadMetadata,
       read: false,
     });
     console.log(`✅ Notification saved to database for user: ${userId}`);
@@ -1402,10 +1405,12 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
     try {
       io.to(socketId).emit('notification', {
         userId: userId,
-        type: type,
+        type: notificationType,
+        category: type,
         title: title,
         message: notificationMessage,
         senderName: senderName,
+        ...(payloadMetadata || {}),
         read: false,
         notificationId: savedNotification?._id, // Include DB notification ID
         createdAt: savedNotification?.createdAt || new Date() // Include timestamp for frontend
@@ -1435,8 +1440,10 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
           notificationMessage,
           {
             type: type,
+            notificationType: notificationType,
             userId: userId.toString(),
             senderName: senderName,
+            ...(payloadMetadata || {}),
             url: `${process.env.FRONTEND_URL || 'https://www.londonwastemanagement.com'}/notifications?type=${type}`,
           }
         );
@@ -1468,8 +1475,10 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
           notificationMessage,
           {
             type: type,
+            notificationType: notificationType,
             userId: userId.toString(),
             senderName: senderName,
+            ...(payloadMetadata || {}),
           }
         );
         
@@ -1492,6 +1501,7 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
         type,
         message: notificationMessage,
         senderName: senderName,
+        metadata: payloadMetadata,
         read: false,
       });
       console.log(`�� Notification saved to database for user: ${userId}`);
@@ -1529,12 +1539,18 @@ const sendOfflineNotifications = async (userId, socket) => {
 
   offlineNotifications?.forEach((notification) => {
     const title = titleMap[notification.type] || 'Notification';
+    const metadata = notification.metadata && typeof notification.metadata === 'object'
+      ? notification.metadata
+      : null;
+    const notificationType = metadata?.type || notification.type;
     socket.emit('notification', {
       userId: notification.userId,
-      type: notification.type,
+      type: notificationType,
+      category: notification.type,
       title: title,
       message: notification.message,
       senderName: notification.senderName,
+      ...(metadata || {}),
       read: notification.read,
       createdAt: notification.createdAt // Include timestamp for frontend
     });

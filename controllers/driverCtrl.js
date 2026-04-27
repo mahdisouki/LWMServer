@@ -7,6 +7,7 @@ const TippingRequest = require('../models/TippingRequest');
 const Payroll = require('../models/Payroll');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
+const AdditionalItemRequest = require('../models/AdditionalItemRequest');
 const { emitNotificationToUser, emitEvent } = require('../socket');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const dailySheetController = require('./dailySheetController');
@@ -968,7 +969,7 @@ const driverManagement = {
   addAdditionalItems: async (req, res) => {
     const { taskId } = req.params;
     const description = req.body.description;
-    const uploads = req.files.map((file) => file.path);
+    const uploads = Array.isArray(req.files) ? req.files.map((file) => file.path) : [];
     const userId = req.user._id;
 
     try {
@@ -979,32 +980,54 @@ const driverManagement = {
       }
 
       const { type } = userInfo;
+      const itemName = String(description || '').trim();
+      if (!itemName) {
+        return res.status(400).json({ message: 'description is required' });
+      }
 
-      const taskUpdate = {
-        additionalItems: [
-          {
-            items: uploads,
-            description: description,
-          },
-        ],
+      const quantity = Number(req.body.quantity);
+      const normalizedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      const requestPayload = {
+        parentTaskId: task._id,
+        itemName,
+        quantity: normalizedQuantity,
+        Objectsposition: 'Outside',
+        quotedPrice: null,
+        media: uploads,
+        status: 'pending_admin_quote',
+        requestedBy: userId,
+        requestedByType: type,
       };
 
-      const task = await Task.findByIdAndUpdate(
-        taskId,
-        taskUpdate,
-        { new: true },
+      const createdRequest = await AdditionalItemRequest.create(requestPayload);
+      const actorName = userInfo?.user?.username || `${task.firstName || ''} ${task.lastName || ''}`.trim() || type;
+      const adminUsers = await User.find({
+        $or: [{ roleType: 'Admin' }, { role: 'Admin' }],
+      }).select('_id');
+      const notificationMessage = `${actorName} submitted an additional item request for order ${task.orderNumber}: "${itemName}"`;
+      await Promise.all(
+        adminUsers.map((adminUser) =>
+          emitNotificationToUser(adminUser._id.toString(), 'Orders', notificationMessage),
+        ),
       );
 
       res
         .status(200)
         .json({
-          message: `Additional items added successfully by ${type}`,
-          task,
+          message: `Additional item request submitted successfully by ${type}`,
+          request: createdRequest,
+          taskId: task._id,
           userType: type
         });
     } catch (error) {
       res.status(500).json({
-        message: 'Failed to add additional items',
+        message: 'Failed to submit additional item request',
         error: error.message,
       });
     }
@@ -1082,7 +1105,14 @@ const driverManagement = {
 
   rateTask: async (req, res) => {
     const { taskId } = req.params;
-    const { clientFeedback, clientFeedbackScale, cashAmount, customerNotPresent } = req.body;
+    const {
+      clientFeedback,
+      clientFeedbackScale,
+      cashAmount,
+      cashReceived,
+      cashRecived,
+      customerNotPresent
+    } = req.body;
     const userId = req.user._id;
 
     try {
@@ -1092,7 +1122,13 @@ const driverManagement = {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      console.log("username", userInfo.user.username, "cashAmount", cashAmount);
+      const normalizedCashReceived = Number(
+        cashAmount ?? cashReceived ?? cashRecived ?? 0
+      );
+      const normalizedFeedbackScale = Number(clientFeedbackScale);
+      const isCustomerNotPresent = customerNotPresent === 'true' || customerNotPresent === true;
+
+      console.log("username", userInfo.user.username, "cashAmount", normalizedCashReceived);
       const task = await Task.findById(taskId);
       if (!task) {
         console.log("task not found");
@@ -1106,8 +1142,6 @@ const driverManagement = {
       }
 
       // Validate: if customer is not present, signature should not be provided
-      const isCustomerNotPresent = customerNotPresent === 'true' || customerNotPresent === true;
-
       if (isCustomerNotPresent && signaturePath) {
         return res.status(400).json({
           message: 'Cannot have signature when customer is not present'
@@ -1116,11 +1150,11 @@ const driverManagement = {
 
       // Update task with the client satisfaction rating and feedback
       task.clientFeedback = clientFeedback;
-      task.clientFeedbackScale = clientFeedbackScale;
+      task.clientFeedbackScale = Number.isFinite(normalizedFeedbackScale) ? normalizedFeedbackScale : undefined;
       task.taskStatus = "Completed";
-      task.cashReceived = cashAmount;
-      // Store the user id who took the cash
-      task.cashReceivedBy = userInfo.user._id;
+      task.cashReceived = Number.isFinite(normalizedCashReceived) ? normalizedCashReceived : 0;
+      // Store the user id who took the cash (for payroll and daily-sheet cash totals)
+      task.cashReceivedBy = userInfo.user._id || req.user._id;
 
       // Save signature and customer presence status (same as other feedback fields)
       task.customerSignature = signaturePath || null;

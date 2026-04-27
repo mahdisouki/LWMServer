@@ -285,7 +285,10 @@ const PayrollCtrl = {
 
     try {
       const payrolls = await Payroll.find({ userId })
-        .populate('pcnDamages')
+        .populate({
+          path: 'pcnDamages',
+          select: 'pcnReferenceNumber proofUrl reason amount paymentStatus time vanMatricule linkedToDailySheet deductionNote deductionTargetPayrollId createdAt updatedAt',
+        })
         .sort({ startTime: -1 });
       if (!payrolls || payrolls.length === 0) {
         return res

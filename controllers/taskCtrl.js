@@ -37,6 +37,7 @@ const sendPayementEmail = require('../utils/sendPayementEmail');
 // const sendPaymentConfirmationEmail = require('../utils/sendPayementRecivedEmail');
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
 const Coupon = require('../models/Coupon');
+const AdditionalItemRequest = require('../models/AdditionalItemRequest');
 const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentFailedEmail } = require('../services/emailsService');
 const { sendRetargetingEmailForTask } = require('../services/retargetingService');
 const path = require('path');
@@ -6417,6 +6418,316 @@ const taskCtrl = {
     } catch (error) {
       res.status(500).json({
         message: 'Failed to create linked additional task',
+        error: error.message,
+      });
+    }
+  },
+
+  getAdditionalItemRequestsForAdmin: async (req, res) => {
+    try {
+      const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 200);
+      const skip = (page - 1) * limit;
+
+      const query = {};
+      const statusFilter = String(req.query.status || '').trim();
+      if (statusFilter) {
+        const statuses = statusFilter
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (statuses.length === 1) {
+          query.status = statuses[0];
+        } else if (statuses.length > 1) {
+          query.status = { $in: statuses };
+        }
+      }
+
+      const createdFromRaw = req.query.createdFrom || req.query.startDate || null;
+      const createdToRaw = req.query.createdTo || req.query.endDate || null;
+      if (createdFromRaw || createdToRaw) {
+        query.createdAt = {};
+        if (createdFromRaw) {
+          const fromDate = new Date(createdFromRaw);
+          if (isNaN(fromDate.getTime())) {
+            return res.status(400).json({ message: 'Invalid createdFrom/startDate format' });
+          }
+          query.createdAt.$gte = fromDate;
+        }
+        if (createdToRaw) {
+          const toDate = new Date(createdToRaw);
+          if (isNaN(toDate.getTime())) {
+            return res.status(400).json({ message: 'Invalid createdTo/endDate format' });
+          }
+          toDate.setHours(23, 59, 59, 999);
+          query.createdAt.$lte = toDate;
+        }
+      }
+
+      const driverName = String(req.query.driverName || '').trim();
+      if (driverName) {
+        const nameTokens = driverName.split(/\s+/).filter(Boolean);
+        const tokenClauses = nameTokens.map((token) => {
+          const regex = new RegExp(token, 'i');
+          return {
+            $or: [
+              { username: regex },
+              { firstName: regex },
+              { lastName: regex },
+              { name: regex },
+            ],
+          };
+        });
+        const matchedUsers = await User.find({
+          $and: tokenClauses,
+        }).select('_id');
+        const matchedIds = matchedUsers.map((u) => u._id);
+        if (!matchedIds.length) {
+          return res.status(200).json({
+            message: 'Additional item requests retrieved successfully',
+            requests: [],
+            meta: {
+              total: 0,
+              page,
+              limit,
+              totalPages: 0,
+              hasNextPage: false,
+              hasPrevPage: page > 1,
+            },
+          });
+        }
+        query.requestedBy = { $in: matchedIds };
+      }
+
+      const [total, requests] = await Promise.all([
+        AdditionalItemRequest.countDocuments(query),
+        AdditionalItemRequest.find(query)
+          .populate('requestedBy', 'username firstName lastName name role roleType')
+          .populate('quotedBy', 'username firstName lastName name role roleType')
+          .populate('driverDecisionBy', 'username firstName lastName name role roleType')
+          .populate('parentTaskId', 'orderNumber firstName lastName phoneNumber date taskStatus')
+          .populate('childTaskId', 'orderNumber totalPrice taskStatus')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+      ]);
+
+      const requestsWithDriverName = requests.map((request) => {
+        const requestedBy = request?.requestedBy || null;
+        const fullName = [requestedBy?.firstName, requestedBy?.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+        const driverName =
+          fullName ||
+          requestedBy?.name ||
+          requestedBy?.username ||
+          null;
+        const parentOrderNumber = request?.parentTaskId?.orderNumber || null;
+        return {
+          ...request,
+          driverName,
+          parentOrderNumber,
+        };
+      });
+
+      const totalPages = Math.ceil(total / limit);
+      return res.status(200).json({
+        message: 'Additional item requests retrieved successfully',
+        requests: requestsWithDriverName,
+        meta: {
+          total,
+          page,
+          limit,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+        },
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to retrieve additional item requests',
+        error: error.message,
+      });
+    }
+  },
+
+  quoteAdditionalItemRequest: async (req, res) => {
+    try {
+      const { taskId, requestId } = req.params;
+      const quotedPrice = Number(req.body.quotedPrice);
+      if (!Number.isFinite(quotedPrice) || quotedPrice < 0) {
+        return res.status(400).json({ message: 'quotedPrice must be a valid number >= 0' });
+      }
+
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      const request = await AdditionalItemRequest.findById(requestId);
+      if (!request) {
+        return res.status(404).json({ message: 'Additional item request not found' });
+      }
+      if (String(request.parentTaskId) !== String(task._id)) {
+        return res.status(400).json({ message: 'Request does not belong to this task' });
+      }
+      if (request.status !== 'pending_admin_quote') {
+        return res.status(400).json({
+          message: `Only pending requests can be quoted. Current status: ${request.status}`,
+        });
+      }
+
+      request.quotedPrice = quotedPrice;
+      request.status = 'quoted';
+      request.quotedBy = req.user?._id || null;
+      request.quotedAt = new Date();
+      await request.save();
+
+      if (request.requestedBy) {
+        const notificationMessage = `Quote submitted for order ${task.orderNumber}: "${request.itemName}" at £${quotedPrice}. Please accept or decline.`;
+        await emitNotificationToUser(
+          request.requestedBy.toString(),
+          'Orders',
+          notificationMessage,
+          null,
+          {
+            type: 'additional_item_quote_submitted',
+            taskId: task._id.toString(),
+            requestId: request._id.toString(),
+            quotedPrice: quotedPrice,
+            itemName: request.itemName,
+            orderNumber: task.orderNumber,
+            quoteDecision: null,
+          },
+        );
+      }
+
+      return res.status(200).json({
+        message: 'Additional item request quoted successfully',
+        request,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to quote additional item request',
+        error: error.message,
+      });
+    }
+  },
+
+  respondToAdditionalItemRequest: async (req, res) => {
+    try {
+      const { taskId, requestId } = req.params;
+      const decision = String(req.body.decision || '').toLowerCase();
+      if (!['accept', 'decline'].includes(decision)) {
+        return res.status(400).json({ message: 'decision must be either "accept" or "decline"' });
+      }
+
+      const actor = await User.findById(req.user?._id).select('role roleType').lean();
+      const roles = Array.isArray(actor?.role) ? actor.role : [actor?.role, actor?.roleType].filter(Boolean);
+      const isDriverOrHelper = roles.some((entry) => ['Driver', 'Helper'].includes(entry));
+      if (!isDriverOrHelper) {
+        return res.status(403).json({ message: 'Only Driver/Helper can accept or decline additional item quotes' });
+      }
+
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      const request = await AdditionalItemRequest.findById(requestId);
+      if (!request) {
+        return res.status(404).json({ message: 'Additional item request not found' });
+      }
+      if (String(request.parentTaskId) !== String(task._id)) {
+        return res.status(400).json({ message: 'Request does not belong to this task' });
+      }
+      if (request.requestedBy && request.requestedBy.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Only the requester can respond to this quote' });
+      }
+      if (request.status !== 'quoted') {
+        return res.status(400).json({
+          message: `Only quoted requests can be answered. Current status: ${request.status}`,
+        });
+      }
+
+      if (decision === 'decline') {
+        request.status = 'declined';
+        request.driverDecisionBy = req.user?._id || null;
+        request.driverDecisionAt = new Date();
+        request.declineReason = String(req.body.reason || '').trim();
+        await request.save();
+
+        const adminUsers = await User.find({
+          $or: [{ roleType: 'Admin' }, { role: 'Admin' }],
+        }).select('_id');
+        const notificationMessage = `Driver declined additional item quote for order ${task.orderNumber}: "${request.itemName}"`;
+        await Promise.all(
+          adminUsers.map((admin) =>
+            emitNotificationToUser(admin._id.toString(), 'Orders', notificationMessage),
+          ),
+        );
+
+        return res.status(200).json({
+          message: 'Additional item quote declined',
+          request,
+        });
+      }
+
+      const itemPrice = Number(request.quotedPrice);
+      if (!Number.isFinite(itemPrice)) {
+        return res.status(400).json({ message: 'Request does not have a valid quoted price yet' });
+      }
+      const requestQuantity = Number(request.quantity) > 0 ? Number(request.quantity) : 1;
+      // quotedPrice is treated as the total price before VAT for the whole request,
+      // so convert to a per-unit price for existing pricing helpers.
+      const derivedUnitPrice = Number((itemPrice / requestQuantity).toFixed(2));
+
+      const { childTask } = await createDirectLinkedAdditionalTaskFromItems({
+        parentTask: task,
+        media: Array.isArray(request.media) ? request.media : [],
+        items: [
+          {
+            object: request.itemName,
+            quantity: requestQuantity,
+            Objectsposition: request.Objectsposition || 'Outside',
+            price: derivedUnitPrice,
+          },
+        ],
+        createdByUser: req.user,
+        pricingOptions: {
+          available: task.available || 'AnyTime',
+          customerEmail: task.email || null,
+          applyMinFee: false,
+          applySundayFee: false,
+        },
+      });
+
+      request.status = 'accepted';
+      request.driverDecisionBy = req.user?._id || null;
+      request.driverDecisionAt = new Date();
+      request.childTaskId = childTask._id;
+      await request.save();
+
+      const adminUsers = await User.find({
+        $or: [{ roleType: 'Admin' }, { role: 'Admin' }],
+      }).select('_id');
+      const notificationMessage = `Driver accepted quote for order ${task.orderNumber}. Child task ${childTask.orderNumber} created for "${request.itemName}".`;
+      await Promise.all(
+        adminUsers.map((admin) =>
+          emitNotificationToUser(admin._id.toString(), 'Orders', notificationMessage),
+        ),
+      );
+
+      return res.status(200).json({
+        message: 'Additional item quote accepted and child task created',
+        request,
+        childTask,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to respond to additional item quote',
         error: error.message,
       });
     }
