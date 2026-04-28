@@ -1522,13 +1522,26 @@ const taskCtrl = {
         },
       })
         .select(
-          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority _id',
+          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority _id items',
         )
+        .populate('items.standardItemId', 'itemName')
         .sort({ createdAt: -1 })
         .lean();
 
       const tasksOut = tasks.map((t) => {
         const name = [t.firstName, t.lastName].filter(Boolean).join(' ').trim();
+        const items = (t.items || []).map((item) => ({
+          standardItemId:
+            item?.standardItemId && typeof item.standardItemId === 'object'
+              ? {
+                  _id: item.standardItemId._id,
+                  itemName: item.standardItemId.itemName,
+                }
+              : item?.standardItemId || null,
+          object: item?.object || null,
+          quantity: item?.quantity ?? 0,
+        }));
+
         return {
           location: t.location,
           date: t.date,
@@ -1539,6 +1552,7 @@ const taskCtrl = {
           priority: t.priority,
           _id: t._id,
           name: name || null,
+          items,
         };
       });
 

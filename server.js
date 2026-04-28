@@ -35,6 +35,7 @@ connectToDatabase()
     require('./cron/deleteExpiredCoupons');
     require('./cron/sendRetargetingFailedTasks');
     require('./cron/sendWasteTransferNotes');
+    require('./cron/remindVanCapacityCheck');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })
