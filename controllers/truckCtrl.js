@@ -474,7 +474,7 @@ const truckCtrl = {
       const staffGeoSelect =
         'firstName lastName username role roleType start_location end_location';
       const [van, driver, helper] = await Promise.all([
-        assigned.vanId ? Van.findById(assigned.vanId).select('matricule name') : null,
+        assigned.vanId ? Van.findById(assigned.vanId).select('matricule name currentCapacity') : null,
         assigned.driverId ? User.findById(assigned.driverId).select(staffGeoSelect) : null,
         assigned.helperId ? User.findById(assigned.helperId).select(staffGeoSelect) : null,
       ]);

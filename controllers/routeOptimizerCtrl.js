@@ -15,7 +15,7 @@ const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://172.20.10.3:8000'//'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.100.106:8000'//'https://routeoptimiser.duckdns.org';
 
 function normalizeMongoId(value) {
   if (value == null) return null;
@@ -549,6 +549,7 @@ async function recalculateTruckRoute(req, res) {
       jobs,
       truck_contexts: [
         {
+          van_id: assignment.vanId ? assignment.vanId.toString() : null,
           truck_id: truck._id.toString(),
           start_location: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
           end_location: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
@@ -556,7 +557,7 @@ async function recalculateTruckRoute(req, res) {
       ],
     };
 
-    const optimizerUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/recalculate-route`;
+    const optimizerUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/recalculate-route2`;
     const startedAtMs = Date.now();
     const { data, status, headers: responseHeaders } = await axios.post(optimizerUrl, payload, {
       timeout: 120000,
