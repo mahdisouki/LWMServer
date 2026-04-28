@@ -61,6 +61,7 @@ router.put('/driver', isAuth, multer.fields([{ name: 'picture', maxCount: 1 }, {
 router.post('/driver/mark-day-start', isAuth, multer.none(), driverCtrl.markDayStart);
 
 router.get('/driver/helper-location', isAuth, driverCtrl.getHelperLocationForDriver);
+router.get('/driver/helper-distance', isAuth, driverCtrl.getDriverDistanceToHelper);
 router.get('/driver/helper-info', isAuth, driverCtrl.getHelperInfoForDriver);
 router.post('/trucks/end/:truckId', isAuth, handleMulterError(multer.array('uploads', 20)), driverCtrl.updateTruckEnd);
 router.get('/trucks/status/:truckId', driverCtrl.getTruckFullStatus);
@@ -81,6 +82,7 @@ router.post('/location/update', isAuth, driverCtrl.updateMyLocation);
 
 // Check if shift has started for the day
 router.get('/driver/day-start-status', isAuth, driverCtrl.getDayStartStatus);
+router.get('/driver/start-button-status', isAuth, driverCtrl.getStartButtonStatus);
 
 // Get all on-work drivers and helpers with their last location
 router.get('/driver/on-work-locations', isAuth, driverCtrl.getOnWorkStaffLocations);

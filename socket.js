@@ -14,6 +14,7 @@ let io;
 const userSocketMap = {}; // Stores userId:socketId mapping
 const Helper = require('./models/Helper');
 const { sendOneSignalNotification } = require('./services/oneSignalService');
+const { processDriverLocationUpdate } = require('./services/proximityAutoStartService');
 
 // Helper function to find truck for a user (including extra drivers/helpers)
 async function findTruckForUser(userId) {
@@ -804,17 +805,27 @@ const initSocket = (server) => {
     });
 
     socket.on('sendLocation', async ({ driverId, coordinates, role }) => {
-      console.log(`Updating location for driver ${driverId}:`, coordinates);
+      const actorUserId = socket.user?.userId;
+      console.log(`Updating location for user ${actorUserId}:`, coordinates);
       console.log(role)
       try {
-        console.log(`Updating location for driver ${driverId}:`, coordinates);
+        console.log(`Updating location for user ${actorUserId}:`, coordinates);
+        if (
+          !coordinates ||
+          !Number.isFinite(Number(coordinates.latitude)) ||
+          !Number.isFinite(Number(coordinates.longitude))
+        ) {
+          console.error('Invalid coordinates payload received in sendLocation');
+          return;
+        }
+
         const coordinatesArray = [coordinates.longitude, coordinates.latitude];
         
         // Find the user first (Driver or Helper)
-        const user = await Driver.findById(driverId) || await Helper.findById(driverId);
+        const user = await Driver.findById(actorUserId) || await Helper.findById(actorUserId);
         
         if (!user) {
-          console.error(`User with ID ${driverId} not found.`);
+          console.error(`User with ID ${actorUserId} not found.`);
           return;
         }
         
@@ -829,7 +840,7 @@ const initSocket = (server) => {
 
         if (user) {
           io.emit('driverLocationUpdate', {
-            driverId,
+            driverId: actorUserId,
             driverName: user.username,
             coordinates,
             picture: user.picture,
@@ -839,8 +850,30 @@ const initSocket = (server) => {
             startTime: user.breakStartTime,
           });
         }
+
+        const isDriver =
+          user.roleType === 'Driver' ||
+          (Array.isArray(user.role) && user.role.includes('Driver'));
+
+        if (isDriver) {
+          const proximityResult = await processDriverLocationUpdate({
+            actorUserId: user._id,
+            actorUsername: user.username,
+            latitude: Number(coordinates.latitude),
+            longitude: Number(coordinates.longitude),
+          });
+
+          if (proximityResult && !proximityResult.skipped) {
+            io.emit('driverHelperProximity', {
+              driverId: actorUserId,
+              distanceMeters: proximityResult.distanceMeters,
+              newlyReachedMilestones: proximityResult.newlyReachedMilestones || [],
+              autoStartResult: proximityResult.autoStartResult || null,
+            });
+          }
+        }
       } catch (error) {
-        console.error(`Error updating location for driver ${driverId}:`, error);
+        console.error(`Error updating location for user ${actorUserId}:`, error);
       }
     });
 

@@ -5,6 +5,7 @@ const Truck = require('../models/Truck');
 const TruckStatus = require('../models/TruckStatus');
 const TippingRequest = require('../models/TippingRequest');
 const Payroll = require('../models/Payroll');
+const DriverHelperProximityState = require('../models/DriverHelperProximityState');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
 const AdditionalItemRequest = require('../models/AdditionalItemRequest');
@@ -20,6 +21,32 @@ function getTodayDateRange() {
   const end = new Date();
   end.setHours(23, 59, 59, 999);
   return { start, end };
+}
+
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const earthRadiusMeters = 6371000;
+  const dLat = toRadians(lat2 - lat1);
+  const dLng = toRadians(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) *
+      Math.cos(toRadians(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+}
+
+function getTodayDateKeyLocal() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 // Helper function to get user model based on role
@@ -301,6 +328,80 @@ const driverManagement = {
       console.log("error:", error)
       res.status(500).json({
         message: 'Failed to retrieve location',
+        error: error.message,
+      });
+    }
+  },
+
+  getDriverDistanceToHelper: async (req, res) => {
+    const userId = req.user._id;
+    const arrivalThresholdMeters = Number(process.env.DRIVER_HELPER_ARRIVAL_METERS || 80);
+
+    try {
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      const { type } = userInfo;
+      if (type !== 'Driver') {
+        return res.status(403).json({ message: 'Only drivers can access this endpoint' });
+      }
+
+      const truck = await getTruckForUser(userId);
+      if (!truck) {
+        return res.status(404).json({ message: 'No truck found for the given user.' });
+      }
+
+      if (!truck.helperId) {
+        return res.status(404).json({ message: 'No helper assigned to this truck' });
+      }
+
+      const driver = await Driver.findById(userId).select('location');
+      const helper = await Helper.findById(truck.helperId).select('location username');
+
+      const driverCoords = driver?.location?.coordinates;
+      const helperCoords = helper?.location?.coordinates;
+
+      if (!Array.isArray(driverCoords) || driverCoords.length < 2) {
+        return res.status(404).json({ message: 'Driver location is not set' });
+      }
+      if (!Array.isArray(helperCoords) || helperCoords.length < 2) {
+        return res.status(404).json({ message: 'Helper location is not set' });
+      }
+
+      const driverLng = Number(driverCoords[0]);
+      const driverLat = Number(driverCoords[1]);
+      const helperLng = Number(helperCoords[0]);
+      const helperLat = Number(helperCoords[1]);
+
+      if (
+        !Number.isFinite(driverLat) ||
+        !Number.isFinite(driverLng) ||
+        !Number.isFinite(helperLat) ||
+        !Number.isFinite(helperLng)
+      ) {
+        return res.status(400).json({ message: 'Invalid driver/helper coordinates' });
+      }
+
+      const distanceMeters = Math.round(
+        haversineMeters(driverLat, driverLng, helperLat, helperLng)
+      );
+      const remainingMeters = Math.max(distanceMeters - arrivalThresholdMeters, 0);
+
+      return res.status(200).json({
+        message: 'Distance to helper retrieved successfully',
+        distanceMeters,
+        remainingMeters,
+        arrivalThresholdMeters,
+        hasArrivedToHelper: distanceMeters <= arrivalThresholdMeters,
+        helperId: truck.helperId,
+        helperName: helper?.username || null,
+      });
+    } catch (error) {
+      console.error('Error getting distance to helper:', error);
+      return res.status(500).json({
+        message: 'Failed to get distance to helper',
         error: error.message,
       });
     }
@@ -1613,6 +1714,51 @@ const driverManagement = {
         error: error.message,
         hasStarted: false,
         dayStarted: false
+      });
+    }
+  },
+
+  /**
+   * Get start button eligibility based on driver-helper proximity state.
+   * GET /api/driver/start-button-status
+   */
+  getStartButtonStatus: async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const dateKey = req.query.dateKey || getTodayDateKeyLocal();
+
+      const truck = await getTruckForUser(userId);
+      if (!truck) {
+        return res.status(200).json({
+          message: 'No truck found for the given user.',
+          enabled: false,
+          dateKey,
+          truckId: null,
+          distanceMeters: null,
+          arrivalTriggeredAt: null,
+        });
+      }
+
+      const state = await DriverHelperProximityState.findOne({
+        truckId: truck._id,
+        dateKey,
+      });
+
+      return res.status(200).json({
+        message: 'Start button status retrieved successfully',
+        enabled: state?.autoStartTriggered === true,
+        dateKey,
+        truckId: truck._id,
+        distanceMeters: Number.isFinite(Number(state?.lastDistanceMeters))
+          ? Number(state.lastDistanceMeters)
+          : null,
+        arrivalTriggeredAt: state?.arrivalTriggeredAt || null,
+      });
+    } catch (error) {
+      console.error('Error getting start button status:', error);
+      return res.status(500).json({
+        message: 'Failed to get start button status',
+        error: error.message,
       });
     }
   },
