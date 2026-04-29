@@ -237,9 +237,12 @@ const PayrollCtrl = {
 
       // Calculate total expenses directly from Expense documents for this driver and date
       let totalExpenses = 0;
+      const addedByCandidates = [user.username, String(user._id)].filter(Boolean);
       const expenses = await Expense.find({
         driverId: userId,
-        addedBy: user.username,
+        ...(addedByCandidates.length > 0
+          ? { addedBy: { $in: addedByCandidates } }
+          : {}),
         date: { $gte: today, $lt: tomorrow }
       });
       totalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
@@ -797,9 +800,12 @@ const PayrollCtrl = {
 
         // Calculate total expenses (use provided value if specified, otherwise calculate from Expense documents)
         if (totalExpenses === undefined) {
+          const addedByCandidates = [user.username, String(user._id)].filter(Boolean);
           const expenses = await Expense.find({
             driverId: userId,
-            addedBy: user.username,
+            ...(addedByCandidates.length > 0
+              ? { addedBy: { $in: addedByCandidates } }
+              : {}),
             date: { $gte: payrollDate, $lt: nextDay }
           });
           calculatedTotalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
