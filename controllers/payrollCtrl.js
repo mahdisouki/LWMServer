@@ -237,12 +237,10 @@ const PayrollCtrl = {
 
       // Calculate total expenses directly from Expense documents for this driver and date
       let totalExpenses = 0;
-      const addedByCandidates = [user.username, String(user._id)].filter(Boolean);
+      // Keep expense totals consistent with expenseController payroll recalculation:
+      // sum by driver + date regardless of who added the expense.
       const expenses = await Expense.find({
         driverId: userId,
-        ...(addedByCandidates.length > 0
-          ? { addedBy: { $in: addedByCandidates } }
-          : {}),
         date: { $gte: today, $lt: tomorrow }
       });
       totalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));

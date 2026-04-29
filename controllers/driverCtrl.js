@@ -187,6 +187,7 @@ const driverManagement = {
       dateOfBirth,
       address,
       CIN,
+      drivingLicenseFront,
       password,
     } = req.body;
 
@@ -212,11 +213,12 @@ const driverManagement = {
       if (dateOfBirth) user.dateOfBirth = dateOfBirth;
       if (address) user.address = address;
       if (CIN) user.CIN = CIN;
+      if (drivingLicenseFront) user.drivingLicenseFront = drivingLicenseFront;
 
       // Update files if new files are uploaded
       if (req.files) {
         if (req.files.picture) user.picture = req.files.picture[0].path;
-        if (req.files.DriverLicense) user.DriverLicense = req.files.DriverLicense[0].path;
+        if (req.files.drivingLicenseFront) user.drivingLicenseFront = req.files.drivingLicenseFront[0].path;
         if (req.files.addressProof) user.addressProof = req.files.addressProof[0].path;
         if (req.files.NatInsurance) user.NatInsurance = req.files.NatInsurance[0].path;
       }
@@ -230,6 +232,7 @@ const driverManagement = {
       await user.save();
 
       // Respond with updated information
+      const drivingLicenseFrontValue = user.drivingLicenseFront || user.DriverLicense;
       res.status(200).json({
         message: `${type} profile updated successfully`,
         user: {
@@ -241,7 +244,7 @@ const driverManagement = {
           phoneNumber: user.phoneNumber[0],
           address: user.address,
           CIN: user.CIN,
-          DriverLicense: user.DriverLicense,
+          drivingLicenseFront: drivingLicenseFrontValue,
           addressProof: user.addressProof,
           NatInsurance: user.NatInsurance,
         },
