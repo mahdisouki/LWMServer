@@ -15,7 +15,7 @@ const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.100.106:8000'//'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.100.200:8000'//'https://routeoptimiser.duckdns.org';
 
 function normalizeMongoId(value) {
   if (value == null) return null;
@@ -511,6 +511,8 @@ async function recalculateTruckRoute(req, res) {
           lng: coords[0],
           taskDuration:
             typeof task.taskDuration === 'number' && task.taskDuration >= 0 ? task.taskDuration : 10,
+          spaceOfVan:
+            typeof task.spaceOfVan === 'number' && task.spaceOfVan >= 0 ? task.spaceOfVan : 0,
           order,
           type,
         });

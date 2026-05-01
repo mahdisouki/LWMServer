@@ -49,6 +49,12 @@ function getTodayDateKeyLocal() {
   return `${y}-${m}-${d}`;
 }
 
+const END_LOCATION_ARRIVAL_METERS = Number(
+  process.env.DRIVER_HELPER_END_ARRIVAL_METERS ||
+    process.env.DRIVER_HELPER_ARRIVAL_METERS ||
+    80
+);
+
 // Helper function to get user model based on role
 async function getUserModel(userId) {
   // Try to find user in User model first
@@ -1758,6 +1764,96 @@ const driverManagement = {
       console.error('Error getting start button status:', error);
       return res.status(500).json({
         message: 'Failed to get start button status',
+        error: error.message,
+      });
+    }
+  },
+
+  /**
+   * Get end button eligibility based on driver distance to helper end_location.
+   * GET /api/driver/end-button-status
+   */
+  getEndButtonStatus: async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const dateKey = req.query.dateKey || getTodayDateKeyLocal();
+
+      const truck = await getTruckForUser(userId);
+      if (!truck) {
+        return res.status(200).json({
+          message: 'No truck found for the given user.',
+          enabled: false,
+          dateKey,
+          truckId: null,
+          distanceMeters: null,
+          arrivalThresholdMeters: END_LOCATION_ARRIVAL_METERS,
+          helperEndLocationSet: false,
+        });
+      }
+
+      const [driverUser, helper] = await Promise.all([
+        User.findById(userId).select('location'),
+        Helper.findById(truck.helperId).select('end_location'),
+      ]);
+
+      const driverCoords = driverUser?.location?.coordinates;
+      const helperEndCoords = helper?.end_location?.coordinates;
+      const hasValidDriverLocation =
+        Array.isArray(driverCoords) && driverCoords.length >= 2;
+      const hasValidHelperEndLocation =
+        Array.isArray(helperEndCoords) && helperEndCoords.length >= 2;
+
+      if (!hasValidDriverLocation || !hasValidHelperEndLocation) {
+        return res.status(200).json({
+          message: 'End button status retrieved successfully',
+          enabled: false,
+          dateKey,
+          truckId: truck._id,
+          distanceMeters: null,
+          arrivalThresholdMeters: END_LOCATION_ARRIVAL_METERS,
+          helperEndLocationSet: hasValidHelperEndLocation,
+        });
+      }
+
+      const driverLng = Number(driverCoords[0]);
+      const driverLat = Number(driverCoords[1]);
+      const helperEndLng = Number(helperEndCoords[0]);
+      const helperEndLat = Number(helperEndCoords[1]);
+
+      if (
+        !Number.isFinite(driverLat) ||
+        !Number.isFinite(driverLng) ||
+        !Number.isFinite(helperEndLat) ||
+        !Number.isFinite(helperEndLng)
+      ) {
+        return res.status(200).json({
+          message: 'End button status retrieved successfully',
+          enabled: false,
+          dateKey,
+          truckId: truck._id,
+          distanceMeters: null,
+          arrivalThresholdMeters: END_LOCATION_ARRIVAL_METERS,
+          helperEndLocationSet: hasValidHelperEndLocation,
+        });
+      }
+
+      const distanceMeters = Math.round(
+        haversineMeters(driverLat, driverLng, helperEndLat, helperEndLng)
+      );
+
+      return res.status(200).json({
+        message: 'End button status retrieved successfully',
+        enabled: distanceMeters <= END_LOCATION_ARRIVAL_METERS,
+        dateKey,
+        truckId: truck._id,
+        distanceMeters,
+        arrivalThresholdMeters: END_LOCATION_ARRIVAL_METERS,
+        helperEndLocationSet: true,
+      });
+    } catch (error) {
+      console.error('Error getting end button status:', error);
+      return res.status(500).json({
+        message: 'Failed to get end button status',
         error: error.message,
       });
     }

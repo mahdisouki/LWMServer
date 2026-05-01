@@ -83,6 +83,7 @@ router.post('/location/update', isAuth, driverCtrl.updateMyLocation);
 // Check if shift has started for the day
 router.get('/driver/day-start-status', isAuth, driverCtrl.getDayStartStatus);
 router.get('/driver/start-button-status', isAuth, driverCtrl.getStartButtonStatus);
+router.get('/driver/end-button-status', isAuth, driverCtrl.getEndButtonStatus);
 
 // Get all on-work drivers and helpers with their last location
 router.get('/driver/on-work-locations', isAuth, driverCtrl.getOnWorkStaffLocations);
