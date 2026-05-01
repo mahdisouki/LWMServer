@@ -57,7 +57,7 @@ router.get('/driver', isAuth, driverCtrl.getTasksForDriver);
 router.get('/driver/tasks-by-date', isAuth, driverCtrl.getTasksPerDate);
 router.post('/driver/add-tipping-to-truck', isAuth, driverCtrl.addTippingRequestToTruck);
 router.post('/trucks/start/:truckId', isAuth, handleMulterError(multer.array('uploads', 20)), driverCtrl.updateTruckStart);
-router.put('/driver', isAuth, multer.fields([{ name: 'picture', maxCount: 1 }, { name: 'DriverLicense', maxCount: 1 }, { name: 'addressProof', maxCount: 1 }, { name: 'NatInsurance', maxCount: 1 }]), driverCtrl.updateDriverProfile);
+router.put('/driver', isAuth, multer.fields([{ name: 'picture', maxCount: 1 }, { name: 'drivingLicenseFront', maxCount: 1 }, { name: 'addressProof', maxCount: 1 }, { name: 'NatInsurance', maxCount: 1 }]), driverCtrl.updateDriverProfile);
 router.post('/driver/mark-day-start', isAuth, multer.none(), driverCtrl.markDayStart);
 
 router.get('/driver/helper-location', isAuth, driverCtrl.getHelperLocationForDriver);

@@ -117,7 +117,9 @@ const updateDailySheetForTippingRequest = async (tippingRequest) => {
       json: () => { }
     };
 
-    // First ensure the tipping request is in the truck's tasks array for that date
+    // Keep route tasks in sync with status:
+    // - Accepted => present in route
+    // - Any other status => removed from route
     if (tippingRequest.truckId && tippingRequest._id) {
       const truck = await Truck.findById(tippingRequest.truckId);
       if (truck) {
@@ -140,10 +142,26 @@ const updateDailySheetForTippingRequest = async (tippingRequest) => {
           return tid === tippingRequest._id.toString();
         });
 
-        if (!exists) {
-          console.log(`Adding tipping request ${tippingRequest._id} to truck ${truckDisplayName(truck)} for date ${formattedDate}`);
+        const shouldBeOnRoute = tippingRequest.status === 'Accepted';
+
+        if (shouldBeOnRoute && !exists) {
+          console.log(`Adding accepted tipping request ${tippingRequest._id} to truck ${truckDisplayName(truck)} for date ${formattedDate}`);
           truck.addTippingRequest(formattedDate, tippingRequest._id);
           await truck.save();
+        } else if (!shouldBeOnRoute && exists) {
+          const filteredTasks = tasksForDate.filter((t) => {
+            const tid = typeof t === 'string' ? t : (t.taskId ? t.taskId.toString() : null);
+            return tid !== tippingRequest._id.toString();
+          });
+
+          if (truck.tasks instanceof Map) {
+            truck.tasks.set(formattedDate, filteredTasks);
+          } else if (typeof truck.tasks === 'object' && truck.tasks) {
+            truck.tasks[formattedDate] = filteredTasks;
+          }
+          truck.markModified('tasks');
+          await truck.save();
+          console.log(`Removed non-accepted tipping request ${tippingRequest._id} from truck ${truckDisplayName(truck)} for date ${formattedDate}`);
         }
       }
     }
