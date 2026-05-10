@@ -2,6 +2,23 @@ const multer = require('multer');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const cloudinary = require('../helper/cloudinaryConfig');
 
+/** MIME subtype → extension Cloudinary accepts (vendor trees like audio/x-m4a break uploads otherwise). */
+function cloudinaryFormatFromMimetype(mimetype) {
+  if (!mimetype || typeof mimetype !== 'string') return 'jpg';
+  const subtype = mimetype.split('/')[1]?.split(';')[0]?.trim().toLowerCase();
+  if (!subtype) return 'jpg';
+  let ext = subtype.startsWith('x-') ? subtype.slice(2) : subtype;
+  const aliases = {
+    m4a: 'mp4', // AAC in MPEG-4 container; Cloudinary lists mp4, not m4a, for video uploads
+    mpeg: 'mp3',
+    mpga: 'mp3',
+    quicktime: 'mov',
+    '3gpp': '3gp',
+    '3gpp2': '3g2',
+  };
+  return aliases[ext] || ext;
+}
+
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: async (req, file) => {
@@ -21,7 +38,7 @@ const storage = new CloudinaryStorage({
     
     const baseParams = {
       folder: 'uploads',
-      format: isVideo ? file.mimetype.split('/')[1] : 'jpg',
+      format: isVideo ? cloudinaryFormatFromMimetype(file.mimetype) : 'jpg',
       resource_type: isVideo ? 'video' : 'image',
       public_id: `${Date.now()}-${Math.random().toString(36).substring(7)}-${file.originalname.replace(/\.[^/.]+$/, '')}`,
       
