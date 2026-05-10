@@ -163,6 +163,8 @@ const incidentController = {
                 canSelfFix,
                 needsBreakdownAssistance,
                 type, // 'accident' or 'breakdown'
+                recoveryDate,
+                recoveryTime,
             } = req.body;
 
             const user = req.user;
@@ -238,6 +240,8 @@ const incidentController = {
                 steps,
                 status: 'New',
                 type: parsedType,
+                recoveryDate,
+                recoveryTime,
                 createdBy: user && user._id ? user._id : undefined,
             });
 

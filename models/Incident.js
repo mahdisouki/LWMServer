@@ -78,6 +78,8 @@ const incidentSchema = new Schema(
             enum: ['New', 'PENDING_RESOLUTION', 'RESOLVED'],
             default: 'New',
         },
+        recoveryDate: { type: Date },
+        recoveryTime: { type: String },
 
         steps: [stepSchema],
         createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
