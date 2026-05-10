@@ -11,6 +11,7 @@ const Driver = require('../models/Driver');
 const AdditionalItemRequest = require('../models/AdditionalItemRequest');
 const { emitNotificationToUser, emitEvent } = require('../socket');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const dailySheetController = require('./dailySheetController');
 const payrollCtrl = require('./payrollCtrl');
 const adminId = "67cb6810c9e768ec25d39523"
@@ -1794,19 +1795,23 @@ const driverManagement = {
         });
       }
 
+      const assigned = await getAssignedForDayFromRanges(truck._id, dateKey);
+      const effectiveHelperId = assigned?.helperId || truck.helperId || null;
       const [driverUser, helper] = await Promise.all([
-        User.findById(userId).select('location'),
-        Helper.findById(truck.helperId).select('end_location'),
+        Driver.findById(userId).select('location end_location'),
+        effectiveHelperId ? Helper.findById(effectiveHelperId).select('end_location') : null,
       ]);
 
       const driverCoords = driverUser?.location?.coordinates;
-      const helperEndCoords = helper?.end_location?.coordinates;
+      const targetEndCoords = effectiveHelperId
+        ? helper?.end_location?.coordinates
+        : driverUser?.end_location?.coordinates;
       const hasValidDriverLocation =
         Array.isArray(driverCoords) && driverCoords.length >= 2;
-      const hasValidHelperEndLocation =
-        Array.isArray(helperEndCoords) && helperEndCoords.length >= 2;
+      const hasValidTargetEndLocation =
+        Array.isArray(targetEndCoords) && targetEndCoords.length >= 2;
 
-      if (!hasValidDriverLocation || !hasValidHelperEndLocation) {
+      if (!hasValidDriverLocation || !hasValidTargetEndLocation) {
         return res.status(200).json({
           message: 'End button status retrieved successfully',
           enabled: false,
@@ -1814,20 +1819,20 @@ const driverManagement = {
           truckId: truck._id,
           distanceMeters: null,
           arrivalThresholdMeters: END_LOCATION_ARRIVAL_METERS,
-          helperEndLocationSet: hasValidHelperEndLocation,
+          helperEndLocationSet: hasValidTargetEndLocation,
         });
       }
 
       const driverLng = Number(driverCoords[0]);
       const driverLat = Number(driverCoords[1]);
-      const helperEndLng = Number(helperEndCoords[0]);
-      const helperEndLat = Number(helperEndCoords[1]);
+      const targetEndLng = Number(targetEndCoords[0]);
+      const targetEndLat = Number(targetEndCoords[1]);
 
       if (
         !Number.isFinite(driverLat) ||
         !Number.isFinite(driverLng) ||
-        !Number.isFinite(helperEndLat) ||
-        !Number.isFinite(helperEndLng)
+        !Number.isFinite(targetEndLat) ||
+        !Number.isFinite(targetEndLng)
       ) {
         return res.status(200).json({
           message: 'End button status retrieved successfully',
@@ -1836,12 +1841,12 @@ const driverManagement = {
           truckId: truck._id,
           distanceMeters: null,
           arrivalThresholdMeters: END_LOCATION_ARRIVAL_METERS,
-          helperEndLocationSet: hasValidHelperEndLocation,
+          helperEndLocationSet: hasValidTargetEndLocation,
         });
       }
 
       const distanceMeters = Math.round(
-        haversineMeters(driverLat, driverLng, helperEndLat, helperEndLng)
+        haversineMeters(driverLat, driverLng, targetEndLat, targetEndLng)
       );
 
       return res.status(200).json({

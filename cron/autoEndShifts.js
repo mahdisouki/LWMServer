@@ -1,110 +1,179 @@
 const cron = require('node-cron');
+const Payroll = require('../models/Payroll');
 const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
-const Payroll = require('../models/Payroll');
-const User = require('../models/User');
+const Task = require('../models/Task');
+const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
+const payrollCtrl = require('../controllers/payrollCtrl');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
+const { getMapboxRouteWithTraffic } = require('../services/routeOptimizerService');
 
 /**
- * Automatically ends all active shifts at 10 PM (22:00)
- * This allows drivers and helpers to start a new shift the next day
- * even if they forgot to manually end their shift
+ * Return date key in local timezone (YYYY-MM-DD).
  */
-async function autoEndShifts() {
-    try {
-        const now = new Date();
-        // Set end time to 10 PM (22:00) of the current day
-        const endTime = new Date(now);
-        endTime.setHours(22, 0, 0, 0); // 10:00 PM
-
-        console.log(`[Auto End Shifts] Running at ${now.toISOString()}, setting endTime to ${endTime.toISOString()}`);
-
-        // 1. End shifts for Drivers with active shifts (startTime exists but endTime is null)
-        const activeDrivers = await Driver.find({
-            startTime: { $exists: true, $ne: null },
-            endTime: null
-        });
-
-        let driversEnded = 0;
-        for (const driver of activeDrivers) {
-            driver.endTime = endTime;
-            await driver.save();
-            driversEnded++;
-            console.log(`[Auto End Shifts] Ended shift for driver: ${driver.username || driver._id}`);
-        }
-
-        // 2. End shifts for Helpers with active shifts (startTime exists but endTime is null)
-        const activeHelpers = await Helper.find({
-            startTime: { $exists: true, $ne: null },
-            endTime: null
-        });
-
-        let helpersEnded = 0;
-        for (const helper of activeHelpers) {
-            helper.endTime = endTime;
-            await helper.save();
-            helpersEnded++;
-            console.log(`[Auto End Shifts] Ended shift for helper: ${helper.username || helper._id}`);
-        }
-
-        // 3. End Payroll entries with active shifts (endTime is null)
-        const activePayrolls = await Payroll.find({
-            endTime: null,
-            startTime: { $exists: true, $ne: null }
-        });
-
-        let payrollsEnded = 0;
-        for (const payroll of activePayrolls) {
-            const start = payroll.startTime;
-            
-            // Only set endTime if startTime exists and is valid
-            if (start && endTime > start) {
-                payroll.endTime = endTime;
-                
-                // Calculate total hours worked
-                const totalHoursWorked = (endTime - start) / (1000 * 3600); // Convert milliseconds to hours
-                payroll.totalHoursWorked = Math.round(totalHoursWorked * 100) / 100; // Round to 2 decimal places
-                
-                // Get user to check regular hours limit
-                const user = await User.findById(payroll.userId);
-                if (user && user.regularHours) {
-                    const REGULAR_HOURS_LIMIT = user.regularHours;
-                    
-                    if (totalHoursWorked <= REGULAR_HOURS_LIMIT) {
-                        payroll.regularHours = Math.round(totalHoursWorked * 100) / 100;
-                        payroll.extraHours = 0;
-                    } else {
-                        payroll.regularHours = REGULAR_HOURS_LIMIT;
-                        payroll.extraHours = Math.round((totalHoursWorked - REGULAR_HOURS_LIMIT) * 100) / 100;
-                    }
-                } else {
-                    // Default to 8 hours if regularHours not set
-                    if (totalHoursWorked <= 8) {
-                        payroll.regularHours = Math.round(totalHoursWorked * 100) / 100;
-                        payroll.extraHours = 0;
-                    } else {
-                        payroll.regularHours = 8;
-                        payroll.extraHours = Math.round((totalHoursWorked - 8) * 100) / 100;
-                    }
-                }
-                
-                await payroll.save();
-                payrollsEnded++;
-                console.log(`[Auto End Shifts] Ended payroll for user: ${payroll.userId}`);
-            }
-        }
-
-        console.log(`[Auto End Shifts] Completed: ${driversEnded} drivers, ${helpersEnded} helpers, ${payrollsEnded} payrolls ended`);
-    } catch (error) {
-        console.error('[Auto End Shifts] Error ending shifts:', error);
-    }
+function getDateKeyLocal(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
-// Schedule the cron job to run every day at 10:00 PM (22:00)
-// Cron format: minute hour day month dayOfWeek
-// '0 22 * * *' means: at minute 0 of hour 22 (10 PM) every day
-cron.schedule('0 22 * * *', autoEndShifts);
+async function callUserEndShiftFlow(userId, endTimeIso) {
+  const req = {
+    user: { _id: userId },
+    body: { endTime: endTimeIso },
+  };
 
-console.log('[Auto End Shifts] Scheduler running - will auto-end shifts at 10:00 PM daily');
+  return new Promise((resolve, reject) => {
+    const res = {
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        const statusCode = this.statusCode || 200;
+        if (statusCode >= 400) {
+          reject(new Error(payload?.message || 'Unknown end-shift error'));
+          return this;
+        }
+        resolve(payload);
+        return this;
+      },
+    };
+
+    Promise.resolve(payrollCtrl.logEndTime(req, res)).catch(reject);
+  });
+}
+
+async function resolveTruckIdForDay(payroll, startOfDay, endOfDay) {
+  if (payroll.truckId) return payroll.truckId;
+
+  const range = await UnitAssignmentLogRange.findOne({
+    type: { $in: ['driver', 'helper'] },
+    refId: payroll.userId,
+    startAt: { $lte: endOfDay },
+    $or: [{ endAt: null }, { endAt: { $gte: startOfDay } }],
+  })
+    .sort({ startAt: -1 })
+    .select('truckId')
+    .lean();
+
+  return range?.truckId || null;
+}
+
+async function autoEndShifts() {
+  try {
+    const now = new Date();
+    const targetDay = new Date(now);
+    targetDay.setDate(targetDay.getDate() - 1);
+
+    const startOfDay = new Date(targetDay);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(targetDay);
+    endOfDay.setHours(23, 59, 59, 999);
+    const dateKey = getDateKeyLocal(targetDay);
+
+    const activePayrolls = await Payroll.find({
+      endTime: null,
+      startTime: { $gte: startOfDay, $lte: endOfDay },
+    }).select('_id userId truckId startTime');
+
+    let payrollsEnded = 0;
+    let skipped = 0;
+
+    for (const payroll of activePayrolls) {
+      try {
+        const truckId = await resolveTruckIdForDay(payroll, startOfDay, endOfDay);
+        if (!truckId) {
+          skipped++;
+          continue;
+        }
+
+        const assignment = await getAssignedForDayFromRanges(truckId, dateKey);
+        const effectiveHelperId = assignment?.helperId || null;
+
+        const [targetHolder, lastCompletedTask] = await Promise.all([
+          effectiveHelperId
+            ? Helper.findById(effectiveHelperId).select('end_location').lean()
+            : Driver.findById(payroll.userId).select('end_location').lean(),
+          Task.findOne({
+            truckId,
+            taskStatus: 'Completed',
+            finishDate: { $gte: startOfDay, $lte: endOfDay },
+          })
+            .sort({ finishDate: -1 })
+            .select('finishDate location'),
+        ]);
+
+        const targetCoords = targetHolder?.end_location?.coordinates;
+        const lastTaskCoords = lastCompletedTask?.location?.coordinates;
+
+        if (
+          !lastCompletedTask ||
+          !Array.isArray(lastTaskCoords) ||
+          lastTaskCoords.length < 2 ||
+          !Array.isArray(targetCoords) ||
+          targetCoords.length < 2
+        ) {
+          skipped++;
+          continue;
+        }
+
+        const mapboxApiKey = process.env.MAPBOX_API_KEY;
+        if (!mapboxApiKey) {
+          skipped++;
+          continue;
+        }
+
+        const route = await getMapboxRouteWithTraffic(
+          Number(lastTaskCoords[0]),
+          Number(lastTaskCoords[1]),
+          Number(targetCoords[0]),
+          Number(targetCoords[1]),
+          mapboxApiKey
+        );
+
+        if (!route || !Number.isFinite(route.durationMin)) {
+          skipped++;
+          continue;
+        }
+
+        const computedEndTime = new Date(
+          new Date(lastCompletedTask.finishDate).getTime() +
+            Math.round(route.durationMin * 60 * 1000)
+        );
+
+        if (!(computedEndTime > payroll.startTime)) {
+          skipped++;
+          continue;
+        }
+
+        await callUserEndShiftFlow(payroll.userId, computedEndTime.toISOString());
+        payrollsEnded++;
+      } catch (innerError) {
+        skipped++;
+        console.error(
+          `[Auto End Shifts] Failed payroll ${payroll._id}:`,
+          innerError.message
+        );
+      }
+    }
+    console.log(
+      `[Auto End Shifts] Completed for ${dateKey}: ended=${payrollsEnded}, skipped=${skipped}, total=${activePayrolls.length}`
+    );
+  } catch (error) {
+    console.error('[Auto End Shifts] Error ending shifts:', error);
+  }
+}
+
+// Schedule the cron job to run every day at midnight.
+// Cron format: minute hour day month dayOfWeek
+// '0 0 * * *' means: at minute 0 of hour 0 every day.
+cron.schedule('0 0 * * *', autoEndShifts);
+
+console.log(
+  '[Auto End Shifts] Scheduler running - will auto-end shifts at midnight daily'
+);
 
 module.exports = { autoEndShifts };
 

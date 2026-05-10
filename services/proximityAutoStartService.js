@@ -3,6 +3,7 @@ const Helper = require('../models/Helper');
 const Driver = require('../models/Driver');
 const DriverHelperProximityState = require('../models/DriverHelperProximityState');
 const loggingService = require('./loggingService');
+const { getAssignedForDayFromRanges } = require('./unitAssignmentLogService');
 
 const THROTTLE_MS = Number(process.env.DRIVER_HELPER_PROXIMITY_THROTTLE_MS || 15000);
 const ARRIVAL_METERS = Number(process.env.DRIVER_HELPER_ARRIVAL_METERS || 80);
@@ -99,31 +100,51 @@ async function processDriverLocationUpdate({
   const truck = await Truck.findOne({ driverId: actorUserId }).select(
     '_id driverId helperId'
   );
-  if (!truck || !truck.helperId) {
-    return { skipped: true, reason: 'missing-truck-or-helper' };
+  if (!truck) {
+    return { skipped: true, reason: 'missing-truck' };
   }
 
-  const helper = await Helper.findById(truck.helperId).select(
-    '_id username role roleType location'
-  );
-  const helperCoords = helper?.location?.coordinates;
-  if (!helper || !Array.isArray(helperCoords) || helperCoords.length < 2) {
-    return { skipped: true, reason: 'helper-location-missing' };
+  const dateKey = getTodayDateKeyLocal();
+  const assigned = await getAssignedForDayFromRanges(truck._id, dateKey);
+  const effectiveHelperId = assigned?.helperId || truck.helperId || null;
+  const hasHelperAssigned = Boolean(effectiveHelperId);
+  let targetCoords = null;
+
+  if (hasHelperAssigned) {
+    const helper = await Helper.findById(effectiveHelperId).select(
+      '_id username role roleType start_location'
+    );
+    targetCoords = helper?.start_location?.coordinates;
+
+    if (!helper || !Array.isArray(targetCoords) || targetCoords.length < 2) {
+      return { skipped: true, reason: 'helper-start-location-missing' };
+    }
+  } else {
+    const soloDriver = await Driver.findById(actorUserId).select('start_location');
+    targetCoords = soloDriver?.start_location?.coordinates;
+
+    if (!soloDriver || !Array.isArray(targetCoords) || targetCoords.length < 2) {
+      return { skipped: true, reason: 'driver-start-location-missing' };
+    }
   }
 
-  const helperLng = Number(helperCoords[0]);
-  const helperLat = Number(helperCoords[1]);
-  if (!Number.isFinite(helperLat) || !Number.isFinite(helperLng)) {
-    return { skipped: true, reason: 'helper-location-invalid' };
+  const targetLng = Number(targetCoords[0]);
+  const targetLat = Number(targetCoords[1]);
+  if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) {
+    return {
+      skipped: true,
+      reason: hasHelperAssigned
+        ? 'helper-start-location-invalid'
+        : 'driver-start-location-invalid',
+    };
   }
 
   const distanceMeters = haversineMeters(
     Number(latitude),
     Number(longitude),
-    helperLat,
-    helperLng
+    targetLat,
+    targetLng
   );
-  const dateKey = getTodayDateKeyLocal();
   const milestones = parseMilestonesFromEnv();
 
   const state =
@@ -135,12 +156,12 @@ async function processDriverLocationUpdate({
       truckId: truck._id,
       dateKey,
       driverId: truck.driverId,
-      helperId: truck.helperId,
+      helperId: effectiveHelperId || truck.driverId,
       milestonesReached: [],
     });
 
   state.driverId = truck.driverId;
-  state.helperId = truck.helperId;
+  state.helperId = effectiveHelperId || truck.driverId;
   state.lastDistanceMeters = Math.round(distanceMeters);
 
   const reachedSet = new Set((state.milestonesReached || []).map(Number));

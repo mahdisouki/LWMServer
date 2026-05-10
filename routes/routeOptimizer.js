@@ -48,7 +48,9 @@ router.post(
   '/external/recalculate-truck',
   routeOptimizerCtrl.recalculateTruckRoute
 );
-
+router.post("/external/refresh",
+  routeOptimizerCtrl.refreshRoute
+);
 /**
  * POST /api/route-optimizer/external/request-tipping
  * Body: { truck_id, van_id?, jobs_date, remaining_jobs, last_completed_job_location? }

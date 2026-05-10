@@ -679,6 +679,307 @@ async function recalculateTruckRoute(req, res) {
 }
 
 /**
+ * POST /api/route-optimizer/external/recalculate-truck
+ * Body: { date: string|Date, truckId: string, persist?: boolean (default true) }
+ * Reads Truck.tasks[date] (tasks + TippingRequest order), builds jobs with coords, order, type (task|TippingRequest),
+ * calls external POST .../api/v1/recalculate-route for this truck only, returns routes[truckId]. Optionally persists new order on the truck.
+ */
+async function refreshRoute(req, res) {
+  try {
+    const { truckId, date: bodyDate, persist = true } = req.body;
+    if (!truckId) {
+      return res.status(400).json({ message: 'truckId is required in body' });
+    }
+    if (!bodyDate) {
+      return res.status(400).json({ message: 'date is required in body' });
+    }
+
+    const inputDate = new Date(bodyDate);
+    if (isNaN(inputDate.getTime())) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
+    const dateStr = inputDate.toISOString().split('T')[0];
+
+    const truck = await Truck.findById(truckId);
+    if (!truck) {
+      return res.status(404).json({ message: 'Truck not found' });
+    }
+
+    if (!truck.tasks || !truck.tasks.has(dateStr)) {
+      return res.status(400).json({
+        message: 'No saved route for this truck on the given date',
+        truckId: truck._id.toString(),
+        date: dateStr,
+      });
+    }
+
+    let segments = [...truck.tasks.get(dateStr)].map(plainTruckRouteSegment);
+    segments.sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    if (!segments.length) {
+      return res.status(400).json({
+        message: 'Route list is empty for this date',
+        truckId: truck._id.toString(),
+        date: dateStr,
+      });
+    }
+
+    const jobs = [];
+    const skipped = [];
+    const routeKey = truck._id.toString();
+    const logPrefix = '[recalculateTruckRoute]';
+
+    console.log(logPrefix, 'build jobs', {
+      truckId: routeKey,
+      date: dateStr,
+      segmentCount: segments.length,
+      segmentsPreview: segments.map((s, i) => ({
+        index: i,
+        order: s.order,
+        type: s.type,
+        taskId: normalizeMongoId(s.taskId),
+        taskIdRawType: s.taskId == null ? 'nullish' : typeof s.taskId,
+      })),
+    });
+
+    for (let segIndex = 0; segIndex < segments.length; segIndex++) {
+      const seg = segments[segIndex];
+      const idStr = normalizeMongoId(seg.taskId);
+      if (!idStr) {
+        console.warn(logPrefix, 'skip segment: missing taskId', {
+          segIndex,
+          order: seg.order,
+          type: seg.type,
+          keys: seg && typeof seg === 'object' ? Object.keys(seg) : [],
+          taskIdValue: seg.taskId,
+        });
+        skipped.push({ segment: seg, reason: 'missing taskId' });
+        continue;
+      }
+      const isTip = seg.type === 'TippingRequest';
+      const order = Number.isFinite(Number(seg.order)) ? Number(seg.order) : segIndex + 1;
+      const type = isTip ? 'TippingRequest' : 'task';
+
+      if (isTip) {
+        const tip = await TippingRequest.findById(idStr).populate('tippingPlace');
+        const coords = tip?.tippingPlace?.location?.coordinates;
+        if (!coords || coords.length < 2) {
+          const placeId =
+            tip?.tippingPlace?._id != null
+              ? String(tip.tippingPlace._id)
+              : tip?.tippingPlace != null
+                ? String(tip.tippingPlace)
+                : null;
+          console.warn(logPrefix, 'skip TippingRequest: no coordinates', {
+            tippingRequestId: idStr,
+            tippingRequestFound: !!tip,
+            tippingPlaceId: placeId,
+            tippingPlacePopulated: !!(tip && tip.tippingPlace && typeof tip.tippingPlace === 'object'),
+            coordinates: coords,
+            locationKeys:
+              tip?.tippingPlace?.location && typeof tip.tippingPlace.location === 'object'
+                ? Object.keys(tip.tippingPlace.location)
+                : [],
+          });
+          skipped.push({ taskId: idStr, type: 'TippingRequest', reason: 'no tipping place coordinates' });
+          continue;
+        }
+        jobs.push({
+          job_id: idStr,
+          lat: coords[1],
+          lng: coords[0],
+          order,
+          type,
+        });
+      } else {
+        const task = await Task.findById(idStr);
+        const coords = task?.location?.coordinates;
+        if (!coords || coords.length < 2) {
+          console.warn(logPrefix, 'skip task: no coordinates', {
+            taskId: idStr,
+            taskFound: !!task,
+            coordinates: coords,
+            locationKeys:
+              task?.location && typeof task.location === 'object' ? Object.keys(task.location) : [],
+          });
+          skipped.push({ taskId: idStr, type: 'task', reason: 'no task location coordinates' });
+          continue;
+        }
+        jobs.push({
+          job_id: idStr,
+          lat: coords[1],
+          lng: coords[0],
+          taskDuration:
+            typeof task.taskDuration === 'number' && task.taskDuration >= 0 ? task.taskDuration : 10,
+          spaceOfVan:
+            typeof task.spaceOfVan === 'number' && task.spaceOfVan >= 0 ? task.spaceOfVan : 0,
+          order,
+          type,
+        });
+      }
+    }
+
+    if (!jobs.length) {
+      const skipReasons = skipped.reduce((acc, s) => {
+        const r = s.reason || 'unknown';
+        acc[r] = (acc[r] || 0) + 1;
+        return acc;
+      }, {});
+      console.warn(logPrefix, 'no jobs with coordinates — returning 400', {
+        truckId: routeKey,
+        date: dateStr,
+        jobsBuilt: jobs.length,
+        skippedCount: skipped.length,
+        skipReasons,
+        skipped,
+      });
+      return res.status(400).json({
+        message: 'No jobs with coordinates to optimize (check tasks and tipping places)',
+        skipped,
+        truckId: truck._id.toString(),
+        date: dateStr,
+      });
+    }
+
+    const assignment = await getAssignedForDayFromRanges(truck._id, dateStr);
+    let helper = null;
+    if (assignment.helperId) {
+      helper = await Helper.findById(assignment.helperId).select('start_location end_location');
+    }
+
+    const payload = {
+      jobs,
+      truck_contexts: [
+        {
+          van_id: assignment.vanId ? assignment.vanId.toString() : null,
+          truck_id: truck._id.toString(),
+          start_location: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
+          end_location: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+        },
+      ],
+    };
+
+    const optimizerUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/recalculate-route`;
+    const startedAtMs = Date.now();
+    const { data, status, headers: responseHeaders } = await axios.post(optimizerUrl, payload, {
+      timeout: 120000,
+      validateStatus: () => true,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const elapsedMs = Date.now() - startedAtMs;
+
+    const responseBodyPreview =
+      typeof data === 'string'
+        ? data
+        : JSON.stringify(data);
+
+    console.log(logPrefix, 'optimizer API response', {
+      url: optimizerUrl,
+      httpStatus: status,
+      elapsedMs,
+      responseHeaders,
+      body: data,
+      bodyPreview: responseBodyPreview && responseBodyPreview.length > 4000
+        ? `${responseBodyPreview.slice(0, 4000)}...[truncated]`
+        : responseBodyPreview,
+    });
+
+    if (status !== 200) {
+      return res.status(status >= 500 ? 502 : status).json({
+        message: data?.detail || data?.message || 'External route optimizer request failed',
+        ...(data && typeof data === 'object' && { detail: data }),
+      });
+    }
+
+    const hasSingularRouteShape = data && typeof data.route === 'object' && data.route !== null;
+    const hasPluralRoutesShape = data && typeof data.routes === 'object' && data.routes !== null;
+
+    if (!hasSingularRouteShape && !hasPluralRoutesShape) {
+      return res.status(502).json({
+        message: 'External route optimizer response shape is invalid (expected route or routes)',
+        detail: data,
+      });
+    }
+
+    const routes = hasPluralRoutesShape ? data.routes : {};
+    const truckRoute = hasSingularRouteShape
+      ? data.route
+      : (routes[routeKey] || null);
+
+    let persisted = false;
+    if (persist !== false && truckRoute && Array.isArray(truckRoute.route_segments)) {
+      if (!truck.tasks) truck.tasks = new Map();
+      truck.tasks.set(dateStr, []);
+      truck.markModified('tasks');
+
+      const routeSegments = truckRoute.route_segments;
+      for (let i = 0; i < routeSegments.length; i++) {
+        const segment = routeSegments[i];
+        if (!segment || typeof segment !== 'object') continue;
+
+        const rawTaskId = segment.taskId;
+        const taskIdStr =
+          typeof rawTaskId === 'string'
+            ? rawTaskId
+            : rawTaskId && typeof rawTaskId === 'object' && rawTaskId.$oid
+              ? rawTaskId.$oid
+              : rawTaskId && typeof rawTaskId.toString === 'function'
+                ? rawTaskId.toString()
+                : null;
+        if (!taskIdStr) continue;
+
+        const order = Number.isFinite(Number(segment.order)) ? Number(segment.order) : i + 1;
+        const segType = segment.type === 'TippingRequest' ? 'TippingRequest' : 'task';
+
+        if (segType === 'TippingRequest') {
+          await TippingRequest.findByIdAndUpdate(taskIdStr, { truckId: truck._id });
+          truck.addTippingRequest(dateStr, taskIdStr, order);
+        } else {
+          await Task.findByIdAndUpdate(taskIdStr, { truckId: truck._id });
+          truck.addTask(dateStr, taskIdStr, order);
+        }
+      }
+      await truck.save();
+      persisted = true;
+
+      try {
+        const mockReq = { body: { date: dateStr } };
+        const mockRes = { status: () => ({ json: () => {} }), json: () => {} };
+        await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+      } catch (dailySheetErr) {
+        console.error('Route optimizer recalculate-truck: daily sheet sync error', dailySheetErr);
+      }
+    }
+
+    return res.status(200).json({
+      success: data.success !== false,
+      truckId: routeKey,
+      date: dateStr,
+      payload_jobs_count: jobs.length,
+      skipped,
+      persisted,
+      route: truckRoute,
+      routes: hasPluralRoutesShape
+        ? routes
+        : { [routeKey]: truckRoute },
+      api_calls_used: data.api_calls_used ?? 0,
+      summary: data.summary && typeof data.summary === 'object' ? data.summary : undefined,
+    });
+  } catch (error) {
+    console.error('Route optimizer recalculate-truck error:', error);
+    if (isOptimizerTransportFailure(error)) {
+      const { status, body } = responseFromOptimizerNetworkError(error, 'recalculate-truck');
+      return res.status(status).json(body);
+    }
+    return res.status(500).json({
+      message: 'Recalculate truck route failed',
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
+
+/**
  * POST /api/route-optimizer/external/request-tipping
  * Body: {
  *   driverId?: string,
@@ -896,4 +1197,5 @@ module.exports = {
   calculateRoutesExternal,
   recalculateTruckRoute,
   requestBestTippingPlace,
+  refreshRoute
 };
