@@ -150,6 +150,41 @@ async function notifyUserEndShiftRequestSubmitted(userId, endShiftRequest) {
   }
 }
 
+async function notifyUserEndShiftRequestApproved(
+  userId,
+  endShiftRequest,
+  payroll,
+  approvedByUser = null
+) {
+  try {
+    const sender =
+      approvedByUser?.username ||
+      `${approvedByUser?.firstName || ''} ${approvedByUser?.lastName || ''}`.trim() ||
+      'Back office';
+    const endTime =
+      payroll?.endTime instanceof Date
+        ? payroll.endTime.toISOString()
+        : payroll?.endTime
+          ? new Date(payroll.endTime).toISOString()
+          : null;
+    await emitNotificationToUser(
+      userId.toString(),
+      'Payroll',
+      'Your end shift request was approved. Your shift has been closed and your payroll has been updated.',
+      sender,
+      {
+        kind: 'EndShiftRequestApproved',
+        endShiftRequestId: endShiftRequest._id.toString(),
+        payrollId: payroll._id.toString(),
+        dateKey: endShiftRequest.dateKey,
+        endTime,
+      }
+    );
+  } catch (err) {
+    console.error('notifyUserEndShiftRequestApproved:', err);
+  }
+}
+
 const PayrollCtrl = {
   // Log start time at the beginning of the day
   logStartTime: async (req, res) => {
@@ -1235,6 +1270,13 @@ const PayrollCtrl = {
 
       shiftReq.status = 'Approved';
       await shiftReq.save();
+
+      await notifyUserEndShiftRequestApproved(
+        shiftReq.userId,
+        shiftReq,
+        finalized.payroll,
+        req.user
+      );
 
       res.status(200).json({
         message: 'End shift request approved; payroll closed using last completed job finish time.',
