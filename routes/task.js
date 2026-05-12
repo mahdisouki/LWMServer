@@ -197,6 +197,46 @@
  *         description: Failed to update tasks
  */
 
+/**
+ * @swagger
+ * /api/task/{taskId}/mark-on-hold:
+ *   post:
+ *     summary: Driver puts a task on hold
+ *     description: Allows the driver assigned to the task's truck (main or extra) to change the task status to "On_Hold". Admins are notified.
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the task to put on hold
+ *     responses:
+ *       200:
+ *         description: Task marked as On_Hold successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 task:
+ *                   $ref: '#/components/schemas/Task'
+ *       400:
+ *         description: Task cannot be put on hold from its current status
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Driver is not assigned to this task
+ *       404:
+ *         description: Task not found
+ *       500:
+ *         description: Failed to put task on hold
+ */
+
 const express = require('express');
 const router = express.Router();
 const taskCtrl = require('../controllers/taskCtrl');
@@ -222,6 +262,7 @@ router.get('/tasks/stats/top-postcodes', taskCtrl.getTop10PostcodesInOrders);
 router.get('/task/:taskId', taskCtrl.getTaskById);
 router.get('/task/order-number/:orderNumber', taskCtrl.getTaskByOrderNumber);
 router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
+router.post('/task/:taskId/mark-on-hold', isAuth, taskCtrl.markTaskOnHold);
 router.put("/tasks/:taskId/traiter", isAuth, checkRole('Admin'), taskCtrl.traiterTask);
 router.put('/task/:taskId', multer.array('clientObjectPhotos'), isAuth, taskCtrl.updateTask);
 router.put('/tasks/:taskId/moveTruck', isAuth, checkRole('Admin'), taskCtrl.moveTaskToAnotherTruck);

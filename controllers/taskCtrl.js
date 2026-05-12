@@ -3221,6 +3221,159 @@ const taskCtrl = {
     }
   },
 
+  /**
+   * Allow a driver (or any authenticated user assigned to the task) to put a
+   * job on hold. Sets taskStatus to "On_Hold", logs the change and notifies
+   * all admins.
+   */
+  markTaskOnHold: async (req, res) => {
+    const { taskId } = req.params;
+
+    try {
+      const task = await Task.findById(taskId);
+
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      if (['Completed', 'Cancelled', 'On_Hold'].includes(task.taskStatus)) {
+        return res.status(400).json({
+          message: `Cannot put task on hold while status is ${task.taskStatus}`,
+        });
+      }
+
+      // If the caller is a Driver, make sure they are the one assigned
+      // (either as main or extra driver) to this task's truck.
+      if (req.user && req.user.roleType === 'Driver') {
+        if (!task.truckId) {
+          return res.status(403).json({
+            message: 'Task is not assigned to any truck',
+          });
+        }
+
+        const truck = await Truck.findById(task.truckId)
+          .select('driverId extraDrivers')
+          .lean();
+
+        const driverIdStr = req.user._id.toString();
+        const isMainDriver =
+          truck && truck.driverId && truck.driverId.toString() === driverIdStr;
+        const isExtraDriver =
+          truck &&
+          Array.isArray(truck.extraDrivers) &&
+          truck.extraDrivers.some(
+            (d) => d.driverId && d.driverId.toString() === driverIdStr,
+          );
+
+        if (!isMainDriver && !isExtraDriver) {
+          return res.status(403).json({
+            message: 'You are not assigned to this task',
+          });
+        }
+      }
+
+      const oldStatus = task.taskStatus;
+      const oldStartDate = task.startDate;
+
+      // On_Hold is treated as "not started yet" (like New). Clear any
+      // start/finish/time tracking so that resuming via mark_start behaves
+      // exactly like starting a New task.
+      task.taskStatus = 'On_Hold';
+      task.startDate = null;
+      task.finishDate = null;
+      task.timeSpent = null;
+
+      await task.save();
+
+      if (req.user) {
+        await loggingService.createLog({
+          userId: req.user._id,
+          username: req.user.username,
+          action: 'UPDATE',
+          entityType: 'TASK',
+          entityId: taskId,
+          changes: {
+            before: { taskStatus: oldStatus, startDate: oldStartDate },
+            after: { taskStatus: task.taskStatus, startDate: null },
+          },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+      }
+
+      if (task.googleCalendarEventId) {
+        try {
+          let adminId = null;
+          if (req.user && req.user.role && req.user.role.includes('Admin')) {
+            adminId = req.user._id;
+          } else {
+            const admin = await User.findOne({
+              role: 'Admin',
+              gmailTokens: { $exists: true, $ne: null },
+            });
+            if (admin) adminId = admin._id;
+          }
+
+          if (adminId) {
+            await updateCalendarEvent(
+              adminId.toString(),
+              task,
+              task.googleCalendarEventId,
+            );
+            console.log(
+              '✅ Calendar event updated for order:',
+              task.orderNumber,
+            );
+          }
+        } catch (calendarError) {
+          if (
+            calendarError.message?.includes('CALENDAR_SCOPE_MISSING') ||
+            calendarError.message?.includes('INVALID_GRANT')
+          ) {
+            console.error('⚠️ Calendar integration requires re-authentication.');
+          } else {
+            console.error(
+              '❌ Error updating calendar event:',
+              calendarError.message,
+            );
+          }
+        }
+      }
+
+      try {
+        const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+        const orderNumber = task.orderNumber || task._id;
+        const notificationMessage = `Driver ${req.user?.username || ''} put task order #${orderNumber} on hold.`;
+
+        for (const admin of adminUsers) {
+          if (admin._id) {
+            await emitNotificationToUser(
+              admin._id.toString(),
+              'Orders',
+              notificationMessage,
+              req.user?.username || null,
+            );
+          }
+        }
+      } catch (notificationError) {
+        console.error(
+          'Error sending on-hold notification to admins:',
+          notificationError,
+        );
+      }
+
+      return res.status(200).json({
+        message: 'Task marked as On_Hold successfully',
+        task,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to put task on hold',
+        error: error.message,
+      });
+    }
+  },
+
   processTaskPayment: async (req, res) => {
     const { taskId } = req.params;
     const { paymentType, paymentAmountType } = req.body;
