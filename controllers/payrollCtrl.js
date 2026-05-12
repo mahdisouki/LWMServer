@@ -131,6 +131,25 @@ async function notifyAdminsOfPendingEndShiftRequest(endShiftRequest, requestingU
   }
 }
 
+async function notifyUserEndShiftRequestSubmitted(userId, endShiftRequest) {
+  try {
+    await emitNotificationToUser(
+      userId.toString(),
+      'Payroll',
+      'Your end shift request was sent to the back office. Please wait until it is approved before your shift can be closed.',
+      'Back office',
+      {
+        kind: 'EndShiftRequestSubmitted',
+        endShiftRequestId: endShiftRequest._id.toString(),
+        payrollId: endShiftRequest.payrollId?.toString?.() ?? String(endShiftRequest.payrollId),
+        dateKey: endShiftRequest.dateKey,
+      }
+    );
+  } catch (err) {
+    console.error('notifyUserEndShiftRequestSubmitted:', err);
+  }
+}
+
 const PayrollCtrl = {
   // Log start time at the beginning of the day
   logStartTime: async (req, res) => {
@@ -330,6 +349,7 @@ const PayrollCtrl = {
           await notifyAdminsOfPendingEndShiftRequest(endShiftRequest, req.user, {
             isNew: isNewEndShiftRequest,
           });
+          await notifyUserEndShiftRequestSubmitted(userId, endShiftRequest);
           return res.status(resolved.status).json({
             message: resolved.message,
             code: resolved.code,

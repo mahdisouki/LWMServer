@@ -78,6 +78,7 @@ async function assertNoRemainingTasksOnTruckForDateKey(truckId, dateKey) {
   const { startOfDay, tomorrow } = bounds;
   const countedTasks = await getCountedTasksForTruckDay(truckId, startOfDay, tomorrow);
   const incomplete = countedTasks.filter((t) => t.taskStatus !== 'Completed');
+  console.log('incomplete', incomplete);
   if (incomplete.length > 0) {
     return {
       ok: false,
