@@ -7,6 +7,7 @@ const DailySheet = require('../models/DailySheet');
 const PcnDamage = require('../models/PcnDamage');
 const Expense = require('../models/Expense');
 const pcnDamageController = require('./pcnDamageController');
+const { resolvePayrollEndTimeFromJobs } = require('../services/payrollEndTimeService');
 
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
@@ -175,15 +176,18 @@ const PayrollCtrl = {
           .json({ message: 'Start time not logged for today.' });
       }
 
-      const end = new Date(endTime);
-      const start = payroll.startTime;
-
-      if (end <= start) {
-        return res
-          .status(400)
-          .json({ message: 'End time must be after start time.' });
+      const resolved = await resolvePayrollEndTimeFromJobs({
+        payroll,
+        fallbackEndTimeIso: endTime,
+        mapboxApiKey: process.env.MAPBOX_API_KEY,
+      });
+      if (!resolved.ok) {
+        return res.status(resolved.status).json({ message: resolved.message });
       }
-
+      console.log('resolved', resolved);
+      const end = resolved.end;
+      const start = payroll.startTime;
+      console.log('end', end);
       const totalHoursWorked = round2((end - start) / (1000 * 3600)); // Convert milliseconds to hours
 
       const user = await User.findById(userId);

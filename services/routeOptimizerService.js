@@ -33,6 +33,10 @@ async function getMapboxRouteWithTraffic(
     language: 'en',
   };
 
+  const logMapbox = (phase, payload) => {
+    console.error('[MapboxDirections]', JSON.stringify({ phase, ...payload }));
+  };
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const { data, status } = await axios.get(url, {
@@ -51,6 +55,14 @@ async function getMapboxRouteWithTraffic(
       }
 
       if (status === 429) {
+        logMapbox('rate_limited', {
+          attempt: attempt + 1,
+          maxRetries,
+          startLon,
+          startLat,
+          endLon,
+          endLat,
+        });
         if (attempt < maxRetries - 1) {
           await sleep(2 ** attempt * 1000);
           continue;
@@ -60,6 +72,20 @@ async function getMapboxRouteWithTraffic(
 
       const errorCode = data.code || 'Unknown';
       const errorMsg = data.message || `HTTP ${status}`;
+
+      if (status !== 200 || data.code !== 'Ok') {
+        logMapbox('response_not_ok', {
+          attempt: attempt + 1,
+          maxRetries,
+          httpStatus: status,
+          mapboxCode: errorCode,
+          mapboxMessage: errorMsg,
+          startLon,
+          startLat,
+          endLon,
+          endLat,
+        });
+      }
 
       if (errorCode === 'NoRoute' || (errorMsg && errorMsg.includes('No route'))) {
         const R = 6371000; // metres
@@ -99,7 +125,27 @@ async function getMapboxRouteWithTraffic(
                 routeCoords: coords,
               };
             }
-          } catch (_) {}
+            logMapbox('driving_profile_fallback_failed', {
+              httpStatus: alt.status,
+              mapboxCode: alt.data?.code,
+              mapboxMessage: alt.data?.message,
+              startLon,
+              startLat,
+              endLon,
+              endLat,
+            });
+          } catch (altErr) {
+            logMapbox('driving_profile_fallback_error', {
+              message: altErr.message,
+              code: altErr.code,
+              httpStatus: altErr.response?.status,
+              mapboxBody: altErr.response?.data,
+              startLon,
+              startLat,
+              endLon,
+              endLat,
+            });
+          }
         }
       }
 
@@ -107,8 +153,29 @@ async function getMapboxRouteWithTraffic(
         await sleep(1000);
         continue;
       }
+      logMapbox('exhausted_retries', {
+        lastHttpStatus: status,
+        lastMapboxCode: data?.code,
+        lastMapboxMessage: data?.message,
+        startLon,
+        startLat,
+        endLon,
+        endLat,
+      });
       return null;
     } catch (err) {
+      logMapbox('request_threw', {
+        attempt: attempt + 1,
+        maxRetries,
+        message: err.message,
+        code: err.code,
+        httpStatus: err.response?.status,
+        mapboxBody: err.response?.data,
+        startLon,
+        startLat,
+        endLon,
+        endLat,
+      });
       if (attempt < maxRetries - 1) {
         await sleep(1000);
         continue;
