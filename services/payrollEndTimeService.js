@@ -33,6 +33,97 @@ function getServerLocalDayBounds(now = new Date()) {
   };
 }
 
+/**
+ * Local midnight bounds for a calendar date key (YYYY-MM-DD), same semantics as getServerLocalDayBounds.
+ * @returns {{ startOfDay: Date, tomorrow: Date } | null}
+ */
+function getDayBoundsFromDateKey(dateKey) {
+  if (typeof dateKey !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    return null;
+  }
+  const [y, m, d] = dateKey.split('-').map((p) => parseInt(p, 10));
+  const startOfDay = new Date(y, m - 1, d, 0, 0, 0, 0);
+  if (
+    Number.isNaN(startOfDay.getTime()) ||
+    startOfDay.getFullYear() !== y ||
+    startOfDay.getMonth() !== m - 1 ||
+    startOfDay.getDate() !== d
+  ) {
+    return null;
+  }
+  const tomorrow = new Date(startOfDay);
+  tomorrow.setDate(startOfDay.getDate() + 1);
+  return { startOfDay, tomorrow };
+}
+
+async function getCountedTasksForTruckDay(truckId, startOfDay, tomorrow) {
+  return Task.find({
+    truckId,
+    date: { $gte: startOfDay, $lt: tomorrow },
+    taskStatus: { $nin: IGNORED_TASK_STATUSES },
+  })
+    .select('taskStatus')
+    .lean();
+}
+
+/**
+ * BO accept: all non-cancelled tasks on the truck for that local day must be Completed.
+ * @returns {Promise<{ ok: true } | { ok: false, status: number, message: string, remainingTasks?: Array<{ taskId: string, taskStatus: string }> }>}
+ */
+async function assertNoRemainingTasksOnTruckForDateKey(truckId, dateKey) {
+  const bounds = getDayBoundsFromDateKey(dateKey);
+  if (!bounds) {
+    return { ok: false, status: 400, message: 'Invalid date key on end shift request.' };
+  }
+  const { startOfDay, tomorrow } = bounds;
+  const countedTasks = await getCountedTasksForTruckDay(truckId, startOfDay, tomorrow);
+  const incomplete = countedTasks.filter((t) => t.taskStatus !== 'Completed');
+  if (incomplete.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        'You must move or complete all remaining tasks on this truck before accepting the end shift request.',
+      remainingTasks: incomplete.map((t) => ({
+        taskId: t._id?.toString?.() ?? String(t._id),
+        taskStatus: t.taskStatus,
+      })),
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * End time for BO-approved close: last completed task finish on that truck for the request's local day.
+ * @returns {Promise<{ ok: true, end: Date } | { ok: false, status: number, message: string }>}
+ */
+async function getLastCompletedFinishDateForTruckDay(truckId, dateKey) {
+  const bounds = getDayBoundsFromDateKey(dateKey);
+  if (!bounds) {
+    return { ok: false, status: 400, message: 'Invalid date key on end shift request.' };
+  }
+  const { startOfDay, tomorrow } = bounds;
+  const lastCompletedTask = await Task.findOne({
+    truckId,
+    taskStatus: 'Completed',
+    finishDate: { $gte: startOfDay, $lt: tomorrow },
+  })
+    .sort({ finishDate: -1 })
+    .select('finishDate')
+    .lean();
+
+  if (!lastCompletedTask?.finishDate) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        'No completed job with a finish time was found for this truck on that day; cannot set end time.',
+    };
+  }
+  const end = new Date(lastCompletedTask.finishDate);
+  return { ok: true, end };
+}
+
 async function resolveTruckIdForServerDay(payroll, startOfDay, endOfDay) {
   if (payroll.truckId) return payroll.truckId;
 
@@ -53,7 +144,10 @@ async function resolveTruckIdForServerDay(payroll, startOfDay, endOfDay) {
  * Resolve shift end time from today's truck jobs (server local day), Mapbox drive from last completed job to home, +5 min buffer.
  * Falls back to `fallbackEndTimeIso` when coords or Mapbox are unavailable.
  *
- * @returns {Promise<{ ok: true, end: Date } | { ok: false, status: number, message: string }>}
+ * @returns {Promise<
+ *   | { ok: true, end: Date }
+ *   | { ok: false, status: number, message: string; code?: string; truckId?: unknown; dateKey?: string; incompleteTasks?: Array<{ taskId: unknown; taskStatus: string }> }
+ * >}
  */
 function logResolve(msg, payload = {}) {
   const line = {
@@ -140,13 +234,7 @@ async function resolvePayrollEndTimeFromJobs({
     helperId: assignment?.helperId?.toString?.() ?? assignment?.helperId ?? null,
   });
 
-  const countedTasks = await Task.find({
-    truckId,
-    date: { $gte: startOfDay, $lt: tomorrow },
-    taskStatus: { $nin: IGNORED_TASK_STATUSES },
-  })
-    .select('taskStatus')
-    .lean();
+  const countedTasks = await getCountedTasksForTruckDay(truckId, startOfDay, tomorrow);
 
   const statusCounts = countedTasks.reduce((acc, t) => {
     acc[t.taskStatus] = (acc[t.taskStatus] || 0) + 1;
@@ -160,20 +248,29 @@ async function resolvePayrollEndTimeFromJobs({
     taskStatusCounts: statusCounts,
   });
 
-  for (const t of countedTasks) {
-    if (t.taskStatus !== 'Completed') {
-      logResolve('blocked_incomplete_task', {
-        payrollId,
-        truckId: truckId.toString?.() ?? String(truckId),
-        offendingTaskStatus: t.taskStatus,
-        taskId: t._id?.toString?.() ?? String(t._id),
-      });
-      return {
-        ok: false,
-        status: 400,
-        message: 'Complete all jobs for today before ending your shift.',
-      };
-    }
+  const incompleteTasks = countedTasks.filter((t) => t.taskStatus !== 'Completed');
+  if (incompleteTasks.length > 0) {
+    const first = incompleteTasks[0];
+    logResolve('blocked_incomplete_task', {
+      payrollId,
+      truckId: truckId.toString?.() ?? String(truckId),
+      offendingTaskStatus: first.taskStatus,
+      taskId: first._id?.toString?.() ?? String(first._id),
+      incompleteCount: incompleteTasks.length,
+    });
+    return {
+      ok: false,
+      status: 422,
+      code: 'INCOMPLETE_TASKS',
+      message:
+        'Complete all jobs for today before ending your shift. A back office request was created so they can close your shift if needed.',
+      truckId,
+      dateKey,
+      incompleteTasks: incompleteTasks.map((t) => ({
+        taskId: t._id,
+        taskStatus: t.taskStatus,
+      })),
+    };
   }
 
   const validateEndAfterStart = (end) =>
@@ -357,4 +454,7 @@ module.exports = {
   resolvePayrollEndTimeFromJobs,
   getServerLocalDayBounds,
   getDateKeyLocal,
+  getDayBoundsFromDateKey,
+  assertNoRemainingTasksOnTruckForDateKey,
+  getLastCompletedFinishDateForTruckDay,
 };
