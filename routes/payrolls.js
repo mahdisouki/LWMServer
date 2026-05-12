@@ -4,6 +4,7 @@ const router = express.Router();
 
 // Middleware to protect routes if needed
 const { isAuth } = require('../middlewares/auth');
+const { checkRole } = require('../middlewares/role');
 
 // Log start time for the day
 router.post('/payroll/log-start-time', isAuth, PayrollCtrl.logStartTime);
@@ -46,4 +47,18 @@ router.delete('/payroll/admin/delete/:payrollId', isAuth, PayrollCtrl.deletePayr
 router.put('/payroll/mark-paid/:payrollId', isAuth, PayrollCtrl.markPayrollAsPaid);
 router.get('/payroll/topExtra', PayrollCtrl.getTopExtraHoursThisWeek);
 router.get('/payroll/topExtraMonth', PayrollCtrl.getTopExtraHoursThisMonth);
+
+// Admin — process driver end-shift requests (incomplete jobs flow)
+router.put(
+  '/payroll/admin/end-shift-request/:requestId/accept',
+  isAuth,
+  checkRole('Admin'),
+  PayrollCtrl.acceptEndShiftRequest
+);
+router.put(
+  '/payroll/admin/end-shift-request/:requestId/reject',
+  isAuth,
+  checkRole('Admin'),
+  PayrollCtrl.rejectEndShiftRequest
+);
 module.exports = router;

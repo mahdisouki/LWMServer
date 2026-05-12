@@ -7,8 +7,129 @@ const DailySheet = require('../models/DailySheet');
 const PcnDamage = require('../models/PcnDamage');
 const Expense = require('../models/Expense');
 const pcnDamageController = require('./pcnDamageController');
+const {
+  resolvePayrollEndTimeFromJobs,
+  assertNoRemainingTasksOnTruckForDateKey,
+  getLastCompletedFinishDateForTruckDay,
+  getDayBoundsFromDateKey,
+} = require('../services/payrollEndTimeService');
+const EndShiftRequest = require('../models/EndShiftRequest');
+const { emitNotificationToUser } = require('../socket');
 
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+/**
+ * Persist payroll end + salary/cash/expense totals and bump user aggregates.
+ * @param {import('mongoose').Document} payroll - mutable payroll doc
+ * @param {import('mongoose').Types.ObjectId} userId
+ * @param {Date} end
+ * @param {{ startOfDay: Date, tomorrow: Date }} dayBounds - local day window for cash/expense queries
+ */
+async function finalizePayrollEndOfShift(payroll, userId, end, dayBounds) {
+  if (!(end > payroll.startTime)) {
+    return { ok: false, status: 400, message: 'End time must be after start time.' };
+  }
+
+  const start = payroll.startTime;
+  const totalHoursWorked = round2((end - start) / (1000 * 3600));
+
+  const user = await User.findById(userId);
+  if (!user) {
+    return { ok: false, status: 404, message: 'User not found.' };
+  }
+
+  const REGULAR_HOURS_LIMIT = user.regularHours;
+  let regularHours = totalHoursWorked;
+  let overtimeHours = 0;
+  let totalSalary = 0;
+
+  if (totalHoursWorked <= REGULAR_HOURS_LIMIT) {
+    regularHours = round2(totalHoursWorked);
+    overtimeHours = 0;
+    totalSalary = user.hourPrice;
+  } else {
+    regularHours = round2(REGULAR_HOURS_LIMIT);
+    overtimeHours = round2(totalHoursWorked - REGULAR_HOURS_LIMIT);
+    const dayPrice = user.hourPrice;
+    const overtimeSalary = round2(overtimeHours * user.extraHourPrice);
+    totalSalary = round2(dayPrice + overtimeSalary);
+  }
+
+  const { startOfDay, tomorrow } = dayBounds;
+  const tasks = await Task.find({
+    date: { $gte: startOfDay, $lt: tomorrow },
+    cashReceivedBy: userId,
+  });
+  const totalCash = round2(tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0));
+
+  const expenses = await Expense.find({
+    driverId: userId,
+    date: { $gte: startOfDay, $lt: tomorrow },
+  });
+  const totalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
+
+  const pcnDamages = await PcnDamage.find({
+    _id: { $in: payroll.pcnDamages || [] },
+  });
+  const totalPcnDamages = round2(pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0));
+
+  payroll.endTime = end;
+  payroll.totalHoursWorked = totalHoursWorked;
+  payroll.regularHours = round2(regularHours);
+  payroll.extraHours = round2(overtimeHours);
+  payroll.totalSalary = round2(totalSalary);
+  payroll.totalExpenses = totalExpenses;
+  payroll.totalPcnDamages = totalPcnDamages;
+  payroll.totalCash = totalCash;
+
+  user.totalHoursWorked = round2((user.totalHoursWorked || 0) + totalHoursWorked);
+  user.totalSalary = round2((user.totalSalary || 0) + payroll.totalSalary);
+
+  await payroll.save();
+  await user.save();
+  await payroll.populate('pcnDamages');
+
+  return { ok: true, payroll, user };
+}
+
+async function notifyAdminsOfPendingEndShiftRequest(endShiftRequest, requestingUser, { isNew } = {}) {
+  try {
+    const adminUsers = await User.find({
+      $or: [{ roleType: 'Admin' }, { role: 'Admin' }],
+    })
+      .select('_id')
+      .lean();
+
+    const driverName =
+      requestingUser?.username ||
+      `${requestingUser?.firstName || ''} ${requestingUser?.lastName || ''}`.trim() ||
+      'Staff';
+
+    const nIncomplete = (endShiftRequest.incompleteTasks || []).length;
+    const prefix = isNew ? 'New end shift request' : 'End shift request updated';
+    const message = `${prefix}: ${driverName} has ${nIncomplete} incomplete job(s) for ${endShiftRequest.dateKey}.`;
+
+    const metadata = {
+      kind: 'EndShiftRequest',
+      endShiftRequestId: endShiftRequest._id.toString(),
+      payrollId: endShiftRequest.payrollId?.toString?.() ?? String(endShiftRequest.payrollId),
+      userId: endShiftRequest.userId?.toString?.() ?? String(endShiftRequest.userId),
+      dateKey: endShiftRequest.dateKey,
+      incompleteTaskCount: nIncomplete,
+      isUpdate: !isNew,
+    };
+
+    const seen = new Set();
+    for (const admin of adminUsers) {
+      const id = admin._id?.toString();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      await emitNotificationToUser(id, 'Payroll', message, driverName, metadata);
+    }
+  } catch (err) {
+    console.error('notifyAdminsOfPendingEndShiftRequest:', err);
+  }
+}
 
 const PayrollCtrl = {
   // Log start time at the beginning of the day
@@ -175,102 +296,65 @@ const PayrollCtrl = {
           .json({ message: 'Start time not logged for today.' });
       }
 
-      const end = new Date(endTime);
-      const start = payroll.startTime;
-
-      if (end <= start) {
-        return res
-          .status(400)
-          .json({ message: 'End time must be after start time.' });
+      const resolved = await resolvePayrollEndTimeFromJobs({
+        payroll,
+        fallbackEndTimeIso: endTime,
+        mapboxApiKey: process.env.MAPBOX_API_KEY,
+      });
+      if (!resolved.ok) {
+        if (resolved.code === 'INCOMPLETE_TASKS') {
+          const driverNotes = req.body.notes || req.body.driverNotes;
+          let endShiftRequest = await EndShiftRequest.findOne({
+            payrollId: payroll._id,
+            status: 'Pending',
+          });
+          const isNewEndShiftRequest = !endShiftRequest;
+          if (!endShiftRequest) {
+            endShiftRequest = await EndShiftRequest.create({
+              userId,
+              payrollId: payroll._id,
+              truckId: resolved.truckId || payroll.truckId,
+              dateKey: resolved.dateKey,
+              requestedEndTime: new Date(endTime),
+              incompleteTasks: resolved.incompleteTasks || [],
+              driverNotes: driverNotes || undefined,
+            });
+          } else {
+            endShiftRequest.requestedEndTime = new Date(endTime);
+            endShiftRequest.incompleteTasks = resolved.incompleteTasks || [];
+            if (driverNotes != null) {
+              endShiftRequest.driverNotes = driverNotes;
+            }
+            await endShiftRequest.save();
+          }
+          await notifyAdminsOfPendingEndShiftRequest(endShiftRequest, req.user, {
+            isNew: isNewEndShiftRequest,
+          });
+          return res.status(resolved.status).json({
+            message: resolved.message,
+            code: resolved.code,
+            endShiftRequest,
+          });
+        }
+        return res.status(resolved.status).json({ message: resolved.message });
       }
-
-      const totalHoursWorked = round2((end - start) / (1000 * 3600)); // Convert milliseconds to hours
-
-      const user = await User.findById(userId);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found.' });
-      }
-
-      // If payroll has been reset, initialize new values
-      // if (user.payrollReset) {
-      //   user.totalHoursWorked = 0;
-      //   user.totalSalary = 0;
-      //   user.payrollReset = false; // Unset the reset flag
-      // }
-
-      const REGULAR_HOURS_LIMIT = user.regularHours; // 8 hours per day
-
-      // Calculate regular and overtime hours
-      let regularHours = totalHoursWorked;
-      let overtimeHours = 0;
-      let totalSalary = 0;
-
-      if (totalHoursWorked <= REGULAR_HOURS_LIMIT) {
-        // If driver works <= regular hours, get the day price (flat rate)
-        regularHours = round2(totalHoursWorked);
-        overtimeHours = 0;
-        totalSalary = user.hourPrice; // dayPrice (flat rate)
-      } else {
-        // If driver works > regular hours, get day price + extra hours * extra hour price
-        regularHours = round2(REGULAR_HOURS_LIMIT);
-        overtimeHours = round2(totalHoursWorked - REGULAR_HOURS_LIMIT);
-        const dayPrice = user.hourPrice; // dayPrice (regular hours rate becomes day rate)
-        const overtimeSalary = round2(overtimeHours * user.extraHourPrice);
-        totalSalary = round2(dayPrice + overtimeSalary);
-      }
-
-      // Get today's tasks and expenses for the user
+      const end = resolved.end;
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(today.getDate() + 1);
 
-      // Get all tasks for today where the user received cash
-      // Match by userId stored in cashReceivedBy
-      const tasks = await Task.find({
-        date: { $gte: today, $lt: tomorrow },
-        cashReceivedBy: userId,
+      const finalized = await finalizePayrollEndOfShift(payroll, userId, end, {
+        startOfDay: today,
+        tomorrow,
       });
-
-      // Calculate total cash received from tasks
-      const totalCash = round2(tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0));
-
-      // Calculate total expenses directly from Expense documents for this driver and date
-      let totalExpenses = 0;
-      // Keep expense totals consistent with expenseController payroll recalculation:
-      // sum by driver + date regardless of who added the expense.
-      const expenses = await Expense.find({
-        driverId: userId,
-        date: { $gte: today, $lt: tomorrow }
-      });
-      totalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
-
-      // Calculate PCN/Damages from the payroll assigned PCNs
-      const pcnDamages = await PcnDamage.find({
-        _id: { $in: payroll.pcnDamages || [] }
-      });
-      const totalPcnDamages = round2(pcnDamages.reduce((sum, pcn) => sum + (pcn.amount || 0), 0));
-
-      payroll.endTime = end;
-      payroll.totalHoursWorked = totalHoursWorked;
-      payroll.regularHours = round2(regularHours);
-      payroll.extraHours = round2(overtimeHours);
-      payroll.totalSalary = round2(totalSalary);
-      payroll.totalExpenses = totalExpenses;
-      payroll.totalPcnDamages = totalPcnDamages;
-      payroll.totalCash = totalCash;
-
-      // Update the user's total hours worked and total salary
-      user.totalHoursWorked = round2((user.totalHoursWorked || 0) + totalHoursWorked);
-      user.totalSalary = round2((user.totalSalary || 0) + payroll.totalSalary);
-
-      await payroll.save();
-      await user.save(); // Save updated user totals
-      await payroll.populate('pcnDamages');
+      if (!finalized.ok) {
+        return res.status(finalized.status).json({ message: finalized.message });
+      }
 
       res.status(200).json({
         message: 'End time logged and salary calculated successfully.',
-        payroll,
+        payroll: finalized.payroll,
       });
     } catch (error) {
       console.error('Error logging end time:', error);
@@ -1066,6 +1150,111 @@ const PayrollCtrl = {
     } catch (error) {
       res.status(500).json({
         message: "Failed to retrieve top extra hours staff for this month",
+        error: error.message,
+      });
+    }
+  },
+
+  /** Admin: accept end-shift request — truck must have no remaining tasks; payroll end = last completed task finish. */
+  acceptEndShiftRequest: async (req, res) => {
+    const { requestId } = req.params;
+    try {
+      const shiftReq = await EndShiftRequest.findById(requestId);
+      if (!shiftReq) {
+        return res.status(404).json({ message: 'End shift request not found.' });
+      }
+      if (shiftReq.status !== 'Pending') {
+        return res
+          .status(400)
+          .json({ message: 'This request is no longer pending.', status: shiftReq.status });
+      }
+
+      const payroll = await Payroll.findOne({ _id: shiftReq.payrollId, endTime: null });
+      if (!payroll) {
+        return res
+          .status(400)
+          .json({ message: 'Payroll not found or shift already ended.' });
+      }
+
+      if (!payroll.userId.equals(shiftReq.userId)) {
+        return res.status(400).json({ message: 'Request does not match payroll user.' });
+      }
+
+      const truckId = shiftReq.truckId || payroll.truckId;
+      if (!truckId) {
+        return res.status(400).json({ message: 'No truck on request or payroll; cannot validate tasks.' });
+      }
+
+      const truckCheck = await assertNoRemainingTasksOnTruckForDateKey(truckId, shiftReq.dateKey);
+      if (!truckCheck.ok) {
+        return res.status(truckCheck.status).json({
+          message: truckCheck.message,
+          remainingTasks: truckCheck.remainingTasks,
+        });
+      }
+
+      const endResult = await getLastCompletedFinishDateForTruckDay(truckId, shiftReq.dateKey);
+      if (!endResult.ok) {
+        return res.status(endResult.status).json({ message: endResult.message });
+      }
+
+      const dayBounds = getDayBoundsFromDateKey(shiftReq.dateKey);
+      if (!dayBounds) {
+        return res.status(400).json({ message: 'Invalid date key on end shift request.' });
+      }
+
+      const finalized = await finalizePayrollEndOfShift(
+        payroll,
+        shiftReq.userId,
+        endResult.end,
+        dayBounds
+      );
+      if (!finalized.ok) {
+        return res.status(finalized.status).json({ message: finalized.message });
+      }
+
+      shiftReq.status = 'Approved';
+      await shiftReq.save();
+
+      res.status(200).json({
+        message: 'End shift request approved; payroll closed using last completed job finish time.',
+        endShiftRequest: shiftReq,
+        payroll: finalized.payroll,
+      });
+    } catch (error) {
+      console.error('Error accepting end shift request:', error);
+      res.status(500).json({
+        message: 'Failed to accept end shift request.',
+        error: error.message,
+      });
+    }
+  },
+
+  /** Admin: reject end-shift request (payroll unchanged). */
+  rejectEndShiftRequest: async (req, res) => {
+    const { requestId } = req.params;
+    try {
+      const shiftReq = await EndShiftRequest.findById(requestId);
+      if (!shiftReq) {
+        return res.status(404).json({ message: 'End shift request not found.' });
+      }
+      if (shiftReq.status !== 'Pending') {
+        return res
+          .status(400)
+          .json({ message: 'This request is no longer pending.', status: shiftReq.status });
+      }
+
+      shiftReq.status = 'Rejected';
+      await shiftReq.save();
+
+      res.status(200).json({
+        message: 'End shift request rejected.',
+        endShiftRequest: shiftReq,
+      });
+    } catch (error) {
+      console.error('Error rejecting end shift request:', error);
+      res.status(500).json({
+        message: 'Failed to reject end shift request.',
         error: error.message,
       });
     }
