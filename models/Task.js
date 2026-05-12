@@ -255,6 +255,7 @@ const taskSchema = new Schema(
       enum: ['low', 'medium', 'high'],
       default: 'low',
     },
+    redflag: { type: Boolean, default: false },
     quotationId: {
       type: Schema.Types.ObjectId,
       ref: 'QuotationRequest', // Reference to your Quotation model

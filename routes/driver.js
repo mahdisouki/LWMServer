@@ -66,6 +66,7 @@ router.get('/driver/helper-info', isAuth, driverCtrl.getHelperInfoForDriver);
 router.post('/trucks/end/:truckId', isAuth, handleMulterError(multer.array('uploads', 20)), driverCtrl.updateTruckEnd);
 router.get('/trucks/status/:truckId', driverCtrl.getTruckFullStatus);
 router.put('/tasks/update-status/:taskId', isAuth, driverCtrl.updateJobStatus);
+router.put('/tasks/:taskId/redflag', isAuth, driverCtrl.updateTaskRedflag);
 router.put('/tasks/rate/:taskId', isAuth, handleMulterError(multer.single('signature')), driverCtrl.rateTask);
 
 // Task image uploads - allow up to 50 files per upload

@@ -943,6 +943,7 @@ const taskCtrl = {
         quotationId,
         couponCode, // Coupon code to apply
         priority,
+        redflag,
       } = req.body;
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
@@ -975,6 +976,7 @@ const taskCtrl = {
       // ✅ Convert FormData string to boolean
       // FormData sends boolean values as strings 'true' or 'false'
       const applyMinFeeBoolean = applyMinFee === 'true' || applyMinFee === true;
+      const redflagBoolean = redflag === 'true' || redflag === true;
       let applySundayFeeBoolean = req.body.applySundayFee === 'true' || req.body.applySundayFee === true;
 
       // For debugging: see what you get from frontend
@@ -1235,6 +1237,7 @@ const taskCtrl = {
         taskDuration: taskDuration || undefined,
         spaceOfVan: taskVanSpacePercent,
         ...(priorityToSet ? { priority: priorityToSet } : {}),
+        redflag: redflagBoolean,
       });
 
       const savedTask = await newTask.save();
@@ -2848,6 +2851,15 @@ const taskCtrl = {
             });
           }
           updates.priority = pNorm;
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(updates, 'redflag')) {
+        const v = updates.redflag;
+        if (v === '' || v === null || v === undefined) {
+          updates.redflag = false;
+        } else {
+          updates.redflag = v === true || v === 'true';
         }
       }
 

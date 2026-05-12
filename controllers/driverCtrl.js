@@ -1214,6 +1214,47 @@ const driverManagement = {
     }
   },
 
+  updateTaskRedflag: async (req, res) => {
+    const { taskId } = req.params;
+    const { redflag } = req.body;
+    const userId = req.user._id;
+
+    try {
+      const userInfo = await getUserModel(userId);
+      if (!userInfo) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      if (redflag === undefined) {
+        return res.status(400).json({
+          message: 'redflag is required (send true or false)',
+          error: 'REDFLAG_REQUIRED',
+        });
+      }
+
+      const task = await Task.findById(taskId);
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      const value = redflag === true || redflag === 'true';
+      task.redflag = value;
+      await task.save();
+
+      res.status(200).json({
+        message: 'Task red flag updated successfully',
+        task,
+        userType: userInfo.type,
+      });
+    } catch (error) {
+      console.error('Error updating task redflag:', error);
+      res.status(500).json({
+        message: 'Failed to update task red flag',
+        error: error.message,
+      });
+    }
+  },
+
   rateTask: async (req, res) => {
     const { taskId } = req.params;
     const {
