@@ -83,16 +83,16 @@ const dayOffController = {
             try {
                 const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
                 const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver/Helper';
-                
+
                 // Format dates for the notification message
                 const startDateFormatted = new Date(startDate).toLocaleDateString();
                 const endDateFormatted = new Date(endDate).toLocaleDateString();
-                const dateRange = startDateFormatted === endDateFormatted 
-                    ? startDateFormatted 
+                const dateRange = startDateFormatted === endDateFormatted
+                    ? startDateFormatted
                     : `${startDateFormatted} to ${endDateFormatted}`;
-                
+
                 const notificationMessage = `${userName} is requesting a day off from ${dateRange}`;
-                
+
                 // Send notification to all admins
                 for (const admin of adminUsers) {
                     if (admin._id) {
@@ -104,7 +104,7 @@ const dayOffController = {
                         );
                     }
                 }
-                
+
                 // Also send to the hardcoded adminId as a fallback
                 if (adminId) {
                     await emitNotificationToUser(
@@ -279,6 +279,34 @@ const dayOffController = {
             if (!updatedRequest) {
                 return res.status(404).json({ message: "Day off request not found" });
             }
+
+            if (status === 'Approved' || status === 'Denied') {
+                try {
+                    const admin = req.user;
+                    const adminName =
+                        admin?.username ||
+                        `${admin?.firstName || ''} ${admin?.lastName || ''}`.trim() ||
+                        'Admin';
+                    const startDateFormatted = new Date(updatedRequest.startDate).toLocaleDateString();
+                    const endDateFormatted = new Date(updatedRequest.endDate).toLocaleDateString();
+                    const dateRange =
+                        startDateFormatted === endDateFormatted
+                            ? startDateFormatted
+                            : `${startDateFormatted} to ${endDateFormatted}`;
+                    const verb = status === 'Approved' ? 'approved' : 'denied';
+                    const notificationMessage = `Your day off request (${dateRange}) was ${verb} .`;
+
+                    await emitNotificationToUser(
+                        updatedRequest.userId.toString(),
+                        'Day_Off',
+                        notificationMessage,
+                        adminName
+                    );
+                } catch (notificationError) {
+                    console.error('Error sending day off status notification to user:', notificationError);
+                }
+            }
+
             res.status(200).json({ message: "Day off request status updated successfully", request: updatedRequest });
         } catch (error) {
             res.status(500).json({ message: "Failed to update day off request", error: error.message });
