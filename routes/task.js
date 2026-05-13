@@ -243,10 +243,11 @@ const taskCtrl = require('../controllers/taskCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
-const {
-  paymentLinkIpLimiter,
-  paymentLinkTokenLimiter,
-} = require('../middlewares/rateLimiter');
+// Payment link rate limiters disabled — re-enable middleware on GET /payment-link/:token/:provider if needed.
+// const {
+//   paymentLinkIpLimiter,
+//   paymentLinkTokenLimiter,
+// } = require('../middlewares/rateLimiter');
 const { getPayPalOrderDetails, capturePayPalPayment } = require('../services/paymentService.js');
 const Task = require('../models/Task');
 router.post('/tasks/lock/:taskId', isAuth, taskCtrl.lockTask);
@@ -274,7 +275,7 @@ router.post('/task/confirm-stripe-payment', taskCtrl.confirmStripeTaskPayment);
 
 router.post('/task/capture-paypal-payment', taskCtrl.capturePayPalTaskPayment);
 router.post('/task/sendPayement/:taskId', taskCtrl.generatePaymentLinks);
-router.get('/payment-link/:token/:provider', paymentLinkIpLimiter, paymentLinkTokenLimiter, taskCtrl.resolvePaymentLink);
+router.get('/payment-link/:token/:provider', taskCtrl.resolvePaymentLink);
 // Stripe Webhook
 // router.post('/webhooks/stripe',express.raw({ type: 'application/json' }),  taskCtrl.handleStripeWebhook);
 
