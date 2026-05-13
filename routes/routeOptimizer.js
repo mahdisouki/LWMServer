@@ -33,7 +33,8 @@ const { checkRole } = require('../middlewares/role');
 
 /**
  * POST /api/route-optimizer/external/calculate-routes
- * Body: { drivers, jobs, respect_time_slots?, job_priorities? } - forwarded to external API (e.g. https://routeoptimiser.duckdns.org/api/v1/calculate-routes)
+ * Body: { date, truckIds|selectedTruckIds?, vanCurrentCapacities? } — builds truck_contexts and POSTs
+ * to the external /api/v1/calculate-routes (optional van_current_capacities for vans in scope).
  */
 router.post(
   '/external/calculate-routes',
