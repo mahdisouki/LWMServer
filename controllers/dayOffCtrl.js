@@ -83,16 +83,16 @@ const dayOffController = {
             try {
                 const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
                 const userName = user.username || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Driver/Helper';
-                
+
                 // Format dates for the notification message
                 const startDateFormatted = new Date(startDate).toLocaleDateString();
                 const endDateFormatted = new Date(endDate).toLocaleDateString();
-                const dateRange = startDateFormatted === endDateFormatted 
-                    ? startDateFormatted 
+                const dateRange = startDateFormatted === endDateFormatted
+                    ? startDateFormatted
                     : `${startDateFormatted} to ${endDateFormatted}`;
-                
+
                 const notificationMessage = `${userName} is requesting a day off from ${dateRange}`;
-                
+
                 // Send notification to all admins
                 for (const admin of adminUsers) {
                     if (admin._id) {
@@ -104,7 +104,7 @@ const dayOffController = {
                         );
                     }
                 }
-                
+
                 // Also send to the hardcoded adminId as a fallback
                 if (adminId) {
                     await emitNotificationToUser(
@@ -294,7 +294,7 @@ const dayOffController = {
                             ? startDateFormatted
                             : `${startDateFormatted} to ${endDateFormatted}`;
                     const verb = status === 'Approved' ? 'approved' : 'denied';
-                    const notificationMessage = `Your day off request (${dateRange}) was ${verb} by ${adminName}.`;
+                    const notificationMessage = `Your day off request (${dateRange}) was ${verb} .`;
 
                     await emitNotificationToUser(
                         updatedRequest.userId.toString(),
