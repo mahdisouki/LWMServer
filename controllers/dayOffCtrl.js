@@ -279,6 +279,34 @@ const dayOffController = {
             if (!updatedRequest) {
                 return res.status(404).json({ message: "Day off request not found" });
             }
+
+            if (status === 'Approved' || status === 'Denied') {
+                try {
+                    const admin = req.user;
+                    const adminName =
+                        admin?.username ||
+                        `${admin?.firstName || ''} ${admin?.lastName || ''}`.trim() ||
+                        'Admin';
+                    const startDateFormatted = new Date(updatedRequest.startDate).toLocaleDateString();
+                    const endDateFormatted = new Date(updatedRequest.endDate).toLocaleDateString();
+                    const dateRange =
+                        startDateFormatted === endDateFormatted
+                            ? startDateFormatted
+                            : `${startDateFormatted} to ${endDateFormatted}`;
+                    const verb = status === 'Approved' ? 'approved' : 'denied';
+                    const notificationMessage = `Your day off request (${dateRange}) was ${verb} by ${adminName}.`;
+
+                    await emitNotificationToUser(
+                        updatedRequest.userId.toString(),
+                        'Day_Off',
+                        notificationMessage,
+                        adminName
+                    );
+                } catch (notificationError) {
+                    console.error('Error sending day off status notification to user:', notificationError);
+                }
+            }
+
             res.status(200).json({ message: "Day off request status updated successfully", request: updatedRequest });
         } catch (error) {
             res.status(500).json({ message: "Failed to update day off request", error: error.message });
