@@ -420,11 +420,46 @@ const PayrollCtrl = {
   },
 
   // Get all payroll records for the logged-in user
+  // Optional query: date=ISO (single local calendar day on startTime), or startDate + endDate (inclusive range on startTime)
   getIndividualPayrollRecords: async (req, res) => {
     const userId = req.user._id;
+    const { startDate, endDate, date } = req.query;
 
     try {
-      const payrolls = await Payroll.find({ userId })
+      const query = { userId };
+
+      if (date) {
+        const inputDate = new Date(date);
+        if (Number.isNaN(inputDate.getTime())) {
+          return res.status(400).json({ message: 'Invalid date parameter.' });
+        }
+        const startOfDay = new Date(inputDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setHours(23, 59, 59, 999);
+        query.startTime = { $gte: startOfDay, $lte: endOfDay };
+      } else if (startDate && endDate) {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+          return res
+            .status(400)
+            .json({ message: 'Invalid startDate or endDate parameter.' });
+        }
+        if (start > end) {
+          return res.status(400).json({
+            message: 'startDate must be before or equal to endDate.',
+          });
+        }
+        query.startTime = { $gte: start, $lte: end };
+      } else if (startDate || endDate) {
+        return res.status(400).json({
+          message:
+            'Provide both startDate and endDate for a range, or use date for a single day.',
+        });
+      }
+
+      const payrolls = await Payroll.find(query)
         .populate({
           path: 'pcnDamages',
           select: 'pcnReferenceNumber proofUrl reason amount paymentStatus time vanMatricule linkedToDailySheet deductionNote deductionTargetPayrollId createdAt updatedAt',

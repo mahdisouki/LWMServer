@@ -12,7 +12,7 @@ router.post('/payroll/log-start-time', isAuth, PayrollCtrl.logStartTime);
 // Log end time for the day
 router.post('/payroll/log-end-time', isAuth, PayrollCtrl.logEndTime);
 
-// Get individual payroll records for the logged-in user
+// Get individual payroll records for the logged-in user (?date= or ?startDate=&endDate= on startTime)
 router.get('/payroll', isAuth, PayrollCtrl.getIndividualPayrollRecords);
 
 // Update payroll record by payroll ID for the logged-in user
