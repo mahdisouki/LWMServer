@@ -410,7 +410,7 @@ async function createPersistentPaymentLink({
 }
 
 const TASK_PRIORITIES = ['low', 'medium', 'high'];
-const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 30 * 1000;
+const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 10 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
 function hashPaymentToken(token) {
@@ -1537,9 +1537,9 @@ const taskCtrl = {
           standardItemId:
             item?.standardItemId && typeof item.standardItemId === 'object'
               ? {
-                  _id: item.standardItemId._id,
-                  itemName: item.standardItemId.itemName,
-                }
+                _id: item.standardItemId._id,
+                itemName: item.standardItemId.itemName,
+              }
               : item?.standardItemId || null,
           object: item?.object || null,
           quantity: item?.quantity ?? 0,
