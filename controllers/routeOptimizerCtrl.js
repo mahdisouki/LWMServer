@@ -15,7 +15,7 @@ const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.0.132:8000'//'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.0.146:8000'//'https://routeoptimiser.duckdns.org';
 
 function normalizeMongoId(value) {
   if (value == null) return null;
@@ -49,6 +49,40 @@ function toLatLngFromGeoPoint(point) {
     return null;
   }
   return { lat: Number(lat), lng: Number(lng) };
+}
+
+/**
+ * Client body: vanCurrentCapacities (camelCase) or van_current_capacities — van Mongo id → number.
+ * @param {unknown} raw
+ * @returns {Record<string, number>|null}
+ */
+function normalizeVanCurrentCapacitiesMap(raw) {
+  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof k !== 'string' || !k.trim()) continue;
+    const n = typeof v === 'number' ? v : Number(v);
+    if (!Number.isFinite(n)) continue;
+    out[k.trim()] = n;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Keep only capacities for vans that appear in this optimize request (assignment van ids).
+ * @param {Record<string, number>|null} map
+ * @param {Set<string>} vanIdsInScope
+ * @returns {Record<string, number>|null}
+ */
+function filterVanCapacitiesToScope(map, vanIdsInScope) {
+  if (!map || !vanIdsInScope.size) return null;
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const [vanId, cap] of Object.entries(map)) {
+    if (vanIdsInScope.has(vanId)) out[vanId] = cap;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function isOptimizerTransportFailure(error) {
@@ -162,7 +196,10 @@ function responseFromOptimizerNetworkError(error, contextLabel) {
  * POST /api/route-optimizer/external/calculate-routes
  * Loads trucks with drivers for the given date and forwards date + truck_contexts to the external API;
  * the optimizer service resolves jobs for that date.
- * Body: { date: string|Date }
+ * Body: { date: string|Date, truckIds?: string[], selectedTruckIds?: string[],
+ *   vanCurrentCapacities?: Record<string, number> }
+ * Optional per-van capacity is forwarded to the external service as van_current_capacities (snake_case),
+ * limited to van ids present in truck_contexts for this request.
  * Returns: { success, routes, api_calls_used } from external API.
  */
 async function calculateRoutesExternal(req, res) {
@@ -233,6 +270,15 @@ async function calculateRoutesExternal(req, res) {
       );
     });
 
+    const vanIdsInScope = new Set(
+      trucksWithDrivers
+        .map(({ assignedVanId }) => (assignedVanId ? assignedVanId.toString() : null))
+        .filter(Boolean)
+    );
+    const rawVanCaps = req.body.vanCurrentCapacities ?? req.body.van_current_capacities;
+    const vanCapsNormalized = normalizeVanCurrentCapacitiesMap(rawVanCaps);
+    const vanCapsForOptimizer = filterVanCapacitiesToScope(vanCapsNormalized, vanIdsInScope);
+
     const payload = {
       date: dateStr,
       truck_contexts: trucksWithDrivers.map(
@@ -244,6 +290,9 @@ async function calculateRoutesExternal(req, res) {
         })
       ),
     };
+    if (vanCapsForOptimizer) {
+      payload.van_current_capacities = vanCapsForOptimizer;
+    }
     console.log("payload", payload);
     const { data, status } = await axios.post(
       `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`,
@@ -549,6 +598,7 @@ async function recalculateTruckRoute(req, res) {
 
     const payload = {
       jobs,
+      date: dateStr,
       truck_contexts: [
         {
           van_id: assignment.vanId ? assignment.vanId.toString() : null,
@@ -849,6 +899,7 @@ async function refreshRoute(req, res) {
 
     const payload = {
       jobs,
+      date: dateStr,
       truck_contexts: [
         {
           van_id: assignment.vanId ? assignment.vanId.toString() : null,
