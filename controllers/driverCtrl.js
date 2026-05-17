@@ -354,9 +354,9 @@ const driverManagement = {
       }
 
       const { type } = userInfo;
-      if (type !== 'Driver') {
-        return res.status(403).json({ message: 'Only drivers can access this endpoint' });
-      }
+      // if (type !== 'Driver') {
+      //   return res.status(403).json({ message: 'Only drivers can access this endpoint' });
+      // }
 
       const truck = await getTruckForUser(userId);
       if (!truck) {
