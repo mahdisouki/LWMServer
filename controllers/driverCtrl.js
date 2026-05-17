@@ -368,11 +368,11 @@ const driverManagement = {
       }
 
       const driver = await Driver.findById(userId).select('location');
-      const helper = await Helper.findById(truck.helperId).select('location username');
+      const helper = await Helper.findById(truck.helperId).select('location username start_location');
 
       const driverCoords = driver?.location?.coordinates;
       const helperCoords = helper?.start_location?.coordinates;
-
+      console.log("helperCoords:", helperCoords)
       if (!Array.isArray(driverCoords) || driverCoords.length < 2) {
         return res.status(404).json({ message: 'Driver location is not set' });
       }
