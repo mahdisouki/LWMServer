@@ -353,26 +353,28 @@ const driverManagement = {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      const { type } = userInfo;
-      // if (type !== 'Driver') {
-      //   return res.status(403).json({ message: 'Only drivers can access this endpoint' });
-      // }
-
       const truck = await getTruckForUser(userId);
       if (!truck) {
         return res.status(404).json({ message: 'No truck found for the given user.' });
       }
 
-      if (!truck.helperId) {
+      if (!truck.driverId) {
+        return res.status(404).json({ message: 'No driver assigned to this truck' });
+      }
+
+      const dateKey = getTodayDateKeyLocal();
+      const assigned = await getAssignedForDayFromRanges(truck._id, dateKey);
+      const effectiveHelperId = assigned?.helperId || truck.helperId || null;
+
+      if (!effectiveHelperId) {
         return res.status(404).json({ message: 'No helper assigned to this truck' });
       }
 
-      const driver = await Driver.findById(userId).select('location');
-      const helper = await Helper.findById(truck.helperId).select('location username start_location');
+      const driver = await Driver.findById(truck.driverId).select('location');
+      const helper = await Helper.findById(effectiveHelperId).select('location username start_location');
 
       const driverCoords = driver?.location?.coordinates;
       const helperCoords = helper?.start_location?.coordinates;
-      console.log("helperCoords:", helperCoords)
       if (!Array.isArray(driverCoords) || driverCoords.length < 2) {
         return res.status(404).json({ message: 'Driver location is not set' });
       }
@@ -405,7 +407,7 @@ const driverManagement = {
         remainingMeters,
         arrivalThresholdMeters,
         hasArrivedToHelper: distanceMeters <= arrivalThresholdMeters,
-        helperId: truck.helperId,
+        helperId: effectiveHelperId,
         helperName: helper?.username || null,
       });
     } catch (error) {
@@ -1838,8 +1840,9 @@ const driverManagement = {
 
       const assigned = await getAssignedForDayFromRanges(truck._id, dateKey);
       const effectiveHelperId = assigned?.helperId || truck.helperId || null;
+      const driverId = truck.driverId;
       const [driverUser, helper] = await Promise.all([
-        Driver.findById(userId).select('location end_location'),
+        driverId ? Driver.findById(driverId).select('location end_location') : null,
         effectiveHelperId ? Helper.findById(effectiveHelperId).select('end_location') : null,
       ]);
 
