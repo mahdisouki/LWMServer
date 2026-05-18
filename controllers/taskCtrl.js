@@ -10,6 +10,29 @@ const mongoose = require('mongoose');
 const { emitNotificationToUser } = require('../socket.js');
 const paginateQuery = require('../utils/paginationHelper');
 const {
+  buildCompletedPaidQuery,
+  buildCompletedPaidCsv,
+  buildCompletedPaidPdfBuffer,
+} = require('../utils/completedPaidExport');
+
+const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseExportDateRange(startDate, endDate) {
+  if (!EXPORT_DATE_RE.test(startDate) || !EXPORT_DATE_RE.test(endDate)) {
+    return null;
+  }
+  const rangeStart = new Date(startDate);
+  const rangeEndExclusive = new Date(endDate);
+  if (isNaN(rangeStart.getTime()) || isNaN(rangeEndExclusive.getTime())) {
+    return null;
+  }
+  rangeEndExclusive.setUTCDate(rangeEndExclusive.getUTCDate() + 1);
+  if (rangeStart >= rangeEndExclusive) {
+    return { invalidOrder: true };
+  }
+  return { rangeStart, rangeEndExclusive };
+}
+const {
   getPayPalOrderDetails,
   capturePayPalPayment,
   createPaypalPaymentLink,
@@ -6984,6 +7007,79 @@ const taskCtrl = {
       res.json({ topPostcodes: result });
     } catch (err) {
       res.status(500).json({ message: 'Failed to get top postcodes', error: err.message });
+    }
+  },
+
+  /**
+   * GET /api/tasks/export/completed-paid?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&format=csv|pdf
+   * Postcode, Price (totalPrice), Order Number — main orders only, by collection date.
+   */
+  exportCompletedPaidCsv: async (req, res) => {
+    try {
+      const startDate = String(req.query.startDate || '').trim();
+      const endDate = String(req.query.endDate || '').trim();
+      const format = String(req.query.format || 'csv').trim().toLowerCase();
+
+      if (!startDate || !endDate) {
+        return res.status(400).json({
+          message: 'startDate and endDate are required (YYYY-MM-DD)',
+        });
+      }
+
+      if (format !== 'csv' && format !== 'pdf') {
+        return res.status(400).json({
+          message: 'format must be csv or pdf',
+        });
+      }
+
+      const parsed = parseExportDateRange(startDate, endDate);
+      if (!parsed) {
+        return res.status(400).json({
+          message: 'Invalid startDate or endDate format. Use YYYY-MM-DD',
+        });
+      }
+      if (parsed.invalidOrder) {
+        return res.status(400).json({
+          message: 'startDate must be on or before endDate',
+        });
+      }
+
+      const { rangeStart, rangeEndExclusive } = parsed;
+
+      const tasks = await Task.find(
+        buildCompletedPaidQuery(rangeStart, rangeEndExclusive),
+      )
+        .select('postcode totalPrice orderNumber date')
+        .sort({ date: 1, orderNumber: 1 })
+        .lean();
+
+      const baseName = `completed-paid-${startDate}-to-${endDate}`;
+
+      if (format === 'pdf') {
+        const pdfBuffer = await buildCompletedPaidPdfBuffer(tasks, {
+          startDate,
+          endDate,
+        });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${baseName}.pdf"`,
+        );
+        return res.send(pdfBuffer);
+      }
+
+      const csv = buildCompletedPaidCsv(tasks);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${baseName}.csv"`,
+      );
+      res.send(csv);
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to export completed paid orders',
+        error: error.message,
+      });
     }
   },
 };
