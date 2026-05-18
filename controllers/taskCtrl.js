@@ -1718,34 +1718,40 @@ const taskCtrl = {
 
       const taskDate = task.date.toISOString().split('T')[0]; // Extract the task date
 
+      // Clear truckId on the task first
+      await Task.findByIdAndUpdate(taskId, { $unset: { truckId: 1 } });
+
       // Convert `truck.tasks` (Map) to a plain object for manipulation
       const tasksByDate =
         truck.tasks instanceof Map
           ? Object.fromEntries(truck.tasks)
           : truck.tasks;
 
-      // Check and remove the task ID from the specified date
-      if (
-        tasksByDate[taskDate] &&
-        tasksByDate[taskDate].includes(task._id.toString())
-      ) {
-        tasksByDate[taskDate] = tasksByDate[taskDate].filter(
-          (id) => id !== task._id.toString(),
-        );
+      // Remove task from truck schedule (entries may be strings or { taskId, type, order })
+      const taskIdStr = task._id.toString();
+      for (const dateKey of Object.keys(tasksByDate)) {
+        const entries = tasksByDate[dateKey];
+        if (!Array.isArray(entries)) continue;
 
-        // Remove the date entry if it becomes empty
-        if (tasksByDate[taskDate].length === 0) {
-          delete tasksByDate[taskDate];
+        const filtered = entries.filter((entry) => {
+          if (entry && typeof entry === 'object' && entry.taskId) {
+            return String(entry.taskId) !== taskIdStr;
+          }
+          return String(entry) !== taskIdStr;
+        });
+
+        if (filtered.length === entries.length) continue;
+
+        if (filtered.length === 0) {
+          delete tasksByDate[dateKey];
+        } else {
+          tasksByDate[dateKey] = filtered;
         }
       }
 
-      // Convert the updated tasks object back to a Map and save it
       truck.tasks = new Map(Object.entries(tasksByDate));
+      truck.markModified('tasks');
       await truck.save();
-
-      // Remove the truck assignment from the task
-      task.truckId = null;
-      await task.save();
 
       // Update daily sheets for the driver
       try {
@@ -1766,6 +1772,9 @@ const taskCtrl = {
         console.error('Error updating daily sheets after task de-assignment:', dailySheetError);
         // Don't fail the main operation if daily sheet update fails
       }
+
+      // Guard: PUT /tasks/order re-assigns truckId for every task still in its list
+      await Task.updateOne({ _id: task._id }, { $unset: { truckId: 1 } });
 
       // Create a log of the truck de-assignment
       if (req.user) {
@@ -1790,7 +1799,7 @@ const taskCtrl = {
 
       res.status(200).json({
         message: 'Task de-assigned from truck successfully',
-        task,
+        task: await Task.findById(taskId),
       });
     } catch (error) {
       console.log(error)
@@ -1920,6 +1929,38 @@ const taskCtrl = {
         };
       });
 
+      const truckBefore = await Truck.findById(truckId).select('tasks');
+      const truckObjectId = mongoose.Types.ObjectId.isValid(truckId)
+        ? new mongoose.Types.ObjectId(truckId)
+        : truckId;
+
+      const previousTaskIdsOnDate = new Set();
+      if (truckBefore?.tasks) {
+        let entries = [];
+        if (truckBefore.tasks instanceof Map) entries = truckBefore.tasks.get(date) || [];
+        else if (typeof truckBefore.tasks === 'object') entries = truckBefore.tasks[date] || [];
+        entries.forEach((entry, idx) => {
+          let id = null;
+          let type = 'task';
+          if (entry && typeof entry === 'object' && entry.taskId) {
+            id = String(entry.taskId);
+            type = entry.type === 'Task' ? 'task' : (entry.type || 'task');
+          } else if (entry != null) {
+            id = String(entry);
+          }
+          if (id && type === 'task') previousTaskIdsOnDate.add(id);
+        });
+      }
+
+      const nextTaskIdsOnDate = new Set(
+        validatedTasks
+          .filter((t) => (t.type === 'Task' ? 'task' : t.type) === 'task')
+          .map((t) => String(t.taskId)),
+      );
+      const removedFromSchedule = [...previousTaskIdsOnDate].filter(
+        (id) => !nextTaskIdsOnDate.has(id),
+      );
+
       const updatedTruck = await Truck.findOneAndUpdate(
         { _id: truckId }, // Query to find the truck
         { $set: { [`tasks.${date}`]: validatedTasks } }, // Dynamically update the tasks for the specific date
@@ -1931,9 +1972,6 @@ const taskCtrl = {
       }
 
       // Keep Task / TippingRequest documents in sync with this truck schedule
-      const truckObjectId = mongoose.Types.ObjectId.isValid(truckId)
-        ? new mongoose.Types.ObjectId(truckId)
-        : truckId;
       const assignmentUpdates = validatedTasks.map((t) => {
         const normalizedType = t.type === 'Task' ? 'task' : t.type;
         if (normalizedType === 'task') {
@@ -1944,6 +1982,14 @@ const taskCtrl = {
         }
         return Promise.resolve();
       });
+      if (removedFromSchedule.length > 0) {
+        assignmentUpdates.push(
+          Task.updateMany(
+            { _id: { $in: removedFromSchedule }, truckId: truckObjectId },
+            { $unset: { truckId: 1 } },
+          ),
+        );
+      }
       await Promise.all(assignmentUpdates);
 
       // Update daily sheets for the driver
