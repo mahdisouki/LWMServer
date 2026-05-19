@@ -8,8 +8,10 @@ const axios = require('axios');
 const { emitNotificationToUser } = require('../socket');
 const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
 const { User } = require('../models/User');
-const Coupon = require('../models/Coupon');
-const { sendQuotationRetargetingEmail } = require('../utils/sendQuotationRetargetingEmail');
+const {
+    RETARGETING_REASONS,
+    sendQuotationRetargetingEmailForQuotation,
+} = require('../services/quotationRetargetingService');
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
         try {
@@ -627,81 +629,27 @@ const quotationRequestController = {
                 }
             }
 
-            const quotation = await QuotationRequest.findByIdAndUpdate(
+            let quotation = await QuotationRequest.findByIdAndUpdate(
                 id,
                 updateData,
                 { new: true, runValidators: true }
             );
 
-            // Check if we need to send retargeting email
-            // Send email if reason is set to "price too high" or "no response" and email hasn't been sent yet
-            // Note: "task created" should NOT trigger retargeting emails since it's an acceptance
             const finalReason = reason !== undefined ? reason : existingQuotation.reason;
-            const shouldSendEmail = (finalReason === 'price too high' || finalReason === 'no response') &&
+            const shouldSendRetargetingEmail =
+                RETARGETING_REASONS.includes(finalReason) &&
                 !existingQuotation.retargetingEmailSent &&
-                quotation.email &&
-                finalReason !== 'task created'; // Explicitly exclude "task created"
+                quotation.email;
 
-            if (shouldSendEmail) {
+            if (shouldSendRetargetingEmail) {
                 try {
-                    // Generate unique 8-character coupon codes
-                    const generateShortCode = () => Math.random().toString(36).substring(2, 10).toUpperCase();
-                    const coupon20Code = generateShortCode();
-                    const coupon10Code = generateShortCode();
-
-                    // Calculate expiration dates
-                    const emailSentAt = new Date();
-                    const expiresAt20Percent = new Date(emailSentAt);
-                    expiresAt20Percent.setHours(expiresAt20Percent.getHours() + 24); // 24 hours from now
-
-                    const expiresAt10Percent = new Date(emailSentAt);
-                    expiresAt10Percent.setHours(expiresAt10Percent.getHours() + 72); // 72 hours from now
-
-                    // Create 20% coupon (24 hours, single use)
-                    const coupon20 = new Coupon({
-                        code: coupon20Code.toUpperCase(),
-                        percentage: 20,
-                        expirationDuration: 24,
-                        expiresAt: expiresAt20Percent,
-                        description: `Quotation retargeting coupon (20%) for quotation ${quotation._id}`,
-                        maxUsage: 1, // Single use only
-                        isActive: true
-                    });
-                    await coupon20.save();
-
-                    // Create 10% coupon (72 hours, single use)
-                    const coupon10 = new Coupon({
-                        code: coupon10Code.toUpperCase(),
-                        percentage: 10,
-                        expirationDuration: 72,
-                        expiresAt: expiresAt10Percent,
-                        description: `Quotation retargeting coupon (10%) for quotation ${quotation._id}`,
-                        maxUsage: 1, // Single use only
-                        isActive: true
-                    });
-                    await coupon10.save();
-
-                    // Send retargeting email
-                    await sendQuotationRetargetingEmail({
-                        customerEmail: quotation.email,
-                        customerName: quotation.Name,
-                        coupon20Code: coupon20.code,
-                        coupon10Code: coupon10.code,
-                        expiresAt20: expiresAt20Percent,
-                        expiresAt10: expiresAt10Percent
-                    });
-
-                    // Update quotation with email sent flag and coupon IDs
-                    quotation.retargetingEmailSent = true;
-                    quotation.retargetingEmailSentAt = emailSentAt;
-                    quotation.retargetingCoupon20Id = coupon20._id;
-                    quotation.retargetingCoupon10Id = coupon10._id;
-                    await quotation.save();
-
-                    console.log(`Retargeting email sent for quotation ${quotation._id} with coupons: ${coupon20.code} and ${coupon10.code}`);
+                    const result = await sendQuotationRetargetingEmailForQuotation(quotation);
+                    quotation = result.quotation;
+                    console.log(
+                        `Retargeting email sent for quotation ${quotation._id} (reason: ${finalReason})`,
+                    );
                 } catch (emailError) {
                     console.error('Error sending retargeting email for quotation:', emailError);
-                    // Don't fail the request if email fails, but log the error
                 }
             }
 
@@ -722,14 +670,11 @@ const quotationRequestController = {
         const { reminderDate } = req.body; // Format: "2025-01-15T14:30:00" or ISO string
 
         try {
-            // Prepare update object
-            const updateData = {
-                reminderSent: false
-            };
+            const updateData = {};
 
-            // Set reminderDate if provided, otherwise set to null
             if (reminderDate) {
                 updateData.reminderDate = new Date(reminderDate);
+                updateData.reminderSent = false;
             } else {
                 updateData.reminderDate = null;
             }
@@ -746,7 +691,7 @@ const quotationRequestController = {
             }
 
             res.status(200).json({
-                message: 'Reminder date and time set successfully',
+                message: 'Retargeting email schedule set successfully',
                 quotation
             });
         } catch (error) {
