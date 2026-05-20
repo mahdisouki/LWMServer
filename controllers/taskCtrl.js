@@ -967,6 +967,7 @@ const taskCtrl = {
         couponCode, // Coupon code to apply
         priority,
         redflag,
+        redflagNote,
       } = req.body;
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
@@ -1000,6 +1001,7 @@ const taskCtrl = {
       // FormData sends boolean values as strings 'true' or 'false'
       const applyMinFeeBoolean = applyMinFee === 'true' || applyMinFee === true;
       const redflagBoolean = redflag === 'true' || redflag === true;
+      const redflagNoteTrimmed = redflagNote != null ? String(redflagNote).trim() : '';
       let applySundayFeeBoolean = req.body.applySundayFee === 'true' || req.body.applySundayFee === true;
 
       // For debugging: see what you get from frontend
@@ -1261,6 +1263,9 @@ const taskCtrl = {
         spaceOfVan: taskVanSpacePercent,
         ...(priorityToSet ? { priority: priorityToSet } : {}),
         redflag: redflagBoolean,
+        ...(redflagBoolean && redflagNoteTrimmed
+          ? { redflagNote: redflagNoteTrimmed, redflagBy: req.user?._id, redflagAt: new Date() }
+          : {}),
       });
 
       const savedTask = await newTask.save();
@@ -2927,8 +2932,23 @@ const taskCtrl = {
         const v = updates.redflag;
         if (v === '' || v === null || v === undefined) {
           updates.redflag = false;
+          updates.redflagNote = null;
+          updates.redflagBy = null;
+          updates.redflagAt = null;
         } else {
-          updates.redflag = v === true || v === 'true';
+          const redflagOn = v === true || v === 'true';
+          updates.redflag = redflagOn;
+          if (redflagOn) {
+            if (updates.redflagNote != null) {
+              updates.redflagNote = String(updates.redflagNote).trim();
+            }
+            updates.redflagBy = req.user?._id ?? updates.redflagBy;
+            updates.redflagAt = new Date();
+          } else {
+            updates.redflagNote = null;
+            updates.redflagBy = null;
+            updates.redflagAt = null;
+          }
         }
       }
 

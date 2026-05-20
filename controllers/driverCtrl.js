@@ -1218,7 +1218,7 @@ const driverManagement = {
 
   updateTaskRedflag: async (req, res) => {
     const { taskId } = req.params;
-    const { redflag } = req.body;
+    const { redflag, redflagNote } = req.body;
     const userId = req.user._id;
 
     try {
@@ -1240,12 +1240,33 @@ const driverManagement = {
       }
 
       const value = redflag === true || redflag === 'true';
+      const description = String(redflagNote ?? '').trim();
+
+      if (value && !description) {
+        return res.status(400).json({
+          message: 'redflagNote is required when setting the emergency flag (describe what happened)',
+          error: 'REDFLAG_NOTE_REQUIRED',
+        });
+      }
+
       task.redflag = value;
+      if (value) {
+        task.redflagNote = description;
+        task.redflagBy = userId;
+        task.redflagAt = new Date();
+      } else {
+        task.redflagNote = undefined;
+        task.redflagBy = undefined;
+        task.redflagAt = undefined;
+      }
       await task.save();
+
+      const populatedTask = await Task.findById(taskId)
+        .populate('redflagBy', 'username firstName lastName role');
 
       res.status(200).json({
         message: 'Task red flag updated successfully',
-        task,
+        task: populatedTask,
         userType: userInfo.type,
       });
     } catch (error) {

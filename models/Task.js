@@ -256,6 +256,9 @@ const taskSchema = new Schema(
       default: 'low',
     },
     redflag: { type: Boolean, default: false },
+    redflagNote: { type: String },
+    redflagBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    redflagAt: { type: Date },
     quotationId: {
       type: Schema.Types.ObjectId,
       ref: 'QuotationRequest', // Reference to your Quotation model
