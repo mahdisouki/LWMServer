@@ -26,6 +26,20 @@ const MessageSchema = new mongoose.Schema({
     picture: { type: String, required: true },
     seenAt: { type: Date, default: Date.now }
   }], // Array of users who have seen this message
+  reactions: [{
+    userId: { type: String, required: true },
+    username: { type: String, required: true },
+    emoji: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+  }],
+  replyTo: {
+    messageId: { type: String },
+    senderId: { type: String },
+    senderName: { type: String },
+    messageText: { type: String },
+    messageType: { type: String },
+    previewUrl: { type: String },
+  },
   createdAt: { type: Date, default: Date.now },
 });
 

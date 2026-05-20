@@ -6,6 +6,7 @@ const Message = require('../models/Message');
 const { User } = require('../models/User');
 const { getIo, emitNotificationToUser } = require('../socket');
 const Truck = require('../models/Truck');
+const { attachReplyTo } = require('../utils/chatMessageHelpers');
 
 // Route pour les fichiers généraux (images, vidéos, documents)
 router.post('/', (req, res, next) => {
@@ -17,7 +18,7 @@ router.post('/', (req, res, next) => {
     next();
   });
 }, async (req, res) => { // Allow up to 10 files
-  const { roomId, senderId, messageText, isDriver, isAdmin = false } = req.body;
+  const { roomId, senderId, messageText, isDriver, isAdmin = false, replyToMessageId } = req.body;
   const files = req.files;
 
   if (!files || files.length === 0) {
@@ -46,7 +47,7 @@ router.post('/', (req, res, next) => {
     const fileUrls = files.map(file => file.path);
     const fileTypes = files.map(file => file.mimetype);
 
-    const message = new Message({
+    const messageData = {
       roomId,
       senderId,
       messageText,
@@ -59,7 +60,9 @@ router.post('/', (req, res, next) => {
       fileTypes: fileTypes,
       messageType: messageType,
       createdAt: new Date(),
-    });
+    };
+    await attachReplyTo(messageData, replyToMessageId, roomId);
+    const message = new Message(messageData);
 
     await message.save();
 
@@ -128,7 +131,7 @@ router.post('/video', (req, res, next) => {
     next();
   });
 }, async (req, res) => {
-  const { roomId, senderId, messageText, videoDuration, videoThumbnail, isDriver, isAdmin = false } = req.body;
+  const { roomId, senderId, messageText, videoDuration, videoThumbnail, isDriver, isAdmin = false, replyToMessageId } = req.body;
   const files = req.files;
 
   if (!files || files.length === 0) {
@@ -153,7 +156,7 @@ router.post('/video', (req, res, next) => {
     const videoDurations = files.map((file, index) => durations[index] || 0);
     const videoThumbnails = files.map((file, index) => thumbnails[index] || null);
 
-    const message = new Message({
+    const messageData = {
       roomId,
       senderId,
       messageText: messageText || '',
@@ -171,7 +174,9 @@ router.post('/video', (req, res, next) => {
       fileTypes: files.map(file => file.mimetype),
       messageType: files.length === 1 ? 'video' : 'multiple',
       createdAt: new Date(),
-    });
+    };
+    await attachReplyTo(messageData, replyToMessageId, roomId);
+    const message = new Message(messageData);
 
     await message.save();
 
@@ -225,7 +230,7 @@ router.post('/video', (req, res, next) => {
 
 // Route spécifique pour les messages vocaux
 router.post('/audio', upload.single('audio'), async (req, res) => {
-  const { roomId, senderId, messageText, audioDuration, isDriver, isAdmin = false } = req.body;
+  const { roomId, senderId, messageText, audioDuration, isDriver, isAdmin = false, replyToMessageId } = req.body;
   const file = req.file;
 
   if (!file) {
@@ -240,7 +245,7 @@ router.post('/audio', upload.single('audio'), async (req, res) => {
   try {
     const user = await User.findById(senderId);
 
-    const message = new Message({
+    const messageData = {
       roomId,
       senderId,
       messageText,
@@ -249,7 +254,9 @@ router.post('/audio', upload.single('audio'), async (req, res) => {
       audioDuration: parseFloat(audioDuration) || 0,
       messageType: 'audio',
       createdAt: new Date(),
-    });
+    };
+    await attachReplyTo(messageData, replyToMessageId, roomId);
+    const message = new Message(messageData);
 
     await message.save();
 

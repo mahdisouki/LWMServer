@@ -15,6 +15,10 @@ const userSocketMap = {}; // Stores userId:socketId mapping
 const Helper = require('./models/Helper');
 const { sendOneSignalNotification } = require('./services/oneSignalService');
 const { processDriverLocationUpdate } = require('./services/proximityAutoStartService');
+const {
+  MESSAGE_SELECT_FIELDS,
+  attachReplyTo,
+} = require('./utils/chatMessageHelpers');
 
 // Helper function to find truck for a user (including extra drivers/helpers)
 async function findTruckForUser(userId) {
@@ -247,7 +251,7 @@ const initSocket = (server) => {
 
       const messages = await Message.find({ roomId })
         .sort({ createdAt: 1 })
-        .select('roomId senderId messageText image fileUrl fileType fileUrls fileTypes audioUrl audioDuration videoUrl videoDuration videoThumbnail videoUrls videoDurations videoThumbnails messageType seen seenAt seenBy createdAt');
+        .select(MESSAGE_SELECT_FIELDS);
       socket.emit('chatHistory', messages);
 
       // Notify other users in the room that someone joined
@@ -277,7 +281,7 @@ const initSocket = (server) => {
         // Get room messages
         const messages = await Message.find({ roomId })
           .sort({ createdAt: 1 })
-          .select('roomId senderId messageText image fileUrl fileType fileUrls fileTypes audioUrl audioDuration videoUrl videoDuration videoThumbnail videoUrls videoDurations videoThumbnails messageType seen seenAt seenBy createdAt');
+          .select(MESSAGE_SELECT_FIELDS);
         socket.emit('chatHistory', messages);
 
         // Confirm admin is in the room
@@ -353,7 +357,7 @@ const initSocket = (server) => {
       }
     });
 
-    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver, messageType = 'text', isAdmin = false, fileUrl, fileType, fileUrls, fileTypes, videoUrl, videoDuration, videoThumbnail, videoUrls, videoDurations, videoThumbnails }) => {
+    socket.on('sendMessage', async ({ roomId, senderId, messageText, isDriver, messageType = 'text', isAdmin = false, fileUrl, fileType, fileUrls, fileTypes, videoUrl, videoDuration, videoThumbnail, videoUrls, videoDurations, videoThumbnails, replyToMessageId }) => {
       console.log(`Received message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
       try {
         const user = await User.findById(senderId);
@@ -405,6 +409,7 @@ const initSocket = (server) => {
             messageData.messageType = 'multiple';
           }
 
+          await attachReplyTo(messageData, replyToMessageId, roomId);
           const message = new Message(messageData);
           await message.save();
 
@@ -454,6 +459,7 @@ const initSocket = (server) => {
           messageData.messageType = 'multiple';
         }
 
+        await attachReplyTo(messageData, replyToMessageId, roomId);
         const message = new Message(messageData);
         await message.save();
 
@@ -506,7 +512,7 @@ const initSocket = (server) => {
 
 
     // Event for video messages (handles both single and multiple videos)
-    socket.on('sendVideoMessage', async ({ roomId, senderId, messageText, isDriver, videoUrl, videoDuration, videoThumbnail, videoUrls, videoDurations, videoThumbnails, isAdmin = false }) => {
+    socket.on('sendVideoMessage', async ({ roomId, senderId, messageText, isDriver, videoUrl, videoDuration, videoThumbnail, videoUrls, videoDurations, videoThumbnails, isAdmin = false, replyToMessageId }) => {
       console.log(`Received video message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
       try {
         const user = await User.findById(senderId);
@@ -545,6 +551,7 @@ const initSocket = (server) => {
             messageData.videoThumbnails = videoThumbnails;
           }
 
+          await attachReplyTo(messageData, replyToMessageId, roomId);
           const message = new Message(messageData);
           await message.save();
           io.to(roomId).emit('newMessage', message);
@@ -581,6 +588,7 @@ const initSocket = (server) => {
           messageData.videoThumbnails = videoThumbnails;
         }
 
+        await attachReplyTo(messageData, replyToMessageId, roomId);
         const message = new Message(messageData);
         await message.save();
         io.to(roomId).emit('newMessage', message);
@@ -616,7 +624,7 @@ const initSocket = (server) => {
     });
 
     // Événement pour les messages vocaux
-    socket.on('sendAudioMessage', async ({ roomId, senderId, messageText, isDriver, audioUrl, audioDuration, isAdmin = false }) => {
+    socket.on('sendAudioMessage', async ({ roomId, senderId, messageText, isDriver, audioUrl, audioDuration, isAdmin = false, replyToMessageId }) => {
       console.log(`Received audio message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
       try {
         const user = await User.findById(senderId);
@@ -632,7 +640,7 @@ const initSocket = (server) => {
 
         if (!truck) {
           console.error(`Truck not found for ${isDriver ? 'driver' : 'helper'} ID ${senderId}`);
-          const message = new Message({
+          const messageData = {
             roomId,
             senderId,
             messageText,
@@ -640,7 +648,9 @@ const initSocket = (server) => {
             audioUrl: audioUrl,
             audioDuration: audioDuration,
             messageType: 'audio',
-          });
+          };
+          await attachReplyTo(messageData, replyToMessageId, roomId);
+          const message = new Message(messageData);
 
           await message.save();
           io.to(roomId).emit('newMessage', message);
@@ -659,7 +669,7 @@ const initSocket = (server) => {
           }
         }
 
-        const message = new Message({
+        const messageData = {
           roomId,
           senderId,
           messageText,
@@ -667,7 +677,9 @@ const initSocket = (server) => {
           audioUrl: audioUrl,
           audioDuration: audioDuration,
           messageType: 'audio',
-        });
+        };
+        await attachReplyTo(messageData, replyToMessageId, roomId);
+        const message = new Message(messageData);
 
         await message.save();
         io.to(roomId).emit('newMessage', message);
@@ -699,7 +711,7 @@ const initSocket = (server) => {
       }
     });
     // Event for image/file messages (handles both single and multiple files)
-    socket.on('sendImageMessage', async ({ roomId, senderId, messageText, isDriver, imageUrl, imageWidth, imageHeight, fileUrls, fileTypes, isAdmin = false }) => {
+    socket.on('sendImageMessage', async ({ roomId, senderId, messageText, isDriver, imageUrl, imageWidth, imageHeight, fileUrls, fileTypes, isAdmin = false, replyToMessageId }) => {
       console.log(`Received image/file message in room ${roomId} from user ${senderId}:`, isDriver, 'isAdmin:', isAdmin);
       try {
         const user = await User.findById(senderId);
@@ -736,6 +748,7 @@ const initSocket = (server) => {
             messageData.fileTypes = fileTypes;
           }
 
+          await attachReplyTo(messageData, replyToMessageId, roomId);
           const message = new Message(messageData);
           await message.save();
           io.to(roomId).emit('newMessage', message);
@@ -770,6 +783,7 @@ const initSocket = (server) => {
           messageData.fileTypes = fileTypes;
         }
 
+        await attachReplyTo(messageData, replyToMessageId, roomId);
         const message = new Message(messageData);
         await message.save();
         io.to(roomId).emit('newMessage', message);
@@ -895,45 +909,69 @@ const initSocket = (server) => {
       socket.emit('onlineUsersList', onlineUsers);
     });
 
-    // Get messages by roomId with pagination
-    socket.on('getMessagesByRoomId', async ({ roomId, skip = 0, limit = 20 }) => {
+    // Get messages by roomId — supports pagination emit and Socket.IO ack for chat list sorting
+    socket.on('getMessagesByRoomId', async (payload, maybeCallback) => {
+      const ack = typeof maybeCallback === 'function' ? maybeCallback : null;
+
       try {
-        if (!roomId) {
-          socket.emit('error', { message: 'Room ID is required' });
+        let roomId;
+        let skip = 0;
+        let limit = 20;
+
+        if (typeof payload === 'string') {
+          roomId = payload;
+          if (ack) {
+            limit = 1;
+          }
+        } else if (payload && typeof payload === 'object') {
+          roomId = payload.roomId;
+          skip = payload.skip ?? 0;
+          limit = payload.limit ?? 20;
+        }
+
+        const roomIdStr = roomId ? String(roomId) : null;
+        if (!roomIdStr) {
+          const err = new Error('Room ID is required');
+          if (ack) return ack(err);
+          socket.emit('error', { message: err.message });
           return;
         }
 
-        // Get total count of messages for this room
-        const totalMessages = await Message.countDocuments({ roomId });
+        const totalMessages = await Message.countDocuments({ roomId: roomIdStr });
 
-        const messages = await Message.find({ roomId })
-          .sort({ createdAt: -1 }) // Sort by newest first
-          .skip(skip) // Skip messages for pagination
-          .limit(limit) // Get specified number of messages
-          .populate('senderId', 'username picture') // Populate sender info
-          .select('roomId senderId messageText image fileUrl fileType fileUrls fileTypes audioUrl audioDuration videoUrl videoDuration videoThumbnail videoUrls videoDurations videoThumbnails messageType seen seenAt seenBy createdAt'); // Include seenBy information
+        const messages = await Message.find({ roomId: roomIdStr })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate('senderId', 'username picture')
+          .select(MESSAGE_SELECT_FIELDS)
+          .lean();
 
-        // Reverse to get chronological order (oldest to newest)
-        const sortedMessages = messages.reverse();
+        if (ack) {
+          return ack(null, messages);
+        }
 
-        // Check if there are more messages to load
+        const sortedMessages = [...messages].reverse();
         const hasMore = skip + limit < totalMessages;
 
         socket.emit('messagesByRoomId', {
           success: true,
-          roomId,
+          roomId: roomIdStr,
           messages: sortedMessages,
           count: sortedMessages.length,
           totalMessages,
           skip,
           limit,
-          hasMore
+          hasMore,
         });
       } catch (error) {
         console.error('Error getting messages by roomId:', error);
+        if (ack) {
+          return ack(error);
+        }
         socket.emit('error', {
           message: 'Failed to get messages by roomId',
-          error: error.message
+          error: error.message,
         });
       }
     });
@@ -1219,6 +1257,133 @@ const initSocket = (server) => {
         });
       } catch (error) {
         console.error('Error handling message seen:', error);
+      }
+    });
+
+    // Message reactions (one emoji per user per message; tap same emoji to remove)
+    socket.on('addReaction', async ({ messageId, roomId, emoji }) => {
+      try {
+        const actorUserId = socket.user.userId;
+        if (!messageId || !roomId || !emoji) {
+          socket.emit('error', { message: 'messageId, roomId, and emoji are required' });
+          return;
+        }
+
+        const user = await User.findById(actorUserId);
+        if (!user) {
+          socket.emit('error', { message: 'User not found' });
+          return;
+        }
+
+        const message = await Message.findById(messageId);
+        if (!message || message.roomId !== roomId) {
+          socket.emit('error', { message: 'Message not found in this room' });
+          return;
+        }
+
+        if (!message.reactions) {
+          message.reactions = [];
+        }
+
+        const existingIndex = message.reactions.findIndex((r) => r.userId === actorUserId);
+
+        if (existingIndex >= 0) {
+          const existing = message.reactions[existingIndex];
+          if (existing.emoji === emoji) {
+            message.reactions.splice(existingIndex, 1);
+            await message.save();
+            io.to(roomId).emit('reactionRemoved', {
+              messageId,
+              roomId,
+              userId: actorUserId,
+              reactions: message.reactions,
+            });
+            io.to(roomId).emit('messageUpdated', {
+              messageId,
+              roomId,
+              reactions: message.reactions,
+            });
+            return;
+          }
+
+          message.reactions[existingIndex].emoji = emoji;
+          message.reactions[existingIndex].createdAt = new Date();
+          await message.save();
+          const reaction = message.reactions[existingIndex];
+          io.to(roomId).emit('reactionAdded', {
+            messageId,
+            roomId,
+            reaction,
+            reactions: message.reactions,
+          });
+          io.to(roomId).emit('messageUpdated', {
+            messageId,
+            roomId,
+            reactions: message.reactions,
+          });
+          return;
+        }
+
+        const reaction = {
+          userId: actorUserId,
+          username: user.username,
+          emoji,
+          createdAt: new Date(),
+        };
+        message.reactions.push(reaction);
+        await message.save();
+
+        io.to(roomId).emit('reactionAdded', {
+          messageId,
+          roomId,
+          reaction,
+          reactions: message.reactions,
+        });
+        io.to(roomId).emit('messageUpdated', {
+          messageId,
+          roomId,
+          reactions: message.reactions,
+        });
+      } catch (error) {
+        console.error('Error handling addReaction:', error);
+        socket.emit('error', { message: 'Failed to add reaction' });
+      }
+    });
+
+    socket.on('removeReaction', async ({ messageId, roomId }) => {
+      try {
+        const actorUserId = socket.user.userId;
+        if (!messageId || !roomId) {
+          socket.emit('error', { message: 'messageId and roomId are required' });
+          return;
+        }
+
+        const message = await Message.findById(messageId);
+        if (!message || message.roomId !== roomId) {
+          socket.emit('error', { message: 'Message not found in this room' });
+          return;
+        }
+
+        const hadReaction = (message.reactions || []).some((r) => r.userId === actorUserId);
+        if (!hadReaction) return;
+
+        message.reactions = (message.reactions || []).filter((r) => r.userId !== actorUserId);
+        await message.save();
+
+        io.to(roomId).emit('reactionRemoved', {
+          messageId,
+          roomId,
+          userId: actorUserId,
+          reactions: message.reactions,
+        });
+        io.to(roomId).emit('messageUpdated', {
+          messageId,
+          roomId,
+          reactions: message.reactions,
+        });
+      } catch (error) {
+        console.error('Error handling removeReaction:', error);
+        socket.emit('error', { message: 'Failed to remove reaction' });
       }
     });
 
