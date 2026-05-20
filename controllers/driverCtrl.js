@@ -56,6 +56,64 @@ const END_LOCATION_ARRIVAL_METERS = Number(
     80
 );
 
+const CASH_PAYMENT_TOLERANCE = 0.01;
+
+function isCashPaymentMethod(method) {
+  return String(method || '').toLowerCase() === 'cash';
+}
+
+function cashAmountMatchesReceived(received, expected) {
+  return (
+    Number.isFinite(received) &&
+    received > 0 &&
+    Number.isFinite(expected) &&
+    Math.abs(received - expected) <= CASH_PAYMENT_TOLERANCE
+  );
+}
+
+/** Mark task Paid when cash collected matches remaining (partial) or total (unpaid cash job). */
+function applyCashPaymentStatusFromRateTask(task, cashReceived) {
+  if (!Number.isFinite(cashReceived) || cashReceived <= 0) return;
+
+  if (task.paymentStatus === 'partial_Paid') {
+    const remainingDue = Number(task.remainingAmount?.amount) || 0;
+    const remainingIsCash =
+      isCashPaymentMethod(task.remainingAmount?.method) ||
+      isCashPaymentMethod(task.paymentMethod) ||
+      isCashPaymentMethod(task.paidAmount?.method);
+
+    if (
+      remainingIsCash &&
+      task.remainingAmount?.status !== 'Paid' &&
+      cashAmountMatchesReceived(cashReceived, remainingDue)
+    ) {
+      if (!task.remainingAmount) task.remainingAmount = {};
+      task.remainingAmount.status = 'Paid';
+      task.remainingAmount.method = task.remainingAmount.method || 'cash';
+      task.paymentStatus = 'Paid';
+      task.markModified('remainingAmount');
+    }
+  } else if (task.paymentStatus === 'Unpaid') {
+    const totalDue = Number(task.totalPrice) || 0;
+    if (
+      isCashPaymentMethod(task.paymentMethod) &&
+      cashAmountMatchesReceived(cashReceived, totalDue)
+    ) {
+      task.paymentStatus = 'Paid';
+      if (!task.paidAmount) task.paidAmount = {};
+      task.paidAmount.status = 'Paid';
+      task.paidAmount.method = task.paidAmount.method || 'cash';
+      task.paidAmount.amount = task.paidAmount.amount ?? cashReceived;
+      if (!task.remainingAmount) task.remainingAmount = {};
+      task.remainingAmount.status = 'Paid';
+      task.remainingAmount.amount = task.remainingAmount.amount ?? 0;
+      task.remainingAmount.method = task.remainingAmount.method || 'cash';
+      task.markModified('paidAmount');
+      task.markModified('remainingAmount');
+    }
+  }
+}
+
 // Helper function to get user model based on role
 async function getUserModel(userId) {
   // Try to find user in User model first
@@ -1313,6 +1371,8 @@ const driverManagement = {
       // Save signature and customer presence status (same as other feedback fields)
       task.customerSignature = signaturePath || null;
       task.customerNotPresent = isCustomerNotPresent;
+
+      applyCashPaymentStatusFromRateTask(task, normalizedCashReceived);
 
       // Check if this is the first task completed by this client (using email)
       const previousCompletedTasks = await Task.find({
