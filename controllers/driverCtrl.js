@@ -162,6 +162,41 @@ async function getTruckForUser(userId) {
   return null;
 }
 
+async function getAllTruckUserIds(truckId) {
+  const truck = await Truck.findById(truckId)
+    .populate('driverId')
+    .populate('helperId')
+    .populate('extraDrivers.driverId')
+    .populate('extraHelpers.helperId');
+
+  if (!truck) return [];
+
+  const userIds = [];
+
+  if (truck.driverId?._id) {
+    userIds.push(truck.driverId._id.toString());
+  }
+  if (truck.helperId?._id) {
+    userIds.push(truck.helperId._id.toString());
+  }
+  if (truck.extraDrivers?.length) {
+    truck.extraDrivers.forEach((extra) => {
+      if (extra.driverId?._id) {
+        userIds.push(extra.driverId._id.toString());
+      }
+    });
+  }
+  if (truck.extraHelpers?.length) {
+    truck.extraHelpers.forEach((extra) => {
+      if (extra.helperId?._id) {
+        userIds.push(extra.helperId._id.toString());
+      }
+    });
+  }
+
+  return [...new Set(userIds)];
+}
+
 // Helper function to format tipping request as task
 function formatTippingRequestAsTask(tippingRequest) {
   return {
@@ -1318,6 +1353,41 @@ const driverManagement = {
         task.redflagAt = undefined;
       }
       await task.save();
+
+      try {
+        const actorName =
+          userInfo.user?.username ||
+          `${userInfo.user?.firstName || ''} ${userInfo.user?.lastName || ''}`.trim() ||
+          userInfo.type;
+        const orderRef = task.orderNumber || taskId;
+        const notificationMessage = value
+          ? `${actorName} raised an emergency flag on order ${orderRef}: ${description}`
+          : `${actorName} cleared the emergency flag on order ${orderRef}`;
+
+        const actorIdStr = userId.toString();
+        const notifyUser = async (recipientId) => {
+          const idStr = recipientId?.toString?.() ?? String(recipientId);
+          if (!idStr || idStr === actorIdStr) return;
+          await emitNotificationToUser(idStr, 'Orders', notificationMessage);
+        };
+
+        const adminUsers = await User.find({
+          $or: [{ roleType: 'Admin' }, { role: 'Admin' }],
+        }).select('_id');
+
+        await Promise.all([
+          ...adminUsers.map((admin) => notifyUser(admin._id)),
+          ...(task.truckId
+            ? (await getAllTruckUserIds(task.truckId)).map((id) => notifyUser(id))
+            : []),
+        ]);
+
+        if (adminId) {
+          await notifyUser(adminId);
+        }
+      } catch (notificationError) {
+        console.error('Error sending redflag notifications:', notificationError);
+      }
 
       const populatedTask = await Task.findById(taskId)
         .populate('redflagBy', 'username firstName lastName role');
