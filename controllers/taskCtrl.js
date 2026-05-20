@@ -7,7 +7,7 @@ const { findTruckByTruckName, truckDisplayName } = require('../utils/truckHelper
 const { User } = require('../models/User');
 const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
-const { emitNotificationToUser } = require('../socket.js');
+const { emitNotificationToUser, emitRefresh } = require('../socket.js');
 const paginateQuery = require('../utils/paginationHelper');
 const {
   buildCompletedPaidQuery,
@@ -6544,6 +6544,33 @@ const taskCtrl = {
         console.error('Error updating daily sheets after multiple task status update:', dailySheetError);
         // Don't fail the main operation if daily sheet update fails
       }
+
+      const uniqueDates = [
+        ...new Set(
+          updatedTasks
+            .filter((task) => task.date)
+            .map((task) => task.date.toISOString().split('T')[0])
+        ),
+      ];
+      const uniqueTruckIds = [
+        ...new Set(
+          updatedTasks
+            .filter((task) => task.truckId)
+            .map((task) => task.truckId.toString())
+        ),
+      ];
+
+      emitRefresh({
+        resource: 'tasks',
+        action: 'updated',
+        meta: {
+          taskStatus,
+          taskIds,
+          updatedCount: updateResult.modifiedCount,
+          dates: uniqueDates,
+          truckIds: uniqueTruckIds,
+        },
+      });
 
       res.status(200).json({
         message: `${updateResult.modifiedCount} task(s) updated successfully`,

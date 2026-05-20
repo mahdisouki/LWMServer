@@ -1765,6 +1765,18 @@ const emitEvent = (eventName, data) => {
   }
 };
 
+/**
+ * Broadcast a refresh signal so clients (mobile + BO) can refetch data.
+ * @param {{ resource: string, action?: string, truckId?: string, date?: string, userId?: string, meta?: object }} payload
+ */
+const emitRefresh = (payload = {}) => {
+  if (!io) return;
+  io.emit('refresh', {
+    ...payload,
+    timestamp: new Date().toISOString(),
+  });
+};
+
 const getIo = () => {
   if (!io) {
     throw new Error('Socket.io not initialized!');
@@ -1813,6 +1825,7 @@ const disconnectUser = (userId) => {
 module.exports = {
   initSocket,
   emitEvent,
+  emitRefresh,
   getIo,
   emitNotificationToUser,
   getOnlineUsers,

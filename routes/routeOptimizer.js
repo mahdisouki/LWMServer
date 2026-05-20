@@ -42,6 +42,16 @@ router.post(
 );
 
 /**
+ * POST /api/route-optimizer/external/calculate-routes-groups
+ * Body: { date, truckIds?, jobGroups|groups|jobs, vanCurrentCapacities? }
+ * Manual job groups (not per truck); optimizer assigns groups to trucks and persists routes.
+ */
+router.post(
+  '/external/calculate-routes-groups',
+  routeOptimizerCtrl.calculateRoutesExternalWithGroups
+);
+
+/**
  * POST /api/route-optimizer/external/recalculate-truck
  * Body: { truckId, date, persist?: boolean }
  */

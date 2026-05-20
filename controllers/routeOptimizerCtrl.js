@@ -85,6 +85,391 @@ function filterVanCapacitiesToScope(map, vanIdsInScope) {
   return Object.keys(out).length ? out : null;
 }
 
+function parseRouteOptimizerDate(inputDate) {
+  const date = inputDate ? new Date(inputDate) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return { ok: false, message: 'Invalid date format' };
+  }
+  const dateStr = date.toISOString().split('T')[0];
+  const startOfDay = new Date(date);
+  startOfDay.setUTCHours(0, 0, 0, 0);
+  const endOfDay = new Date(date);
+  endOfDay.setUTCHours(23, 59, 59, 999);
+  return { ok: true, dateStr, startOfDay, endOfDay };
+}
+
+/**
+ * @typedef {{ groupId: string, segments: Array<{ taskId: string, type: string }> }} NormalizedJobGroup
+ */
+
+function segmentsFromJobGroupEntry(group) {
+  if (Array.isArray(group.segments)) {
+    return group.segments
+      .map((s) => {
+        const taskId = normalizeMongoId(s.taskId ?? s.jobId ?? s.id);
+        if (!taskId) return null;
+        const type = s.type === 'TippingRequest' ? 'TippingRequest' : 'task';
+        return { taskId, type };
+      })
+      .filter(Boolean);
+  }
+
+  /** @type {Array<{ taskId: string, type: string }>} */
+  const segs = [];
+
+  const jobLists = [
+    { ids: group.jobs, type: null },
+    { ids: group.taskIds, type: 'task' },
+    { ids: group.tippingRequestIds ?? group.tippingIds, type: 'TippingRequest' },
+    { ids: group.jobIds, type: null },
+  ];
+
+  for (const { ids, type: defaultType } of jobLists) {
+    if (!Array.isArray(ids)) continue;
+    for (const raw of ids) {
+      if (raw && typeof raw === 'object') {
+        const taskId = normalizeMongoId(raw.id ?? raw.jobId ?? raw.taskId);
+        if (!taskId) continue;
+        const type =
+          raw.type === 'TippingRequest'
+            ? 'TippingRequest'
+            : defaultType === 'TippingRequest'
+              ? 'TippingRequest'
+              : 'task';
+        segs.push({ taskId, type });
+      } else {
+        const taskId = normalizeMongoId(raw);
+        if (!taskId) continue;
+        const type = defaultType === 'TippingRequest' ? 'TippingRequest' : 'task';
+        segs.push({ taskId, type });
+      }
+    }
+  }
+
+  return segs;
+}
+
+/**
+ * Manual job groups from the client (not tied to a truck). Trucks are chosen separately via truckIds.
+ * Accepts:
+ * - jobGroups / groups: [{ groupId?, jobs?, segments?, taskIds?, ... }]
+ * - jobs: [[taskId, ...], ...] — each inner array is one group
+ * - jobs: [{ groupId?, jobs: [...] }, ...]
+ * @returns {NormalizedJobGroup[]}
+ */
+function normalizeJobGroupsFromBody(body) {
+  /** @type {NormalizedJobGroup[]} */
+  const out = [];
+  let groupIndex = 0;
+
+  const pushGroup = (group, fallbackIndex) => {
+    const segments = segmentsFromJobGroupEntry(group);
+    if (!segments.length) return;
+    const groupId =
+      (typeof group.groupId === 'string' && group.groupId.trim()) ||
+      (typeof group.id === 'string' && group.id.trim()) ||
+      `group-${fallbackIndex + 1}`;
+    out.push({ groupId, segments });
+  };
+
+  const listSources = [body.jobGroups, body.groups];
+  for (const source of listSources) {
+    if (!Array.isArray(source)) continue;
+    for (const group of source) {
+      pushGroup(group, groupIndex);
+      groupIndex += 1;
+    }
+  }
+
+  if (Array.isArray(body.jobs) && body.jobs.length) {
+    const first = body.jobs[0];
+    if (Array.isArray(first)) {
+      body.jobs.forEach((jobIds, i) => {
+        if (!Array.isArray(jobIds)) return;
+        pushGroup({ groupId: `group-${i + 1}`, jobs: jobIds }, i);
+      });
+    } else if (first && typeof first === 'object') {
+      body.jobs.forEach((group, i) => pushGroup(group, i));
+    }
+  }
+
+  return out;
+}
+
+/** Spread manual groups across trucks (fallback when external groups API is unavailable). */
+function distributeJobGroupsAcrossTrucks(jobGroups, trucksInScope) {
+  /** @type {Map<string, NormalizedJobGroup[]>} */
+  const byTruck = new Map();
+  for (const entry of trucksInScope) {
+    byTruck.set(entry.truck._id.toString(), []);
+  }
+  if (!trucksInScope.length) return byTruck;
+
+  jobGroups.forEach((group, i) => {
+    const truckId = trucksInScope[i % trucksInScope.length].truck._id.toString();
+    byTruck.get(truckId).push(group);
+  });
+  return byTruck;
+}
+
+async function buildOptimizerJobsFromSegments(segments, logPrefix = '[routeGroups]') {
+  const jobs = [];
+  const skipped = [];
+
+  for (let segIndex = 0; segIndex < segments.length; segIndex++) {
+    const seg = segments[segIndex];
+    const idStr = normalizeMongoId(seg.taskId);
+    if (!idStr) {
+      skipped.push({ segment: seg, reason: 'missing taskId' });
+      continue;
+    }
+    const isTip = seg.type === 'TippingRequest';
+    const order = segIndex + 1;
+    const type = isTip ? 'TippingRequest' : 'task';
+
+    if (isTip) {
+      const tip = await TippingRequest.findById(idStr).populate('tippingPlace');
+      const coords = tip?.tippingPlace?.location?.coordinates;
+      if (!coords || coords.length < 2) {
+        skipped.push({ taskId: idStr, type: 'TippingRequest', reason: 'no tipping place coordinates' });
+        continue;
+      }
+      jobs.push({
+        job_id: idStr,
+        lat: coords[1],
+        lng: coords[0],
+        order,
+        type,
+      });
+    } else {
+      const task = await Task.findById(idStr);
+      const coords = task?.location?.coordinates;
+      if (!coords || coords.length < 2) {
+        skipped.push({ taskId: idStr, type: 'task', reason: 'no task location coordinates' });
+        continue;
+      }
+      jobs.push({
+        job_id: idStr,
+        lat: coords[1],
+        lng: coords[0],
+        taskDuration:
+          typeof task.taskDuration === 'number' && task.taskDuration >= 0 ? task.taskDuration : 10,
+        spaceOfVan:
+          typeof task.spaceOfVan === 'number' && task.spaceOfVan >= 0 ? task.spaceOfVan : 0,
+        order,
+        type,
+      });
+    }
+  }
+
+  if (skipped.length) {
+    console.warn(logPrefix, 'skipped segments while building jobs', skipped);
+  }
+
+  return { jobs, skipped };
+}
+
+async function loadTrucksWithDriversForDate({ dateStr, requestedTruckIds }) {
+  const hasTruckSelection = Array.isArray(requestedTruckIds) && requestedTruckIds.length > 0;
+  const truckQuery = hasTruckSelection ? { _id: { $in: requestedTruckIds } } : {};
+  const allTrucks = await Truck.find(truckQuery).populate('vanId');
+
+  if (hasTruckSelection && !allTrucks.length) {
+    return { ok: false, status: 400, message: 'No valid trucks found for provided truckIds/selectedTruckIds' };
+  }
+
+  const trucksWithDrivers = [];
+  for (const t of allTrucks) {
+    const assignment = await getAssignedForDayFromRanges(t._id, dateStr);
+    if (assignment.driverId) {
+      const driver = await Driver.findById(assignment.driverId).select('_id');
+      if (!driver) continue;
+      let helper = null;
+      if (assignment.helperId) {
+        helper = await Helper.findById(assignment.helperId).select('start_location end_location');
+      }
+      trucksWithDrivers.push({
+        truck: t,
+        driverId: assignment.driverId,
+        assignedVanId: assignment.vanId || null,
+        startLocation: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
+        endLocation: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+      });
+    }
+  }
+
+  if (!trucksWithDrivers.length) {
+    return { ok: false, status: 400, message: 'No trucks with drivers available for assignment' };
+  }
+
+  return { ok: true, trucksWithDrivers, hasTruckSelection };
+}
+
+async function persistExternalRoutes({
+  trucksWithDrivers,
+  routes,
+  dateStr,
+  startOfDay,
+  endOfDay,
+  logScope = 'external',
+}) {
+  const consideredTruckIds = trucksWithDrivers.map(({ truck }) => truck._id);
+  await Task.updateMany(
+    {
+      date: { $gte: startOfDay, $lte: endOfDay },
+      truckId: { $in: consideredTruckIds },
+    },
+    { $set: { truckId: null } }
+  );
+
+  const routeKeys = Object.keys(routes || {});
+  let assignedCount = 0;
+
+  for (const routeKey of routeKeys) {
+    const entry = trucksWithDrivers.find(({ truck }) => truck._id.toString() === routeKey);
+    if (!entry) {
+      console.log('[RouteOptimizer:%s] routeKey=%s no truck matched (skip)', logScope, routeKey);
+      continue;
+    }
+    const { truck } = entry;
+    if (!truck.tasks) truck.tasks = new Map();
+    truck.tasks.set(dateStr, []);
+    truck.markModified('tasks');
+
+    const routeSegments = Array.isArray(routes[routeKey].route_segments)
+      ? routes[routeKey].route_segments
+      : [];
+    let assignedThisTruck = 0;
+    const missingTaskIds = [];
+
+    for (let i = 0; i < routeSegments.length; i++) {
+      const segment = routeSegments[i];
+      if (!segment || typeof segment !== 'object') continue;
+
+      const rawTaskId = segment.taskId;
+      const taskId =
+        typeof rawTaskId === 'string'
+          ? rawTaskId
+          : rawTaskId && typeof rawTaskId === 'object' && rawTaskId.$oid
+            ? rawTaskId.$oid
+            : null;
+
+      if (!taskId) {
+        missingTaskIds.push(String(rawTaskId));
+        continue;
+      }
+
+      const order = Number.isFinite(Number(segment.order)) ? Number(segment.order) : i + 1;
+      const segType = segment.type === 'TippingRequest' ? 'TippingRequest' : 'task';
+
+      if (segType === 'TippingRequest') {
+        await TippingRequest.findByIdAndUpdate(taskId, { truckId: truck._id });
+        truck.addTippingRequest(dateStr, taskId, order);
+      } else {
+        await Task.findByIdAndUpdate(taskId, { truckId: truck._id });
+        truck.addTask(dateStr, taskId, order);
+      }
+
+      assignedCount += 1;
+      assignedThisTruck += 1;
+    }
+
+    if (missingTaskIds.length) {
+      console.log(
+        '[RouteOptimizer:%s] truck %s: segments without valid taskId: %s',
+        logScope,
+        truckDisplayName(truck),
+        missingTaskIds.join(', ')
+      );
+    }
+    console.log(
+      '[RouteOptimizer:%s] truck %s: assigned %d (total %d)',
+      logScope,
+      truckDisplayName(truck),
+      assignedThisTruck,
+      assignedCount
+    );
+    await truck.save();
+  }
+
+  try {
+    const mockReq = { body: { date: dateStr } };
+    const mockRes = { status: () => ({ json: () => {} }), json: () => {} };
+    await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+  } catch (dailySheetErr) {
+    console.error('Route optimizer: daily sheet sync error', dailySheetErr);
+  }
+
+  return assignedCount;
+}
+
+async function optimizeTruckGroupsLocally({ truckEntry, dateStr, groups }) {
+  const { truck, assignedVanId, startLocation, endLocation } = truckEntry;
+  const routeKey = truck._id.toString();
+  const combinedSegments = [];
+  let orderOffset = 0;
+
+  const truckContext = {
+    van_id: assignedVanId ? assignedVanId.toString() : null,
+    truck_id: routeKey,
+    start_location: startLocation,
+    end_location: endLocation,
+  };
+
+  for (const group of groups) {
+    const { jobs } = await buildOptimizerJobsFromSegments(
+      group.segments,
+      `[routeGroups:${routeKey}:${group.groupId}]`
+    );
+    if (!jobs.length) continue;
+
+    const payload = {
+      jobs,
+      date: dateStr,
+      truck_contexts: [truckContext],
+    };
+
+    const { data, status } = await axios.post(
+      `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/recalculate-route2`,
+      payload,
+      {
+        timeout: 120000,
+        validateStatus: () => true,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+
+    if (status !== 200) {
+      throw Object.assign(new Error(data?.detail || data?.message || 'Group recalculate failed'), {
+        status: status >= 500 ? 502 : status,
+        detail: data,
+        groupId: group.groupId,
+        truckId: routeKey,
+      });
+    }
+
+    const truckRoute =
+      data && typeof data.route === 'object'
+        ? data.route
+        : data?.routes?.[routeKey] || null;
+    const routeSegments = Array.isArray(truckRoute?.route_segments) ? truckRoute.route_segments : [];
+
+    for (let i = 0; i < routeSegments.length; i++) {
+      const segment = routeSegments[i];
+      if (!segment || typeof segment !== 'object') continue;
+      const baseOrder = Number.isFinite(Number(segment.order)) ? Number(segment.order) : i + 1;
+      combinedSegments.push({
+        ...segment,
+        order: orderOffset + baseOrder,
+        groupId: group.groupId,
+      });
+    }
+    orderOffset += routeSegments.length;
+  }
+
+  return { route_segments: combinedSegments };
+}
+
 function isOptimizerTransportFailure(error) {
   if (!error) return false;
   if (error.isAxiosError && !error.response) return true;
@@ -422,6 +807,236 @@ async function calculateRoutesExternal(req, res) {
     }
     return res.status(500).json({
       message: 'External calculate routes failed',
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
+/**
+ * POST /api/route-optimizer/external/calculate-routes-groups
+ * Same as calculate-routes but the client sends manual job groups (not grouped by truck).
+ * The optimizer assigns whole groups to trucks and orders jobs inside each group.
+ *
+ * Body: {
+ *   date: string|Date,
+ *   truckIds?: string[],
+ *   selectedTruckIds?: string[],
+ *   vanCurrentCapacities?: Record<string, number>,
+ *   jobGroups?: [{ groupId?, jobs?: string[]|object[], segments?, taskIds?, ... }],
+ *   groups?: [...],  // alias for jobGroups
+ *   jobs?: [[taskId, ...], ...] | [{ groupId?, jobs: [...] }, ...]
+ * }
+ */
+async function calculateRoutesExternalWithGroups(req, res) {
+  try {
+    const parsed = parseRouteOptimizerDate(req.body.date);
+    if (!parsed.ok) {
+      return res.status(400).json({ message: parsed.message });
+    }
+    const { dateStr, startOfDay, endOfDay } = parsed;
+
+    const jobGroups = normalizeJobGroupsFromBody(req.body);
+    if (!jobGroups.length) {
+      return res.status(400).json({
+        message:
+          'Manual job groups are required. Send jobGroups, groups, or jobs (array of job-id arrays).',
+      });
+    }
+
+    const requestedTruckIds = Array.isArray(req.body.truckIds)
+      ? req.body.truckIds
+      : Array.isArray(req.body.selectedTruckIds)
+        ? req.body.selectedTruckIds
+        : null;
+
+    const loaded = await loadTrucksWithDriversForDate({ dateStr, requestedTruckIds });
+    if (!loaded.ok) {
+      return res.status(loaded.status).json({ message: loaded.message });
+    }
+
+    const { trucksWithDrivers } = loaded;
+    const trucksInScope = trucksWithDrivers;
+
+    console.log(
+      '[RouteOptimizer:groups] date=%s jobGroups=%d trucks=%d',
+      dateStr,
+      jobGroups.length,
+      trucksInScope.length
+    );
+
+    const vanIdsInScope = new Set(
+      trucksInScope
+        .map(({ assignedVanId }) => (assignedVanId ? assignedVanId.toString() : null))
+        .filter(Boolean)
+    );
+    const rawVanCaps = req.body.vanCurrentCapacities ?? req.body.van_current_capacities;
+    const vanCapsNormalized = normalizeVanCurrentCapacitiesMap(rawVanCaps);
+    const vanCapsForOptimizer = filterVanCapacitiesToScope(vanCapsNormalized, vanIdsInScope);
+
+    /** @type {Array<{ group_id: string, jobs: object[] }>} */
+    const job_groups = [];
+
+    for (const group of jobGroups) {
+      const { jobs, skipped } = await buildOptimizerJobsFromSegments(
+        group.segments,
+        `[routeGroups:build:${group.groupId}]`
+      );
+      if (!jobs.length) {
+        return res.status(400).json({
+          message: `Group "${group.groupId}" has no jobs with coordinates`,
+          skipped,
+          groupId: group.groupId,
+        });
+      }
+      job_groups.push({
+        group_id: group.groupId,
+        jobs,
+      });
+    }
+
+    const payload = {
+      date: dateStr,
+      truck_contexts: trucksInScope.map(
+        ({ truck, assignedVanId, startLocation, endLocation }) => ({
+          truck_id: truck._id.toString(),
+          van_id: assignedVanId ? assignedVanId.toString() : null,
+          start_location: startLocation,
+          end_location: endLocation,
+        })
+      ),
+      job_groups,
+    };
+    if (vanCapsForOptimizer) {
+      payload.van_current_capacities = vanCapsForOptimizer;
+    }
+
+    let routes = {};
+    let apiCallsUsed = 0;
+    let optimizerMode = 'calculate-routes-groups';
+    let externalSuccess = true;
+    /** @type {Record<string, unknown>} */
+    let externalSummary = {};
+
+    const tryExternal = async (url) => {
+      const { data, status } = await axios.post(url, payload, {
+        timeout: 120000,
+        validateStatus: () => true,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return { data, status, url };
+    };
+
+    const groupsUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes-groups`;
+    let { data, status, url: usedUrl } = await tryExternal(groupsUrl);
+
+    if (!(status === 200 && data && typeof data.routes === 'object')) {
+      const standardUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`;
+      if (status === 404 || status === 405 || status === 422) {
+        console.log(
+          '[RouteOptimizer:groups] %s unavailable (HTTP %s), trying %s with job_groups',
+          groupsUrl,
+          status,
+          standardUrl
+        );
+        const retry = await tryExternal(standardUrl);
+        data = retry.data;
+        status = retry.status;
+        usedUrl = retry.url;
+        if (status === 200 && data && typeof data.routes === 'object') {
+          optimizerMode = 'calculate-routes-with-job_groups';
+        }
+      }
+    }
+
+    if (status === 200 && data && typeof data.routes === 'object') {
+      routes = data.routes;
+      apiCallsUsed = data.api_calls_used ?? 0;
+      externalSuccess = data.success !== false;
+      externalSummary =
+        data.summary && typeof data.summary === 'object' ? data.summary : {};
+      console.log('[RouteOptimizer:groups] external OK via %s', usedUrl);
+    } else if (status === 404 || status === 405 || status === 422) {
+      optimizerMode = 'per-group-recalculate-distributed';
+      console.log(
+        '[RouteOptimizer:groups] external groups API unavailable (HTTP %s), local fallback',
+        status
+      );
+
+      const groupsByTruck = distributeJobGroupsAcrossTrucks(jobGroups, trucksInScope);
+      for (const entry of trucksInScope) {
+        const truckId = entry.truck._id.toString();
+        const groups = groupsByTruck.get(truckId) || [];
+        if (!groups.length) {
+          routes[truckId] = { route_segments: [] };
+          continue;
+        }
+        routes[truckId] = await optimizeTruckGroupsLocally({
+          truckEntry: entry,
+          dateStr,
+          groups,
+        });
+        apiCallsUsed += groups.length;
+      }
+    } else {
+      if (data?.detail && Array.isArray(data.detail)) {
+        console.error(
+          '[RouteOptimizer:groups] validation errors:',
+          JSON.stringify(data.detail, null, 2)
+        );
+      }
+      return res.status(status >= 500 ? 502 : status).json({
+        message: data?.detail || data?.message || 'External route optimizer (groups) request failed',
+        ...(data && typeof data === 'object' && { detail: data }),
+      });
+    }
+
+    const routeTruckIds = new Set(Object.keys(routes));
+    const trucksToPersist = trucksInScope.filter(({ truck }) =>
+      routeTruckIds.has(truck._id.toString())
+    );
+
+    const assignedCount = await persistExternalRoutes({
+      trucksWithDrivers: trucksToPersist.length ? trucksToPersist : trucksInScope,
+      routes,
+      dateStr,
+      startOfDay,
+      endOfDay,
+      logScope: 'groups',
+    });
+
+    return res.status(200).json({
+      success: externalSuccess,
+      routes,
+      job_groups: job_groups.map((g) => g.group_id),
+      api_calls_used: apiCallsUsed,
+      optimizerMode,
+      summary: {
+        date: dateStr,
+        job_groups: job_groups.length,
+        trucks_used: Object.keys(routes).length,
+        ...externalSummary,
+        assigned: assignedCount,
+      },
+    });
+  } catch (error) {
+    console.error('Route optimizer external calculate-routes-groups error:', error);
+    if (error.status && error.groupId) {
+      return res.status(error.status).json({
+        message: error.message,
+        truckId: error.truckId,
+        groupId: error.groupId,
+        detail: error.detail,
+      });
+    }
+    if (isOptimizerTransportFailure(error)) {
+      const { status, body } = responseFromOptimizerNetworkError(
+        error,
+        'calculate-routes-groups'
+      );
+      return res.status(status).json(body);
+    }
+    return res.status(500).json({
+      message: 'External calculate routes (groups) failed',
       error: error.response?.data || error.message,
     });
   }
@@ -1246,6 +1861,7 @@ async function requestBestTippingPlace(req, res) {
 
 module.exports = {
   calculateRoutesExternal,
+  calculateRoutesExternalWithGroups,
   recalculateTruckRoute,
   requestBestTippingPlace,
   refreshRoute
