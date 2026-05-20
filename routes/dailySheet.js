@@ -23,6 +23,7 @@ router.get(
 );
 router.post('/:driverId/:date/fuel', dailySheetController.addFuelLog);
 router.get('/fuel/logs', dailySheetController.getAllFuelLogs);
+router.get('/:driverId/fuel', dailySheetController.getFuelLogsForDriver);
 router.get('/:driverId/:date/fuel', dailySheetController.getFuelLogs);
 router.patch('/:driverId/:date/fuel/:fuelLogId', dailySheetController.updateFuelLog);
 router.delete('/:driverId/:date/fuel/:fuelLogId', dailySheetController.deleteFuelLog);

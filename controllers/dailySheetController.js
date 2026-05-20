@@ -521,6 +521,24 @@ const dailySheetController = {
         .json({ message: 'Failed to fetch fuel logs', error: error.message });
     }
   },
+  getFuelLogsForDriver: async (req, res) => {
+    try {
+      const { driverId } = req.params;
+
+      const fuelLogs = await Fuel.find({ driverId }).sort({ date: -1, time: -1 });
+
+      res.status(200).json({
+        message: 'Fuel logs retrieved',
+        count: fuelLogs.length,
+        fuelLogs,
+      });
+    } catch (error) {
+      console.error(error);
+      res
+        .status(500)
+        .json({ message: 'Failed to fetch fuel logs', error: error.message });
+    }
+  },
   getFuelLogs: async (req, res) => {
     try {
       const { driverId, date } = req.params;
