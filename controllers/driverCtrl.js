@@ -8,8 +8,8 @@ const Payroll = require('../models/Payroll');
 const DriverHelperProximityState = require('../models/DriverHelperProximityState');
 const bcrypt = require('bcrypt');
 const Driver = require('../models/Driver');
-const AdditionalItemRequest = require('../models/AdditionalItemRequest');
 const { emitNotificationToUser, emitEvent } = require('../socket');
+const taskPhotoUploadService = require('../services/taskPhotoUploadService');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const { processDriverLocationUpdate } = require('../services/proximityAutoStartService');
@@ -962,304 +962,29 @@ const driverManagement = {
   },
 
 
-  uploadInitialConditionPhotos: async (req, res) => {
-    const { taskId } = req.params;
-    const description = req.body.description;
-    const uploads = req.files.map((file) => file.path);
-    const userId = req.user._id;
+  uploadInitialConditionPhotos: (req, res) =>
+    taskPhotoUploadService.handleTaskPhotoUploadRequest(req, res, 'initial', {
+      getUserModel,
+      getTruckForUser,
+    }),
 
-    try {
-      // Get user info
-      const userInfo = await getUserModel(userId);
-      if (!userInfo) {
-        return res.status(404).json({ message: 'User not found' });
-      }
+  intermediateConditionPhotos: (req, res) =>
+    taskPhotoUploadService.handleTaskPhotoUploadRequest(req, res, 'intermediate', {
+      getUserModel,
+      getTruckForUser,
+    }),
 
-      const { type } = userInfo;
+  uploadFinalConditionPhotos: (req, res) =>
+    taskPhotoUploadService.handleTaskPhotoUploadRequest(req, res, 'final', {
+      getUserModel,
+      getTruckForUser,
+    }),
 
-      // Fetch the truck containing the task
-      const truck = await getTruckForUser(userId);
-      if (!truck) {
-        return res.status(404).json({ message: 'No truck found for the given user.' });
-      }
-
-      // Get the current job (task)
-      const currentTask = await Task.findById(taskId);
-      if (!currentTask) {
-        return res.status(404).json({ message: 'Current task not found.' });
-      }
-
-      // Update the task with initial condition photos
-      const taskUpdate = {
-        $push: {
-          initialConditionPhotos: {
-            items: uploads,
-            description: description,
-          },
-        },
-      };
-
-      const updatedTask = await Task.findByIdAndUpdate(taskId, taskUpdate, { new: true });
-      if (!updatedTask) {
-        return res.status(404).json({ message: 'Failed to update the task with initial condition photos.' });
-      }
-
-      // Update the user's current job address based on type
-      if (type === 'Driver') {
-        const driverUpdate = {
-          currentJobAddress: currentTask.collectionAddress ? currentTask.collectionAddress : null,
-        };
-        await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
-      } else if (type === 'Helper') {
-        const helperUpdate = {
-          currentJobAddress: currentTask.collectionAddress ? currentTask.collectionAddress : null,
-        };
-        await Helper.findByIdAndUpdate(userId, helperUpdate, { new: true });
-      }
-
-      // Send response
-      res.status(200).json({
-        message: `Initial condition photos uploaded successfully by ${type}`,
-        task: updatedTask,
-        userType: type
-      });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({
-        message: 'Failed to upload initial condition photos',
-        error: error.message,
-      });
-    }
-  },
-
-  intermediateConditionPhotos: async (req, res) => {
-    const { taskId } = req.params;
-    const description = req.body.description;
-    const uploads = req.files.map((file) => file.path);
-    const userId = req.user._id;
-
-    try {
-      console.log('Processing intermediate condition photos for task:', taskId);
-
-      // Get user info
-      const userInfo = await getUserModel(userId);
-      if (!userInfo) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      const { type } = userInfo;
-
-      // Fetch the truck associated with the current user
-      const truck = await getTruckForUser(userId);
-      if (!truck) {
-        return res
-          .status(404)
-          .json({ message: 'No truck found for the given user.' });
-      }
-
-      console.log('Found truck:', truck._id);
-
-      // Get the current job (task)
-      const currentTask = await Task.findById(taskId);
-      if (!currentTask) {
-        return res.status(404).json({ message: 'Current task not found.' });
-      }
-
-      console.log('Found current task:', currentTask._id);
-
-      // Update the task with intermediate condition photos
-      const taskUpdate = {
-        intermediateConditionPhotos: [
-          {
-            items: uploads,
-            description: description,
-          },
-        ],
-      };
-
-      console.log('Updating task with photos:', taskUpdate);
-
-      const task = await Task.findByIdAndUpdate(
-        taskId,
-        taskUpdate,
-        { new: true },
-      );
-
-      console.log('Task updated successfully');
-
-      // Update the user's current job address based on type
-      if (type === 'Driver') {
-        const driverUpdate = {
-          currentJobAddress: currentTask.collectionAddress,
-        };
-        await Driver.findByIdAndUpdate(userId, driverUpdate, { new: true });
-        console.log('Driver updated successfully');
-      } else if (type === 'Helper') {
-        const helperUpdate = {
-          currentJobAddress: currentTask.collectionAddress,
-        };
-        await Helper.findByIdAndUpdate(userId, helperUpdate, { new: true });
-        console.log('Helper updated successfully');
-      }
-
-      res.status(200).json({
-        message: `Intermediate condition photos uploaded successfully by ${type}`,
-        task,
-        userType: type
-      });
-    } catch (error) {
-      console.error('Error in intermediateConditionPhotos:', error);
-
-      // Check if it's a Map error
-      if (error.message && error.message.includes('Iterator value')) {
-        console.error('Map error detected, attempting to clean up truck data...');
-
-        try {
-          const Truck = require('../models/Truck');
-          await Truck.cleanupTasks();
-          console.log('Truck tasks cleaned up successfully');
-
-          // Retry the operation
-          return res.status(500).json({
-            message: 'Database cleanup required. Please try again.',
-            error: 'Map data corruption detected and fixed. Please retry the operation.',
-          });
-        } catch (cleanupError) {
-          console.error('Cleanup failed:', cleanupError);
-        }
-      }
-
-      res.status(500).json({
-        message: 'Failed to upload intermediate condition photos',
-        error: error.message,
-      });
-    }
-  },
-
-  uploadFinalConditionPhotos: async (req, res) => {
-    const { taskId } = req.params;
-    const description = req.body.description;
-    const uploads = req.files.map((file) => file.path);
-    const userId = req.user._id;
-
-    try {
-      // Get user info
-      const userInfo = await getUserModel(userId);
-      if (!userInfo) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      const { type } = userInfo;
-
-      const taskUpdate = {
-        finalConditionPhotos: [
-          {
-            items: uploads,
-            description: description,
-          },
-        ],
-      };
-
-      const task = await Task.findByIdAndUpdate(taskId, taskUpdate, {
-        new: true,
-      });
-
-      res.status(200).json({
-        message: `Final condition photos uploaded successfully by ${type}`,
-        task,
-        userType: type
-      });
-    } catch (error) {
-      console.log(error)
-      res.status(500).json({
-        message: 'Failed to upload final condition photos',
-        error: error.message,
-      });
-    }
-  },
-
-  addAdditionalItems: async (req, res) => {
-    const { taskId } = req.params;
-    const description = req.body.description;
-    const uploads = Array.isArray(req.files) ? req.files.map((file) => file.path) : [];
-    const userId = req.user._id;
-
-    try {
-      // Get user info
-      const userInfo = await getUserModel(userId);
-      if (!userInfo) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-
-      const { type } = userInfo;
-      const itemName = String(description || '').trim();
-      if (!itemName) {
-        return res.status(400).json({ message: 'description is required' });
-      }
-
-      const ALLOWED_PAYMENT_METHODS = [
-        'cash',
-        'BankTransfer',
-        'payment_link',
-        'partial_payment',
-        'online',
-      ];
-      const paymentMethod = String(req.body.paymentMethod || '').trim();
-      if (!ALLOWED_PAYMENT_METHODS.includes(paymentMethod)) {
-        return res.status(400).json({
-          message:
-            'paymentMethod is required and must be one of: cash, BankTransfer, payment_link, partial_payment, online',
-        });
-      }
-
-      const quantity = Number(req.body.quantity);
-      const normalizedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
-
-      const task = await Task.findById(taskId);
-      if (!task) {
-        return res.status(404).json({ message: 'Task not found' });
-      }
-
-      const requestPayload = {
-        parentTaskId: task._id,
-        itemName,
-        quantity: normalizedQuantity,
-        Objectsposition: 'Outside',
-        quotedPrice: null,
-        paymentMethod,
-        media: uploads,
-        status: 'pending_admin_quote',
-        requestedBy: userId,
-        requestedByType: type,
-      };
-
-      const createdRequest = await AdditionalItemRequest.create(requestPayload);
-      const actorName = userInfo?.user?.username || `${task.firstName || ''} ${task.lastName || ''}`.trim() || type;
-      const adminUsers = await User.find({
-        $or: [{ roleType: 'Admin' }, { role: 'Admin' }],
-      }).select('_id');
-      const notificationMessage = `${actorName} submitted an additional item request for order ${task.orderNumber}: "${itemName}"`;
-      await Promise.all(
-        adminUsers.map((adminUser) =>
-          emitNotificationToUser(adminUser._id.toString(), 'Orders', notificationMessage),
-        ),
-      );
-
-      res
-        .status(200)
-        .json({
-          message: `Additional item request submitted successfully by ${type}`,
-          request: createdRequest,
-          taskId: task._id,
-          userType: type
-        });
-    } catch (error) {
-      res.status(500).json({
-        message: 'Failed to submit additional item request',
-        error: error.message,
-      });
-    }
-  },
+  addAdditionalItems: (req, res) =>
+    taskPhotoUploadService.handleTaskPhotoUploadRequest(req, res, 'additional', {
+      getUserModel,
+      getTruckForUser,
+    }),
   // this api is not used in the project
   updateJobStatus: async (req, res) => {
     const { taskId } = req.params;
