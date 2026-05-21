@@ -4,7 +4,10 @@ const Driver = require('../models/Driver');
 const DriverHelperProximityState = require('../models/DriverHelperProximityState');
 const loggingService = require('./loggingService');
 const { getAssignedForDayFromRanges } = require('./unitAssignmentLogService');
-const { autoStartShiftOnArrival } = require('./shiftStartService');
+const {
+  autoStartShiftsOnArrival,
+  hasPendingShiftStart,
+} = require('./shiftStartService');
 
 const THROTTLE_MS = Number(process.env.DRIVER_HELPER_PROXIMITY_THROTTLE_MS || 15000);
 const ARRIVAL_METERS = Number(process.env.DRIVER_HELPER_ARRIVAL_METERS || 80);
@@ -192,9 +195,8 @@ async function processDriverLocationUpdate({
   let autoStartResult = null;
   const hasArrived = distanceMeters <= ARRIVAL_METERS;
 
-  if (hasArrived && state.shiftStartRequestedAt && !state.shiftAutoStartedAt) {
-    const shiftStart = await autoStartShiftOnArrival({
-      driverId: truck.driverId,
+  if (hasArrived && hasPendingShiftStart(state)) {
+    const shiftStart = await autoStartShiftsOnArrival({
       truck,
       state,
       dateKey,
@@ -203,8 +205,11 @@ async function processDriverLocationUpdate({
     if (shiftStart.started) {
       autoStartResult = {
         shiftAutoStarted: true,
-        payrollId: shiftStart.payroll._id.toString(),
+        payrollId: shiftStart.driverPayroll?._id?.toString() || null,
+        helperPayrollId: shiftStart.helperPayroll?._id?.toString() || null,
         startTime: shiftStart.startTime,
+        driverStarted: Boolean(shiftStart.driver?.started),
+        helperStarted: Boolean(shiftStart.helper?.started),
         arrivalThresholdMeters: ARRIVAL_METERS,
         arrivalDistanceMeters: Math.round(distanceMeters),
       };
@@ -214,7 +219,7 @@ async function processDriverLocationUpdate({
         actorUsername,
         truckId: truck._id,
         details: {
-          event: 'DRIVER_SHIFT_AUTO_STARTED_ON_ARRIVAL',
+          event: 'TEAM_SHIFTS_AUTO_STARTED_ON_ARRIVAL',
           ...autoStartResult,
           driverId: truck.driverId,
           helperId: effectiveHelperId,
@@ -235,6 +240,7 @@ async function processDriverLocationUpdate({
           arrivalThresholdMeters: ARRIVAL_METERS,
           arrivalDistanceMeters: Math.round(distanceMeters),
           shiftStartRequested: Boolean(state.shiftStartRequestedAt),
+          helperShiftStartRequested: Boolean(state.helperShiftStartRequestedAt),
           driverId: truck.driverId,
           helperId: effectiveHelperId,
           dateKey,

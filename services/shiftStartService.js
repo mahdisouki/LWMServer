@@ -21,8 +21,8 @@ function getDayBounds(dateKey = getTodayDateKeyLocal()) {
   return { startOfDay, endOfDay };
 }
 
-async function getTruckForDriver(driverId) {
-  return Truck.findOne({ driverId }).select('_id driverId helperId');
+function idsMatch(a, b) {
+  return a && b && a.toString() === b.toString();
 }
 
 async function getEffectiveHelperId(truck, dateKey) {
@@ -31,11 +31,46 @@ async function getEffectiveHelperId(truck, dateKey) {
   return assigned?.helperId || truck.helperId || null;
 }
 
-async function driverHasHelperToday(driverId, dateKey = getTodayDateKeyLocal()) {
-  const truck = await getTruckForDriver(driverId);
-  if (!truck) return { truck: null, effectiveHelperId: null };
+async function getTruckTeamForUser(userId, dateKey = getTodayDateKeyLocal()) {
+  let truck =
+    (await Truck.findOne({ driverId: userId }).select('_id driverId helperId')) ||
+    (await Truck.findOne({ helperId: userId }).select('_id driverId helperId')) ||
+    (await Truck.findOne({ 'extraDrivers.driverId': userId }).select(
+      '_id driverId helperId'
+    )) ||
+    (await Truck.findOne({ 'extraHelpers.helperId': userId }).select(
+      '_id driverId helperId'
+    ));
+
+  if (!truck) {
+    return { truck: null, driverId: null, effectiveHelperId: null };
+  }
+
   const effectiveHelperId = await getEffectiveHelperId(truck, dateKey);
-  return { truck, effectiveHelperId };
+  return {
+    truck,
+    driverId: truck.driverId,
+    effectiveHelperId,
+  };
+}
+
+function isPairedDriverHelperTeam({ truck, driverId, effectiveHelperId }) {
+  return Boolean(truck && driverId && effectiveHelperId);
+}
+
+function getUserTeamRole(userId, driverId, effectiveHelperId) {
+  if (idsMatch(userId, driverId)) return 'driver';
+  if (idsMatch(userId, effectiveHelperId)) return 'helper';
+  return null;
+}
+
+/** @deprecated use getTruckTeamForUser */
+async function driverHasHelperToday(driverId, dateKey = getTodayDateKeyLocal()) {
+  const team = await getTruckTeamForUser(driverId, dateKey);
+  return {
+    truck: team.truck,
+    effectiveHelperId: team.effectiveHelperId,
+  };
 }
 
 async function getOrCreateProximityState(truck, dateKey, effectiveHelperId) {
@@ -57,6 +92,43 @@ async function getOrCreateProximityState(truck, dateKey, effectiveHelperId) {
   return state;
 }
 
+function getShiftPendingStatusForUser(state, userId, driverId, effectiveHelperId, activePayroll) {
+  const role = getUserTeamRole(userId, driverId, effectiveHelperId);
+  if (role === 'helper') {
+    const pendingArrival = Boolean(
+      state?.helperShiftStartRequestedAt &&
+        !state?.helperShiftAutoStartedAt &&
+        !activePayroll
+    );
+    return {
+      role,
+      pendingArrival,
+      shiftStartRequestedAt: state?.helperShiftStartRequestedAt || null,
+      shiftAutoStartedAt: state?.helperShiftAutoStartedAt || null,
+      waitingForDriverArrival: pendingArrival,
+    };
+  }
+
+  const pendingArrival = Boolean(
+    state?.shiftStartRequestedAt && !state?.shiftAutoStartedAt && !activePayroll
+  );
+  return {
+    role: role || 'driver',
+    pendingArrival,
+    shiftStartRequestedAt: state?.shiftStartRequestedAt || null,
+    shiftAutoStartedAt: state?.shiftAutoStartedAt || null,
+    waitingForDriverArrival: pendingArrival,
+  };
+}
+
+function hasPendingShiftStart(state) {
+  const driverPending =
+    state?.shiftStartRequestedAt && !state?.shiftAutoStartedAt;
+  const helperPending =
+    state?.helperShiftStartRequestedAt && !state?.helperShiftAutoStartedAt;
+  return Boolean(driverPending || helperPending);
+}
+
 async function findActivePayrollForDay(userId, dateKey = getTodayDateKeyLocal()) {
   const { startOfDay, endOfDay } = getDayBounds(dateKey);
   return Payroll.findOne({
@@ -69,7 +141,12 @@ async function findActivePayrollForDay(userId, dateKey = getTodayDateKeyLocal())
 async function createShiftPayroll(userId, startTime = new Date()) {
   const existing = await Payroll.findOne({ userId, endTime: null });
   if (existing) {
-    return { ok: false, status: 400, message: 'You have already started work for the day.', payroll: existing };
+    return {
+      ok: false,
+      status: 400,
+      message: 'You have already started work for the day.',
+      payroll: existing,
+    };
   }
 
   const truck =
@@ -89,13 +166,26 @@ async function createShiftPayroll(userId, startTime = new Date()) {
   return { ok: true, payroll: newPayroll };
 }
 
-async function markShiftStartRequested(driverId, dateKey = getTodayDateKeyLocal()) {
-  const { truck, effectiveHelperId } = await driverHasHelperToday(driverId, dateKey);
-  if (!truck || !effectiveHelperId) {
-    return { ok: false, status: 404, message: 'No truck or helper assignment found for today.' };
+async function markShiftStartRequested(userId, dateKey = getTodayDateKeyLocal()) {
+  const { truck, driverId, effectiveHelperId } = await getTruckTeamForUser(
+    userId,
+    dateKey
+  );
+
+  if (!isPairedDriverHelperTeam({ truck, driverId, effectiveHelperId })) {
+    return {
+      ok: false,
+      status: 404,
+      message: 'No truck or driver/helper assignment found for today.',
+    };
   }
 
-  const activePayroll = await findActivePayrollForDay(driverId, dateKey);
+  const role = getUserTeamRole(userId, driverId, effectiveHelperId);
+  if (!role) {
+    return { ok: false, status: 403, message: 'User is not on this truck team for today.' };
+  }
+
+  const activePayroll = await findActivePayrollForDay(userId, dateKey);
   if (activePayroll) {
     return {
       ok: false,
@@ -106,25 +196,30 @@ async function markShiftStartRequested(driverId, dateKey = getTodayDateKeyLocal(
   }
 
   const state = await getOrCreateProximityState(truck, dateKey, effectiveHelperId);
-  if (state.shiftStartRequestedAt) {
-    return {
-      ok: true,
-      alreadyRequested: true,
-      state,
-      truck,
-      effectiveHelperId,
-    };
+  let alreadyRequested = false;
+
+  if (role === 'driver') {
+    alreadyRequested = Boolean(state.shiftStartRequestedAt);
+    if (!alreadyRequested) {
+      state.shiftStartRequestedAt = new Date();
+    }
+  } else {
+    alreadyRequested = Boolean(state.helperShiftStartRequestedAt);
+    if (!alreadyRequested) {
+      state.helperShiftStartRequestedAt = new Date();
+    }
   }
 
-  state.shiftStartRequestedAt = new Date();
   await state.save();
 
   return {
     ok: true,
-    alreadyRequested: false,
+    alreadyRequested,
     state,
     truck,
+    driverId,
     effectiveHelperId,
+    role,
   };
 }
 
@@ -176,12 +271,12 @@ async function isDriverAtHelperStart(driverId, effectiveHelperId) {
   );
 }
 
-async function notifyDriverShiftStarted(driverId, payroll, dateKey) {
+async function notifyUserShiftStarted(userId, payroll, dateKey) {
   try {
-    const { emitNotificationToUser, emitEvent, getIo } = require('../socket');
+    const { emitNotificationToUser } = require('../socket');
     const message = 'Your shift has now started';
     await emitNotificationToUser(
-      driverId.toString(),
+      userId.toString(),
       'Payroll',
       message,
       'London Waste Management',
@@ -192,75 +287,171 @@ async function notifyDriverShiftStarted(driverId, payroll, dateKey) {
         startTime: payroll.startTime?.toISOString?.() ?? payroll.startTime,
       }
     );
-
-    const io = getIo();
-    if (io) {
-      io.emit('driverShiftAutoStarted', {
-        driverId: driverId.toString(),
-        payrollId: payroll._id.toString(),
-        startTime: payroll.startTime,
-        dateKey,
-        message,
-      });
-    } else {
-      emitEvent('driverShiftAutoStarted', {
-        driverId: driverId.toString(),
-        payrollId: payroll._id.toString(),
-        startTime: payroll.startTime,
-        dateKey,
-        message,
-      });
-    }
   } catch (err) {
-    console.error('[shiftStartService] notifyDriverShiftStarted:', err.message);
+    console.error('[shiftStartService] notifyUserShiftStarted:', err.message);
   }
 }
 
-async function autoStartShiftOnArrival({
+async function emitPairShiftAutoStarted({
   driverId,
+  helperId,
+  dateKey,
+  startTime,
+  driverPayroll,
+  helperPayroll,
+}) {
+  try {
+    const { getIo, emitEvent } = require('../socket');
+    const message = 'Your shift has now started';
+    const payload = {
+      driverId: driverId?.toString(),
+      helperId: helperId?.toString(),
+      dateKey,
+      startTime,
+      message,
+      driverPayrollId: driverPayroll?._id?.toString() || null,
+      helperPayrollId: helperPayroll?._id?.toString() || null,
+    };
+
+    const io = getIo();
+    if (io) {
+      io.emit('pairShiftAutoStarted', payload);
+      if (driverPayroll) {
+        io.emit('driverShiftAutoStarted', {
+          ...payload,
+          payrollId: payload.driverPayrollId,
+        });
+      }
+      if (helperPayroll) {
+        io.emit('helperShiftAutoStarted', {
+          ...payload,
+          payrollId: payload.helperPayrollId,
+        });
+      }
+    } else {
+      emitEvent('pairShiftAutoStarted', payload);
+    }
+  } catch (err) {
+    console.error('[shiftStartService] emitPairShiftAutoStarted:', err.message);
+  }
+}
+
+async function startPayrollForTeamMember(userId, dateKey, sharedStartTime, state, role) {
+  const requestedField =
+    role === 'driver' ? 'shiftStartRequestedAt' : 'helperShiftStartRequestedAt';
+  const startedField =
+    role === 'driver' ? 'shiftAutoStartedAt' : 'helperShiftAutoStartedAt';
+
+  if (!state[requestedField] || state[startedField]) {
+    return { started: false, role, reason: 'not-pending' };
+  }
+
+  const activePayroll = await findActivePayrollForDay(userId, dateKey);
+  if (activePayroll) {
+    state[startedField] = activePayroll.startTime || sharedStartTime;
+    return { started: true, role, payroll: activePayroll, alreadyActive: true };
+  }
+
+  const result = await createShiftPayroll(userId, sharedStartTime);
+  if (!result.ok) {
+    return { started: false, role, reason: 'create-failed', message: result.message };
+  }
+
+  state[startedField] = result.payroll.startTime;
+  await notifyUserShiftStarted(userId, result.payroll, dateKey);
+  return { started: true, role, payroll: result.payroll };
+}
+
+async function autoStartShiftsOnArrival({
   truck,
   state,
   dateKey = getTodayDateKeyLocal(),
 }) {
-  if (!state?.shiftStartRequestedAt || state.shiftAutoStartedAt) {
-    return { started: false, reason: 'not-pending-or-already-started' };
+  if (!hasPendingShiftStart(state)) {
+    return { started: false, reason: 'nothing-pending' };
   }
 
-  const activePayroll = await findActivePayrollForDay(driverId, dateKey);
-  if (activePayroll) {
-    state.shiftAutoStartedAt = activePayroll.startTime || new Date();
-    state.autoStartTriggered = true;
-    await state.save();
-    return { started: false, reason: 'payroll-already-active', payroll: activePayroll };
-  }
+  const driverId = truck.driverId;
+  const helperId = state.helperId;
+  const sharedStartTime = new Date();
 
-  const result = await createShiftPayroll(driverId);
-  if (!result.ok) {
-    return { started: false, reason: 'create-failed', message: result.message };
-  }
-
-  state.shiftAutoStartedAt = result.payroll.startTime;
+  state.arrivalTriggeredAt = state.arrivalTriggeredAt || sharedStartTime;
   state.autoStartTriggered = true;
-  state.arrivalTriggeredAt = state.arrivalTriggeredAt || new Date();
+
+  const outcomes = [];
+  const driverPending = state.shiftStartRequestedAt && !state.shiftAutoStartedAt;
+  const helperPending =
+    state.helperShiftStartRequestedAt && !state.helperShiftAutoStartedAt;
+
+  if (driverPending) {
+    outcomes.push(
+      await startPayrollForTeamMember(driverId, dateKey, sharedStartTime, state, 'driver')
+    );
+  }
+  if (helperPending) {
+    outcomes.push(
+      await startPayrollForTeamMember(helperId, dateKey, sharedStartTime, state, 'helper')
+    );
+  }
+
   await state.save();
 
-  await notifyDriverShiftStarted(driverId, result.payroll, dateKey);
+  const driverOutcome = outcomes.find((o) => o.role === 'driver');
+  const helperOutcome = outcomes.find((o) => o.role === 'helper');
+  const anyStarted = outcomes.some((o) => o.started);
+
+  if (anyStarted) {
+    await emitPairShiftAutoStarted({
+      driverId,
+      helperId,
+      dateKey,
+      startTime: sharedStartTime,
+      driverPayroll: driverOutcome?.payroll || null,
+      helperPayroll: helperOutcome?.payroll || null,
+    });
+  }
 
   return {
-    started: true,
-    payroll: result.payroll,
-    startTime: result.payroll.startTime,
+    started: anyStarted,
+    startTime: sharedStartTime,
+    driver: driverOutcome || null,
+    helper: helperOutcome || null,
+    payroll: driverOutcome?.payroll || helperOutcome?.payroll || null,
+    driverPayroll: driverOutcome?.payroll || null,
+    helperPayroll: helperOutcome?.payroll || null,
   };
+}
+
+async function tryAutoStartIfDriverArrived({ truck, state, dateKey, driverId, effectiveHelperId }) {
+  if (!(await isDriverAtHelperStart(driverId, effectiveHelperId))) {
+    return null;
+  }
+  state.arrivalTriggeredAt = state.arrivalTriggeredAt || new Date();
+  state.autoStartTriggered = true;
+  await state.save();
+  return autoStartShiftsOnArrival({ truck, state, dateKey });
+}
+
+/** @deprecated use autoStartShiftsOnArrival */
+async function autoStartShiftOnArrival(opts) {
+  return autoStartShiftsOnArrival(opts);
 }
 
 module.exports = {
   getTodayDateKeyLocal,
   getDayBounds,
+  getTruckTeamForUser,
   driverHasHelperToday,
+  isPairedDriverHelperTeam,
+  getUserTeamRole,
+  getShiftPendingStatusForUser,
+  hasPendingShiftStart,
   findActivePayrollForDay,
   createShiftPayroll,
   markShiftStartRequested,
+  autoStartShiftsOnArrival,
   autoStartShiftOnArrival,
-  notifyDriverShiftStarted,
+  tryAutoStartIfDriverArrived,
+  notifyUserShiftStarted,
   isDriverAtHelperStart,
 };
