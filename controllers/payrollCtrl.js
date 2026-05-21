@@ -23,6 +23,8 @@ const {
   markShiftStartRequested,
   tryAutoStartIfDriverArrived,
   getTodayDateKeyLocal,
+  findActivePayrollForDay,
+  findCompletedPayrollForDay,
 } = require('../services/shiftStartService');
 
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -207,6 +209,26 @@ const PayrollCtrl = {
 
     try {
       const dateKey = getTodayDateKeyLocal();
+
+      const activeToday = await findActivePayrollForDay(userId, dateKey);
+      if (activeToday) {
+        return res.status(400).json({
+          message: 'You have already started work for the day.',
+          payroll: activeToday,
+          isShiftActive: true,
+        });
+      }
+
+      const completedToday = await findCompletedPayrollForDay(userId, dateKey);
+      if (completedToday) {
+        return res.status(400).json({
+          message: 'You Already start a shift today',
+          payroll: completedToday,
+          shiftEnded: true,
+          isShiftActive: false,
+        });
+      }
+
       const { truck, driverId, effectiveHelperId } = await getTruckTeamForUser(
         userId,
         dateKey

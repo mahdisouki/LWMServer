@@ -138,7 +138,29 @@ async function findActivePayrollForDay(userId, dateKey = getTodayDateKeyLocal())
   });
 }
 
+/** Today's payroll with both start and end (shift already finished). */
+async function findCompletedPayrollForDay(userId, dateKey = getTodayDateKeyLocal()) {
+  const { startOfDay, endOfDay } = getDayBounds(dateKey);
+  return Payroll.findOne({
+    userId,
+    startTime: { $gte: startOfDay, $lte: endOfDay },
+    endTime: { $exists: true, $ne: null },
+  }).sort({ startTime: -1 });
+}
+
 async function createShiftPayroll(userId, startTime = new Date()) {
+  const dateKey = getTodayDateKeyLocal();
+  const completedToday = await findCompletedPayrollForDay(userId, dateKey);
+  if (completedToday) {
+    return {
+      ok: false,
+      status: 400,
+      message: 'You Already start a shift today',
+      payroll: completedToday,
+      shiftCompleted: true,
+    };
+  }
+
   const existing = await Payroll.findOne({ userId, endTime: null });
   if (existing) {
     return {
@@ -192,6 +214,17 @@ async function markShiftStartRequested(userId, dateKey = getTodayDateKeyLocal())
       status: 400,
       message: 'You have already started work for the day.',
       payroll: activePayroll,
+    };
+  }
+
+  const completedPayroll = await findCompletedPayrollForDay(userId, dateKey);
+  if (completedPayroll) {
+    return {
+      ok: false,
+      status: 400,
+      message: 'You Already start a shift today',
+      payroll: completedPayroll,
+      shiftCompleted: true,
     };
   }
 
@@ -447,6 +480,7 @@ module.exports = {
   getShiftPendingStatusForUser,
   hasPendingShiftStart,
   findActivePayrollForDay,
+  findCompletedPayrollForDay,
   createShiftPayroll,
   markShiftStartRequested,
   autoStartShiftsOnArrival,
