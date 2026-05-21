@@ -71,6 +71,17 @@ function buildMessagePreview(msg) {
   return getReplySnippet(msg);
 }
 
+/** Build a seenBy subdocument; picture is optional (empty string when user has no avatar). */
+function buildSeenByEntry(user) {
+  const userId = user?._id?.toString?.() ?? user?.id?.toString?.() ?? String(user?.userId ?? '');
+  return {
+    userId,
+    username: user?.username || 'Unknown',
+    picture: user?.picture ? String(user.picture) : '',
+    seenAt: new Date(),
+  };
+}
+
 async function getLatestMessageByRoomIds(roomIds) {
   if (!roomIds.length) return {};
 
@@ -98,5 +109,6 @@ module.exports = {
   buildReplyToSnapshot,
   attachReplyTo,
   buildMessagePreview,
+  buildSeenByEntry,
   getLatestMessageByRoomIds,
 };

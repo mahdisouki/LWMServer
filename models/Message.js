@@ -23,7 +23,7 @@ const MessageSchema = new mongoose.Schema({
   seenBy: [{
     userId: { type: String, required: true },
     username: { type: String, required: true },
-    picture: { type: String, required: true },
+    picture: { type: String, default: '' },
     seenAt: { type: Date, default: Date.now }
   }], // Array of users who have seen this message
   reactions: [{
@@ -41,6 +41,17 @@ const MessageSchema = new mongoose.Schema({
     previewUrl: { type: String },
   },
   createdAt: { type: Date, default: Date.now },
+});
+
+MessageSchema.pre('save', function normalizeSeenBy(next) {
+  if (Array.isArray(this.seenBy)) {
+    for (const entry of this.seenBy) {
+      if (entry && (entry.picture == null || entry.picture === undefined)) {
+        entry.picture = '';
+      }
+    }
+  }
+  next();
 });
 
 module.exports = mongoose.model('Message', MessageSchema);

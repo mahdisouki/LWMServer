@@ -18,6 +18,7 @@ const { processDriverLocationUpdate } = require('./services/proximityAutoStartSe
 const {
   MESSAGE_SELECT_FIELDS,
   attachReplyTo,
+  buildSeenByEntry,
 } = require('./utils/chatMessageHelpers');
 
 // Helper function to find truck for a user (including extra drivers/helpers)
@@ -1258,29 +1259,17 @@ const initSocket = (server) => {
           return;
         }
 
-        // Add user to seenBy array
+        const seenEntry = buildSeenByEntry(user);
+
         await Message.findByIdAndUpdate(messageId, {
-          $push: {
-            seenBy: {
-              userId: userId,
-              username: user.username,
-              picture: user.picture,
-              seenAt: new Date()
-            }
-          },
+          $push: { seenBy: seenEntry },
           seen: true,
-          seenAt: new Date()
+          seenAt: new Date(),
         });
 
-        // Emit message seen to the room with user details
         io.to(roomId).emit('messageSeenUpdate', {
           messageId,
-          seenBy: {
-            userId: userId,
-            username: user.username,
-            picture: user.picture,
-            seenAt: new Date()
-          }
+          seenBy: seenEntry,
         });
       } catch (error) {
         console.error('Error handling message seen:', error);
@@ -1314,11 +1303,17 @@ const initSocket = (server) => {
 
         const existingIndex = message.reactions.findIndex((r) => r.userId === actorUserId);
 
+        const persistReactions = async () => {
+          await Message.findByIdAndUpdate(messageId, {
+            $set: { reactions: message.reactions },
+          });
+        };
+
         if (existingIndex >= 0) {
           const existing = message.reactions[existingIndex];
           if (existing.emoji === emoji) {
             message.reactions.splice(existingIndex, 1);
-            await message.save();
+            await persistReactions();
             io.to(roomId).emit('reactionRemoved', {
               messageId,
               roomId,
@@ -1335,7 +1330,7 @@ const initSocket = (server) => {
 
           message.reactions[existingIndex].emoji = emoji;
           message.reactions[existingIndex].createdAt = new Date();
-          await message.save();
+          await persistReactions();
           const reaction = message.reactions[existingIndex];
           io.to(roomId).emit('reactionAdded', {
             messageId,
@@ -1358,7 +1353,7 @@ const initSocket = (server) => {
           createdAt: new Date(),
         };
         message.reactions.push(reaction);
-        await message.save();
+        await persistReactions();
 
         io.to(roomId).emit('reactionAdded', {
           messageId,
@@ -1395,7 +1390,9 @@ const initSocket = (server) => {
         if (!hadReaction) return;
 
         message.reactions = (message.reactions || []).filter((r) => r.userId !== actorUserId);
-        await message.save();
+        await Message.findByIdAndUpdate(messageId, {
+          $set: { reactions: message.reactions },
+        });
 
         io.to(roomId).emit('reactionRemoved', {
           messageId,
@@ -1454,35 +1451,23 @@ const initSocket = (server) => {
 
         let markedCount = 0;
 
-        // Update each message individually to add user to seenBy array
+        const seenEntry = buildSeenByEntry(user);
+
         for (const message of unreadMessages) {
           await Message.findByIdAndUpdate(message._id, {
-            $push: {
-              seenBy: {
-                userId: userId,
-                username: user.username,
-                picture: user.picture,
-                seenAt: new Date()
-              }
-            },
+            $push: { seenBy: seenEntry },
             seen: true,
-            seenAt: new Date()
+            seenAt: new Date(),
           });
           markedCount++;
         }
 
         console.log(`Marked ${markedCount} messages as seen by ${user.username}`);
 
-        // Emit all messages seen to the room with user details
         io.to(roomId).emit('allMessagesSeen', {
           roomId,
-          seenBy: {
-            userId: userId,
-            username: user.username,
-            picture: user.picture,
-            seenAt: new Date()
-          },
-          markedCount: markedCount
+          seenBy: seenEntry,
+          markedCount: markedCount,
         });
       } catch (error) {
         console.error('Error marking all messages as seen:', error);
