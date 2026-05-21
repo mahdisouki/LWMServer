@@ -16,12 +16,13 @@ const {
 const EndShiftRequest = require('../models/EndShiftRequest');
 const { emitNotificationToUser } = require('../socket');
 const {
-  driverHasHelperToday,
+  getTruckTeamForUser,
+  isPairedDriverHelperTeam,
+  getUserTeamRole,
   createShiftPayroll,
   markShiftStartRequested,
-  autoStartShiftOnArrival,
+  tryAutoStartIfDriverArrived,
   getTodayDateKeyLocal,
-  isDriverAtHelperStart,
 } = require('../services/shiftStartService');
 
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -205,47 +206,62 @@ const PayrollCtrl = {
     }
 
     try {
-      const { truck, effectiveHelperId } = await driverHasHelperToday(userId);
-      const isDriverWithHelper =
-        truck &&
-        effectiveHelperId &&
-        truck.driverId?.toString() === userId.toString();
+      const dateKey = getTodayDateKeyLocal();
+      const { truck, driverId, effectiveHelperId } = await getTruckTeamForUser(
+        userId,
+        dateKey
+      );
+      const teamRole = getUserTeamRole(userId, driverId, effectiveHelperId);
+      const isPairedTeam = isPairedDriverHelperTeam({
+        truck,
+        driverId,
+        effectiveHelperId,
+      });
 
-      if (isDriverWithHelper) {
-        const pending = await markShiftStartRequested(userId);
+      if (isPairedTeam && (teamRole === 'driver' || teamRole === 'helper')) {
+        const pending = await markShiftStartRequested(userId, dateKey);
         if (!pending.ok) {
           return res.status(pending.status || 400).json({ message: pending.message });
         }
 
-        const dateKey = getTodayDateKeyLocal();
-        const state = pending.state;
+        const auto = await tryAutoStartIfDriverArrived({
+          truck,
+          state: pending.state,
+          dateKey,
+          driverId,
+          effectiveHelperId,
+        });
 
-        if (await isDriverAtHelperStart(userId, effectiveHelperId)) {
-          state.arrivalTriggeredAt = state.arrivalTriggeredAt || new Date();
-          state.autoStartTriggered = true;
-          await state.save();
-
-          const auto = await autoStartShiftOnArrival({
-            driverId: userId,
-            truck,
-            state,
-            dateKey,
+        if (auto?.started) {
+          const myPayroll =
+            teamRole === 'driver' ? auto.driverPayroll : auto.helperPayroll;
+          return res.status(201).json({
+            message: 'Your shift has now started.',
+            payroll: myPayroll,
+            pendingArrival: false,
+            shiftAutoStarted: true,
+            teamShiftStarted: true,
+            driverPayroll: auto.driverPayroll || null,
+            helperPayroll: auto.helperPayroll || null,
           });
-          if (auto.started) {
-            return res.status(201).json({
-              message: 'Your shift has now started.',
-              payroll: auto.payroll,
-              pendingArrival: false,
-              shiftAutoStarted: true,
-            });
-          }
         }
 
+        const waitingMessage =
+          teamRole === 'helper'
+            ? 'Start shift recorded. Your shift will begin automatically when the driver arrives.'
+            : 'Start shift recorded. Your shift will begin automatically when you arrive at the helper location.';
+
+        const requestedAt =
+          teamRole === 'helper'
+            ? pending.state.helperShiftStartRequestedAt
+            : pending.state.shiftStartRequestedAt;
+
         return res.status(200).json({
-          message:
-            'Start shift recorded. Your shift will begin automatically when you arrive at the helper location.',
+          message: waitingMessage,
           pendingArrival: true,
-          shiftStartRequestedAt: pending.state.shiftStartRequestedAt,
+          waitingForDriverArrival: true,
+          role: teamRole,
+          shiftStartRequestedAt: requestedAt,
         });
       }
 

@@ -889,12 +889,31 @@ const initSocket = (server) => {
               autoStartResult: proximityResult.autoStartResult || null,
             });
             if (proximityResult.autoStartResult?.shiftAutoStarted) {
-              io.emit('driverShiftAutoStarted', {
+              const ar = proximityResult.autoStartResult;
+              io.emit('pairShiftAutoStarted', {
                 driverId: String(actorUserId),
-                payrollId: proximityResult.autoStartResult.payrollId,
-                startTime: proximityResult.autoStartResult.startTime,
+                driverPayrollId: ar.payrollId,
+                helperPayrollId: ar.helperPayrollId,
+                startTime: ar.startTime,
+                driverStarted: ar.driverStarted,
+                helperStarted: ar.helperStarted,
                 message: 'Your shift has now started',
               });
+              if (ar.driverStarted && ar.payrollId) {
+                io.emit('driverShiftAutoStarted', {
+                  driverId: String(actorUserId),
+                  payrollId: ar.payrollId,
+                  startTime: ar.startTime,
+                  message: 'Your shift has now started',
+                });
+              }
+              if (ar.helperStarted && ar.helperPayrollId) {
+                io.emit('helperShiftAutoStarted', {
+                  helperPayrollId: ar.helperPayrollId,
+                  startTime: ar.startTime,
+                  message: 'Your shift has now started',
+                });
+              }
             }
           }
         }
