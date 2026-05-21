@@ -198,7 +198,7 @@ const PayrollCtrl = {
 
     try {
       // Check if there is already a payroll entry for today with no end time
-      const existingPayroll = await Payroll.findOne({ userId, endTime: null });
+      const existingPayroll = await Payroll.findOne({ userId, endTime: null }) || await Payroll.findOne({ userId, startTime: { $gte: new Date(startTime), $lt: new Date(startTime.setDate(startTime.getDate() + 1)) } });
 
       if (existingPayroll) {
         return res
