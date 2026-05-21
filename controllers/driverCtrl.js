@@ -1512,7 +1512,7 @@ const driverManagement = {
   updateMyLocation: async (req, res) => {
     const userId = req.user._id;
     const { latitude, longitude } = req.body;
-    console.log('Updating location for user:', userId);
+    console.log('Updating location for user from background job:', userId);
     try {
       // Validate input
       if (!latitude || !longitude) {
