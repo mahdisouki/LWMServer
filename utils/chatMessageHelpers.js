@@ -1,6 +1,38 @@
 const Message = require('../models/Message');
 const { User } = require('../models/User');
 
+const OBJECT_ID_HEX = /^[a-fA-F0-9]{24}$/;
+
+function toIdString(id) {
+  if (id == null) return '';
+  if (typeof id === 'string') return id.trim();
+  if (typeof id === 'object') {
+    if (id.$oid) return String(id.$oid).trim();
+    if (id._id != null) return toIdString(id._id);
+    if (typeof id.toString === 'function') {
+      const s = id.toString();
+      if (s !== '[object Object]') return s.trim();
+    }
+  }
+  return String(id).trim();
+}
+
+function isValidObjectId(id) {
+  return typeof id === 'string' && OBJECT_ID_HEX.test(id);
+}
+
+function normalizeReactionEmoji(emoji) {
+  if (typeof emoji === 'string') return emoji.trim();
+  if (emoji && typeof emoji === 'object' && typeof emoji.emoji === 'string') {
+    return emoji.emoji.trim();
+  }
+  return '';
+}
+
+function reactionUserIdMatches(reactionUserId, actorUserId) {
+  return String(reactionUserId) === String(actorUserId);
+}
+
 const MESSAGE_SELECT_FIELDS =
   'roomId senderId messageText image fileUrl fileType fileUrls fileTypes audioUrl audioDuration videoUrl videoDuration videoThumbnail videoUrls videoDurations videoThumbnails messageType seen seenAt seenBy reactions replyTo createdAt';
 
@@ -99,4 +131,8 @@ module.exports = {
   attachReplyTo,
   buildMessagePreview,
   getLatestMessageByRoomIds,
+  toIdString,
+  isValidObjectId,
+  normalizeReactionEmoji,
+  reactionUserIdMatches,
 };
