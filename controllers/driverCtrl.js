@@ -1156,6 +1156,21 @@ const driverManagement = {
         return res.status(400).json({ message: 'description is required' });
       }
 
+      const ALLOWED_PAYMENT_METHODS = [
+        'cash',
+        'BankTransfer',
+        'payment_link',
+        'partial_payment',
+        'online',
+      ];
+      const paymentMethod = String(req.body.paymentMethod || '').trim();
+      if (!ALLOWED_PAYMENT_METHODS.includes(paymentMethod)) {
+        return res.status(400).json({
+          message:
+            'paymentMethod is required and must be one of: cash, BankTransfer, payment_link, partial_payment, online',
+        });
+      }
+
       const quantity = Number(req.body.quantity);
       const normalizedQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 
@@ -1170,6 +1185,7 @@ const driverManagement = {
         quantity: normalizedQuantity,
         Objectsposition: 'Outside',
         quotedPrice: null,
+        paymentMethod,
         media: uploads,
         status: 'pending_admin_quote',
         requestedBy: userId,

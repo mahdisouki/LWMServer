@@ -337,6 +337,16 @@ async function createDirectLinkedAdditionalTaskFromItems({
   const couponCode = pricingOptions.couponCode || null;
   const customerEmail = pricingOptions.customerEmail || null;
   const available = pricingOptions.available || parentTask.available || 'AnyTime';
+  const TASK_PAYMENT_METHODS = [
+    'cash',
+    'BankTransfer',
+    'payment_link',
+    'partial_payment',
+    'online',
+  ];
+  const childPaymentMethod = TASK_PAYMENT_METHODS.includes(pricingOptions.paymentMethod)
+    ? pricingOptions.paymentMethod
+    : 'cash';
   const pricingItems = normalizedItems
     .filter((item) => item.standardItemId)
     .map((item) => ({
@@ -388,7 +398,7 @@ async function createDirectLinkedAdditionalTaskFromItems({
     createdBy: createdByUser?.username || 'system',
     createdByType: 'Admin',
     paymentStatus: 'Unpaid',
-    paymentMethod: 'cash',
+    paymentMethod: childPaymentMethod,
     clientObjectPhotos: normalizedMedia,
     totalPrice: calculatedTotalPrice,
     items: normalizedItems,
@@ -6996,6 +7006,7 @@ const taskCtrl = {
           customerEmail: task.email || null,
           applyMinFee: false,
           applySundayFee: false,
+          paymentMethod: request.paymentMethod,
         },
       });
 

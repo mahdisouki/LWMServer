@@ -13,6 +13,11 @@ const additionalItemRequestSchema = new Schema(
       default: 'Outside',
     },
     quotedPrice: { type: Number, default: null },
+    paymentMethod: {
+      type: String,
+      enum: ['cash', 'BankTransfer', 'payment_link', 'partial_payment', 'online'],
+      required: true,
+    },
     media: [{ type: String }],
     status: {
       type: String,
