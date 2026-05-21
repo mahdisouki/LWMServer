@@ -3200,6 +3200,18 @@ const taskCtrl = {
           // Do not fail the request if notification sending fails
         }
 
+        emitRefresh({
+          resource: 'tasks',
+          action: 'updated',
+          truckId: task.truckId?.toString?.() ?? task.truckId ?? null,
+          date: task.date ? task.date.toISOString().split('T')[0] : null,
+          meta: {
+            taskId: task._id.toString(),
+            taskStatus: task.taskStatus,
+            statusAction: 'mark_start',
+          },
+        });
+
         return res.status(200).json({
           message: 'Task marked as started successfully',
           task,
@@ -3313,6 +3325,18 @@ const taskCtrl = {
           console.error('Error sending completion notification to admins:', notificationError);
           // Do not fail the request if notification sending fails
         }
+
+        emitRefresh({
+          resource: 'tasks',
+          action: 'updated',
+          truckId: task.truckId?.toString?.() ?? task.truckId ?? null,
+          date: task.date ? task.date.toISOString().split('T')[0] : null,
+          meta: {
+            taskId: task._id.toString(),
+            taskStatus: task.taskStatus,
+            statusAction: 'mark_finish',
+          },
+        });
 
         return res.status(200).json({
           message: 'Task marked as finished successfully',
