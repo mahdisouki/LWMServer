@@ -4,6 +4,7 @@ const driverCtrl = require('../controllers/driverCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 const multer = require('../middlewares/multer');
+const uploadDisk = require('../middlewares/multerDisk');
 const multerLib = require('multer');
 
 // Helper function to wrap multer middleware with error handling
@@ -69,11 +70,11 @@ router.put('/tasks/update-status/:taskId', isAuth, driverCtrl.updateJobStatus);
 router.put('/tasks/:taskId/redflag', isAuth, driverCtrl.updateTaskRedflag);
 router.put('/tasks/rate/:taskId', isAuth, handleMulterError(multer.single('signature')), driverCtrl.rateTask);
 
-// Task image uploads - allow up to 50 files per upload
-router.post('/location/uploadItem/:taskId', isAuth, handleMulterError(multer.array('uploads', 50)), driverCtrl.uploadInitialConditionPhotos);
-router.post('/truck/uploadItem/:taskId', isAuth, handleMulterError(multer.array('uploads', 50)), driverCtrl.uploadFinalConditionPhotos);
-router.post('/truck/uploadIntermediateItem/:taskId', isAuth, handleMulterError(multer.array('uploads', 50)), driverCtrl.intermediateConditionPhotos);
-router.post('/additional-items/uploadItem/:taskId', isAuth, handleMulterError(multer.array('uploads', 50)), driverCtrl.addAdditionalItems);
+// Task photos: disk staging → 202 → background Cloudinary + DB
+router.post('/location/uploadItem/:taskId', isAuth, handleMulterError(uploadDisk.array('uploads', 50)), driverCtrl.uploadInitialConditionPhotos);
+router.post('/truck/uploadItem/:taskId', isAuth, handleMulterError(uploadDisk.array('uploads', 50)), driverCtrl.uploadFinalConditionPhotos);
+router.post('/truck/uploadIntermediateItem/:taskId', isAuth, handleMulterError(uploadDisk.array('uploads', 50)), driverCtrl.intermediateConditionPhotos);
+router.post('/additional-items/uploadItem/:taskId', isAuth, handleMulterError(uploadDisk.array('uploads', 50)), driverCtrl.addAdditionalItems);
 
 router.post('/break/start', isAuth, driverCtrl.startBreak);
 router.post('/break/end', isAuth, driverCtrl.endBreak);
