@@ -18,10 +18,6 @@ const { processDriverLocationUpdate } = require('./services/proximityAutoStartSe
 const {
   MESSAGE_SELECT_FIELDS,
   attachReplyTo,
-  toIdString,
-  isValidObjectId,
-  normalizeReactionEmoji,
-  reactionUserIdMatches,
 } = require('./utils/chatMessageHelpers');
 
 // Helper function to find truck for a user (including extra drivers/helpers)
@@ -1292,36 +1288,22 @@ const initSocket = (server) => {
     });
 
     // Message reactions (one emoji per user per message; tap same emoji to remove)
-    socket.on('addReaction', async (payload = {}) => {
+    socket.on('addReaction', async ({ messageId, roomId, emoji }) => {
       try {
-        const actorUserId = toIdString(socket.user?.userId);
-        const messageId = toIdString(payload.messageId);
-        const roomId = toIdString(payload.roomId);
-        const emoji = normalizeReactionEmoji(payload.emoji);
-
-        if (!actorUserId || !messageId || !roomId || !emoji) {
+        const actorUserId = socket.user.userId;
+        if (!messageId || !roomId || !emoji) {
           socket.emit('error', { message: 'messageId, roomId, and emoji are required' });
           return;
         }
 
-        if (!isValidObjectId(messageId)) {
-          socket.emit('error', { message: 'Invalid messageId' });
-          return;
-        }
-
-        if (!isValidObjectId(actorUserId)) {
-          socket.emit('error', { message: 'Invalid user session' });
-          return;
-        }
-
-        const user = await User.findById(actorUserId).select('username');
+        const user = await User.findById(actorUserId);
         if (!user) {
           socket.emit('error', { message: 'User not found' });
           return;
         }
 
         const message = await Message.findById(messageId);
-        if (!message || toIdString(message.roomId) !== roomId) {
+        if (!message || message.roomId !== roomId) {
           socket.emit('error', { message: 'Message not found in this room' });
           return;
         }
@@ -1330,15 +1312,12 @@ const initSocket = (server) => {
           message.reactions = [];
         }
 
-        const existingIndex = message.reactions.findIndex((r) =>
-          reactionUserIdMatches(r.userId, actorUserId)
-        );
+        const existingIndex = message.reactions.findIndex((r) => r.userId === actorUserId);
 
         if (existingIndex >= 0) {
           const existing = message.reactions[existingIndex];
           if (existing.emoji === emoji) {
             message.reactions.splice(existingIndex, 1);
-            message.markModified('reactions');
             await message.save();
             io.to(roomId).emit('reactionRemoved', {
               messageId,
@@ -1356,7 +1335,6 @@ const initSocket = (server) => {
 
           message.reactions[existingIndex].emoji = emoji;
           message.reactions[existingIndex].createdAt = new Date();
-          message.markModified('reactions');
           await message.save();
           const reaction = message.reactions[existingIndex];
           io.to(roomId).emit('reactionAdded', {
@@ -1375,12 +1353,11 @@ const initSocket = (server) => {
 
         const reaction = {
           userId: actorUserId,
-          username: user.username || 'User',
+          username: user.username,
           emoji,
           createdAt: new Date(),
         };
         message.reactions.push(reaction);
-        message.markModified('reactions');
         await message.save();
 
         io.to(roomId).emit('reactionAdded', {
@@ -1396,47 +1373,28 @@ const initSocket = (server) => {
         });
       } catch (error) {
         console.error('Error handling addReaction:', error);
-        const detail =
-          error?.name === 'ValidationError'
-            ? 'Reaction validation failed'
-            : error?.name === 'CastError'
-              ? 'Invalid message or user id'
-              : 'Failed to add reaction';
-        socket.emit('error', { message: detail });
+        socket.emit('error', { message: 'Failed to add reaction' });
       }
     });
 
-    socket.on('removeReaction', async (payload = {}) => {
+    socket.on('removeReaction', async ({ messageId, roomId }) => {
       try {
-        const actorUserId = toIdString(socket.user?.userId);
-        const messageId = toIdString(payload.messageId);
-        const roomId = toIdString(payload.roomId);
-
-        if (!actorUserId || !messageId || !roomId) {
+        const actorUserId = socket.user.userId;
+        if (!messageId || !roomId) {
           socket.emit('error', { message: 'messageId and roomId are required' });
           return;
         }
 
-        if (!isValidObjectId(messageId)) {
-          socket.emit('error', { message: 'Invalid messageId' });
-          return;
-        }
-
         const message = await Message.findById(messageId);
-        if (!message || toIdString(message.roomId) !== roomId) {
+        if (!message || message.roomId !== roomId) {
           socket.emit('error', { message: 'Message not found in this room' });
           return;
         }
 
-        const hadReaction = (message.reactions || []).some((r) =>
-          reactionUserIdMatches(r.userId, actorUserId)
-        );
+        const hadReaction = (message.reactions || []).some((r) => r.userId === actorUserId);
         if (!hadReaction) return;
 
-        message.reactions = (message.reactions || []).filter(
-          (r) => !reactionUserIdMatches(r.userId, actorUserId)
-        );
-        message.markModified('reactions');
+        message.reactions = (message.reactions || []).filter((r) => r.userId !== actorUserId);
         await message.save();
 
         io.to(roomId).emit('reactionRemoved', {
@@ -1452,9 +1410,7 @@ const initSocket = (server) => {
         });
       } catch (error) {
         console.error('Error handling removeReaction:', error);
-        const detail =
-          error?.name === 'CastError' ? 'Invalid message id' : 'Failed to remove reaction';
-        socket.emit('error', { message: detail });
+        socket.emit('error', { message: 'Failed to remove reaction' });
       }
     });
 
