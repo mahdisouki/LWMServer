@@ -35,6 +35,16 @@ const driverHelperProximityStateSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /** Driver pressed Start shift — en route to helper; payroll starts on arrival. */
+    shiftStartRequestedAt: {
+      type: Date,
+      default: null,
+    },
+    /** Payroll was created automatically when driver reached helper start_location. */
+    shiftAutoStartedAt: {
+      type: Date,
+      default: null,
+    },
     arrivalTriggeredAt: {
       type: Date,
       default: null,
