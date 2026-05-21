@@ -15,6 +15,14 @@ const {
 } = require('../services/payrollEndTimeService');
 const EndShiftRequest = require('../models/EndShiftRequest');
 const { emitNotificationToUser } = require('../socket');
+const {
+  driverHasHelperToday,
+  createShiftPayroll,
+  markShiftStartRequested,
+  autoStartShiftOnArrival,
+  getTodayDateKeyLocal,
+  isDriverAtHelperStart,
+} = require('../services/shiftStartService');
 
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
@@ -197,29 +205,59 @@ const PayrollCtrl = {
     }
 
     try {
-      // Check if there is already a payroll entry for today with no end time
-      const existingPayroll = await Payroll.findOne({ userId, endTime: null });
+      const { truck, effectiveHelperId } = await driverHasHelperToday(userId);
+      const isDriverWithHelper =
+        truck &&
+        effectiveHelperId &&
+        truck.driverId?.toString() === userId.toString();
 
-      if (existingPayroll) {
-        return res
-          .status(400)
-          .json({ message: 'You have already started work for the day.' });
+      if (isDriverWithHelper) {
+        const pending = await markShiftStartRequested(userId);
+        if (!pending.ok) {
+          return res.status(pending.status || 400).json({ message: pending.message });
+        }
+
+        const dateKey = getTodayDateKeyLocal();
+        const state = pending.state;
+
+        if (await isDriverAtHelperStart(userId, effectiveHelperId)) {
+          state.arrivalTriggeredAt = state.arrivalTriggeredAt || new Date();
+          state.autoStartTriggered = true;
+          await state.save();
+
+          const auto = await autoStartShiftOnArrival({
+            driverId: userId,
+            truck,
+            state,
+            dateKey,
+          });
+          if (auto.started) {
+            return res.status(201).json({
+              message: 'Your shift has now started.',
+              payroll: auto.payroll,
+              pendingArrival: false,
+              shiftAutoStarted: true,
+            });
+          }
+        }
+
+        return res.status(200).json({
+          message:
+            'Start shift recorded. Your shift will begin automatically when you arrive at the helper location.',
+          pendingArrival: true,
+          shiftStartRequestedAt: pending.state.shiftStartRequestedAt,
+        });
       }
-      const truck = await Truck.findOne({ driverId: req.user._id }) || await Truck.findOne({ helperId: req.user._id })
-      // Create a new payroll record with the start time
-      const newPayroll = new Payroll({
-        userId,
-        startTime: new Date(startTime),
-        truckId: truck._id
-      });
 
-      await newPayroll.save();
-      await pcnDamageController.recalculatePayrollPcnDamages(newPayroll.startTime, userId);
-      await newPayroll.populate('pcnDamages');
+      const result = await createShiftPayroll(userId, startTime);
+      if (!result.ok) {
+        return res.status(result.status || 400).json({ message: result.message });
+      }
 
       res.status(201).json({
         message: 'Start time logged successfully.',
-        payroll: newPayroll,
+        payroll: result.payroll,
+        pendingArrival: false,
       });
     } catch (error) {
       console.error('Error logging start time:', error);

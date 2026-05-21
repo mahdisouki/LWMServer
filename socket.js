@@ -884,6 +884,14 @@ const initSocket = (server) => {
               newlyReachedMilestones: proximityResult.newlyReachedMilestones || [],
               autoStartResult: proximityResult.autoStartResult || null,
             });
+            if (proximityResult.autoStartResult?.shiftAutoStarted) {
+              io.emit('driverShiftAutoStarted', {
+                driverId: String(actorUserId),
+                payrollId: proximityResult.autoStartResult.payrollId,
+                startTime: proximityResult.autoStartResult.startTime,
+                message: 'Your shift has now started',
+              });
+            }
           }
         }
       } catch (error) {

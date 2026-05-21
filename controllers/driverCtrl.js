@@ -12,6 +12,8 @@ const { emitNotificationToUser, emitEvent } = require('../socket');
 const taskPhotoUploadService = require('../services/taskPhotoUploadService');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
+const { processDriverLocationUpdate } = require('../services/proximityAutoStartService');
+const { findActivePayrollForDay } = require('../services/shiftStartService');
 const dailySheetController = require('./dailySheetController');
 const payrollCtrl = require('./payrollCtrl');
 const adminId = "67cb6810c9e768ec25d39523"
@@ -1558,9 +1560,28 @@ const driverManagement = {
         startTime: user.breakStartTime,
       });
 
+      let proximityResult = null;
+      if (type === 'Driver') {
+        proximityResult = await processDriverLocationUpdate({
+          actorUserId: userId,
+          actorUsername: user.username,
+          latitude: Number(latitude),
+          longitude: Number(longitude),
+        });
+        if (proximityResult && !proximityResult.skipped) {
+          emitEvent('driverHelperProximity', {
+            driverId: userId,
+            distanceMeters: proximityResult.distanceMeters,
+            newlyReachedMilestones: proximityResult.newlyReachedMilestones || [],
+            autoStartResult: proximityResult.autoStartResult || null,
+          });
+        }
+      }
+
       res.status(200).json({
         message: 'Location updated successfully',
-        location: user.location
+        location: user.location,
+        proximity: proximityResult,
       });
     } catch (error) {
       console.error(`Error updating location for user ${userId}:`, error);
@@ -1642,6 +1663,21 @@ const driverManagement = {
         });
       }
 
+      const truck = await getTruckForUser(userId);
+      let pendingArrival = false;
+      let shiftStartRequestedAt = null;
+      if (truck) {
+        const dateKey = req.query.date || getTodayDateKeyLocal();
+        const proximityState = await DriverHelperProximityState.findOne({
+          truckId: truck._id,
+          dateKey,
+        });
+        pendingArrival = Boolean(
+          proximityState?.shiftStartRequestedAt && !proximityState?.shiftAutoStartedAt
+        );
+        shiftStartRequestedAt = proximityState?.shiftStartRequestedAt || null;
+      }
+
       // No payroll record found for this day
       return res.status(200).json({
         hasStarted: false,
@@ -1649,7 +1685,11 @@ const driverManagement = {
         isShiftActive: false,
         payrollId: null,
         startTime: null,
-        message: 'No shift started for this day'
+        pendingArrival,
+        shiftStartRequestedAt,
+        message: pendingArrival
+          ? 'Start shift requested — waiting for arrival at helper location'
+          : 'No shift started for this day',
       });
 
     } catch (error) {
@@ -1689,9 +1729,21 @@ const driverManagement = {
         dateKey,
       });
 
+      const activePayroll = await findActivePayrollForDay(userId, dateKey);
+      const pendingArrival = Boolean(
+        state?.shiftStartRequestedAt && !state?.shiftAutoStartedAt && !activePayroll
+      );
+      const visible = !activePayroll && !pendingArrival;
+
       return res.status(200).json({
         message: 'Start button status retrieved successfully',
-        enabled: state?.autoStartTriggered === true,
+        /** @deprecated Use `visible` — true only before Start shift is pressed. */
+        enabled: visible,
+        visible,
+        pendingArrival,
+        shiftStartRequestedAt: state?.shiftStartRequestedAt || null,
+        shiftAutoStartedAt: state?.shiftAutoStartedAt || null,
+        hasArrived: Boolean(state?.arrivalTriggeredAt),
         dateKey,
         truckId: truck._id,
         distanceMeters: Number.isFinite(Number(state?.lastDistanceMeters))

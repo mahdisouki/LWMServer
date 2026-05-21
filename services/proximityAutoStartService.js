@@ -4,6 +4,7 @@ const Driver = require('../models/Driver');
 const DriverHelperProximityState = require('../models/DriverHelperProximityState');
 const loggingService = require('./loggingService');
 const { getAssignedForDayFromRanges } = require('./unitAssignmentLogService');
+const { autoStartShiftOnArrival } = require('./shiftStartService');
 
 const THROTTLE_MS = Number(process.env.DRIVER_HELPER_PROXIMITY_THROTTLE_MS || 15000);
 const ARRIVAL_METERS = Number(process.env.DRIVER_HELPER_ARRIVAL_METERS || 80);
@@ -189,29 +190,57 @@ async function processDriverLocationUpdate({
   state.milestonesReached = Array.from(reachedSet).sort((a, b) => b - a);
 
   let autoStartResult = null;
-  if (!state.autoStartTriggered && distanceMeters <= ARRIVAL_METERS) {
-    state.autoStartTriggered = true;
-    state.arrivalTriggeredAt = new Date();
+  const hasArrived = distanceMeters <= ARRIVAL_METERS;
 
-    autoStartResult = {
-      startButtonEnabled: true,
-      statusChanged: true,
-      arrivalThresholdMeters: ARRIVAL_METERS,
-      arrivalDistanceMeters: Math.round(distanceMeters),
-    };
-
-    await logProximityEvent({
-      actorUserId,
-      actorUsername,
-      truckId: truck._id,
-      details: {
-        event: 'DRIVER_HELPER_ARRIVED_READY_TO_START',
-        ...autoStartResult,
-        driverId: truck.driverId,
-        helperId: truck.helperId,
-        dateKey,
-      },
+  if (hasArrived && state.shiftStartRequestedAt && !state.shiftAutoStartedAt) {
+    const shiftStart = await autoStartShiftOnArrival({
+      driverId: truck.driverId,
+      truck,
+      state,
+      dateKey,
     });
+
+    if (shiftStart.started) {
+      autoStartResult = {
+        shiftAutoStarted: true,
+        payrollId: shiftStart.payroll._id.toString(),
+        startTime: shiftStart.startTime,
+        arrivalThresholdMeters: ARRIVAL_METERS,
+        arrivalDistanceMeters: Math.round(distanceMeters),
+      };
+
+      await logProximityEvent({
+        actorUserId,
+        actorUsername,
+        truckId: truck._id,
+        details: {
+          event: 'DRIVER_SHIFT_AUTO_STARTED_ON_ARRIVAL',
+          ...autoStartResult,
+          driverId: truck.driverId,
+          helperId: effectiveHelperId,
+          dateKey,
+        },
+      });
+    }
+  } else if (hasArrived && !state.arrivalTriggeredAt) {
+    state.arrivalTriggeredAt = new Date();
+    if (!state.autoStartTriggered) {
+      state.autoStartTriggered = true;
+      await logProximityEvent({
+        actorUserId,
+        actorUsername,
+        truckId: truck._id,
+        details: {
+          event: 'DRIVER_HELPER_ARRIVED',
+          arrivalThresholdMeters: ARRIVAL_METERS,
+          arrivalDistanceMeters: Math.round(distanceMeters),
+          shiftStartRequested: Boolean(state.shiftStartRequestedAt),
+          driverId: truck.driverId,
+          helperId: effectiveHelperId,
+          dateKey,
+        },
+      });
+    }
   }
 
   await state.save();
