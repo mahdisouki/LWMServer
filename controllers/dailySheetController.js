@@ -334,7 +334,7 @@ const dailySheetController = {
       const { amount, litres, station, addedBy, time: timeBody } = req.body;
 
       if (amount == null || Number.isNaN(Number(amount))) {
-        return res.status(400).json({ message: 'amount is required and must be a number' });
+       amount = 0;
       }
 
       const startDate = new Date(date);
