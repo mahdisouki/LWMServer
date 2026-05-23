@@ -15,7 +15,10 @@ const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.0.146:8000'//'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.0.135:8000'//'https://routeoptimiser.duckdns.org';
+/** External optimizer: manual job groups (POST body: date, truck_contexts, job_groups). */
+const EXTERNAL_ROUTE_GROUPS_API_PATH =
+  process.env.EXTERNAL_ROUTE_GROUPS_API_PATH || '/api/v1/custom';
 
 function normalizeMongoId(value) {
   if (value == null) return null;
@@ -814,8 +817,8 @@ async function calculateRoutesExternal(req, res) {
 
 /**
  * POST /api/route-optimizer/external/calculate-routes-groups
- * Same as calculate-routes but the client sends manual job groups (not grouped by truck).
- * The optimizer assigns whole groups to trucks and orders jobs inside each group.
+ * Client sends manual job groups (not grouped by truck).
+ * Calls external POST /api/v1/custom; assigns groups to trucks and persists routes.
  *
  * Body: {
  *   date: string|Date,
@@ -909,10 +912,10 @@ async function calculateRoutesExternalWithGroups(req, res) {
     if (vanCapsForOptimizer) {
       payload.van_current_capacities = vanCapsForOptimizer;
     }
-
+    console.log("payload", payload);
     let routes = {};
     let apiCallsUsed = 0;
-    let optimizerMode = 'calculate-routes-groups';
+    let optimizerMode = 'custom';
     let externalSuccess = true;
     /** @type {Record<string, unknown>} */
     let externalSummary = {};
@@ -926,29 +929,13 @@ async function calculateRoutesExternalWithGroups(req, res) {
       return { data, status, url };
     };
 
-    const groupsUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes-groups`;
+    const groupsUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}${EXTERNAL_ROUTE_GROUPS_API_PATH}`;
     let { data, status, url: usedUrl } = await tryExternal(groupsUrl);
 
-    if (!(status === 200 && data && typeof data.routes === 'object')) {
-      const standardUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`;
-      if (status === 404 || status === 405 || status === 422) {
-        console.log(
-          '[RouteOptimizer:groups] %s unavailable (HTTP %s), trying %s with job_groups',
-          groupsUrl,
-          status,
-          standardUrl
-        );
-        const retry = await tryExternal(standardUrl);
-        data = retry.data;
-        status = retry.status;
-        usedUrl = retry.url;
-        if (status === 200 && data && typeof data.routes === 'object') {
-          optimizerMode = 'calculate-routes-with-job_groups';
-        }
-      }
-    }
+    const hasRoutes = data != null && data.routes != null && typeof data.routes === 'object';
+    const externalOk = hasRoutes && (status === 200 || data.success === true);
 
-    if (status === 200 && data && typeof data.routes === 'object') {
+    if (externalOk) {
       routes = data.routes;
       apiCallsUsed = data.api_calls_used ?? 0;
       externalSuccess = data.success !== false;
@@ -958,7 +945,8 @@ async function calculateRoutesExternalWithGroups(req, res) {
     } else if (status === 404 || status === 405 || status === 422) {
       optimizerMode = 'per-group-recalculate-distributed';
       console.log(
-        '[RouteOptimizer:groups] external groups API unavailable (HTTP %s), local fallback',
+        '[RouteOptimizer:groups] %s unavailable (HTTP %s), local fallback',
+        groupsUrl,
         status
       );
 
@@ -985,7 +973,10 @@ async function calculateRoutesExternalWithGroups(req, res) {
         );
       }
       return res.status(status >= 500 ? 502 : status).json({
-        message: data?.detail || data?.message || 'External route optimizer (groups) request failed',
+        message:
+          data?.detail ||
+          data?.message ||
+          'External route optimizer (custom / groups) request failed',
         ...(data && typeof data === 'object' && { detail: data }),
       });
     }
@@ -1019,7 +1010,7 @@ async function calculateRoutesExternalWithGroups(req, res) {
       },
     });
   } catch (error) {
-    console.error('Route optimizer external calculate-routes-groups error:', error);
+    console.error('Route optimizer external calculate-routes-groups (custom) error:', error);
     if (error.status && error.groupId) {
       return res.status(error.status).json({
         message: error.message,

@@ -44,7 +44,7 @@ router.post(
 /**
  * POST /api/route-optimizer/external/calculate-routes-groups
  * Body: { date, truckIds?, jobGroups|groups|jobs, vanCurrentCapacities? }
- * Manual job groups (not per truck); optimizer assigns groups to trucks and persists routes.
+ * Proxies to external POST /api/v1/custom (manual job groups → truck routes).
  */
 router.post(
   '/external/calculate-routes-groups',
