@@ -331,10 +331,16 @@ const dailySheetController = {
   addFuelLog: async (req, res) => {
     try {
       const { driverId, date } = req.params;
-      const { amount, litres, station, addedBy, time: timeBody } = req.body;
+      const { amount, litres, station, addedBy, time: timeBody, imageProof: imageProofBody } =
+        req.body;
 
       const fuelAmount =
         amount != null && !Number.isNaN(Number(amount)) ? Number(amount) : 0;
+
+      const imageProof =
+        (req.file && req.file.path) ||
+        (imageProofBody && String(imageProofBody).trim()) ||
+        undefined;
 
       const startDate = new Date(date);
       if (Number.isNaN(startDate.getTime())) {
@@ -358,6 +364,7 @@ const dailySheetController = {
             : undefined,
         station,
         addedBy,
+        ...(imageProof ? { imageProof } : {}),
         time: timeBody ? new Date(timeBody) : new Date(),
         date: dailySheet ? dailySheet.date || startDate : startDate,
         linkedToDailySheet: !!dailySheet,
@@ -512,6 +519,7 @@ const dailySheetController = {
         time: f.time,
         station: f.station,
         addedBy: f.addedBy,
+        imageProof: f.imageProof,
       }));
 
       res.status(200).json({

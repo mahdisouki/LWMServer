@@ -18,6 +18,7 @@ const fuelSchema = new Schema(
     time: { type: Date, default: Date.now },
     station: { type: String },
     addedBy: { type: String },
+    imageProof: { type: String },
     date: { type: Date, default: Date.now },
     linkedToDailySheet: { type: Boolean, default: false },
   },

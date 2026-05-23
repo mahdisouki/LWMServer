@@ -21,7 +21,7 @@ router.get(
   "/sheets/:driverId/:date",
   dailySheetController.getDailySheetsbyId
 );
-router.post('/:driverId/:date/fuel', dailySheetController.addFuelLog);
+router.post('/:driverId/:date/fuel', parser.single('imageProof'), dailySheetController.addFuelLog);
 router.get('/fuel/logs', dailySheetController.getAllFuelLogs);
 router.get('/:driverId/fuel', dailySheetController.getFuelLogsForDriver);
 router.get('/:driverId/:date/fuel', dailySheetController.getFuelLogs);
