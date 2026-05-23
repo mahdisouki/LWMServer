@@ -333,11 +333,13 @@ const dailySheetController = {
       const { driverId, date } = req.params;
       const { amount, litres, station, addedBy, time: timeBody } = req.body;
 
-      if (amount == null || Number.isNaN(Number(amount))) {
-       amount = 0;
-      }
+      const fuelAmount =
+        amount != null && !Number.isNaN(Number(amount)) ? Number(amount) : 0;
 
       const startDate = new Date(date);
+      if (Number.isNaN(startDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid date parameter.' });
+      }
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
       endDate.setHours(23, 59, 59, 999);
@@ -349,8 +351,11 @@ const dailySheetController = {
 
       const fuelPayload = {
         driverId,
-        amount: Number(amount),
-        litres: litres != null ? Number(litres) : undefined,
+        amount: fuelAmount,
+        litres:
+          litres != null && !Number.isNaN(Number(litres))
+            ? Number(litres)
+            : undefined,
         station,
         addedBy,
         time: timeBody ? new Date(timeBody) : new Date(),
