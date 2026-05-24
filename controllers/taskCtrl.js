@@ -6971,7 +6971,7 @@ const taskCtrl = {
 
   quoteAdditionalItemRequest: async (req, res) => {
     try {
-      const { taskId, requestId } = req.params;
+      const { taskId, requestId , itemName } = req.params;
       const quotedPrice = Number(req.body.quotedPrice);
       if (!Number.isFinite(quotedPrice) || quotedPrice < 0) {
         return res.status(400).json({ message: 'quotedPrice must be a valid number >= 0' });
@@ -6997,6 +6997,7 @@ const taskCtrl = {
 
       request.quotedPrice = quotedPrice;
       request.status = 'quoted';
+      request.itemName = itemName;
       request.quotedBy = req.user?._id || null;
       request.quotedAt = new Date();
       await request.save();
