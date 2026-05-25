@@ -10,6 +10,12 @@ const mongoose = require('mongoose');
 const { emitNotificationToUser, emitRefresh } = require('../socket.js');
 const paginateQuery = require('../utils/paginationHelper');
 const {
+  tryLinkTaskToMatchingQuotation,
+  applyQuotationTaskCreatedReason,
+  isTaskEligibleForQuotationLink,
+} = require('../services/quotationTaskMatchingService');
+const QuotationRequest = require('../models/QuotationRequest');
+const {
   buildCompletedPaidQuery,
   buildCompletedPaidCsv,
   buildCompletedPaidPdfBuffer,
@@ -1279,6 +1285,31 @@ const taskCtrl = {
       });
 
       const savedTask = await newTask.save();
+
+      if (savedTask.quotationId) {
+        try {
+          const quotation = await QuotationRequest.findById(savedTask.quotationId);
+          if (quotation && isTaskEligibleForQuotationLink(savedTask)) {
+            await applyQuotationTaskCreatedReason(quotation);
+          }
+        } catch (err) {
+          console.error(
+            '[Quotation Link] Error setting task created reason on quotation:',
+            err,
+          );
+        }
+      } else {
+        try {
+          const linkResult = await tryLinkTaskToMatchingQuotation(savedTask);
+          if (linkResult.action === 'linked') {
+            console.log(
+              `[Quotation Link] Task ${savedTask._id} linked to quotation ${linkResult.quotationId}`,
+            );
+          }
+        } catch (err) {
+          console.error('[Quotation Link] Error linking task to quotation on createTask:', err);
+        }
+      }
 
       /**
        * 🔁 Repeat customer handling

@@ -1,11 +1,15 @@
 const Coupon = require('../models/Coupon');
+const QuotationRequest = require('../models/QuotationRequest');
+const Task = require('../models/Task');
 const { sendQuotationRetargetingEmail } = require('../utils/sendQuotationRetargetingEmail');
+const {
+  findLinkedTaskForQuotation,
+  tryLinkQuotationToMatchingTask,
+} = require('./quotationTaskMatchingService');
 
 function generateShortCode() {
   return Math.random().toString(36).substring(2, 10).toUpperCase();
 }
-
-const RETARGETING_REASONS = ['no response', 'price too high'];
 
 function isQuotationEligibleForScheduledRetargeting(quotation, quotationIdsWithOrders) {
   if (!quotation.email) {
@@ -21,12 +25,7 @@ function isQuotationEligibleForScheduledRetargeting(quotation, quotationIdsWithO
     return false;
   }
 
-  const reason = quotation.reason && quotation.reason.trim();
-  if (!reason) {
-    return true;
-  }
-
-  return RETARGETING_REASONS.includes(reason);
+  return true;
 }
 
 /**
@@ -39,6 +38,11 @@ async function sendQuotationRetargetingEmailForQuotation(quotation) {
 
   if (quotation.retargetingEmailSent) {
     throw new Error('Retargeting email has already been sent for this quotation');
+  }
+
+  const linkedTask = await findLinkedTaskForQuotation(quotation._id);
+  if (linkedTask) {
+    throw new Error('Quotation is already linked to a task');
   }
 
   const coupon20Code = generateShortCode();
@@ -87,13 +91,74 @@ async function sendQuotationRetargetingEmailForQuotation(quotation) {
   quotation.retargetingCoupon20Id = coupon20._id;
   quotation.retargetingCoupon10Id = coupon10._id;
   quotation.reminderSent = true;
+  quotation.reason = 'no response';
+  quotation.customReason = null;
   await quotation.save();
 
   return { quotation, coupon20, coupon10 };
 }
 
+/**
+ * Attempts to link quotations without a non-failed linked task (pending or rejected-after-email).
+ */
+async function linkPendingQuotationsToTasks() {
+  const linkedQuotationIds = await Task.distinct('quotationId', {
+    quotationId: { $ne: null },
+    paymentStatus: { $ne: 'Failed' },
+  });
+
+  const unlinked = await QuotationRequest.find({
+    _id: { $nin: linkedQuotationIds },
+  }).sort({ createdAt: -1 });
+
+  let linked = 0;
+  for (const quotation of unlinked) {
+    const result = await tryLinkQuotationToMatchingTask(quotation);
+    if (result.action === 'linked') {
+      linked += 1;
+    }
+  }
+  return linked;
+}
+
+/**
+ * Links quotation to an existing matching task, or sends retargeting email if none found.
+ */
+async function processQuotationForRetargeting(quotation, quotationIdsWithOrders) {
+  const quotationIdStr = quotation._id.toString();
+
+  if (!isQuotationEligibleForScheduledRetargeting(quotation, quotationIdsWithOrders)) {
+    return { action: 'skipped', quotationId: quotationIdStr };
+  }
+
+  const existingLink = await findLinkedTaskForQuotation(quotation._id);
+  if (existingLink) {
+    quotationIdsWithOrders.add(quotationIdStr);
+    return { action: 'already_linked', taskId: existingLink._id, quotationId: quotationIdStr };
+  }
+
+  const linkResult = await tryLinkQuotationToMatchingTask(quotation);
+  if (linkResult.action === 'linked') {
+    quotationIdsWithOrders.add(quotationIdStr);
+    return {
+      action: 'linked',
+      taskId: linkResult.taskId,
+      quotationId: quotationIdStr,
+    };
+  }
+
+  const result = await sendQuotationRetargetingEmailForQuotation(quotation);
+  return {
+    action: 'retargeting_sent',
+    quotationId: quotationIdStr,
+    coupon20: result.coupon20,
+    coupon10: result.coupon10,
+  };
+}
+
 module.exports = {
-  RETARGETING_REASONS,
   isQuotationEligibleForScheduledRetargeting,
   sendQuotationRetargetingEmailForQuotation,
+  linkPendingQuotationsToTasks,
+  processQuotationForRetargeting,
 };

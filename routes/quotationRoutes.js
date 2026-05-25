@@ -25,9 +25,6 @@ router.patch('/quotation/:id/read', isAuth, checkRole('Admin'), quotationRequest
 // Route to mark a quotation as unread
 router.patch('/quotation/:id/unread', isAuth, checkRole('Admin'), quotationRequestController.markQuotationAsUnread);
 
-// Route to update quotation (e.g., set reason)
-router.patch('/quotation/:id', isAuth, checkRole('Admin'), quotationRequestController.updateQuotation);
-
 // Route to schedule quotation retargeting email (reminderDate = send time)
 router.patch('/quotation/:id/reminder', isAuth, checkRole('Admin'), quotationRequestController.setQuotationReminder);
 

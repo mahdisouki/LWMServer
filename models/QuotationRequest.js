@@ -54,67 +54,43 @@ const quotationRequestSchema = new Schema({
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true }); // Enable timestamps to get updatedAt
 
-// Instance method to compute status based on associated Task and reason
+// Status is derived only from `reason` (legacy-aligned stats)
+quotationRequestSchema.methods.getStatusSync = function (taskCreatedAt = null) {
+  if (this.reason === 'task created') {
+    return {
+      status: 'accepted',
+      statusDate: taskCreatedAt || this.updatedAt || this.createdAt,
+      hasOrder: !!taskCreatedAt,
+    };
+  }
+
+  const hasReason = this.reason && this.reason.trim() !== '';
+  if (hasReason) {
+    return {
+      status: 'rejected',
+      statusDate: this.updatedAt || this.createdAt,
+      hasOrder: false,
+    };
+  }
+
+  return {
+    status: 'pending',
+    statusDate: null,
+    hasOrder: false,
+  };
+};
+
 quotationRequestSchema.methods.computeStatus = async function () {
   const Task = mongoose.model('Task');
 
-  // Check if there's an associated order (Task)
-  const task = await Task.findOne({ quotationId: this._id })
+  const task = await Task.findOne({
+    quotationId: this._id,
+    paymentStatus: { $ne: 'Failed' },
+  })
     .select('createdAt')
-    .sort({ createdAt: 1 }); // Get the earliest task if multiple exist
+    .sort({ createdAt: 1 });
 
-  const hasOrder = !!task;
-  const hasReason = this.reason && this.reason.trim() !== '';
-  const isTaskCreatedReason = this.reason === 'task created';
-
-  // Determine status: accepted > rejected > pending
-  // "task created" reason should result in accepted status
-  if (hasOrder || isTaskCreatedReason) {
-    return {
-      status: 'accepted',
-      statusDate: task ? task.createdAt : (this.updatedAt || this.createdAt),
-      hasOrder: hasOrder
-    };
-  } else if (hasReason) {
-    return {
-      status: 'rejected',
-      statusDate: this.updatedAt || this.createdAt,
-      hasOrder: false
-    };
-  } else {
-    return {
-      status: 'pending',
-      statusDate: null,
-      hasOrder: false
-    };
-  }
-};
-
-// Instance method to get status synchronously (for cases where Task info is already provided)
-quotationRequestSchema.methods.getStatusSync = function (taskCreatedAt = null) {
-  const hasOrder = !!taskCreatedAt;
-  const hasReason = this.reason && this.reason.trim() !== '';
-  const isTaskCreatedReason = this.reason === 'task created';
-
-  if (hasOrder || isTaskCreatedReason) {
-    return {
-      status: 'accepted',
-      statusDate: taskCreatedAt || (this.updatedAt || this.createdAt),
-      hasOrder: hasOrder
-    };
-  } else if (hasReason) {
-    return {
-      status: 'rejected',
-      statusDate: this.updatedAt || this.createdAt,
-      hasOrder: false
-    };
-  } else {
-    return {
-      status: 'pending',
-      statusDate: null,
-      hasOrder: false
-    };
-  }
+  return this.getStatusSync(task ? task.createdAt : null);
 };
 
 const QuotationRequest = mongoose.model('QuotationRequest', quotationRequestSchema);

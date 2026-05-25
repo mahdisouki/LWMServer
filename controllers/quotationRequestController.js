@@ -8,10 +8,6 @@ const axios = require('axios');
 const { emitNotificationToUser } = require('../socket');
 const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
 const { User } = require('../models/User');
-const {
-    RETARGETING_REASONS,
-    sendQuotationRetargetingEmailForQuotation,
-} = require('../services/quotationRetargetingService');
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
         try {
@@ -168,7 +164,6 @@ const quotationRequestController = {
                 keyword,
                 startDate,
                 endDate,
-                reason,
                 status,
                 statusDateStart,
                 statusDateEnd,
@@ -203,16 +198,6 @@ const quotationRequestController = {
                 }
             }
 
-            // Add reason filter if provided
-            if (reason) {
-                if (reason === 'other') {
-                    query.reason = 'other';
-                    query.customReason = { $exists: true, $ne: null, $ne: '' };
-                } else {
-                    query.reason = reason;
-                }
-            }
-
             // Build sort object
             const sort = {};
             sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
@@ -244,7 +229,8 @@ const quotationRequestController = {
 
             // Find all tasks that have these quotationIds with createdAt dates
             const tasksWithQuotations = await Task.find({
-                quotationId: { $in: quotationIds }
+                quotationId: { $in: quotationIds },
+                paymentStatus: { $ne: 'Failed' },
             }).select('quotationId createdAt');
 
             // Create a Map of quotationId -> Task createdAt for quick lookup
@@ -569,102 +555,6 @@ const quotationRequestController = {
         }
     },
 
-    updateQuotation: async (req, res) => {
-        const { id } = req.params;
-        const { reason, customReason } = req.body;
-
-        try {
-            // First, get the existing quotation to check its current state
-            const existingQuotation = await QuotationRequest.findById(id);
-
-            if (!existingQuotation) {
-                return res.status(404).json({ message: 'Quotation not found' });
-            }
-
-            // Validate reason if provided
-            if (reason !== undefined && !['no response', 'price too high', 'other', 'task created'].includes(reason)) {
-                return res.status(400).json({
-                    message: 'Invalid reason. Must be one of: no response, price too high, other, task created'
-                });
-            }
-
-            // Build update object
-            const updateData = {};
-
-            // Handle reason updates
-            if (reason !== undefined) {
-                updateData.reason = reason;
-
-                // If reason is being set to 'other' for the first time, customReason is required
-                if (reason === 'other' && existingQuotation.reason !== 'other' && !customReason) {
-                    return res.status(400).json({
-                        message: 'customReason is required when reason is "other"'
-                    });
-                }
-
-                // Clear customReason if reason is being changed to something other than 'other'
-                if (reason !== 'other') {
-                    updateData.customReason = null;
-                }
-            }
-
-            // Handle customReason updates
-            if (customReason !== undefined) {
-                // Determine what the final reason will be
-                const finalReason = reason !== undefined ? reason : existingQuotation.reason;
-
-                if (finalReason === 'other') {
-                    // Allow updating customReason when reason is 'other'
-                    updateData.customReason = customReason || null;
-                } else {
-                    // If reason is not 'other', don't allow setting customReason
-                    // But allow clearing it if it exists
-                    if (customReason && customReason.trim() !== '') {
-                        return res.status(400).json({
-                            message: 'customReason can only be set when reason is "other"'
-                        });
-                    }
-                    // If customReason is empty/null, allow clearing it
-                    updateData.customReason = null;
-                }
-            }
-
-            let quotation = await QuotationRequest.findByIdAndUpdate(
-                id,
-                updateData,
-                { new: true, runValidators: true }
-            );
-
-            const finalReason = reason !== undefined ? reason : existingQuotation.reason;
-            const shouldSendRetargetingEmail =
-                RETARGETING_REASONS.includes(finalReason) &&
-                !existingQuotation.retargetingEmailSent &&
-                quotation.email;
-
-            if (shouldSendRetargetingEmail) {
-                try {
-                    const result = await sendQuotationRetargetingEmailForQuotation(quotation);
-                    quotation = result.quotation;
-                    console.log(
-                        `Retargeting email sent for quotation ${quotation._id} (reason: ${finalReason})`,
-                    );
-                } catch (emailError) {
-                    console.error('Error sending retargeting email for quotation:', emailError);
-                }
-            }
-
-            res.status(200).json({
-                message: 'Quotation updated successfully',
-                quotation
-            });
-        } catch (error) {
-            res.status(500).json({
-                message: 'Failed to update quotation',
-                error: error.message,
-            });
-        }
-    },
-
     setQuotationReminder: async (req, res) => {
         const { id } = req.params;
         const { reminderDate } = req.body; // Format: "2025-01-15T14:30:00" or ISO string
@@ -691,7 +581,9 @@ const quotationRequestController = {
             }
 
             res.status(200).json({
-                message: 'Retargeting email schedule set successfully',
+                message: reminderDate
+                    ? 'Retargeting will run when reminderDate is reached (link job or send email).'
+                    : 'Reminder cleared; automatic retargeting applies after 2 days without a reminder.',
                 quotation
             });
         } catch (error) {

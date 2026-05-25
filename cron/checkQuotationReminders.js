@@ -2,73 +2,130 @@ const cron = require('node-cron');
 const QuotationRequest = require('../models/QuotationRequest');
 const Task = require('../models/Task');
 const {
-  isQuotationEligibleForScheduledRetargeting,
-  sendQuotationRetargetingEmailForQuotation,
+  AUTO_RETARGET_DELAY_MS,
+  AUTO_RETARGET_HOUR,
+  isAutoRetargetEligible,
+  isReminderRetargetDue,
+} = require('../services/quotationTaskMatchingService');
+const {
+  linkPendingQuotationsToTasks,
+  processQuotationForRetargeting,
 } = require('../services/quotationRetargetingService');
+
+function dedupeQuotationsById(quotations) {
+  const seen = new Set();
+  return quotations.filter((q) => {
+    const id = q._id.toString();
+    if (seen.has(id)) {
+      return false;
+    }
+    seen.add(id);
+    return true;
+  });
+}
+
+async function buildQuotationIdsWithOrders(quotationIds) {
+  const tasksWithQuotations = await Task.find({
+    quotationId: { $in: quotationIds },
+    paymentStatus: { $ne: 'Failed' },
+  }).select('quotationId');
+
+  return new Set(tasksWithQuotations.map((t) => t.quotationId.toString()));
+}
+
+async function runRetargetingBatch(quotations, quotationIdsWithOrders, label) {
+  let linked = 0;
+  let emailsSent = 0;
+  let emailsFailed = 0;
+  let skipped = 0;
+
+  for (const quotation of quotations) {
+    try {
+      const result = await processQuotationForRetargeting(
+        quotation,
+        quotationIdsWithOrders,
+      );
+
+      if (result.action === 'linked') {
+        linked += 1;
+        console.log(
+          `[Quotation Retargeting] [${label}] Linked quotation ${quotation._id} to task ${result.taskId}`,
+        );
+      } else if (result.action === 'retargeting_sent') {
+        emailsSent += 1;
+        console.log(
+          `[Quotation Retargeting] [${label}] Sent retargeting email for quotation ${quotation._id} (${quotation.email})`,
+        );
+      } else if (result.action === 'already_linked') {
+        linked += 1;
+      } else {
+        skipped += 1;
+      }
+    } catch (error) {
+      emailsFailed += 1;
+      console.error(
+        `[Quotation Retargeting] [${label}] Failed for quotation ${quotation._id} (${quotation.email}):`,
+        error.message,
+      );
+    }
+  }
+
+  return { linked, emailsSent, emailsFailed, skipped };
+}
 
 async function checkQuotationReminders() {
   try {
     const now = new Date();
     console.log(`[Quotation Retargeting] Checking at ${now.toISOString()}`);
 
-    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const proactiveLinked = await linkPendingQuotationsToTasks();
+    if (proactiveLinked > 0) {
+      console.log(
+        `[Quotation Retargeting] Proactively linked ${proactiveLinked} quotation(s) to matching task(s) (before send window)`,
+      );
+    }
 
-    const quotationsDue = await QuotationRequest.find({
-      reminderDate: {
-        $lte: now,
-        $gte: oneDayAgo,
-        $ne: null,
-      },
-      retargetingEmailSent: { $ne: true },
-    });
+    const autoCutoff = new Date(now.getTime() - AUTO_RETARGET_DELAY_MS);
+
+    const [reminderCandidates, autoCandidates] = await Promise.all([
+      QuotationRequest.find({
+        reminderDate: { $ne: null },
+        retargetingEmailSent: { $ne: true },
+      }),
+      QuotationRequest.find({
+        reminderDate: null,
+        retargetingEmailSent: { $ne: true },
+        createdAt: { $lte: autoCutoff },
+      }),
+    ]);
+
+    const reminderDue = reminderCandidates.filter((q) =>
+      isReminderRetargetDue(q, now),
+    );
+    const autoDue = autoCandidates.filter((q) => isAutoRetargetEligible(q, now));
+
+    const quotationsToProcess = dedupeQuotationsById([...reminderDue, ...autoDue]);
 
     console.log(
-      `[Quotation Retargeting] Found ${quotationsDue.length} quotation(s) with due reminder dates`,
+      `[Quotation Retargeting] ${reminderDue.length} admin reminder(s) due (send at reminderDate), ${autoDue.length} auto (2-day @ ${AUTO_RETARGET_HOUR}:00), ${quotationsToProcess.length} unique to process`,
     );
 
-    if (quotationsDue.length === 0) {
+    if (quotationsToProcess.length === 0) {
       return;
     }
 
-    const quotationIds = quotationsDue.map((q) => q._id);
-    const tasksWithQuotations = await Task.find({
-      quotationId: { $in: quotationIds },
-    }).select('quotationId');
-
-    const quotationIdsWithOrders = new Set(
-      tasksWithQuotations.map((t) => t.quotationId.toString()),
+    const quotationIdsWithOrders = await buildQuotationIdsWithOrders(
+      quotationsToProcess.map((q) => q._id),
     );
 
-    const eligibleQuotations = quotationsDue.filter((quotation) =>
-      isQuotationEligibleForScheduledRetargeting(quotation, quotationIdsWithOrders),
+    const totals = await runRetargetingBatch(
+      quotationsToProcess,
+      quotationIdsWithOrders,
+      'batch',
     );
 
     console.log(
-      `[Quotation Retargeting] ${eligibleQuotations.length} quotation(s) eligible to receive retargeting email`,
-    );
-
-    let emailsSent = 0;
-    let emailsFailed = 0;
-
-    for (const quotation of eligibleQuotations) {
-      try {
-        const { coupon20, coupon10 } = await sendQuotationRetargetingEmailForQuotation(quotation);
-        emailsSent += 1;
-        console.log(
-          `[Quotation Retargeting] Sent retargeting email for quotation ${quotation._id} (${quotation.email}) - coupons ${coupon20.code}, ${coupon10.code}`,
-        );
-      } catch (error) {
-        emailsFailed += 1;
-        console.error(
-          `[Quotation Retargeting] Failed for quotation ${quotation._id} (${quotation.email}):`,
-          error.message,
-        );
-      }
-    }
-
-    const skipped = quotationsDue.length - eligibleQuotations.length;
-    console.log(
-      `[Quotation Retargeting] Completed: ${emailsSent} sent, ${emailsFailed} failed, ${skipped} skipped`,
+      `[Quotation Retargeting] Completed: ${totals.linked} linked, ${totals.emailsSent} sent, ${totals.emailsFailed} failed, ${totals.skipped} skipped`,
     );
   } catch (error) {
     console.error('Error in checkQuotationReminders:', error);
@@ -78,7 +135,7 @@ async function checkQuotationReminders() {
 cron.schedule('*/5 * * * *', checkQuotationReminders);
 
 console.log(
-  'Quotation retargeting scheduler running (checks every 5 minutes for due reminderDate)...',
+  `Quotation retargeting scheduler running (every 5 min: admin reminderDate when due, or auto 2 days at ${AUTO_RETARGET_HOUR}:00 if no reminder)...`,
 );
 
 module.exports = { checkQuotationReminders };
