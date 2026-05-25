@@ -318,7 +318,88 @@ async function placeChildTaskNextToParentInTruckSequence(parentTask, childTaskId
   await truck.save();
 }
 
+async function getTruckCrewUserIdsForTaskDate(truckId, taskDate) {
+  if (!truckId) return [];
 
+  const dateStr = taskDate
+    ? new Date(taskDate).toISOString().split('T')[0]
+    : new Date().toISOString().split('T')[0];
+
+  const assigned = await getAssignedForDayFromRanges(truckId, dateStr);
+  const truck = await Truck.findById(truckId)
+    .select('driverId helperId extraDrivers extraHelpers')
+    .lean();
+  if (!truck) return [];
+
+  const ids = new Set();
+  const driverId =
+    assigned?.driverId?.toString?.() ?? truck.driverId?.toString?.() ?? null;
+  const helperId =
+    assigned?.helperId?.toString?.() ?? truck.helperId?.toString?.() ?? null;
+
+  if (driverId) ids.add(driverId);
+  if (helperId) ids.add(helperId);
+
+  for (const extra of truck.extraDrivers || []) {
+    const id = extra.driverId?.toString?.() ?? String(extra.driverId || '');
+    if (id) ids.add(id);
+  }
+  for (const extra of truck.extraHelpers || []) {
+    const id = extra.helperId?.toString?.() ?? String(extra.helperId || '');
+    if (id) ids.add(id);
+  }
+
+  return [...ids];
+}
+
+async function notifyTruckCrewLinkedAdditionalTaskAccepted({
+  parentTask,
+  childTask,
+  createdByUser = null,
+}) {
+  try {
+    const excludeId = createdByUser?._id?.toString?.() ?? null;
+    const userIds = (await getTruckCrewUserIdsForTaskDate(parentTask.truckId, parentTask.date)).filter(
+      (id) => id !== excludeId
+    );
+    if (!userIds.length) return;
+
+    const senderName =
+      createdByUser?.username ||
+      `${createdByUser?.firstName || ''} ${createdByUser?.lastName || ''}`.trim() ||
+      'Back office';
+    const orderNumber = parentTask.orderNumber || String(parentTask._id);
+    const childOrderNumber = childTask.orderNumber || String(childTask._id);
+    const message = `Additional items were added to order #${orderNumber}. New linked job #${childOrderNumber} is on your route.`;
+
+    await Promise.all(
+      userIds.map((userId) =>
+        emitNotificationToUser(userId, 'Orders', message, senderName, {
+          type: 'linked_additional_task_created',
+          taskId: parentTask._id.toString(),
+          childTaskId: childTask._id.toString(),
+          orderNumber,
+          childOrderNumber,
+          truckId: parentTask.truckId?.toString?.() ?? null,
+        })
+      )
+    );
+
+    emitRefresh({
+      resource: 'tasks',
+      action: 'created',
+      truckId: parentTask.truckId?.toString?.() ?? parentTask.truckId ?? null,
+      date: parentTask.date ? new Date(parentTask.date).toISOString().split('T')[0] : null,
+      meta: {
+        taskId: childTask._id.toString(),
+        parentTaskId: parentTask._id.toString(),
+        linkedTaskType: 'additional_items',
+      },
+    });
+  } catch (err) {
+    console.error('notifyTruckCrewLinkedAdditionalTaskAccepted:', err);
+  }
+}
 
 async function createDirectLinkedAdditionalTaskFromItems({
   parentTask,
@@ -417,6 +498,12 @@ async function createDirectLinkedAdditionalTaskFromItems({
   } catch (err) {
     console.error('Failed to position child task next to parent in truck sequence:', err);
   }
+
+  await notifyTruckCrewLinkedAdditionalTaskAccepted({
+    parentTask,
+    childTask,
+    createdByUser,
+  });
 
   return { childTask };
 }
@@ -6915,7 +7002,7 @@ const taskCtrl = {
 
   quoteAdditionalItemRequest: async (req, res) => {
     try {
-      const { taskId, requestId } = req.params;
+      const { taskId, requestId , itemName } = req.params;
       const quotedPrice = Number(req.body.quotedPrice);
       if (!Number.isFinite(quotedPrice) || quotedPrice < 0) {
         return res.status(400).json({ message: 'quotedPrice must be a valid number >= 0' });
@@ -6941,6 +7028,7 @@ const taskCtrl = {
 
       request.quotedPrice = quotedPrice;
       request.status = 'quoted';
+      request.itemName = itemName;
       request.quotedBy = req.user?._id || null;
       request.quotedAt = new Date();
       await request.save();

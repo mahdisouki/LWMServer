@@ -1,5 +1,6 @@
 const Payroll = require('../models/Payroll');
 const Truck = require('../models/Truck');
+const Van = require('../models/Van');
 const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const DriverHelperProximityState = require('../models/DriverHelperProximityState');
@@ -148,8 +149,25 @@ async function findCompletedPayrollForDay(userId, dateKey = getTodayDateKeyLocal
   }).sort({ startTime: -1 });
 }
 
-async function createShiftPayroll(userId, startTime = new Date()) {
-  const dateKey = getTodayDateKeyLocal();
+/** Van registration (matricule) for the unit on this calendar day. */
+async function resolveVanRegForTruck(truckId, dateKey = getTodayDateKeyLocal()) {
+  if (!truckId) return undefined;
+
+  const assigned = await getAssignedForDayFromRanges(truckId, dateKey);
+  let vanId = assigned?.vanId || null;
+  if (!vanId) {
+    const truck = await Truck.findById(truckId).select('vanId').lean();
+    vanId = truck?.vanId || null;
+  }
+  if (!vanId) return undefined;
+
+  const van = await Van.findById(vanId).select('matricule name').lean();
+  const reg = van?.matricule || van?.name;
+  return reg ? String(reg).trim() : undefined;
+}
+
+async function createShiftPayroll(userId, startTime = new Date(), options = {}) {
+  const dateKey = options.dateKey || getTodayDateKeyLocal();
   const completedToday = await findCompletedPayrollForDay(userId, dateKey);
   if (completedToday) {
     return {
@@ -171,14 +189,28 @@ async function createShiftPayroll(userId, startTime = new Date()) {
     };
   }
 
-  const truck =
-    (await Truck.findOne({ driverId: userId })) ||
-    (await Truck.findOne({ helperId: userId }));
+  let truck = options.truck || null;
+  if (!truck && options.truckId) {
+    truck = await Truck.findById(options.truckId).select('_id driverId helperId vanId');
+  }
+  if (!truck) {
+    truck =
+      (await Truck.findOne({ driverId: userId })) ||
+      (await Truck.findOne({ helperId: userId }));
+  }
+
+  const vanReg =
+    options.vanReg !== undefined && options.vanReg !== null && String(options.vanReg).trim()
+      ? String(options.vanReg).trim()
+      : truck?._id
+        ? await resolveVanRegForTruck(truck._id, dateKey)
+        : undefined;
 
   const newPayroll = new Payroll({
     userId,
     startTime: new Date(startTime),
     truckId: truck?._id,
+    ...(vanReg ? { vanReg } : {}),
   });
 
   await newPayroll.save();
@@ -369,7 +401,14 @@ async function emitPairShiftAutoStarted({
   }
 }
 
-async function startPayrollForTeamMember(userId, dateKey, sharedStartTime, state, role) {
+async function startPayrollForTeamMember(
+  userId,
+  dateKey,
+  sharedStartTime,
+  state,
+  role,
+  truck
+) {
   const requestedField =
     role === 'driver' ? 'shiftStartRequestedAt' : 'helperShiftStartRequestedAt';
   const startedField =
@@ -385,7 +424,7 @@ async function startPayrollForTeamMember(userId, dateKey, sharedStartTime, state
     return { started: true, role, payroll: activePayroll, alreadyActive: true };
   }
 
-  const result = await createShiftPayroll(userId, sharedStartTime);
+  const result = await createShiftPayroll(userId, sharedStartTime, { truck, dateKey });
   if (!result.ok) {
     return { started: false, role, reason: 'create-failed', message: result.message };
   }
@@ -418,12 +457,26 @@ async function autoStartShiftsOnArrival({
 
   if (driverPending) {
     outcomes.push(
-      await startPayrollForTeamMember(driverId, dateKey, sharedStartTime, state, 'driver')
+      await startPayrollForTeamMember(
+        driverId,
+        dateKey,
+        sharedStartTime,
+        state,
+        'driver',
+        truck
+      )
     );
   }
   if (helperPending) {
     outcomes.push(
-      await startPayrollForTeamMember(helperId, dateKey, sharedStartTime, state, 'helper')
+      await startPayrollForTeamMember(
+        helperId,
+        dateKey,
+        sharedStartTime,
+        state,
+        'helper',
+        truck
+      )
     );
   }
 
@@ -482,6 +535,7 @@ module.exports = {
   findActivePayrollForDay,
   findCompletedPayrollForDay,
   createShiftPayroll,
+  resolveVanRegForTruck,
   markShiftStartRequested,
   autoStartShiftsOnArrival,
   autoStartShiftOnArrival,

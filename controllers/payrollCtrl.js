@@ -287,7 +287,11 @@ const PayrollCtrl = {
         });
       }
 
-      const result = await createShiftPayroll(userId, startTime);
+      const result = await createShiftPayroll(userId, startTime, {
+        truck,
+        dateKey,
+        vanReg: req.body.vanReg,
+      });
       if (!result.ok) {
         return res.status(result.status || 400).json({ message: result.message });
       }

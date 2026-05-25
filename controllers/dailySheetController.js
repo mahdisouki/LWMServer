@@ -331,13 +331,21 @@ const dailySheetController = {
   addFuelLog: async (req, res) => {
     try {
       const { driverId, date } = req.params;
-      const { amount, litres, station, addedBy, time: timeBody } = req.body;
+      const { amount, litres, station, addedBy, time: timeBody, imageProof: imageProofBody } =
+        req.body;
 
-      if (amount == null || Number.isNaN(Number(amount))) {
-        return res.status(400).json({ message: 'amount is required and must be a number' });
-      }
+      const fuelAmount =
+        amount != null && !Number.isNaN(Number(amount)) ? Number(amount) : 0;
+
+      const imageProof =
+        (req.file && req.file.path) ||
+        (imageProofBody && String(imageProofBody).trim()) ||
+        undefined;
 
       const startDate = new Date(date);
+      if (Number.isNaN(startDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid date parameter.' });
+      }
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(date);
       endDate.setHours(23, 59, 59, 999);
@@ -349,10 +357,14 @@ const dailySheetController = {
 
       const fuelPayload = {
         driverId,
-        amount: Number(amount),
-        litres: litres != null ? Number(litres) : undefined,
+        amount: fuelAmount,
+        litres:
+          litres != null && !Number.isNaN(Number(litres))
+            ? Number(litres)
+            : undefined,
         station,
         addedBy,
+        ...(imageProof ? { imageProof } : {}),
         time: timeBody ? new Date(timeBody) : new Date(),
         date: dailySheet ? dailySheet.date || startDate : startDate,
         linkedToDailySheet: !!dailySheet,
@@ -507,6 +519,7 @@ const dailySheetController = {
         time: f.time,
         station: f.station,
         addedBy: f.addedBy,
+        imageProof: f.imageProof,
       }));
 
       res.status(200).json({
