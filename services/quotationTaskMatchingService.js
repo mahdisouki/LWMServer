@@ -7,6 +7,15 @@ function isTaskEligibleForQuotationLink(task) {
   return task && String(task.paymentStatus) !== FAILED_PAYMENT_STATUS;
 }
 
+/** Mongo filter: tasks that count as linked to a quotation. */
+function quotationLinkEligibleFilter() {
+  return { paymentStatus: { $ne: FAILED_PAYMENT_STATUS } };
+}
+
+function quotationLinkIneligibleFilter() {
+  return { paymentStatus: FAILED_PAYMENT_STATUS };
+}
+
 const AUTO_RETARGET_DAYS = 2;
 const AUTO_RETARGET_HOUR = Number.parseInt(
   process.env.QUOTATION_AUTO_RETARGET_HOUR || '14',
@@ -105,9 +114,11 @@ function taskMatchesQuotation(task, quotation) {
 
 function baseTaskQuery(quotation) {
   return {
-    quotationId: null,
-    paymentStatus: { $ne: FAILED_PAYMENT_STATUS },
-    createdAt: { $gte: quotation.createdAt },
+    $and: [
+      { quotationId: null },
+      { createdAt: { $gte: quotation.createdAt } },
+      quotationLinkEligibleFilter(),
+    ],
   };
 }
 
@@ -183,11 +194,25 @@ async function applyQuotationTaskCreatedReason(quotation) {
   await quotation.save();
 }
 
-async function clearFailedTaskQuotationLinks(quotationId) {
+async function clearIneligibleTaskQuotationLinks(quotationId) {
   await Task.updateMany(
-    { quotationId, paymentStatus: FAILED_PAYMENT_STATUS },
+    { quotationId, ...quotationLinkIneligibleFilter() },
     { $set: { quotationId: null } },
   );
+}
+
+async function revertQuotationTaskCreatedReasonIfOrphaned(quotationId) {
+  const stillLinked = await findLinkedTaskForQuotation(quotationId);
+  if (stillLinked) {
+    return;
+  }
+  const quotation = await QuotationRequest.findById(quotationId);
+  if (quotation && quotation.reason === 'task created') {
+    await QuotationRequest.updateOne(
+      { _id: quotationId },
+      { $unset: { reason: '' }, $set: { customReason: null } },
+    );
+  }
 }
 
 async function linkQuotationToTask(quotation, task) {
@@ -199,7 +224,7 @@ async function linkQuotationToTask(quotation, task) {
     throw new Error('Task is already linked to a quotation');
   }
 
-  await clearFailedTaskQuotationLinks(quotation._id);
+  await clearIneligibleTaskQuotationLinks(quotation._id);
 
   task.quotationId = quotation._id;
   await task.save();
@@ -210,7 +235,7 @@ async function linkQuotationToTask(quotation, task) {
 async function findLinkedTaskForQuotation(quotationId) {
   return Task.findOne({
     quotationId,
-    paymentStatus: { $ne: FAILED_PAYMENT_STATUS },
+    ...quotationLinkEligibleFilter(),
   }).sort({ createdAt: 1 });
 }
 
@@ -277,9 +302,43 @@ async function tryLinkTaskToMatchingQuotation(task) {
   };
 }
 
+/**
+ * Keeps task↔quotation in sync with payment eligibility.
+ * Unpaid / Paid / partial_Paid link normally; Failed tasks are never linked.
+ */
+async function syncTaskQuotationLink(task) {
+  if (!task) {
+    return { action: 'skipped' };
+  }
+
+  if (!isTaskEligibleForQuotationLink(task)) {
+    if (!task.quotationId) {
+      return { action: 'deferred' };
+    }
+
+    const quotationId = task.quotationId;
+    task.quotationId = null;
+    await task.save();
+    await revertQuotationTaskCreatedReasonIfOrphaned(quotationId);
+    return { action: 'unlinked', quotationId: quotationId.toString() };
+  }
+
+  if (task.quotationId) {
+    const quotation = await QuotationRequest.findById(task.quotationId);
+    if (quotation) {
+      await applyQuotationTaskCreatedReason(quotation);
+    }
+    return { action: 'already_has_quotation' };
+  }
+
+  return tryLinkTaskToMatchingQuotation(task);
+}
+
 module.exports = {
   FAILED_PAYMENT_STATUS,
   isTaskEligibleForQuotationLink,
+  quotationLinkEligibleFilter,
+  quotationLinkIneligibleFilter,
   AUTO_RETARGET_DAYS,
   AUTO_RETARGET_HOUR,
   AUTO_RETARGET_DELAY_MS,
@@ -296,5 +355,7 @@ module.exports = {
   findLinkedTaskForQuotation,
   tryLinkQuotationToMatchingTask,
   tryLinkTaskToMatchingQuotation,
+  syncTaskQuotationLink,
   applyQuotationTaskCreatedReason,
+  revertQuotationTaskCreatedReasonIfOrphaned,
 };

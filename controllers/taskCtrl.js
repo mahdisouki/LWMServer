@@ -9,12 +9,7 @@ const paypal = require('@paypal/checkout-server-sdk');
 const mongoose = require('mongoose');
 const { emitNotificationToUser, emitRefresh } = require('../socket.js');
 const paginateQuery = require('../utils/paginationHelper');
-const {
-  tryLinkTaskToMatchingQuotation,
-  applyQuotationTaskCreatedReason,
-  isTaskEligibleForQuotationLink,
-} = require('../services/quotationTaskMatchingService');
-const QuotationRequest = require('../models/QuotationRequest');
+const { syncTaskQuotationLink } = require('../services/quotationTaskMatchingService');
 const {
   buildCompletedPaidQuery,
   buildCompletedPaidCsv,
@@ -1373,29 +1368,15 @@ const taskCtrl = {
 
       const savedTask = await newTask.save();
 
-      if (savedTask.quotationId) {
-        try {
-          const quotation = await QuotationRequest.findById(savedTask.quotationId);
-          if (quotation && isTaskEligibleForQuotationLink(savedTask)) {
-            await applyQuotationTaskCreatedReason(quotation);
-          }
-        } catch (err) {
-          console.error(
-            '[Quotation Link] Error setting task created reason on quotation:',
-            err,
+      try {
+        const linkResult = await syncTaskQuotationLink(savedTask);
+        if (linkResult.action === 'linked') {
+          console.log(
+            `[Quotation Link] Task ${savedTask._id} linked to quotation ${linkResult.quotationId}`,
           );
         }
-      } else {
-        try {
-          const linkResult = await tryLinkTaskToMatchingQuotation(savedTask);
-          if (linkResult.action === 'linked') {
-            console.log(
-              `[Quotation Link] Task ${savedTask._id} linked to quotation ${linkResult.quotationId}`,
-            );
-          }
-        } catch (err) {
-          console.error('[Quotation Link] Error linking task to quotation on createTask:', err);
-        }
+      } catch (err) {
+        console.error('[Quotation Link] Error syncing quotation link on createTask:', err);
       }
 
       /**
@@ -3893,6 +3874,14 @@ const taskCtrl = {
       if (task.email) {
         await syncRepeatCustomerForEmail(task.email);
       }
+      try {
+        await syncTaskQuotationLink(task);
+      } catch (err) {
+        console.error(
+          '[Quotation Link] Error syncing quotation link after payment session create:',
+          err,
+        );
+      }
 
       // Créer la session de paiement
       switch (paymentType) {
@@ -4155,6 +4144,14 @@ const taskCtrl = {
         await task.save(); // ✅ Sauvegarder SEULEMENT après confirmation
         if (task.email) {
           await syncRepeatCustomerForEmail(task.email);
+        }
+        try {
+          await syncTaskQuotationLink(task);
+        } catch (err) {
+          console.error(
+            '[Quotation Link] Error syncing quotation link after Stripe payment confirm:',
+            err,
+          );
         }
 
         // Récupérer les informations du paiement
@@ -4436,6 +4433,14 @@ const taskCtrl = {
         await task.save();
         if (task.email) {
           await syncRepeatCustomerForEmail(task.email);
+        }
+        try {
+          await syncTaskQuotationLink(task);
+        } catch (err) {
+          console.error(
+            '[Quotation Link] Error syncing quotation link after PayPal capture:',
+            err,
+          );
         }
         const transactionId =
           capture.result.purchase_units[0].payments.captures[0].id;
@@ -5153,6 +5158,14 @@ const taskCtrl = {
         }
 
         await task.save();
+        try {
+          await syncTaskQuotationLink(task);
+        } catch (err) {
+          console.error(
+            '[Quotation Link] Error syncing quotation link after Stripe webhook:',
+            err,
+          );
+        }
         if (paymentLinkId && mongoose.Types.ObjectId.isValid(paymentLinkId)) {
           await PaymentLink.findOneAndUpdate(
             {
@@ -5550,6 +5563,14 @@ const taskCtrl = {
           }
 
           await task.save();
+          try {
+            await syncTaskQuotationLink(task);
+          } catch (err) {
+            console.error(
+              '[Quotation Link] Error syncing quotation link after PayPal webhook:',
+              err,
+            );
+          }
           if (paymentLinkId && mongoose.Types.ObjectId.isValid(paymentLinkId)) {
             await PaymentLink.findOneAndUpdate(
               {
@@ -5752,6 +5773,14 @@ const taskCtrl = {
           }
 
           await task.save();
+          try {
+            await syncTaskQuotationLink(task);
+          } catch (err) {
+            console.error(
+              '[Quotation Link] Error syncing quotation link after PayPal CAPTURE webhook:',
+              err,
+            );
+          }
           if (paymentLinkId && mongoose.Types.ObjectId.isValid(paymentLinkId)) {
             await PaymentLink.findOneAndUpdate(
               {
