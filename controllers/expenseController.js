@@ -312,6 +312,8 @@ const expenseController = {
     },
 };
 
+expenseController.recalculatePayrollExpenses = recalculatePayrollExpenses;
+
 module.exports = expenseController;
 
 

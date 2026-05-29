@@ -9,6 +9,7 @@ const { User } = require('../models/User');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const Payroll = require('../models/Payroll');
 const Expense = require('../models/Expense');
+const { recalculatePayrollExpenses } = require('./expenseController');
 const Fuel = require('../models/Fuel');
 const dailySheetController = {
   generateDailySheetsForAllDrivers: async (req, res) => {
@@ -629,17 +630,24 @@ const dailySheetController = {
         return res.status(404).json({ message: 'Daily sheet not found for that date' });
       }
 
+      const expenseDate = dailySheet.date || startDate;
+
       const expense = await Expense.create({
+        driverId,
         dailySheetId: dailySheet._id,
         reason,
         amount,
         location,
         receiptUrl,
         addedBy,
+        date: expenseDate,
+        linkedToDailySheet: true,
       });
 
       dailySheet.expenses.push(expense._id);
       await dailySheet.save();
+
+      await recalculatePayrollExpenses(expense.date, expense.driverId);
 
       res.status(200).json({ message: 'Expense added', expense });
     } catch (error) {
@@ -671,8 +679,13 @@ const dailySheetController = {
       if (amount !== undefined) expense.amount = amount;
       if (location !== undefined) expense.location = location;
       if (req.file) expense.receiptUrl = req.file.path;
+      if (!expense.driverId) expense.driverId = driverId;
+      if (!expense.date) expense.date = dailySheet.date || startDate;
+      expense.linkedToDailySheet = true;
 
       await expense.save();
+
+      await recalculatePayrollExpenses(expense.date, expense.driverId);
 
       res.status(200).json({ message: 'Expense updated', expense });
     } catch (error) {
@@ -702,6 +715,12 @@ const dailySheetController = {
       // Remove reference from daily sheet
       dailySheet.expenses.pull(expenseId);
       await dailySheet.save();
+
+      const recalcDriverId = expense.driverId || driverId;
+      const recalcDate = expense.date || dailySheet.date || startDate;
+      if (recalcDriverId && recalcDate) {
+        await recalculatePayrollExpenses(recalcDate, recalcDriverId);
+      }
 
       res.status(200).json({ message: 'Expense deleted' });
     } catch (error) {
