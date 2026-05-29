@@ -581,6 +581,241 @@ async function invalidateSiblingPaymentLinks({ taskId, paymentType, excludePayme
   });
 }
 
+function buildPaymentEmailBreakdownFromTask(task) {
+  let subtotal = 0;
+  const breakdown = [];
+
+  for (const item of task.items || []) {
+    let itemPrice = 0;
+    let itemDescription = '';
+    let positionFee = 0;
+
+    if (item.standardItemId) {
+      itemPrice = Number(item.standardItemId.price);
+      itemDescription = item.standardItemId.itemName;
+      if (item.Objectsposition === 'InsideWithDismantling') {
+        positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
+      } else if (item.Objectsposition === 'Inside') {
+        positionFee = Number(item.standardItemId.insidePrice);
+      }
+    } else if (item.object) {
+      itemPrice = Number(item.price);
+      itemDescription = item.object;
+    }
+
+    const quantity = Number(item.quantity) || 1;
+    let finalItemTotal;
+    let displayPrice = itemPrice;
+
+    if (item.standardItemId) {
+      finalItemTotal = itemPrice * quantity + positionFee * quantity;
+    } else {
+      finalItemTotal = itemPrice * quantity;
+    }
+
+    if (task.hasDiscount && task.discountType === 'perItem' && item.customPrice) {
+      displayPrice = Number(item.customPrice);
+      if (item.standardItemId) {
+        finalItemTotal = Number(item.customPrice) * quantity + positionFee * quantity;
+      } else {
+        finalItemTotal = Number(item.customPrice) * quantity;
+      }
+    }
+
+    breakdown.push({
+      itemDescription,
+      quantity,
+      price: displayPrice,
+      total: finalItemTotal,
+      Objectsposition: item.Objectsposition,
+      standardItemId: item.standardItemId,
+      insidePrice: item.standardItemId?.insidePrice,
+      insideWithDismantlingPrice: item.standardItemId?.insideWithDismantlingPrice,
+      positionFee,
+    });
+    subtotal += finalItemTotal;
+  }
+
+  const taskTotal = Number(task.totalPrice);
+  const vat =
+    Number.isFinite(taskTotal) && taskTotal > 0
+      ? Number((taskTotal - taskTotal / 1.2).toFixed(2))
+      : Number((subtotal * 0.2).toFixed(2));
+
+  breakdown.push({
+    description: 'VAT (20%)',
+    amount: vat,
+  });
+
+  validateBreakdown(breakdown);
+  return breakdown;
+}
+
+async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes = '' } = {}) {
+  const task = await Task.findById(taskId).populate('items.standardItemId');
+  if (!task) {
+    throw new Error('Task not found');
+  }
+
+  const customerEmail = String(task.email || '').trim();
+  if (!customerEmail) {
+    return { sent: false, reason: 'no_email' };
+  }
+
+  const amountToPay = Number(task.totalPrice);
+  if (!Number.isFinite(amountToPay) || amountToPay <= 0) {
+    return { sent: false, reason: 'no_amount' };
+  }
+
+  const breakdown = buildPaymentEmailBreakdownFromTask(task);
+  const orderNumber = task.orderNumber;
+
+  const { stableLink: stripeLink } = await createPersistentPaymentLink({
+    taskId: task._id,
+    provider: 'stripe',
+    paymentType,
+    amountToPay,
+    orderNumber,
+  });
+  const { stableLink: paypalLink } = await createPersistentPaymentLink({
+    taskId: task._id,
+    provider: 'paypal',
+    paymentType,
+    amountToPay,
+    orderNumber,
+  });
+
+  await sendPayementEmail({
+    taskId: task._id.toString(),
+    customerEmail,
+    stripeLink,
+    paypalLink,
+    totalPrice: amountToPay,
+    totall: amountToPay,
+    breakdown,
+    notes,
+    taskDetails: task,
+    paymentType,
+    amountToPay,
+  });
+
+  return { sent: true, type: 'payment_link' };
+}
+
+async function deliverInvoiceForTask(taskId) {
+  const task = await Task.findById(taskId).populate('items.standardItemId');
+  if (!task) {
+    throw new Error('Task not found');
+  }
+
+  const customerEmail = String(task.email || '').trim();
+  if (!customerEmail) {
+    return { sent: false, reason: 'no_email' };
+  }
+
+  const dirPath = path.join(__dirname, '../generated');
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+
+  const fileName = `invoice-${task.orderNumber}.pdf`;
+  const filePath = path.join(dirPath, fileName);
+
+  await generateOfficialInvoicePDF(task, filePath);
+
+  const total = Number(task.totalPrice) || 0;
+  const subtotal = Number((total / 1.2).toFixed(2));
+  const vat = Number((total - subtotal).toFixed(2));
+
+  const paymentMethodLabel =
+    task.paymentMethod === 'BankTransfer'
+      ? 'Bank Transfer'
+      : task.paymentMethod === 'cash'
+        ? 'Cash'
+        : task.paymentMethod || 'Invoice';
+
+  const templatePath = path.join(
+    __dirname,
+    '../public/templates/invoiceConfirmation.html',
+  );
+  const templateSource = fs.readFileSync(templatePath, 'utf8');
+  const template = Handlebars.compile(templateSource);
+
+  const emailContent = template({
+    firstName: task.firstName,
+    lastName: task.lastName,
+    orderNumber: task.orderNumber,
+    totalPrice: total.toFixed(2),
+    hasDiscount: false,
+    hasAutomaticDiscount: false,
+    automaticDiscountAmount: '0.00',
+    isPerItemDiscount: false,
+    discountType: 'percentage',
+    customDiscountPercent: 0,
+    discountAmount: '0.00',
+    itemDiscountAmount: '0.00',
+    hasCoupon: false,
+    couponCode: '',
+    couponPercentage: 0,
+    couponDiscount: '0.00',
+    couponLabel: '',
+    subtotal: subtotal.toFixed(2),
+    vat: vat.toFixed(2),
+    total: total.toFixed(2),
+    isPartialPaid: false,
+    depositAmount: '0.00',
+    remainingAmount: '0.00',
+    paymentMethod: paymentMethodLabel,
+    showCallOutFeeRow: false,
+    callOutFee: '0.00',
+    showSundayFeeRow: false,
+    sundayFee: '50.00',
+  });
+
+  await transporter.sendMail({
+    from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
+    to: customerEmail,
+    subject: addStagingToSubject(`Invoice for Order #${task.orderNumber}`),
+    html: addStagingBanner(emailContent),
+    attachments: [{ filename: fileName, path: filePath }],
+  });
+
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+
+  return { sent: true, type: 'invoice' };
+}
+
+async function autoSendClientBillingAfterAdditionalAccept(childTask, paymentMethod) {
+  const customerEmail = String(childTask.email || '').trim();
+  if (!customerEmail) {
+    console.warn(
+      'autoSendClientBillingAfterAdditionalAccept: no customer email on child task',
+      childTask._id,
+    );
+    return { sent: false, reason: 'no_email' };
+  }
+
+  try {
+    if (paymentMethod === 'payment_link') {
+      return await deliverPaymentLinksForTask(childTask._id, { paymentType: 'total' });
+    }
+    if (paymentMethod === 'cash' || paymentMethod === 'BankTransfer') {
+      return await deliverInvoiceForTask(childTask._id);
+    }
+    console.warn(
+      'autoSendClientBillingAfterAdditionalAccept: unsupported payment method',
+      paymentMethod,
+      childTask._id,
+    );
+    return { sent: false, reason: 'unsupported_payment_method' };
+  } catch (err) {
+    console.error('autoSendClientBillingAfterAdditionalAccept:', err);
+    return { sent: false, error: err.message };
+  }
+}
+
 function sendPaymentLinkError(res, req, statusCode, title, message) {
   const acceptsHtml = String(req.headers.accept || '').includes('text/html');
   if (acceptsHtml) {
@@ -7188,10 +7423,25 @@ const taskCtrl = {
       request.childTaskId = childTask._id;
       await request.save();
 
+      const clientBilling = await autoSendClientBillingAfterAdditionalAccept(
+        childTask,
+        request.paymentMethod,
+      );
+
       const adminUsers = await User.find({
         $or: [{ roleType: 'Admin' }, { role: 'Admin' }],
       }).select('_id');
-      const notificationMessage = `Driver accepted quote for order ${task.orderNumber}. Child task ${childTask.orderNumber} created for "${request.itemName}".`;
+      let notificationMessage = `Driver accepted quote for order ${task.orderNumber}. Child task ${childTask.orderNumber} created for "${request.itemName}".`;
+      if (clientBilling.sent) {
+        notificationMessage +=
+          clientBilling.type === 'payment_link'
+            ? ' Payment link emailed to the client.'
+            : ' Invoice emailed to the client.';
+      } else if (clientBilling.reason === 'no_email') {
+        notificationMessage += ' Client billing email was not sent (no email on file).';
+      } else if (clientBilling.error) {
+        notificationMessage += ` Client billing email failed: ${clientBilling.error}`;
+      }
       await Promise.all(
         adminUsers.map((admin) =>
           emitNotificationToUser(admin._id.toString(), 'Orders', notificationMessage),
@@ -7202,6 +7452,7 @@ const taskCtrl = {
         message: 'Additional item quote accepted and child task created',
         request,
         childTask,
+        clientBilling,
       });
     } catch (error) {
       return res.status(500).json({
