@@ -4,21 +4,34 @@
  */
 
 const axios = require('axios');
+const crypto = require('crypto');
 const Task = require('../models/Task');
 const TippingRequest = require('../models/TippingRequest');
 const Truck = require('../models/Truck');
 const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
+const RouteOptimizerProposal = require('../models/RouteOptimizerProposal');
 const { truckDisplayName } = require('../utils/truckHelpers');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.0.135:8000'//'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://172.20.10.2:8000' //'https://routeoptimiser.duckdns.org';
 /** External optimizer: manual job groups (POST body: date, truck_contexts, job_groups). */
 const EXTERNAL_ROUTE_GROUPS_API_PATH =
   process.env.EXTERNAL_ROUTE_GROUPS_API_PATH || '/api/v1/custom';
+/** External optimizer: dual auto + custom compare in one call. */
+const EXTERNAL_COMPARE_ROUTES_API_PATH =
+  process.env.EXTERNAL_COMPARE_ROUTES_API_PATH || '/api/v1/compare-routes';
+
+const ROUTE_PROPOSAL_TTL_MS = Number(process.env.ROUTE_PROPOSAL_TTL_MS) || 24 * 60 * 60 * 1000;
+
+const OPTIMIZER_AXIOS_OPTS = {
+  timeout: 120000,
+  validateStatus: () => true,
+  headers: { 'Content-Type': 'application/json' },
+};
 
 function normalizeMongoId(value) {
   if (value == null) return null;
@@ -306,6 +319,379 @@ async function loadTrucksWithDriversForDate({ dateStr, requestedTruckIds }) {
   }
 
   return { ok: true, trucksWithDrivers, hasTruckSelection };
+}
+
+function buildTruckContextsPayload(trucksInScope) {
+  return trucksInScope.map(({ truck, assignedVanId, startLocation, endLocation }) => ({
+    truck_id: truck._id.toString(),
+    van_id: assignedVanId ? assignedVanId.toString() : null,
+    start_location: startLocation,
+    end_location: endLocation,
+  }));
+}
+
+function buildVanCapsForTrucks(body, trucksInScope) {
+  const vanIdsInScope = new Set(
+    trucksInScope
+      .map(({ assignedVanId }) => (assignedVanId ? assignedVanId.toString() : null))
+      .filter(Boolean)
+  );
+  const rawVanCaps = body.vanCurrentCapacities ?? body.van_current_capacities;
+  const vanCapsNormalized = normalizeVanCurrentCapacitiesMap(rawVanCaps);
+  return filterVanCapacitiesToScope(vanCapsNormalized, vanIdsInScope);
+}
+
+function attachVanCapsToPayload(payload, vanCapsForOptimizer) {
+  if (vanCapsForOptimizer) {
+    payload.van_current_capacities = vanCapsForOptimizer;
+  }
+  return payload;
+}
+
+async function postExternalOptimizer(url, payload) {
+  const { data, status } = await axios.post(url, payload, OPTIMIZER_AXIOS_OPTS);
+  return { data, status, url };
+}
+
+async function buildJobGroupsForPayload(jobGroups, logPrefix = '[routeGroups]') {
+  /** @type {Array<{ group_id: string, jobs: object[] }>} */
+  const job_groups = [];
+
+  for (const group of jobGroups) {
+    const { jobs, skipped } = await buildOptimizerJobsFromSegments(
+      group.segments,
+      `${logPrefix}:${group.groupId}`
+    );
+    if (!jobs.length) {
+      return {
+        ok: false,
+        message: `Group "${group.groupId}" has no jobs with coordinates`,
+        skipped,
+        groupId: group.groupId,
+      };
+    }
+    job_groups.push({
+      group_id: group.groupId,
+      jobs,
+    });
+  }
+
+  return { ok: true, job_groups };
+}
+
+/** Parse external driving time strings (e.g. "3:19" → 199 minutes as H:MM). */
+function parseDrivingTimeMin(value) {
+  if (value == null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+  const s = String(value).trim();
+  if (!s) return null;
+
+  if (s.includes(':')) {
+    const parts = s.split(':').map((p) => Number(p));
+    if (parts.length === 2 && parts.every((n) => Number.isFinite(n))) {
+      return parts[0] * 60 + parts[1];
+    }
+  }
+
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function extractTruckRouteMetrics(routeKey, routeData, truckName) {
+  const route = routeData && typeof routeData === 'object' ? routeData : {};
+  const segments = Array.isArray(route.route_segments) ? route.route_segments : [];
+  const resolvedName = route.driver_info?.name || truckName || routeKey;
+
+  let durationMin = null;
+  for (const key of ['total_time_min', 'total_duration_min', 'duration_min', 'total_time']) {
+    const n = Number(route[key]);
+    if (Number.isFinite(n)) {
+      durationMin = n;
+      break;
+    }
+  }
+  if (durationMin == null && route.driving_time_min != null) {
+    durationMin = parseDrivingTimeMin(route.driving_time_min);
+  }
+  if (durationMin == null && segments.length) {
+    const sum = segments.reduce((acc, seg) => {
+      const d = Number(seg?.total_segment_min ?? seg?.duration_min ?? seg?.duration ?? 0);
+      return acc + (Number.isFinite(d) ? d : 0);
+    }, 0);
+    if (sum > 0) durationMin = sum;
+  }
+
+  let distanceKm = null;
+  for (const key of [
+    'total_distance_km',
+    'total_distance',
+    'distance_km',
+    'driving_distance_km',
+  ]) {
+    const n = Number(route[key]);
+    if (Number.isFinite(n)) {
+      distanceKm = n;
+      break;
+    }
+  }
+
+  const drivingTimeDisplay =
+    route.driving_time_min != null ? String(route.driving_time_min) : null;
+
+  return {
+    truckId: routeKey,
+    truckName: resolvedName,
+    durationMin,
+    drivingTimeDisplay,
+    distanceKm,
+    jobCount: segments.length,
+  };
+}
+
+function buildRoutePreviewMetrics(routes, trucksWithDrivers, options = {}) {
+  const truckNameById = new Map(
+    trucksWithDrivers.map(({ truck }) => [truck._id.toString(), truckDisplayName(truck)])
+  );
+  const routeMap = routes && typeof routes === 'object' ? routes : {};
+  const routeMetrics = Object.keys(routeMap).map((key) =>
+    extractTruckRouteMetrics(key, routeMap[key], truckNameById.get(key))
+  );
+  const summedDurationMin = routeMetrics.reduce(
+    (acc, r) => acc + (Number.isFinite(r.durationMin) ? r.durationMin : 0),
+    0
+  );
+  const fleetTotalDistanceKm = routeMetrics.reduce(
+    (acc, r) => acc + (Number.isFinite(r.distanceKm) ? r.distanceKm : 0),
+    0
+  );
+
+  const fleetTotalDurationMin =
+    options.fleetTotalDurationMin != null
+      ? options.fleetTotalDurationMin
+      : routeMetrics.length
+        ? summedDurationMin
+        : null;
+
+  return {
+    routes: routeMetrics,
+    fleetTotalDurationMin,
+    fleetTotalDurationDisplay: options.fleetTotalDurationDisplay ?? null,
+    fleetTotalDistanceKm: routeMetrics.length ? fleetTotalDistanceKm : null,
+  };
+}
+
+function enrichRouteMetricsWithComparison(routeMetrics, comparison, variant) {
+  const byTruck = comparison?.by_truck;
+  if (!byTruck || typeof byTruck !== 'object') return routeMetrics;
+
+  const comparisonKey = variant === 'auto' ? 'calculate_routes' : 'custom';
+
+  return routeMetrics.map((row) => {
+    const truckCompare = byTruck[row.truckId];
+    if (!truckCompare || typeof truckCompare !== 'object') return row;
+    return {
+      ...row,
+      comparisonDrivingTime: truckCompare[comparisonKey] ?? null,
+      comparisonDifference: truckCompare.difference ?? null,
+      onlyInThisVariant:
+        variant === 'auto'
+          ? Boolean(truckCompare.only_in_calculate_routes)
+          : Boolean(truckCompare.only_in_custom),
+    };
+  });
+}
+
+async function resolveCompareRoutesExternal({
+  dateStr,
+  truck_contexts,
+  job_groups,
+  vanCapsForOptimizer,
+  reqBody,
+}) {
+  const compareUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}${EXTERNAL_COMPARE_ROUTES_API_PATH}`;
+  const payload = {
+    date: dateStr,
+    truck_contexts,
+    job_groups,
+    respect_time_slots: reqBody.respectTimeSlots ?? reqBody.respect_time_slots ?? false,
+    van_capacity: reqBody.vanCapacity ?? reqBody.van_capacity ?? null,
+  };
+  if (vanCapsForOptimizer) {
+    payload.van_current_capacities = vanCapsForOptimizer;
+  }
+
+  const { data, status } = await postExternalOptimizer(compareUrl, payload);
+  const autoRoutes = data?.calculate_routes?.routes;
+  const customRoutes = data?.custom?.routes;
+  const hasAnyRoutes =
+    (autoRoutes && typeof autoRoutes === 'object') ||
+    (customRoutes && typeof customRoutes === 'object');
+  const externalOk = data != null && hasAnyRoutes && (status === 200 || data.success === true);
+
+  if (!externalOk) {
+    if (status === 404 || status === 405) {
+      return { ok: false, fallback: true, status, error: 'compare-routes not available' };
+    }
+    return {
+      ok: false,
+      error:
+        (typeof data?.detail === 'string' && data.detail) ||
+        data?.message ||
+        `Compare routes failed (HTTP ${status})`,
+      detail: data,
+      status: status >= 500 ? 502 : status,
+    };
+  }
+
+  const autoBlock = data.calculate_routes || {};
+  const customBlock = data.custom || {};
+  const comparison = data.comparison && typeof data.comparison === 'object' ? data.comparison : null;
+  const fleet = comparison?.fleet || {};
+  const autoRoutesMap =
+    autoBlock.routes && typeof autoBlock.routes === 'object' ? autoBlock.routes : {};
+  const customRoutesMap =
+    customBlock.routes && typeof customBlock.routes === 'object' ? customBlock.routes : {};
+
+  const buildVariant = (block, routesMap, variant, fleetKey, fleetDisplayKey) => {
+    const hasRoutes = Object.keys(routesMap).length > 0;
+    const blockOk = block.success !== false;
+    return {
+      ok: blockOk && hasRoutes,
+      routes: routesMap,
+      apiCallsUsed: block.api_calls_used ?? 0,
+      optimizerMode: `compare-routes/${variant}`,
+      externalSummary: {
+        ...(block.summary && typeof block.summary === 'object' ? block.summary : {}),
+        comparison,
+      },
+      fleetTotalDurationMin: parseDrivingTimeMin(fleet[fleetKey]),
+      fleetTotalDurationDisplay: fleet[fleetDisplayKey] ?? null,
+      error:
+        !blockOk || !hasRoutes
+          ? block.message ||
+            block.error ||
+            (typeof block.detail === 'string' ? block.detail : null) ||
+            `${variant} routes unavailable`
+          : null,
+    };
+  };
+
+  return {
+    ok: true,
+    comparison,
+    apiCallsUsed: data.api_calls_used ?? 0,
+    auto: buildVariant(
+      autoBlock,
+      autoRoutesMap,
+      'auto',
+      'calculate_routes_total',
+      'calculate_routes_total'
+    ),
+    custom: buildVariant(customBlock, customRoutesMap, 'custom', 'custom_total', 'custom_total'),
+  };
+}
+
+async function resolveAutoRoutes(basePayload) {
+  const url = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`;
+  const { data, status } = await postExternalOptimizer(url, basePayload);
+  const hasRoutes = data != null && data.routes != null && typeof data.routes === 'object';
+  const externalOk = hasRoutes && (status === 200 || data.success === true);
+
+  if (!externalOk) {
+    return {
+      ok: false,
+      error:
+        (typeof data?.detail === 'string' && data.detail) ||
+        data?.message ||
+        `Automatic route optimizer failed (HTTP ${status})`,
+      detail: data,
+      status: status >= 500 ? 502 : status,
+    };
+  }
+
+  return {
+    ok: true,
+    routes: data.routes || {},
+    apiCallsUsed: data.api_calls_used ?? 0,
+    optimizerMode: 'calculate-routes',
+    externalSuccess: data.success !== false,
+    externalSummary: data.summary && typeof data.summary === 'object' ? data.summary : {},
+  };
+}
+
+async function resolveCustomGroupRoutes({
+  basePayload,
+  job_groups,
+  jobGroups,
+  trucksInScope,
+  dateStr,
+}) {
+  const payload = { ...basePayload, job_groups };
+  const groupsUrl = `${EXTERNAL_ROUTE_OPTIMIZER_URL}${EXTERNAL_ROUTE_GROUPS_API_PATH}`;
+  const { data, status } = await postExternalOptimizer(groupsUrl, payload);
+
+  const hasRoutes = data != null && data.routes != null && typeof data.routes === 'object';
+  const externalOk = hasRoutes && (status === 200 || data.success === true);
+
+  if (externalOk) {
+    return {
+      ok: true,
+      routes: data.routes,
+      apiCallsUsed: data.api_calls_used ?? 0,
+      optimizerMode: 'custom',
+      externalSuccess: data.success !== false,
+      externalSummary: data.summary && typeof data.summary === 'object' ? data.summary : {},
+    };
+  }
+
+  if (status === 404 || status === 405 || status === 422) {
+    const routes = {};
+    let apiCallsUsed = 0;
+    const groupsByTruck = distributeJobGroupsAcrossTrucks(jobGroups, trucksInScope);
+
+    for (const entry of trucksInScope) {
+      const truckId = entry.truck._id.toString();
+      const groups = groupsByTruck.get(truckId) || [];
+      if (!groups.length) {
+        routes[truckId] = { route_segments: [] };
+        continue;
+      }
+      routes[truckId] = await optimizeTruckGroupsLocally({
+        truckEntry: entry,
+        dateStr,
+        groups,
+      });
+      apiCallsUsed += groups.length;
+    }
+
+    return {
+      ok: true,
+      routes,
+      apiCallsUsed,
+      optimizerMode: 'per-group-recalculate-distributed',
+      externalSuccess: true,
+      externalSummary: {},
+    };
+  }
+
+  return {
+    ok: false,
+    error:
+      (typeof data?.detail === 'string' && data.detail) ||
+      data?.message ||
+      `Custom route optimizer failed (HTTP ${status})`,
+    detail: data,
+    status: status >= 500 ? 502 : status,
+  };
+}
+
+async function expireStaleRouteProposals() {
+  const now = new Date();
+  await RouteOptimizerProposal.updateMany(
+    { status: 'pending', expiresAt: { $lt: now } },
+    { $set: { status: 'expired' } }
+  );
 }
 
 async function persistExternalRoutes({
@@ -1850,9 +2236,356 @@ async function requestBestTippingPlace(req, res) {
   }
 }
 
+/**
+ * POST /api/route-optimizer/external/compare-route-previews
+ * Calls external POST /api/v1/compare-routes (auto + custom in one call), stores two previews (no DB assign).
+ * Falls back to parallel /calculate-routes + /custom if compare-routes is unavailable.
+ * Body: { date, truckIds?, jobGroups|groups|jobs, vanCurrentCapacities?, respectTimeSlots? }
+ */
+async function compareRoutePreviews(req, res) {
+  try {
+    await expireStaleRouteProposals();
+
+    const parsed = parseRouteOptimizerDate(req.body.date);
+    if (!parsed.ok) {
+      return res.status(400).json({ message: parsed.message });
+    }
+    const { dateStr } = parsed;
+
+    const jobGroups = normalizeJobGroupsFromBody(req.body);
+    if (!jobGroups.length) {
+      return res.status(400).json({
+        message:
+          'Manual job groups are required. Send jobGroups, groups, or jobs (array of job-id arrays).',
+      });
+    }
+
+    const requestedTruckIds = Array.isArray(req.body.truckIds)
+      ? req.body.truckIds
+      : Array.isArray(req.body.selectedTruckIds)
+        ? req.body.selectedTruckIds
+        : null;
+
+    const loaded = await loadTrucksWithDriversForDate({ dateStr, requestedTruckIds });
+    if (!loaded.ok) {
+      return res.status(loaded.status).json({ message: loaded.message });
+    }
+
+    const { trucksWithDrivers } = loaded;
+    const trucksInScope = trucksWithDrivers;
+    const truckIds = trucksInScope.map(({ truck }) => truck._id);
+
+    const builtGroups = await buildJobGroupsForPayload(jobGroups, '[comparePreviews]');
+    if (!builtGroups.ok) {
+      return res.status(400).json({
+        message: builtGroups.message,
+        skipped: builtGroups.skipped,
+        groupId: builtGroups.groupId,
+      });
+    }
+
+    const vanCapsForOptimizer = buildVanCapsForTrucks(req.body, trucksInScope);
+    const truck_contexts = buildTruckContextsPayload(trucksInScope);
+    const basePayload = attachVanCapsToPayload(
+      {
+        date: dateStr,
+        truck_contexts,
+      },
+      vanCapsForOptimizer
+    );
+
+    console.log(
+      '[RouteOptimizer:compare] date=%s jobGroups=%d trucks=%d',
+      dateStr,
+      builtGroups.job_groups.length,
+      trucksInScope.length
+    );
+
+    let externalComparison = null;
+    let compareMode = 'compare-routes';
+    /** @type {{ ok: boolean, routes?: object, error?: string, detail?: unknown, optimizerMode?: string, apiCallsUsed?: number, externalSummary?: object, fleetTotalDurationMin?: number|null, fleetTotalDurationDisplay?: string|null }} */
+    let autoResult;
+    /** @type {typeof autoResult} */
+    let customResult;
+
+    const compareBundle = await resolveCompareRoutesExternal({
+      dateStr,
+      truck_contexts,
+      job_groups: builtGroups.job_groups,
+      vanCapsForOptimizer,
+      reqBody: req.body,
+    });
+
+    if (compareBundle.ok) {
+      externalComparison = compareBundle.comparison;
+      autoResult = compareBundle.auto;
+      customResult = compareBundle.custom;
+      console.log('[RouteOptimizer:compare] external compare-routes OK');
+    } else if (compareBundle.fallback) {
+      compareMode = 'dual-fallback';
+      console.log(
+        '[RouteOptimizer:compare] compare-routes unavailable (HTTP %s), dual-call fallback',
+        compareBundle.status
+      );
+      [autoResult, customResult] = await Promise.all([
+        resolveAutoRoutes(basePayload),
+        resolveCustomGroupRoutes({
+          basePayload: { ...basePayload, job_groups: builtGroups.job_groups },
+          job_groups: builtGroups.job_groups,
+          jobGroups,
+          trucksInScope,
+          dateStr,
+        }),
+      ]);
+    } else {
+      return res.status(compareBundle.status || 502).json({
+        message: compareBundle.error || 'Compare routes failed',
+        ...(compareBundle.detail && typeof compareBundle.detail === 'object'
+          ? { detail: compareBundle.detail }
+          : {}),
+      });
+    }
+
+    const comparisonId = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + ROUTE_PROPOSAL_TTL_MS);
+    const createdBy = req.user?._id || null;
+    const jobGroupIds = builtGroups.job_groups.map((g) => g.group_id);
+
+    /** @type {Array<object>} */
+    const options = [];
+
+    const variantDefs = [
+      {
+        variant: 'auto',
+        label: 'Automatic assignment',
+        result: autoResult,
+      },
+      {
+        variant: 'custom',
+        label: 'Manual job groups',
+        result: customResult,
+      },
+    ];
+
+    for (const def of variantDefs) {
+      if (!def.result?.ok) {
+        options.push({
+          previewId: null,
+          variant: def.variant,
+          label: def.label,
+          available: false,
+          error: def.result?.error || `${def.label} unavailable`,
+          detail: def.result?.detail,
+        });
+        continue;
+      }
+
+      const metrics = buildRoutePreviewMetrics(def.result.routes, trucksInScope, {
+        fleetTotalDurationMin: def.result.fleetTotalDurationMin,
+        fleetTotalDurationDisplay: def.result.fleetTotalDurationDisplay,
+      });
+      const routesWithComparison = enrichRouteMetricsWithComparison(
+        metrics.routes,
+        externalComparison,
+        def.variant
+      );
+
+      const proposal = await RouteOptimizerProposal.create({
+        comparisonId,
+        variant: def.variant,
+        date: dateStr,
+        truckIds,
+        status: 'pending',
+        optimizerMode: def.result.optimizerMode,
+        routes: def.result.routes,
+        externalSummary: def.result.externalSummary || {},
+        apiCallsUsed: def.result.apiCallsUsed ?? 0,
+        jobGroupIds: def.variant === 'custom' ? jobGroupIds : [],
+        createdBy,
+        expiresAt,
+      });
+
+      options.push({
+        previewId: proposal._id,
+        variant: def.variant,
+        label: def.label,
+        available: true,
+        optimizerMode: def.result.optimizerMode,
+        apiCallsUsed: def.result.apiCallsUsed ?? 0,
+        routes: routesWithComparison,
+        fleetTotalDurationMin: metrics.fleetTotalDurationMin,
+        fleetTotalDurationDisplay: metrics.fleetTotalDurationDisplay,
+        fleetTotalDistanceKm: metrics.fleetTotalDistanceKm,
+        summary: {
+          date: dateStr,
+          trucks_used: routesWithComparison.length,
+          ...(def.result.externalSummary && typeof def.result.externalSummary === 'object'
+            ? def.result.externalSummary
+            : {}),
+        },
+      });
+    }
+
+    const anyAvailable = options.some((o) => o.available);
+
+    return res.status(anyAvailable ? 200 : 502).json({
+      success: anyAvailable,
+      comparisonId,
+      date: dateStr,
+      expiresAt: expiresAt.toISOString(),
+      compareMode,
+      comparison: externalComparison,
+      options,
+    });
+  } catch (error) {
+    console.error('Route optimizer compare-route-previews error:', error);
+    if (error.status && error.groupId) {
+      return res.status(error.status).json({
+        message: error.message,
+        truckId: error.truckId,
+        groupId: error.groupId,
+        detail: error.detail,
+      });
+    }
+    if (isOptimizerTransportFailure(error)) {
+      const { status, body } = responseFromOptimizerNetworkError(error, 'compare-route-previews');
+      return res.status(status).json(body);
+    }
+    return res.status(500).json({
+      message: 'Compare route previews failed',
+      error: error.response?.data || error.message,
+    });
+  }
+}
+
+/**
+ * POST /api/route-optimizer/external/accept-route-preview
+ * Body: { previewId: string }
+ */
+async function acceptRoutePreview(req, res) {
+  try {
+    await expireStaleRouteProposals();
+
+    const previewId = req.body.previewId || req.body.proposalId;
+    if (!previewId) {
+      return res.status(400).json({ message: 'previewId is required' });
+    }
+
+    const proposal = await RouteOptimizerProposal.findById(previewId);
+    if (!proposal) {
+      return res.status(404).json({ message: 'Route preview not found' });
+    }
+    if (proposal.status !== 'pending') {
+      return res.status(400).json({
+        message: `Route preview is not pending (status: ${proposal.status})`,
+        status: proposal.status,
+      });
+    }
+    if (proposal.expiresAt && proposal.expiresAt < new Date()) {
+      proposal.status = 'expired';
+      await proposal.save();
+      return res.status(410).json({ message: 'Route preview has expired. Run compare again.' });
+    }
+
+    const parsed = parseRouteOptimizerDate(proposal.date);
+    if (!parsed.ok) {
+      return res.status(500).json({ message: 'Stored proposal has invalid date' });
+    }
+    const { dateStr, startOfDay, endOfDay } = parsed;
+
+    const requestedTruckIds = proposal.truckIds?.map((id) => id.toString()) || [];
+    const loaded = await loadTrucksWithDriversForDate({ dateStr, requestedTruckIds });
+    if (!loaded.ok) {
+      return res.status(loaded.status).json({ message: loaded.message });
+    }
+
+    const routes = proposal.routes && typeof proposal.routes === 'object' ? proposal.routes : {};
+    const routeTruckIds = new Set(Object.keys(routes));
+    const trucksToPersist = loaded.trucksWithDrivers.filter(({ truck }) =>
+      routeTruckIds.has(truck._id.toString())
+    );
+
+    const assignedCount = await persistExternalRoutes({
+      trucksWithDrivers: trucksToPersist.length ? trucksToPersist : loaded.trucksWithDrivers,
+      routes,
+      dateStr,
+      startOfDay,
+      endOfDay,
+      logScope: `accept-${proposal.variant}`,
+    });
+
+    proposal.status = 'accepted';
+    proposal.acceptedAt = new Date();
+    await proposal.save();
+
+    await RouteOptimizerProposal.updateMany(
+      {
+        comparisonId: proposal.comparisonId,
+        _id: { $ne: proposal._id },
+        status: 'pending',
+      },
+      { $set: { status: 'superseded' } }
+    );
+
+    return res.status(200).json({
+      success: true,
+      previewId: proposal._id,
+      comparisonId: proposal.comparisonId,
+      variant: proposal.variant,
+      optimizerMode: proposal.optimizerMode,
+      date: dateStr,
+      assigned: assignedCount,
+    });
+  } catch (error) {
+    console.error('Route optimizer accept-route-preview error:', error);
+    return res.status(500).json({
+      message: 'Accept route preview failed',
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * POST /api/route-optimizer/external/discard-route-preview
+ * Body: { comparisonId?: string, previewId?: string }
+ */
+async function discardRoutePreview(req, res) {
+  try {
+    const { comparisonId, previewId } = req.body;
+    if (!comparisonId && !previewId) {
+      return res.status(400).json({ message: 'comparisonId or previewId is required' });
+    }
+
+    const filter = { status: 'pending' };
+    if (comparisonId) {
+      filter.comparisonId = comparisonId;
+    } else {
+      filter._id = previewId;
+    }
+
+    const result = await RouteOptimizerProposal.updateMany(filter, {
+      $set: { status: 'discarded' },
+    });
+
+    return res.status(200).json({
+      success: true,
+      discarded: result.modifiedCount,
+    });
+  } catch (error) {
+    console.error('Route optimizer discard-route-preview error:', error);
+    return res.status(500).json({
+      message: 'Discard route preview failed',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   calculateRoutesExternal,
   calculateRoutesExternalWithGroups,
+  compareRoutePreviews,
+  acceptRoutePreview,
+  discardRoutePreview,
   recalculateTruckRoute,
   requestBestTippingPlace,
   refreshRoute

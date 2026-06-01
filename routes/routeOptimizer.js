@@ -52,6 +52,34 @@ router.post(
 );
 
 /**
+ * POST /api/route-optimizer/external/compare-route-previews
+ * Proxies to external POST /api/v1/compare-routes; returns auto + custom previews with driving times.
+ * Body: { date, truckIds?, jobGroups|groups|jobs, vanCurrentCapacities?, respectTimeSlots? }
+ */
+router.post(
+  '/external/compare-route-previews',
+  routeOptimizerCtrl.compareRoutePreviews
+);
+
+/**
+ * POST /api/route-optimizer/external/accept-route-preview
+ * Body: { previewId } — applies the chosen preview to trucks/tasks.
+ */
+router.post(
+  '/external/accept-route-preview',
+  routeOptimizerCtrl.acceptRoutePreview
+);
+
+/**
+ * POST /api/route-optimizer/external/discard-route-preview
+ * Body: { comparisonId } or { previewId }
+ */
+router.post(
+  '/external/discard-route-preview',
+  routeOptimizerCtrl.discardRoutePreview
+);
+
+/**
  * POST /api/route-optimizer/external/recalculate-truck
  * Body: { truckId, date, persist?: boolean }
  */

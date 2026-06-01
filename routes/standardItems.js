@@ -211,7 +211,8 @@ router.delete('/items/:id',
 // Convert category to references
 router.put("/convert", standardItemCtrl.convertCategoryToReferences);
 // Add this route BEFORE the /:id route to prevent conflicts
-router.get('/items/slug/:slug', standardItemCtrl.getStandardItemBySlug);// router.post('/pay',    standardItemCtrl.processPayment);
+router.get('/items/slug/:slug', standardItemCtrl.getStandardItemBySlug);
+// router.post('/pay',    standardItemCtrl.processPayment);
 // router.post('/checkoutStripe',    standardItemCtrl.confirmStripePayment);
 // router.post('/checkoutPaypal',    standardItemCtrl.capturePayPalOrder);
 module.exports = router;
