@@ -85,6 +85,14 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isStillWorking: {
+    type: Boolean,
+    default: true
+  },
+  terminationReason: {
+    type: String,
+    default: ''
+  },
   truckId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Truck',
