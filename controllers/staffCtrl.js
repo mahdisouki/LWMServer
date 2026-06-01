@@ -62,6 +62,8 @@ const staffManagement = {
         startLng,
         endLat,
         endLng,
+        isStillWorking,
+        terminationReason,
       } = req.body;
 
       // Get file paths
@@ -116,6 +118,8 @@ const staffManagement = {
           signedStarterForm: signedStarterFormUrl,
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
+          isStillWorking,
+          terminationReason,
         };
         if (role === 'Driver' || role === 'Helper') {
           if (start_location && start_location.coordinates && start_location.coordinates.length >= 2) {
@@ -154,6 +158,8 @@ const staffManagement = {
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
           permissions: parsedPermissions || {},
+          isStillWorking,
+          terminationReason,
         });
       } else {
         newUser = new User({
@@ -175,6 +181,8 @@ const staffManagement = {
           signedStarterForm: signedStarterFormUrl,
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
+          isStillWorking,
+          terminationReason,
         });
       }
       console.log(newUser)
@@ -354,6 +362,10 @@ const staffManagement = {
 
       if (typeof updateData.csvPermission === 'string') {
         updateData.csvPermission = updateData.csvPermission === 'true';
+      }
+
+      if (typeof updateData.isStillWorking === 'string') {
+        updateData.isStillWorking = updateData.isStillWorking === 'true';
       }
 
       // Handle empty phone number
