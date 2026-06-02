@@ -2,7 +2,33 @@ const DailySheet = require('../models/DailySheet');
 const Expense = require('../models/Expense');
 const Payroll = require('../models/Payroll');
 
-// Helper: recalculate payroll.totalExpenses for a user on a given date (like PCN recalc)
+const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+const toLocalDateStr = (d) => {
+    if (!d) return null;
+    const x = new Date(d);
+    return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
+
+const getMonthRange = (date) => {
+    const base = new Date(date);
+    if (isNaN(base.getTime())) return null;
+    const start = new Date(base.getFullYear(), base.getMonth(), 1, 0, 0, 0, 0);
+    const end = new Date(base.getFullYear(), base.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { start, end };
+};
+
+const getDayRange = (date) => {
+    const base = new Date(date);
+    if (isNaN(base.getTime())) return null;
+    const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0);
+    const end = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 23, 59, 59, 999);
+    return { start, end };
+};
+
+const getExpenseDay = (expense) => expense.date || expense.createdAt;
+
+// Month-scoped routing (aligned with PCN recalc)
 const recalculatePayrollExpenses = async (date, userId) => {
     try {
         const parsed = new Date(date);
@@ -10,49 +36,107 @@ const recalculatePayrollExpenses = async (date, userId) => {
             console.error('recalculatePayrollExpenses: invalid date', date);
             return;
         }
-        const y = parsed.getFullYear();
-        const m = parsed.getMonth();
-        const d = parsed.getDate();
-        const startDate = new Date(y, m, d, 0, 0, 0, 0);
-        const endDate = new Date(y, m, d, 23, 59, 59, 999);
+        const monthRange = getMonthRange(parsed);
+        if (!monthRange) return;
 
-        // Find payroll records for this user on this date (startTime within day)
-        const payrollRecords = await Payroll.find({
-            userId: userId,
-            startTime: { $gte: startDate, $lte: endDate }
-        });
+        const [payrollRecords, expenses] = await Promise.all([
+            Payroll.find({
+                userId,
+                startTime: { $gte: monthRange.start, $lte: monthRange.end },
+            }).sort({ startTime: 1 }),
+            Expense.find({
+                driverId: userId,
+                date: { $gte: monthRange.start, $lte: monthRange.end },
+            }).sort({ date: 1 }).select('_id amount date createdAt'),
+        ]);
 
         if (payrollRecords.length === 0) {
-            console.log(`No payroll records found for user ${userId} on date ${date}`);
+            for (const expense of expenses) {
+                const expenseDate = toLocalDateStr(getExpenseDay(expense));
+                expense.reimbursementTargetPayrollId = null;
+                expense.reimbursementNote = `Expense on ${expenseDate} not assigned to any payroll this month yet.`;
+                await expense.save();
+            }
             return;
         }
 
-        // Sum all expenses for that driver on that date
-        const expenses = await Expense.find({
-            driverId: userId,
-            date: { $gte: startDate, $lte: endDate }
-        });
-        const totalExpenses = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+        // Do not touch validated paid months
+        if (!payrollRecords.some((p) => p.status !== 'Paid')) {
+            return;
+        }
+
+        const payrollMap = new Map();
+        for (const payroll of payrollRecords) {
+            payrollMap.set(payroll._id.toString(), []);
+        }
+
+        for (const expense of expenses) {
+            const dayRange = getDayRange(getExpenseDay(expense));
+            if (!dayRange) continue;
+
+            const sameDayPayrolls = payrollRecords.filter(
+                (p) => p.startTime && p.startTime >= dayRange.start && p.startTime <= dayRange.end,
+            );
+
+            let targetPayroll = sameDayPayrolls[0] || null;
+            let reimbursementNote = '';
+
+            if (!targetPayroll) {
+                const prevPayrolls = payrollRecords.filter((p) => p.startTime && p.startTime < dayRange.start);
+                const prevPayroll = prevPayrolls.length > 0 ? prevPayrolls[prevPayrolls.length - 1] : null;
+                if (prevPayroll) {
+                    targetPayroll = prevPayroll;
+                    reimbursementNote = `Expense on ${toLocalDateStr(getExpenseDay(expense))} applied to previous payroll ${toLocalDateStr(prevPayroll.startTime)}.`;
+                }
+            }
+
+            if (!targetPayroll) {
+                const nextPayroll = payrollRecords.find((p) => p.startTime && p.startTime > dayRange.end);
+                if (nextPayroll) {
+                    targetPayroll = nextPayroll;
+                    reimbursementNote = `Expense on ${toLocalDateStr(getExpenseDay(expense))} applied to next payroll ${toLocalDateStr(nextPayroll.startTime)}.`;
+                }
+            }
+
+            if (!targetPayroll) {
+                expense.reimbursementTargetPayrollId = null;
+                expense.reimbursementNote = `Expense on ${toLocalDateStr(getExpenseDay(expense))} not assigned to any payroll this month yet.`;
+                await expense.save();
+                continue;
+            }
+
+            if (!reimbursementNote) {
+                reimbursementNote = `Expense on ${toLocalDateStr(getExpenseDay(expense))} applied on payroll ${toLocalDateStr(targetPayroll.startTime)}.`;
+            }
+
+            if (targetPayroll.status === 'Paid') {
+                continue;
+            }
+
+            expense.reimbursementTargetPayrollId = targetPayroll._id;
+            expense.reimbursementNote = reimbursementNote;
+            await expense.save();
+            payrollMap.get(targetPayroll._id.toString()).push(expense);
+        }
 
         for (const payroll of payrollRecords) {
-            payroll.totalExpenses = totalExpenses;
+            if (payroll.status === 'Paid') continue;
+            const assigned = payrollMap.get(payroll._id.toString()) || [];
+            payroll.expenses = assigned.map((e) => e._id);
+            payroll.totalExpenses = round2(assigned.reduce((sum, e) => sum + (e.amount || 0), 0));
             await payroll.save();
-            console.log(`Updated payroll ${payroll._id} with totalExpenses: ${totalExpenses}`);
         }
     } catch (error) {
         console.error('Error recalculating payroll expenses:', error);
-        // don't throw – we don't want to fail the main operation
     }
 };
 
 const expenseController = {
-    // Get all expenses (optionally filter by driverId, date range, or addedBy)
     getAllExpenses: async (req, res) => {
         try {
             const { driverId, from, to, addedBy, linkedToDailySheet } = req.query;
             const filter = {};
 
-            // Filter by date range via Expense.date
             const dateFilter = {};
             if (from) {
                 const fromDate = new Date(from);
@@ -76,13 +160,15 @@ const expenseController = {
                 filter.addedBy = addedBy;
             }
 
-            // Filter by linkedToDailySheet (if provided) - same style as PCN logic
             if (linkedToDailySheet !== undefined) {
                 const isLinked = linkedToDailySheet === 'true' || linkedToDailySheet === true;
                 filter.linkedToDailySheet = isLinked;
             }
 
-            const expenses = await Expense.find(filter).sort({ date: -1, time: -1 }).populate('dailySheetId');
+            const expenses = await Expense.find(filter)
+                .sort({ date: -1, time: -1 })
+                .populate('dailySheetId')
+                .populate('reimbursementTargetPayrollId', 'startTime status');
             res.status(200).json({
                 message: 'Expenses retrieved successfully',
                 count: expenses.length,
@@ -94,7 +180,6 @@ const expenseController = {
         }
     },
 
-    // Get expenses for a specific driver and date (like dailySheet-based endpoints)
     getExpensesForDriverAndDate: async (req, res) => {
         try {
             const { driverId, date } = req.params;
@@ -119,7 +204,6 @@ const expenseController = {
         }
     },
 
-    // Add a new expense, optionally linking it to a DailySheet
     addExpense: async (req, res) => {
         try {
             const { dailySheetId, driverId, date } = req.body;
@@ -135,11 +219,9 @@ const expenseController = {
             let resolvedDriverId = driverId;
             let resolvedExpenseDate = date;
 
-            // If a dailySheetId is provided directly, try to link to it
             if (dailySheetId) {
                 linkedDailySheet = await DailySheet.findById(dailySheetId);
             } else if (driverId && date) {
-                // Otherwise, if driverId + date are provided, try to resolve the sheet
                 const startDate = new Date(date);
                 startDate.setHours(0, 0, 0, 0);
                 const endDate = new Date(date);
@@ -151,7 +233,6 @@ const expenseController = {
                 });
             }
 
-            // If linked to a sheet, ensure we have driverId/date for the expense
             if (linkedDailySheet) {
                 resolvedDriverId = resolvedDriverId || linkedDailySheet.driverId;
                 resolvedExpenseDate = resolvedExpenseDate || linkedDailySheet.date;
@@ -181,23 +262,21 @@ const expenseController = {
 
             const expense = await Expense.create(expenseData);
 
-            // If we found a daily sheet, push the reference
             if (linkedDailySheet) {
                 linkedDailySheet.expenses.push(expense._id);
                 await linkedDailySheet.save();
             }
 
-            // Recalculate payroll expenses for that driver/date
             await recalculatePayrollExpenses(expense.date, expense.driverId);
+            const refreshed = await Expense.findById(expense._id);
 
-            res.status(201).json({ message: 'Expense added', expense });
+            res.status(201).json({ message: 'Expense added', expense: refreshed });
         } catch (error) {
             console.error('Error adding expense:', error);
             res.status(500).json({ message: 'Failed to add expense', error: error.message });
         }
     },
 
-    // Update an expense by ID
     updateExpense: async (req, res) => {
         try {
             const { expenseId } = req.params;
@@ -220,8 +299,6 @@ const expenseController = {
             if (location !== undefined) expense.location = location;
             if (req.file) expense.receiptUrl = req.file.path;
 
-            // Support linking/unlinking to a DailySheet (used by "Add existing" flow)
-            // Unlink if explicitly requested, or if dailySheetId is null/empty string.
             const parsedLinkedToDailySheet =
                 linkedToDailySheet === undefined
                     ? undefined
@@ -270,20 +347,19 @@ const expenseController = {
 
             await expense.save();
 
-            // Recalculate payroll expenses for old/new driver/date if relevant
             if (oldDriverId && oldDate) {
                 await recalculatePayrollExpenses(oldDate, oldDriverId);
             }
             await recalculatePayrollExpenses(expense.date, expense.driverId);
 
-            res.status(200).json({ message: 'Expense updated', expense });
+            const refreshed = await Expense.findById(expense._id);
+            res.status(200).json({ message: 'Expense updated', expense: refreshed });
         } catch (error) {
             console.error('Error updating expense:', error);
             res.status(500).json({ message: 'Failed to update expense', error: error.message });
         }
     },
 
-    // Delete an expense by ID
     deleteExpense: async (req, res) => {
         try {
             const { expenseId } = req.params;
@@ -293,13 +369,11 @@ const expenseController = {
                 return res.status(404).json({ message: 'Expense not found' });
             }
 
-            // Also remove reference from DailySheet if present
             await DailySheet.updateOne(
                 { _id: expense.dailySheetId },
                 { $pull: { expenses: expense._id } }
             );
 
-            // Recalculate payroll expenses for that driver/date
             if (expense.date && expense.driverId) {
                 await recalculatePayrollExpenses(expense.date, expense.driverId);
             }
@@ -315,5 +389,3 @@ const expenseController = {
 expenseController.recalculatePayrollExpenses = recalculatePayrollExpenses;
 
 module.exports = expenseController;
-
-

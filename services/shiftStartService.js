@@ -5,6 +5,7 @@ const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const DriverHelperProximityState = require('../models/DriverHelperProximityState');
 const pcnDamageController = require('../controllers/pcnDamageController');
+const { recalculatePayrollExpenses } = require('../controllers/expenseController');
 const { getAssignedForDayFromRanges } = require('./unitAssignmentLogService');
 
 function getTodayDateKeyLocal() {
@@ -215,9 +216,11 @@ async function createShiftPayroll(userId, startTime = new Date(), options = {}) 
 
   await newPayroll.save();
   await pcnDamageController.recalculatePayrollPcnDamages(newPayroll.startTime, userId);
-  await newPayroll.populate('pcnDamages');
+  await recalculatePayrollExpenses(newPayroll.startTime, userId);
+  const payrollForResponse = (await Payroll.findById(newPayroll._id)) || newPayroll;
+  await payrollForResponse.populate(['pcnDamages', 'expenses']);
 
-  return { ok: true, payroll: newPayroll };
+  return { ok: true, payroll: payrollForResponse };
 }
 
 async function markShiftStartRequested(userId, dateKey = getTodayDateKeyLocal()) {
