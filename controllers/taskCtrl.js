@@ -7609,6 +7609,81 @@ const taskCtrl = {
       });
     }
   },
+
+  /**
+   * GET /api/tasks/export/recent-emails?limit=1000
+   * Export latest task emails as CSV.
+   */
+  exportRecentOrderEmailsCsv: async (req, res) => {
+    try {
+      const parsedLimit = Number.parseInt(String(req.query.limit || '1000'), 10);
+      const limit = Number.isFinite(parsedLimit)
+        ? Math.min(Math.max(parsedLimit, 1), 5000)
+        : 1000;
+
+      const rows = await Task.aggregate([
+        {
+          $match: {
+            email: { $exists: true, $ne: null, $ne: '' },
+            paymentStatus: { $ne: 'Failed' },
+            taskStatus: { $ne: 'Cancelled' },
+          },
+        },
+        {
+          $addFields: {
+            normalizedEmail: { $toLower: { $trim: { input: '$email' } } },
+          },
+        },
+        {
+          $match: {
+            normalizedEmail: { $ne: '' },
+          },
+        },
+        {
+          $sort: { createdAt: -1 },
+        },
+        {
+          $group: {
+            _id: '$normalizedEmail',
+            email: { $first: '$normalizedEmail' },
+            createdAt: { $first: '$createdAt' },
+            orderNumber: { $first: '$orderNumber' },
+          },
+        },
+        {
+          $sort: { createdAt: -1 },
+        },
+        {
+          $limit: limit,
+        },
+      ]);
+
+      const escapeCsv = (value) => {
+        const stringValue = String(value ?? '');
+        const escaped = stringValue.replace(/"/g, '""');
+        return `"${escaped}"`;
+      };
+
+      const csvLines = ['email,orderNumber'];
+      for (const row of rows) {
+        csvLines.push(
+          [escapeCsv(row.email), escapeCsv(row.orderNumber || '')].join(','),
+        );
+      }
+
+      const csvContent = `${csvLines.join('\n')}\n`;
+      const fileName = `recent-order-emails-${rows.length}.csv`;
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+      return res.send(csvContent);
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to export recent order emails',
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = taskCtrl;

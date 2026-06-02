@@ -258,6 +258,7 @@ router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.crea
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
 router.get('/tasks', taskCtrl.getAllTasks);
 router.get('/tasks/export/completed-paid', taskCtrl.exportCompletedPaidCsv);
+router.get('/tasks/export/recent-emails', taskCtrl.exportRecentOrderEmailsCsv);
 router.get('/tasks/by-date', taskCtrl.getTasksByDateLite);
 router.get('/tasks/stats/top-items', taskCtrl.getTop10ItemsOrdered);
 router.get('/tasks/stats/top-postcodes', taskCtrl.getTop10PostcodesInOrders);
