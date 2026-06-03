@@ -22,6 +22,8 @@ const expenseSchema = new Schema({
     // Backward-compat for old data/queries (prefer using `date`)
     time: { type: Date, required: false },
     linkedToDailySheet: { type: Boolean, default: false },
+    reimbursementTargetPayrollId: { type: Schema.Types.ObjectId, ref: 'Payroll', default: null },
+    reimbursementNote: { type: String, default: '' },
 }, { timestamps: true });
 
 const Expense = mongoose.model('Expense', expenseSchema);

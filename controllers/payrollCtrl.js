@@ -7,6 +7,7 @@ const DailySheet = require('../models/DailySheet');
 const PcnDamage = require('../models/PcnDamage');
 const Expense = require('../models/Expense');
 const pcnDamageController = require('./pcnDamageController');
+const { recalculatePayrollExpenses } = require('./expenseController');
 const {
   resolvePayrollEndTimeFromJobs,
   assertNoRemainingTasksOnTruckForDateKey,
@@ -934,15 +935,17 @@ const PayrollCtrl = {
       }
 
       await payroll.save();
+      let payrollForResponse = payroll;
       if (payroll.startTime) {
         await pcnDamageController.recalculatePayrollPcnDamages(payroll.startTime, payroll.userId);
-        await payroll.populate('pcnDamages');
+        await recalculatePayrollExpenses(payroll.startTime, payroll.userId);
+        payrollForResponse = (await Payroll.findById(payroll._id)) || payroll;
       }
-      await payroll.populate('pcnDamages');
+      await payrollForResponse.populate(['pcnDamages', 'expenses']);
 
       res.status(200).json({
         message: 'Payroll updated successfully.',
-        payroll
+        payroll: payrollForResponse,
       });
     } catch (error) {
       console.error('Error updating payroll:', error);
@@ -1050,20 +1053,7 @@ const PayrollCtrl = {
           calculatedTotalCash = round2(tasks.reduce((sum, task) => sum + (task.cashReceived || 0), 0));
         }
 
-        // Calculate total expenses (use provided value if specified, otherwise calculate from Expense documents)
-        if (totalExpenses === undefined) {
-          const addedByCandidates = [user.username, String(user._id)].filter(Boolean);
-          const expenses = await Expense.find({
-            driverId: userId,
-            ...(addedByCandidates.length > 0
-              ? { addedBy: { $in: addedByCandidates } }
-              : {}),
-            date: { $gte: payrollDate, $lt: nextDay }
-          });
-          calculatedTotalExpenses = round2(expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0));
-        }
-
-        // totalPcnDamages is resolved by assignment policy after payroll is created.
+        // totalExpenses / totalPcnDamages are resolved after payroll is created.
       }
 
       // Get truckId if not provided but user has a truck
@@ -1098,26 +1088,27 @@ const PayrollCtrl = {
       });
 
       await newPayroll.save();
+      let payrollForResponse = newPayroll;
       if (newPayroll.startTime) {
         await pcnDamageController.recalculatePayrollPcnDamages(newPayroll.startTime, userId);
+        await recalculatePayrollExpenses(newPayroll.startTime, userId);
+        payrollForResponse = (await Payroll.findById(newPayroll._id)) || newPayroll;
       }
 
       // Populate user and truck details for response
-      await newPayroll.populate({
+      await payrollForResponse.populate({
         path: 'userId',
         select: 'username email roleType'
       });
-      await newPayroll.populate({
+      await payrollForResponse.populate({
         path: 'truckId',
         select: 'name'
       });
-      await newPayroll.populate({
-        path: 'pcnDamages'
-      });
+      await payrollForResponse.populate(['pcnDamages', 'expenses']);
 
       res.status(201).json({
         message: 'Payroll record created successfully.',
-        payroll: newPayroll
+        payroll: payrollForResponse
       });
     } catch (error) {
       console.error('Error creating payroll:', error);

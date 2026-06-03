@@ -19,6 +19,7 @@ const payrollSchema = new Schema({
         ref: 'Truck'
     },
     pcnDamages:[{type: Schema.Types.ObjectId, ref: 'PcnDamage'}],
+    expenses: [{ type: Schema.Types.ObjectId, ref: 'Expense' }],
     vanReg:{type: String,},
     workingWith: {type:String},
     totalHoursWorked: { type: Number, default: 0 }, // Total hours worked
