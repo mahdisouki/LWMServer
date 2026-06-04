@@ -42,6 +42,9 @@ const {
   createPayPalOrder,
   PayPalClient,
   calculateTotalPriceUpdate,
+  resolveReusableProviderCheckoutUrl,
+  expireStripeCheckoutSessionIfOpen,
+  refundStripeCheckoutSessionPayment,
 } = require('../services/paymentService.js');
 const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
@@ -572,6 +575,10 @@ async function invalidateSiblingPaymentLinks({ taskId, paymentType, excludePayme
     query._id = { $ne: excludePaymentLinkId };
   }
 
+  const siblings = await PaymentLink.find(query).select(
+    '_id provider activeProviderSessionId'
+  );
+
   await PaymentLink.updateMany(query, {
     $set: {
       status: 'cancelled',
@@ -579,6 +586,80 @@ async function invalidateSiblingPaymentLinks({ taskId, paymentType, excludePayme
       'metadata.cancelledAt': new Date(),
     },
   });
+
+  for (const link of siblings) {
+    if (link.provider === 'stripe' && link.activeProviderSessionId) {
+      await expireStripeCheckoutSessionIfOpen(link.activeProviderSessionId);
+    }
+  }
+}
+
+async function resolveProviderCheckoutUrl(paymentLink, task, normalizedProvider) {
+  const reusableUrl = await resolveReusableProviderCheckoutUrl(
+    paymentLink,
+    normalizedProvider
+  );
+  if (reusableUrl) {
+    return reusableUrl;
+  }
+
+  const now = Date.now();
+  if (
+    paymentLink.lastRefreshedAt &&
+    now - paymentLink.lastRefreshedAt.getTime() < PAYMENT_LINK_REFRESH_COOLDOWN_MS
+  ) {
+    const fresh = await PaymentLink.findById(paymentLink._id);
+    if (fresh) {
+      const retryUrl = await resolveReusableProviderCheckoutUrl(fresh, normalizedProvider);
+      if (retryUrl) {
+        return retryUrl;
+      }
+    }
+    return null;
+  }
+
+  if (
+    normalizedProvider === 'stripe' &&
+    paymentLink.activeProviderSessionId
+  ) {
+    await expireStripeCheckoutSessionIfOpen(paymentLink.activeProviderSessionId);
+  }
+
+  let checkout;
+  if (normalizedProvider === 'stripe') {
+    checkout = await createStripePaymentLink(
+      task._id,
+      paymentLink.amountToPay,
+      [],
+      paymentLink.paymentType,
+      task.orderNumber,
+      paymentLink._id
+    );
+  } else {
+    checkout = await createPaypalPaymentLink(
+      task._id,
+      paymentLink.amountToPay,
+      [],
+      paymentLink.paymentType,
+      task.orderNumber,
+      paymentLink._id
+    );
+  }
+
+  const providerSessionId = checkout.sessionId || checkout.orderId;
+  await PaymentLink.findOneAndUpdate(
+    { _id: paymentLink._id, status: 'active', usedAt: null },
+    {
+      $set: {
+        activeProviderSessionId: providerSessionId,
+        activeProviderSessionUrl: checkout.url,
+        lastRefreshedAt: new Date(),
+      },
+      $inc: { refreshCount: 1 },
+    }
+  );
+
+  return checkout.url;
 }
 
 function buildPaymentEmailBreakdownFromTask(task) {
@@ -5141,7 +5222,12 @@ const taskCtrl = {
       }
 
       const now = Date.now();
+      const reusableUrl = await resolveReusableProviderCheckoutUrl(
+        paymentLink,
+        normalizedProvider
+      );
       if (
+        !reusableUrl &&
         paymentLink.lastRefreshedAt &&
         now - paymentLink.lastRefreshedAt.getTime() < PAYMENT_LINK_REFRESH_COOLDOWN_MS
       ) {
@@ -5185,30 +5271,21 @@ const taskCtrl = {
         );
       }
 
-      let providerUrl = null;
-      if (normalizedProvider === 'stripe') {
-        providerUrl = await createStripePaymentLink(
-          task._id,
-          paymentLink.amountToPay,
-          [],
-          paymentLink.paymentType,
-          task.orderNumber,
-          paymentLink._id,
-        );
-      } else {
-        providerUrl = await createPaypalPaymentLink(
-          task._id,
-          paymentLink.amountToPay,
-          [],
-          paymentLink.paymentType,
-          task.orderNumber,
-          paymentLink._id,
+      const providerUrl = await resolveProviderCheckoutUrl(
+        paymentLink,
+        task,
+        normalizedProvider
+      );
+
+      if (!providerUrl) {
+        return sendPaymentLinkError(
+          res,
+          req,
+          429,
+          'Please Wait',
+          'Please wait a few seconds and try again.',
         );
       }
-
-      paymentLink.lastRefreshedAt = new Date();
-      paymentLink.refreshCount = (paymentLink.refreshCount || 0) + 1;
-      await paymentLink.save();
 
       return res.redirect(providerUrl);
     } catch (error) {
@@ -5257,6 +5334,20 @@ const taskCtrl = {
         if (!task) {
           console.error(`Task not found for ID: ${taskId}`);
           return res.status(404).send('Task not found');
+        }
+
+        if (isPaymentTypeAlreadySettled(task, paymentAmountType)) {
+          const refundResult = await refundStripeCheckoutSessionPayment(session);
+          console.warn(
+            'Stripe checkout.session.completed: payment type already settled, skipping duplicate',
+            {
+              taskId,
+              paymentAmountType,
+              sessionId: session.id,
+              refundResult,
+            },
+          );
+          return res.status(200).send('Already settled');
         }
 
         // Update payment status based on payment type
@@ -5413,6 +5504,8 @@ const taskCtrl = {
               $set: {
                 status: 'used',
                 usedAt: new Date(),
+                activeProviderSessionId: null,
+                activeProviderSessionUrl: null,
               },
             },
           );
@@ -5432,6 +5525,22 @@ const taskCtrl = {
           paidAmountStatus: task.paidAmount.status,
           remainingAmountStatus: task.remainingAmount.status,
         });
+
+        const existingStripePayment = await PaymentHistory.findOne({
+          taskId: task._id,
+          paymentType: 'Stripe',
+          transactionId: String(transactionId),
+          status: 'success',
+        }).select('_id');
+
+        if (existingStripePayment) {
+          console.log(
+            'Stripe webhook: PaymentHistory already exists for transaction:',
+            transactionId,
+          );
+          return res.status(200).send('Webhook received');
+        }
+
         await PaymentHistory.create({
           taskId: task._id,
           firstName: task.firstName,
@@ -5679,17 +5788,6 @@ const taskCtrl = {
           const orderId = evt.resource.id;
           const client = PayPalClient();
 
-          // Capture
-          const capReq = new paypal.orders.OrdersCaptureRequest(orderId);
-          capReq.requestBody({});
-          const capRes = await client.execute(capReq);
-
-          if (!(capRes.statusCode === 201 || capRes.result.status === 'COMPLETED')) {
-            console.error('Capture failed', capRes.statusCode, capRes.result?.status);
-            return res.status(500).send('Capture failed');
-          }
-
-          // Get order (for custom_id & payer email)
           const getReq = new paypal.orders.OrdersGetRequest(orderId);
           const getRes = await client.execute(getReq);
           const pu = getRes.result.purchase_units?.[0];
@@ -5707,6 +5805,23 @@ const taskCtrl = {
           if (!task) {
             console.error('PayPal webhook: Task not found for custom_id:', customId);
             return await safeAck('ignored', 'Ignored – task not found');
+          }
+
+          if (isPaymentTypeAlreadySettled(task, paymentTypeMeta)) {
+            console.warn(
+              'PayPal ORDER.APPROVED: payment type already settled, skipping capture',
+              { orderId, taskId: customId, paymentTypeMeta },
+            );
+            return await safeAck('processed', 'Already settled – capture skipped');
+          }
+
+          const capReq = new paypal.orders.OrdersCaptureRequest(orderId);
+          capReq.requestBody({});
+          const capRes = await client.execute(capReq);
+
+          if (!(capRes.statusCode === 201 || capRes.result.status === 'COMPLETED')) {
+            console.error('Capture failed', capRes.statusCode, capRes.result?.status);
+            return res.status(500).send('Capture failed');
           }
 
           // Calculate final price to verify if it's truly a partial payment
@@ -5767,7 +5882,6 @@ const taskCtrl = {
             }
           } else {
             // Full payment (including when amountInGBP === finalPrice or paymentTypeMeta is 'total')
-            if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
             task.paymentStatus = 'Paid';
             // ❌ NE PAS modifier taskStatus - il reste inchangé
             task.paidAmount = task.paidAmount || {};
@@ -5818,6 +5932,8 @@ const taskCtrl = {
                 $set: {
                   status: 'used',
                   usedAt: new Date(),
+                  activeProviderSessionId: null,
+                  activeProviderSessionUrl: null,
                 },
               },
             );
@@ -5903,6 +6019,14 @@ const taskCtrl = {
             return await safeAck('ignored', 'Ignored – task not found');
           }
 
+          if (isPaymentTypeAlreadySettled(task, paymentTypeMeta)) {
+            console.log(
+              'PayPal CAPTURE.COMPLETED: payment type already settled, skipping',
+              { orderId, taskId: customId, paymentTypeMeta },
+            );
+            return await safeAck('processed', 'Already settled');
+          }
+
           // Calculate final price to verify if it's truly a partial payment
           const itemsForCalculation = task.items.map(item => ({
             standardItemId: item.standardItemId?._id || item.standardItemId,
@@ -5960,7 +6084,6 @@ const taskCtrl = {
             }
           } else {
             // Full payment (including when amountInGBP === finalPrice or paymentTypeMeta is 'total')
-            if (task.paymentStatus === 'Paid') return res.status(200).send('Already processed');
             task.paymentStatus = 'Paid';
             // ❌ NE PAS modifier taskStatus - il reste inchangé
             task.paidAmount = task.paidAmount || {};

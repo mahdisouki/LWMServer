@@ -12,6 +12,10 @@ const paymentLinkSchema = new Schema(
     usedAt: { type: Date, default: null },
     lastRefreshedAt: { type: Date, default: null },
     refreshCount: { type: Number, default: 0 },
+    /** Stripe Checkout Session id (cs_...) or PayPal order id — reused while still open. */
+    activeProviderSessionId: { type: String, default: null },
+    /** Cached redirect URL for activeProviderSessionId. */
+    activeProviderSessionUrl: { type: String, default: null },
     metadata: { type: Schema.Types.Mixed },
   },
   { timestamps: true },

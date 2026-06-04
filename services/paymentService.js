@@ -205,8 +205,53 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
         },
     });
 
-    return session.url;
+    return { url: session.url, sessionId: session.id };
 };
+
+async function getReusableStripeCheckoutUrl(sessionId) {
+    if (!sessionId) return null;
+    try {
+        const session = await stripe.checkout.sessions.retrieve(String(sessionId));
+        if (session.status === 'open' && session.url) {
+            return session.url;
+        }
+        return null;
+    } catch (error) {
+        console.warn('[paymentService] Could not reuse Stripe session:', sessionId, error.message);
+        return null;
+    }
+}
+
+async function expireStripeCheckoutSessionIfOpen(sessionId) {
+    if (!sessionId) return;
+    try {
+        const session = await stripe.checkout.sessions.retrieve(String(sessionId));
+        if (session.status === 'open') {
+            await stripe.checkout.sessions.expire(String(sessionId));
+        }
+    } catch (error) {
+        console.warn('[paymentService] Could not expire Stripe session:', sessionId, error.message);
+    }
+}
+
+/**
+ * Refund a completed Checkout Session when the order was already paid (duplicate tab/session).
+ */
+async function refundStripeCheckoutSessionPayment(session) {
+    if (!session?.payment_intent) return { refunded: false, reason: 'no-payment-intent' };
+    const paymentIntentId =
+        typeof session.payment_intent === 'string'
+            ? session.payment_intent
+            : session.payment_intent.id;
+    try {
+        await stripe.refunds.create({ payment_intent: paymentIntentId });
+        console.log('[paymentService] Refunded duplicate Stripe checkout payment:', paymentIntentId);
+        return { refunded: true, paymentIntentId };
+    } catch (error) {
+        console.error('[paymentService] Failed to refund duplicate Stripe payment:', error.message);
+        return { refunded: false, reason: error.message, paymentIntentId };
+    }
+}
 
 const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentType = 'total', orderNumber = null, paymentLinkId = null) => {
     console.log("Generating PayPal link for items:", breakdown);
@@ -270,7 +315,8 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
         const environment = createPayPalEnvironment();
         const client = new paypal.core.PayPalHttpClient(environment);
         const order = await client.execute(request);
-        return order.result.links.find(link => link.rel === "approve").href;
+        const approveUrl = order.result.links.find((link) => link.rel === 'approve')?.href;
+        return { url: approveUrl, orderId: order.result.id };
     } catch (error) {
         console.error("Failed to create PayPal payment link:", error);
         if (error.statusCode === 401) {
@@ -279,6 +325,35 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
         throw error;
     }
 };
+
+async function getReusablePayPalCheckoutUrl(orderId) {
+    if (!orderId) return null;
+    try {
+        const order = await getPayPalOrderDetails(String(orderId));
+        if (order.status === 'CREATED' || order.status === 'APPROVED') {
+            return order.links?.find((link) => link.rel === 'approve')?.href || null;
+        }
+        return null;
+    } catch (error) {
+        console.warn('[paymentService] Could not reuse PayPal order:', orderId, error.message);
+        return null;
+    }
+}
+
+async function resolveReusableProviderCheckoutUrl(paymentLink, provider) {
+    const sessionId = paymentLink.activeProviderSessionId;
+    if (!sessionId) return null;
+
+    if (provider === 'stripe') {
+        return getReusableStripeCheckoutUrl(sessionId);
+    }
+
+    if (provider === 'paypal') {
+        return getReusablePayPalCheckoutUrl(sessionId);
+    }
+
+    return null;
+}
 
 const createStripePaymentIntent = async (amount) => {
     return stripe.paymentIntents.create({
@@ -369,4 +444,19 @@ async function testPayPal() {
 
 //testPayPal();
 
-module.exports = { getPayPalOrderDetails, calculateTotalPrice, createStripePaymentIntent, capturePayPalPayment, createPayPalOrder, PayPalClient, createStripePaymentLink, createPaypalPaymentLink, calculateTotalPriceUpdate };
+module.exports = {
+    getPayPalOrderDetails,
+    calculateTotalPrice,
+    createStripePaymentIntent,
+    capturePayPalPayment,
+    createPayPalOrder,
+    PayPalClient,
+    createStripePaymentLink,
+    createPaypalPaymentLink,
+    calculateTotalPriceUpdate,
+    getReusableStripeCheckoutUrl,
+    getReusablePayPalCheckoutUrl,
+    resolveReusableProviderCheckoutUrl,
+    expireStripeCheckoutSessionIfOpen,
+    refundStripeCheckoutSessionPayment,
+};
