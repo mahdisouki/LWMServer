@@ -11,6 +11,9 @@ const {
 
 const THROTTLE_MS = Number(process.env.DRIVER_HELPER_PROXIMITY_THROTTLE_MS || 15000);
 const ARRIVAL_METERS = Number(process.env.DRIVER_HELPER_ARRIVAL_METERS || 80);
+const NEARBY_NOTIFY_METERS = Number(
+  process.env.DRIVER_HELPER_NEARBY_NOTIFY_METERS || 3000
+);
 const DEFAULT_MILESTONES = [5000, 2000, 1000, 500, 100];
 const inMemoryLastRunByDriver = new Map();
 
@@ -58,6 +61,37 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
       Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return earthRadiusMeters * c;
+}
+
+async function notifyHelperDriverNearby({
+  helperId,
+  driverName,
+  distanceMeters,
+  truckId,
+  driverId,
+  dateKey,
+}) {
+  try {
+    const { emitNotificationToUser } = require('../socket');
+    const distanceKm = Math.max(0.1, Math.round((distanceMeters / 1000) * 10) / 10);
+    const message = `${driverName} is nearby (about ${distanceKm} km away).`;
+    await emitNotificationToUser(
+      helperId.toString(),
+      'Driver_Tracking',
+      message,
+      'London Waste Management',
+      {
+        kind: 'DriverNearby',
+        driverId: driverId?.toString?.() ?? driverId,
+        distanceMeters: Math.round(distanceMeters),
+        thresholdMeters: NEARBY_NOTIFY_METERS,
+        dateKey,
+        truckId: truckId?.toString?.() ?? truckId,
+      }
+    );
+  } catch (error) {
+    console.error('[proximityAutoStart] Failed to notify helper:', error.message);
+  }
 }
 
 async function logProximityEvent({
@@ -184,10 +218,44 @@ async function processDriverLocationUpdate({
         milestoneMeters: milestone,
         currentDistanceMeters: Math.round(distanceMeters),
         driverId: truck.driverId,
-        helperId: truck.helperId,
+        helperId: effectiveHelperId,
         dateKey,
       },
     });
+  }
+
+  let helperNearbyNotified = false;
+  if (
+    hasHelperAssigned &&
+    effectiveHelperId &&
+    hasPendingShiftStart(state) &&
+    distanceMeters <= NEARBY_NOTIFY_METERS &&
+    !reachedSet.has(NEARBY_NOTIFY_METERS)
+  ) {
+    reachedSet.add(NEARBY_NOTIFY_METERS);
+    const driverName = actorUsername || driver?.username || 'Your driver';
+    await notifyHelperDriverNearby({
+      helperId: effectiveHelperId,
+      driverName,
+      distanceMeters,
+      truckId: truck._id,
+      driverId: truck.driverId,
+      dateKey,
+    });
+    await logProximityEvent({
+      actorUserId,
+      actorUsername,
+      truckId: truck._id,
+      details: {
+        event: 'HELPER_NOTIFIED_DRIVER_NEARBY',
+        thresholdMeters: NEARBY_NOTIFY_METERS,
+        currentDistanceMeters: Math.round(distanceMeters),
+        helperId: effectiveHelperId,
+        driverId: truck.driverId,
+        dateKey,
+      },
+    });
+    helperNearbyNotified = true;
   }
 
   state.milestonesReached = Array.from(reachedSet).sort((a, b) => b - a);
@@ -255,6 +323,7 @@ async function processDriverLocationUpdate({
     skipped: false,
     distanceMeters: Math.round(distanceMeters),
     newlyReachedMilestones: newlyReached,
+    helperNearbyNotified,
     autoStartResult,
   };
 }
