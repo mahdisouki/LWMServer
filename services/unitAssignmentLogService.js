@@ -182,6 +182,7 @@ async function getUnitAssignmentLogsByDate({ truckId, date }) {
 
 module.exports = {
   logUnitAssignment,
+  getDayBounds,
   getAssignmentsForUnitOnDay,
   getAssignedForDayFromRanges,
   getAssignmentAtTime,

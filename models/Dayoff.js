@@ -9,7 +9,12 @@ const dayoffSchema = new Schema({
   proofs: [{ type: String }],
   status: { type: String, enum: ['Pending', 'Approved', 'Denied'], default: 'Pending' },
   statusUpdateDate: { type: Date }, // Date when admin approved or denied the request
-  reason: { type: String }
+  reason: { type: String },
+  remindersSent: {
+    sevenDays: { type: Boolean, default: false },
+    twoDays: { type: Boolean, default: false },
+    oneDay: { type: Boolean, default: false },
+  },
 });
 
 const Dayoff = mongoose.model('Dayoff', dayoffSchema);

@@ -19,6 +19,7 @@ const notificationSchema = new mongoose.Schema({
       "Tipping",
       "Storage",
       "Truck",
+      "Unit_Management",
       "Day_Off",
       "Busy_Days",
       "Emails",
