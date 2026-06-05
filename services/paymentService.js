@@ -184,9 +184,10 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
         quantity: 1,
     }];
 
-    // Include metadata for webhook processing
+    // Include metadata for webhook processing and Stripe Dashboard search
     const metadata = {
         taskId: String(taskId),
+        orderNumber: String(orderNumber),
         paymentAmountType: paymentType || '',
         paymentLinkId: paymentLinkId ? String(paymentLinkId) : '',
     };
@@ -198,6 +199,13 @@ const createStripePaymentLink = async (taskId, amountToPay, breakdown, paymentTy
         success_url: `${CLIENT_URL}/payment/success?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=stripe`,
         cancel_url: `${CLIENT_URL}/payment/failed?taskId=${taskId}&paymentAmountType=${paymentType}&paymentType=stripe`,
         metadata: metadata,
+        payment_intent_data: {
+            metadata: {
+                taskId: String(taskId),
+                orderNumber: String(orderNumber),
+                paymentAmountType: paymentType || '',
+            },
+        },
         custom_text: {
             submit: {
                 message: "Thank you for choosing London Waste Management!",

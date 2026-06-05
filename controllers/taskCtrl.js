@@ -4203,6 +4203,12 @@ const taskCtrl = {
       switch (paymentType) {
         case 'stripe':
           try {
+            const orderNumber = task.orderNumber || String(taskId);
+            const stripeMetadata = {
+              taskId: String(taskId),
+              orderNumber,
+              paymentAmountType: actualPaymentType,
+            };
             const session = await stripe.checkout.sessions.create({
               payment_method_types: ['card'],
               mode: 'payment',
@@ -4223,9 +4229,13 @@ const taskCtrl = {
               ],
               success_url: `${CLIENT_URL}/payment/success?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
               cancel_url: `${CLIENT_URL}/payment/failed?taskId=${taskId}&paymentAmountType=${paymentAmountType}&paymentType=stripe`,
-              metadata: {
-                taskId: taskId,
-                paymentAmountType: actualPaymentType,
+              metadata: stripeMetadata,
+              payment_intent_data: {
+                metadata: {
+                  taskId: String(taskId),
+                  orderNumber,
+                  paymentAmountType: actualPaymentType,
+                },
               },
             });
 
