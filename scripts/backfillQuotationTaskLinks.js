@@ -9,9 +9,12 @@ const {
   isAutoRetargetEligible,
   findLinkedTaskForQuotation,
   findMatchingTaskForQuotation,
-  tryLinkQuotationToMatchingTask,
+  linkQuotationToTask,
   isTaskEligibleForQuotationLink,
   normalizeEmail,
+  normalizePhone,
+  normalizeName,
+  taskMatchesQuotation,
 } = require('../services/quotationTaskMatchingService');
 const {
   processQuotationForRetargeting,
@@ -24,6 +27,10 @@ const BATCH_SIZE = Number.parseInt(
 );
 const BATCH_DELAY_MS = Number.parseInt(
   process.env.QUOTATION_RETARGETING_BATCH_DELAY_MS || '5000',
+  10,
+);
+const PROGRESS_LOG_EVERY = Number.parseInt(
+  process.env.QUOTATION_BACKFILL_PROGRESS_EVERY || '25',
   10,
 );
 
@@ -56,6 +63,122 @@ function isPendingQuotation(quotation) {
   return !reason || String(reason).trim() === '';
 }
 
+function logLinkProgress(processed, total, summary, prefix = '[link]') {
+  console.log(
+    `${prefix} Processing ${processed}/${total} — linked: ${summary.linked}, ` +
+      `alreadyLinked: ${summary.alreadyLinked}, noMatch: ${summary.noMatch}, ` +
+      `skippedIneligible: ${summary.skippedIneligibleTask}, errors: ${summary.errors}`,
+  );
+}
+
+function taskFullName(task) {
+  return normalizeName(`${task.firstName || ''} ${task.lastName || ''}`);
+}
+
+async function loadLinkedQuotationIds() {
+  console.log('[link] Loading quotation IDs already linked to tasks...');
+  const ids = await Task.distinct('quotationId', {
+    quotationId: { $ne: null },
+    paymentStatus: { $ne: 'Failed' },
+  });
+  const linked = new Set(ids.filter(Boolean).map(String));
+  console.log(`[link] ${linked.size} quotation(s) already linked`);
+  return linked;
+}
+
+async function buildUnlinkedTaskMatchMaps() {
+  console.log('[link] Loading unlinked eligible tasks for in-memory matching...');
+  const tasks = await Task.find({
+    quotationId: null,
+    paymentStatus: { $ne: 'Failed' },
+  })
+    .select(
+      '_id orderNumber email phoneNumber phoneNumber2 firstName lastName createdAt paymentStatus',
+    )
+    .sort({ createdAt: 1 })
+    .lean();
+
+  console.log(`[link] Loaded ${tasks.length} unlinked task(s)`);
+
+  const byEmail = new Map();
+  const byPhone = new Map();
+  const byName = new Map();
+
+  for (const task of tasks) {
+    const email = normalizeEmail(task.email);
+    if (email && !byEmail.has(email)) {
+      byEmail.set(email, task);
+    }
+
+    for (const rawPhone of [task.phoneNumber, task.phoneNumber2]) {
+      const digits = normalizePhone(rawPhone);
+      if (!digits) continue;
+      if (!byPhone.has(digits)) {
+        byPhone.set(digits, task);
+      }
+      if (digits.length >= 9) {
+        const suffixKey = `suffix:${digits.slice(-9)}`;
+        if (!byPhone.has(suffixKey)) {
+          byPhone.set(suffixKey, task);
+        }
+      }
+    }
+
+    const name = taskFullName(task);
+    if (name && !byName.has(name)) {
+      byName.set(name, task);
+    }
+  }
+
+  return { byEmail, byPhone, byName };
+}
+
+function findMatchingTaskInMemory(quotation, maps) {
+  const qCreated = quotation.createdAt ? new Date(quotation.createdAt) : null;
+
+  const tryCandidate = (task) => {
+    if (!task || !qCreated) return null;
+    if (new Date(task.createdAt) < qCreated) return null;
+    if (!taskMatchesQuotation(task, quotation)) return null;
+    return task;
+  };
+
+  const email = normalizeEmail(quotation.email);
+  if (email) {
+    const match = tryCandidate(maps.byEmail.get(email));
+    if (match) return match;
+  }
+
+  const qPhone = normalizePhone(quotation.phoneNumber);
+  if (qPhone) {
+    let match = tryCandidate(maps.byPhone.get(qPhone));
+    if (match) return match;
+    if (qPhone.length >= 9) {
+      match = tryCandidate(maps.byPhone.get(`suffix:${qPhone.slice(-9)}`));
+      if (match) return match;
+    }
+  }
+
+  const qName = normalizeName(quotation.Name);
+  if (qName) {
+    const match = tryCandidate(maps.byName.get(qName));
+    if (match) return match;
+  }
+
+  return null;
+}
+
+function removeTaskFromMatchMaps(taskId, maps) {
+  const id = taskId.toString();
+  for (const map of [maps.byEmail, maps.byPhone, maps.byName]) {
+    for (const [key, task] of map.entries()) {
+      if (task._id.toString() === id) {
+        map.delete(key);
+      }
+    }
+  }
+}
+
 async function buildQuotationIdsWithOrders(quotationIds) {
   if (quotationIds.length === 0) {
     return new Set();
@@ -69,7 +192,7 @@ async function buildQuotationIdsWithOrders(quotationIds) {
 }
 
 /**
- * Phase 1: link historical quotations to matching tasks.
+ * Phase 1: link historical quotations to matching tasks (in-memory match + batched).
  */
 async function backfillQuotationTaskLinks({ dryRun = false, acceptedOnly = false } = {}) {
   const query = acceptedOnly ? { reason: 'task created' } : {};
@@ -87,46 +210,100 @@ async function backfillQuotationTaskLinks({ dryRun = false, acceptedOnly = false
     errors: 0,
   };
 
-  for (const quotation of quotations) {
-    const existingLink = await findLinkedTaskForQuotation(quotation._id);
-    if (existingLink) {
-      summary.alreadyLinked += 1;
-      continue;
-    }
+  if (quotations.length === 0) {
+    console.log('[link] No quotations to process.');
+    return summary;
+  }
 
-    try {
-      if (dryRun) {
-        const matchedTask = await findMatchingTaskForQuotation(quotation);
-        if (!matchedTask) {
-          summary.noMatch += 1;
-          continue;
+  const linkedQuotationIds = await loadLinkedQuotationIds();
+  const matchMaps = await buildUnlinkedTaskMatchMaps();
+
+  const totalBatches = Math.ceil(quotations.length / BATCH_SIZE);
+  console.log(
+    `[link] Processing ${quotations.length} quotation(s) in chunks of ${BATCH_SIZE} ` +
+      `(progress every ${PROGRESS_LOG_EVERY})`,
+  );
+
+  let processed = 0;
+
+  for (let i = 0; i < quotations.length; i += BATCH_SIZE) {
+    const chunk = quotations.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+
+    console.log(
+      `[link] Chunk ${batchNum}/${totalBatches} (${chunk.length} quotation(s))`,
+    );
+
+    for (const quotation of chunk) {
+      processed += 1;
+      const quotationIdStr = quotation._id.toString();
+
+      if (linkedQuotationIds.has(quotationIdStr)) {
+        summary.alreadyLinked += 1;
+        if (processed % PROGRESS_LOG_EVERY === 0 || processed === quotations.length) {
+          logLinkProgress(processed, quotations.length, summary);
         }
-        if (!isTaskEligibleForQuotationLink(matchedTask)) {
-          summary.skippedIneligibleTask += 1;
-          continue;
-        }
-        summary.linked += 1;
-        console.log(
-          `[link dry-run] quotation ${quotation._id} → task ${matchedTask.orderNumber || matchedTask._id}`,
-        );
         continue;
       }
 
-      const result = await tryLinkQuotationToMatchingTask(quotation);
-      if (result.action === 'linked') {
-        summary.linked += 1;
-        const task = await Task.findById(result.taskId).select('orderNumber email paymentStatus');
-        console.log(
-          `[linked] quotation ${quotation._id} → task ${task?.orderNumber || result.taskId}`,
-        );
-      } else if (result.action === 'already_linked') {
-        summary.alreadyLinked += 1;
-      } else {
-        summary.noMatch += 1;
+      try {
+        const matchedTask = findMatchingTaskInMemory(quotation, matchMaps);
+
+        if (!matchedTask) {
+          summary.noMatch += 1;
+          if (processed % PROGRESS_LOG_EVERY === 0 || processed === quotations.length) {
+            logLinkProgress(processed, quotations.length, summary);
+          }
+          continue;
+        }
+
+        if (!isTaskEligibleForQuotationLink(matchedTask)) {
+          summary.skippedIneligibleTask += 1;
+          if (processed % PROGRESS_LOG_EVERY === 0 || processed === quotations.length) {
+            logLinkProgress(processed, quotations.length, summary);
+          }
+          continue;
+        }
+
+        if (dryRun) {
+          summary.linked += 1;
+          console.log(
+            `[link dry-run] quotation ${quotation._id} → task ${matchedTask.orderNumber || matchedTask._id}`,
+          );
+          removeTaskFromMatchMaps(matchedTask._id, matchMaps);
+          linkedQuotationIds.add(quotationIdStr);
+        } else {
+          const taskDoc = await Task.findById(matchedTask._id);
+          if (!taskDoc || taskDoc.quotationId) {
+            summary.noMatch += 1;
+            removeTaskFromMatchMaps(matchedTask._id, matchMaps);
+          } else {
+            await linkQuotationToTask(quotation, taskDoc);
+            summary.linked += 1;
+            linkedQuotationIds.add(quotationIdStr);
+            removeTaskFromMatchMaps(matchedTask._id, matchMaps);
+            console.log(
+              `[linked] quotation ${quotation._id} → task ${taskDoc.orderNumber || taskDoc._id}`,
+            );
+          }
+        }
+
+        if (processed % PROGRESS_LOG_EVERY === 0 || processed === quotations.length) {
+          logLinkProgress(processed, quotations.length, summary);
+        }
+      } catch (error) {
+        summary.errors += 1;
+        console.error(`[link error] quotation ${quotation._id}:`, error.message);
+        if (processed % PROGRESS_LOG_EVERY === 0 || processed === quotations.length) {
+          logLinkProgress(processed, quotations.length, summary);
+        }
       }
-    } catch (error) {
-      summary.errors += 1;
-      console.error(`[link error] quotation ${quotation._id}:`, error.message);
+    }
+
+    const hasMore = i + BATCH_SIZE < quotations.length;
+    if (hasMore && BATCH_DELAY_MS > 0 && !dryRun) {
+      console.log(`[link] Waiting ${BATCH_DELAY_MS}ms before next chunk...`);
+      await sleep(BATCH_DELAY_MS);
     }
   }
 
@@ -313,6 +490,7 @@ const run = async () => {
       console.log(`  Linked${dryRun ? ' (would)' : ''}: ${linkSummary.linked}`);
       console.log(`  Already linked: ${linkSummary.alreadyLinked}`);
       console.log(`  No match: ${linkSummary.noMatch}`);
+      console.log(`  Skipped ineligible task: ${linkSummary.skippedIneligibleTask}`);
       console.log(`  Errors: ${linkSummary.errors}`);
       if (linkSummary.errors > 0) {
         exitCode = 1;
@@ -350,4 +528,6 @@ if (require.main === module) {
 module.exports = {
   backfillQuotationTaskLinks,
   backfillPendingRetargetingEmails,
+  buildUnlinkedTaskMatchMaps,
+  findMatchingTaskInMemory,
 };
