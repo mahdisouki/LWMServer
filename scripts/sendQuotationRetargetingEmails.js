@@ -3,6 +3,11 @@ const mongoose = require('mongoose');
 const QuotationRequest = require('../models/QuotationRequest');
 const Coupon = require('../models/Coupon');
 const { sendRetargetingEmail } = require('../utils/sendRetargetingEmail');
+const {
+  hasRetargetingEmailSentForQuotationEmail,
+  suppressQuotationRetargetingAsDuplicate,
+} = require('../services/quotationRetargetingService');
+const { normalizeEmail } = require('../services/quotationTaskMatchingService');
 
 // Connect to MongoDB
 const connectDB = async () => {
@@ -118,7 +123,7 @@ const sendQuotationRetargetingEmails = async () => {
     const quotations = await QuotationRequest.find({
       reason: { $in: ['no response', 'price too high'] },
       retargetingEmailSent: { $ne: true }
-    });
+    }).sort({ createdAt: 1 });
 
     if (quotations.length === 0) {
       console.log('✅ No quotations found that need retargeting emails.');
@@ -130,9 +135,28 @@ const sendQuotationRetargetingEmails = async () => {
     const MINIMUM_TOTAL = 45; // Minimum fee in GBP
     let successCount = 0;
     let errorCount = 0;
+    let duplicateEmailsSkipped = 0;
+    const processedEmails = new Set();
 
     for (const quotation of quotations) {
       try {
+        const emailKey = normalizeEmail(quotation.email);
+
+        if (emailKey && processedEmails.has(emailKey)) {
+          await suppressQuotationRetargetingAsDuplicate(quotation);
+          duplicateEmailsSkipped += 1;
+          console.log(`   ⏭️  Skipped duplicate email (${quotation.email}) — already sent in this run`);
+          continue;
+        }
+
+        if (emailKey && await hasRetargetingEmailSentForQuotationEmail(quotation.email, quotation._id)) {
+          await suppressQuotationRetargetingAsDuplicate(quotation);
+          processedEmails.add(emailKey);
+          duplicateEmailsSkipped += 1;
+          console.log(`   ⏭️  Skipped duplicate email (${quotation.email}) — already sent via another quotation`);
+          continue;
+        }
+
         console.log(`\n📝 Processing quotation ID: ${quotation._id}`);
         console.log(`   Email: ${quotation.email}`);
         console.log(`   Name: ${quotation.Name}`);
@@ -235,6 +259,10 @@ const sendQuotationRetargetingEmails = async () => {
         quotation.retargetingCoupon10Id = coupon10._id;
         await quotation.save();
 
+        if (emailKey) {
+          processedEmails.add(emailKey);
+        }
+
         console.log(`   ✅ Email sent successfully!`);
         successCount++;
 
@@ -246,6 +274,7 @@ const sendQuotationRetargetingEmails = async () => {
 
     console.log(`\n\n📊 Summary:`);
     console.log(`   ✅ Successfully sent: ${successCount}`);
+    console.log(`   ⏭️  Duplicate emails skipped: ${duplicateEmailsSkipped}`);
     console.log(`   ❌ Errors: ${errorCount}`);
     console.log(`   📧 Total processed: ${quotations.length}`);
 
