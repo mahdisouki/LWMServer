@@ -45,75 +45,77 @@ const serviceCategoryCtrl = {
 
   getAllServiceCategories: async (req, res) => {
     try {
-      const categoryPopularity = await Task.aggregate([
-        {
-          $match: {
-            paymentStatus: { $in: ['Paid', 'partial_Paid'] },
-            taskStatus: { $ne: 'Cancelled' },
-            'items.standardItemId': { $ne: null }
-          }
-        },
-        { $unwind: '$items' },
-        {
-          $match: {
-            'items.standardItemId': { $ne: null }
-          }
-        },
-        {
-          $lookup: {
-            from: StandardItem.collection.name,
-            localField: 'items.standardItemId',
-            foreignField: '_id',
-            as: 'itemDoc'
-          }
-        },
-        { $unwind: '$itemDoc' },
-        { $unwind: '$itemDoc.category' },
-        {
-          $group: {
-            _id: '$itemDoc.category',
-            purchasedCount: {
-              $sum: {
-                $cond: [
-                  { $gt: ['$items.quantity', 0] },
-                  '$items.quantity',
-                  1
-                ]
-              }
-            },
-            timesPurchased: { $sum: 1 }
-          }
-        }
-      ]);
+      // const categoryPopularity = await Task.aggregate([
+      //   {
+      //     $match: {
+      //       paymentStatus: { $in: ['Paid', 'partial_Paid'] },
+      //       taskStatus: { $ne: 'Cancelled' },
+      //       'items.standardItemId': { $ne: null }
+      //     }
+      //   },
+      //   { $unwind: '$items' },
+      //   {
+      //     $match: {
+      //       'items.standardItemId': { $ne: null }
+      //     }
+      //   },
+      //   {
+      //     $lookup: {
+      //       from: StandardItem.collection.name,
+      //       localField: 'items.standardItemId',
+      //       foreignField: '_id',
+      //       as: 'itemDoc'
+      //     }
+      //   },
+      //   { $unwind: '$itemDoc' },
+      //   { $unwind: '$itemDoc.category' },
+      //   {
+      //     $group: {
+      //       _id: '$itemDoc.category',
+      //       purchasedCount: {
+      //         $sum: {
+      //           $cond: [
+      //             { $gt: ['$items.quantity', 0] },
+      //             '$items.quantity',
+      //             1
+      //           ]
+      //         }
+      //       },
+      //       timesPurchased: { $sum: 1 }
+      //     }
+      //   }
+      // ]);
+      //
+      // const popularityMap = new Map(
+      //   categoryPopularity.map((entry) => [String(entry._id), entry])
+      // );
+      //
+      // const serviceCategories = await ServiceCategory.find();
+      //
+      // const sortedCategories = serviceCategories
+      //   .map((category) => {
+      //     const popularity = popularityMap.get(String(category._id));
+      //     return {
+      //       ...category.toObject(),
+      //       purchasedCount: popularity?.purchasedCount || 0,
+      //       timesPurchased: popularity?.timesPurchased || 0
+      //     };
+      //   })
+      //   .sort((a, b) => {
+      //     if (b.purchasedCount !== a.purchasedCount) {
+      //       return b.purchasedCount - a.purchasedCount;
+      //     }
+      //     if (b.timesPurchased !== a.timesPurchased) {
+      //       return b.timesPurchased - a.timesPurchased;
+      //     }
+      //     return a.name.localeCompare(b.name);
+      //   });
 
-      const popularityMap = new Map(
-        categoryPopularity.map((entry) => [String(entry._id), entry])
-      );
-
-      const serviceCategories = await ServiceCategory.find();
-
-      const sortedCategories = serviceCategories
-        .map((category) => {
-          const popularity = popularityMap.get(String(category._id));
-          return {
-            ...category.toObject(),
-            purchasedCount: popularity?.purchasedCount || 0,
-            timesPurchased: popularity?.timesPurchased || 0
-          };
-        })
-        .sort((a, b) => {
-          if (b.purchasedCount !== a.purchasedCount) {
-            return b.purchasedCount - a.purchasedCount;
-          }
-          if (b.timesPurchased !== a.timesPurchased) {
-            return b.timesPurchased - a.timesPurchased;
-          }
-          return a.name.localeCompare(b.name);
-        });
+      const serviceCategories = await ServiceCategory.find().sort({ name: 1 });
 
       res.status(200).json({
         message: 'All service categories fetched successfully',
-        serviceCategories: sortedCategories,
+        serviceCategories,
       });
     } catch (error) {
       res.status(500).json({

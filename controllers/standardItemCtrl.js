@@ -376,61 +376,61 @@ const standardItemCtrl = {
             _id: { $ne: baseItem._id }
           }
         },
+        // {
+        //   // Lookup popularity information from tasks collection
+        //   $lookup: {
+        //     from: 'tasks',
+        //     let: { itemId: '$_id' },
+        //     pipeline: [
+        //       {
+        //         $match: {
+        //           paymentStatus: { $in: ['Paid', 'partial_Paid'] },
+        //           taskStatus: { $ne: 'Cancelled' },
+        //           'items.standardItemId': { $ne: null }
+        //         }
+        //       },
+        //       { $unwind: '$items' },
+        //       {
+        //         $match: {
+        //           $expr: {
+        //             $and: [
+        //               { $eq: ['$items.standardItemId', '$$itemId'] },
+        //               { $ne: ['$items.standardItemId', null] }
+        //             ]
+        //           }
+        //         }
+        //       },
+        //       {
+        //         $group: {
+        //           _id: '$items.standardItemId',
+        //           totalQuantity: {
+        //             $sum: {
+        //               $cond: [
+        //                 { $gt: ['$items.quantity', 0] },
+        //                 '$items.quantity',
+        //                 1
+        //               ]
+        //             }
+        //           },
+        //           timesOrdered: { $sum: 1 }
+        //         }
+        //       }
+        //     ],
+        //     as: 'popularity'
+        //   }
+        // },
         {
-          // Lookup popularity information from tasks collection
-          $lookup: {
-            from: 'tasks',
-            let: { itemId: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  paymentStatus: { $in: ['Paid', 'partial_Paid'] },
-                  taskStatus: { $ne: 'Cancelled' },
-                  'items.standardItemId': { $ne: null }
-                }
-              },
-              { $unwind: '$items' },
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$items.standardItemId', '$$itemId'] },
-                      { $ne: ['$items.standardItemId', null] }
-                    ]
-                  }
-                }
-              },
-              {
-                $group: {
-                  _id: '$items.standardItemId',
-                  // Track how many units were sold (quantity) and how many times ordered
-                  totalQuantity: {
-                    $sum: {
-                      $cond: [
-                        { $gt: ['$items.quantity', 0] },
-                        '$items.quantity',
-                        1
-                      ]
-                    }
-                  },
-                  timesOrdered: { $sum: 1 }
-                }
-              }
-            ],
-            as: 'popularity'
-          }
-        },
-        {
-          // Flatten popularity info and default to 0 when no orders exist.
           // Also compute a "nameMatch" score (1/0) when a regex keyword is available
           // so that matching names can be ranked higher without excluding others.
           $addFields: {
-            totalQuantity: {
-              $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
-            },
-            timesOrdered: {
-              $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
-            },
+            // totalQuantity: {
+            //   $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
+            // },
+            // timesOrdered: {
+            //   $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
+            // },
+            totalQuantity: 0,
+            timesOrdered: 0,
             nameMatch: nameRegex
               ? {
                 $cond: [
@@ -463,8 +463,8 @@ const standardItemCtrl = {
         {
           $sort: {
             nameMatch: -1,      // name matches (regex) first, if any
-            timesOrdered: -1,   // then most frequently ordered
-            totalQuantity: -1,  // then by total units sold
+            // timesOrdered: -1,   // then most frequently ordered
+            // totalQuantity: -1,  // then by total units sold
             price: 1,           // then cheapest first
             itemName: 1         // tie‑breaker
           }
@@ -488,56 +488,58 @@ const standardItemCtrl = {
               _id: { $ne: baseItem._id }
             }
           },
-          {
-            $lookup: {
-              from: 'tasks',
-              let: { itemId: '$_id' },
-              pipeline: [
-                {
-                  $match: {
-                    paymentStatus: { $in: ['Paid', 'partial_Paid'] },
-                    taskStatus: { $ne: 'Cancelled' },
-                    'items.standardItemId': { $ne: null }
-                  }
-                },
-                { $unwind: '$items' },
-                {
-                  $match: {
-                    $expr: {
-                      $and: [
-                        { $eq: ['$items.standardItemId', '$$itemId'] },
-                        { $ne: ['$items.standardItemId', null] }
-                      ]
-                    }
-                  }
-                },
-                {
-                  $group: {
-                    _id: '$items.standardItemId',
-                    totalQuantity: {
-                      $sum: {
-                        $cond: [
-                          { $gt: ['$items.quantity', 0] },
-                          '$items.quantity',
-                          1
-                        ]
-                      }
-                    },
-                    timesOrdered: { $sum: 1 }
-                  }
-                }
-              ],
-              as: 'popularity'
-            }
-          },
+          // {
+          //   $lookup: {
+          //     from: 'tasks',
+          //     let: { itemId: '$_id' },
+          //     pipeline: [
+          //       {
+          //         $match: {
+          //           paymentStatus: { $in: ['Paid', 'partial_Paid'] },
+          //           taskStatus: { $ne: 'Cancelled' },
+          //           'items.standardItemId': { $ne: null }
+          //         }
+          //       },
+          //       { $unwind: '$items' },
+          //       {
+          //         $match: {
+          //           $expr: {
+          //             $and: [
+          //               { $eq: ['$items.standardItemId', '$$itemId'] },
+          //               { $ne: ['$items.standardItemId', null] }
+          //             ]
+          //           }
+          //         }
+          //       },
+          //       {
+          //         $group: {
+          //           _id: '$items.standardItemId',
+          //           totalQuantity: {
+          //             $sum: {
+          //               $cond: [
+          //                 { $gt: ['$items.quantity', 0] },
+          //                 '$items.quantity',
+          //                 1
+          //               ]
+          //             }
+          //           },
+          //           timesOrdered: { $sum: 1 }
+          //         }
+          //       }
+          //     ],
+          //     as: 'popularity'
+          //   }
+          // },
           {
             $addFields: {
-              totalQuantity: {
-                $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
-              },
-              timesOrdered: {
-                $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
-              },
+              // totalQuantity: {
+              //   $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
+              // },
+              // timesOrdered: {
+              //   $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
+              // },
+              totalQuantity: 0,
+              timesOrdered: 0,
               nameMatch: nameRegex
                 ? {
                   $cond: [
@@ -570,8 +572,8 @@ const standardItemCtrl = {
           {
             $sort: {
               nameMatch: -1,
-              timesOrdered: -1,
-              totalQuantity: -1,
+              // timesOrdered: -1,
+              // totalQuantity: -1,
               price: 1,
               itemName: 1
             }
@@ -583,7 +585,7 @@ const standardItemCtrl = {
 
         return res.status(200).json({
           message:
-            'No related items found in the same category, showing top popular & cheap items instead',
+            'No related items found in the same category, showing cheap items instead',
           baseItem: {
             id: baseItem._id,
             itemName: baseItem.itemName
@@ -689,38 +691,38 @@ const standardItemCtrl = {
 
       // Popularity-first default ordering when no explicit sort is requested.
       // If sort is provided, keep existing explicit behavior.
-      if (!sort) {
-        const allItems = await StandardItem.find(filter).populate('category').exec();
-        const popularityMap = await getPopularityMapForItems();
-        const sortedItems = sortItemsByPopularity(allItems, popularityMap);
-
-        if (isPaginationDisabled) {
-          return res.status(200).json({
-            message: 'All standard items fetched successfully',
-            items: sortedItems,
-            meta: {
-              currentPage: 1,
-              limit: total,
-              total,
-              count: sortedItems.length
-            }
-          });
-        }
-
-        const skip = (pageNum - 1) * limitNum;
-        const pagedItems = sortedItems.slice(skip, skip + limitNum);
-
-        return res.status(200).json({
-          message: 'All standard items fetched successfully',
-          items: pagedItems,
-          meta: {
-            currentPage: pageNum,
-            limit: limitNum,
-            total,
-            count: pagedItems.length
-          }
-        });
-      }
+      // if (!sort) {
+      //   const allItems = await StandardItem.find(filter).populate('category').exec();
+      //   const popularityMap = await getPopularityMapForItems();
+      //   const sortedItems = sortItemsByPopularity(allItems, popularityMap);
+      //
+      //   if (isPaginationDisabled) {
+      //     return res.status(200).json({
+      //       message: 'All standard items fetched successfully',
+      //       items: sortedItems,
+      //       meta: {
+      //         currentPage: 1,
+      //         limit: total,
+      //         total,
+      //         count: sortedItems.length
+      //       }
+      //     });
+      //   }
+      //
+      //   const skip = (pageNum - 1) * limitNum;
+      //   const pagedItems = sortedItems.slice(skip, skip + limitNum);
+      //
+      //   return res.status(200).json({
+      //     message: 'All standard items fetched successfully',
+      //     items: pagedItems,
+      //     meta: {
+      //       currentPage: pageNum,
+      //       limit: limitNum,
+      //       total,
+      //       count: pagedItems.length
+      //     }
+      //   });
+      // }
 
       // Normal explicit sorting (use MongoDB sort)
       const query = StandardItem.find(filter).populate('category').sort(sortOption);
@@ -779,13 +781,18 @@ const standardItemCtrl = {
       }
 
       // Fetch all category items first, then sort by popularity before pagination
-      const allItems = await StandardItem.find(query).populate('category', 'name');
-      const popularityMap = await getPopularityMapForItems();
-      const sortedItems = sortItemsByPopularity(allItems, popularityMap);
-      const items = sortedItems.slice((page - 1) * limit, page * limit);
+      // const allItems = await StandardItem.find(query).populate('category', 'name');
+      // const popularityMap = await getPopularityMapForItems();
+      // const sortedItems = sortItemsByPopularity(allItems, popularityMap);
+      // const items = sortedItems.slice((page - 1) * limit, page * limit);
+      // const totalItems = sortedItems.length;
 
-      // Count total items based on the query
-      const totalItems = sortedItems.length;
+      const totalItems = await StandardItem.countDocuments(query);
+      const items = await StandardItem.find(query)
+        .populate('category', 'name')
+        .sort({ createdAt: -1, _id: 1 })
+        .skip((page - 1) * limit)
+        .limit(limit);
 
       if (items.length === 0) {
         return res.status(404).json({ message: 'No standard items found' });
