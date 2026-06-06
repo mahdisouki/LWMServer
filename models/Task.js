@@ -494,5 +494,11 @@ taskSchema.pre('save', async function (next) {
   }
 });
 
+taskSchema.index({ date: 1 });
+taskSchema.index({ createdAt: -1 });
+taskSchema.index({ paymentStatus: 1, taskStatus: 1 });
+taskSchema.index({ date: 1, createdAt: -1 });
+taskSchema.index({ taskStatus: 1, paymentStatus: 1, finishDate: 1 });
+
 const Task = mongoose.model("Task", taskSchema);
 module.exports = Task;

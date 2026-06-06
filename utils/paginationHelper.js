@@ -6,13 +6,13 @@ const paginateQuery = async (
 ) => {
     const {
         page = 1,
-        limit = 1000,
+        limit = 100,
         keyword,
         sort = '-createdAt',
     } = queryParams;
 
     const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 200);
     const skip = (pageNum - 1) * limitNum;
 
     const queryFilter = {};
@@ -64,12 +64,14 @@ const paginateQuery = async (
             const isDate = !isNaN(parsedDate.getTime());
 
             if (isDate) {
-                const nextDay = new Date(parsedDate);
-                nextDay.setDate(nextDay.getDate() + 1);
+                const dayStart = new Date(parsedDate);
+                dayStart.setUTCHours(0, 0, 0, 0);
+                const dayEnd = new Date(dayStart);
+                dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
 
                 queryFilter[field] = {
-                    $gte: parsedDate.toISOString(),
-                    $lt: nextDay.toISOString(),
+                    $gte: dayStart,
+                    $lt: dayEnd,
                 };
             } else {
                 queryFilter[field] = value;

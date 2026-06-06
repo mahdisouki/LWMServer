@@ -1968,13 +1968,15 @@ const taskCtrl = {
         return res.status(400).json({ message: 'Invalid date format' });
       }
 
-      const nextDay = new Date(parsedDate);
-      nextDay.setDate(nextDay.getDate() + 1);
+      const dayStart = new Date(parsedDate);
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
 
       const tasks = await Task.find({
         date: {
-          $gte: parsedDate.toISOString(),
-          $lt: nextDay.toISOString(),
+          $gte: dayStart,
+          $lt: dayEnd,
         },
       })
         .select(
