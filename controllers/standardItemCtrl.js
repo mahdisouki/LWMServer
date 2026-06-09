@@ -1,8 +1,12 @@
 const StandardItem = require('../models/StandardItem');
 const ServiceCategory = require('../models/ServiceCategory.js');
-const Task = require('../models/Task');
 const mongoose = require('mongoose');
 const { normalizeForSlugCompare } = require('../utils/slug');
+const { isPopularityStale } = require('../services/popularityService');
+const {
+  sortItemsByPopularity,
+  defaultItemSort,
+} = require('../utils/itemPopularitySort');
 const {
   calculateTotalPrice,
   createStripePaymentIntent,
@@ -12,143 +16,6 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const paypal = require('@paypal/checkout-server-sdk');
 const { PayPalClient } = require('../services/paymentService.js');
 const loggingService = require('../services/loggingService');
-
-const getPopularityMapForItems = async () => {
-  const popularityRows = await Task.aggregate([
-    {
-      $match: {
-        paymentStatus: { $in: ['Paid', 'partial_Paid'] },
-        taskStatus: { $ne: 'Cancelled' },
-        'items.standardItemId': { $ne: null }
-      }
-    },
-    { $unwind: '$items' },
-    {
-      $match: {
-        'items.standardItemId': { $ne: null }
-      }
-    },
-    {
-      $group: {
-        _id: '$items.standardItemId',
-        purchasedCount: {
-          $sum: {
-            $cond: [
-              { $gt: ['$items.quantity', 0] },
-              '$items.quantity',
-              1
-            ]
-          }
-        },
-        timesPurchased: { $sum: 1 }
-      }
-    }
-  ]);
-
-  return new Map(
-    popularityRows.map((entry) => [String(entry._id), entry])
-  );
-};
-
-// If two items have close popularity, keep logical display order inside that "near" band.
-const POPULARITY_NEAR_BUCKET_SIZE = 3;
-const toPopularityBucket = (purchasedCount) =>
-  Math.floor((purchasedCount || 0) / POPULARITY_NEAR_BUCKET_SIZE);
-
-const sortItemsByPopularity = (items, popularityMap) => {
-  return items.sort((a, b) => {
-    const aPopularity = popularityMap.get(String(a._id));
-    const bPopularity = popularityMap.get(String(b._id));
-
-    const aPurchased = aPopularity?.purchasedCount || 0;
-    const bPurchased = bPopularity?.purchasedCount || 0;
-
-    const aBucket = toPopularityBucket(aPurchased);
-    const bBucket = toPopularityBucket(bPurchased);
-    if (bBucket !== aBucket) {
-      return bBucket - aBucket;
-    }
-
-    const aOrder = getItemSortOrder(a.itemName);
-    const bOrder = getItemSortOrder(b.itemName);
-    if (aOrder !== bOrder) {
-      return aOrder - bOrder;
-    }
-
-    if (bPurchased !== aPurchased) {
-      return bPurchased - aPurchased;
-    }
-
-    const aTimes = aPopularity?.timesPurchased || 0;
-    const bTimes = bPopularity?.timesPurchased || 0;
-    if (bTimes !== aTimes) {
-      return bTimes - aTimes;
-    }
-
-    return a.itemName.localeCompare(b.itemName);
-  });
-};
-
-// Helper function to keep a natural item-size order inside the same popularity rank
-const SORT_GROUPS = [
-  { keys: ['lamp', 'cushion'], base: 100 },
-  { keys: ['chair', 'armchair'], base: 200 },
-  { keys: ['table', 'desk'], base: 300 },
-  { keys: ['sofa'], base: 400 },
-  { keys: ['bed', 'mattress'], base: 500 },
-  { keys: ['wardrobe', 'drawer'], base: 600 },
-  { keys: ['printer', 'tv'], base: 700 },
-  { keys: ['fridge', 'freezer'], base: 800 },
-  { keys: ['door', 'window', 'radiator'], base: 900 },
-  { keys: ['load', 'bin'], base: 1000 },
-];
-
-const SIZE_ORDER = [
-  ['mini', 1],
-  ['small', 2],
-  ['single', 2],
-  ['standard', 3],
-  ['medium', 3],
-  ['double', 4],
-  ['king', 5],
-  ['emperor', 6],
-  ['large', 7],
-  ['corner', 8],
-  ['american', 9],
-  ['commercial', 10],
-];
-
-const getItemSortOrder = (itemName) => {
-  if (!itemName) return 99999;
-
-  const name = itemName.toLowerCase();
-
-  // Group score (e.g. sofa group)
-  let base = 9000;
-  for (const g of SORT_GROUPS) {
-    if (g.keys.some((k) => name.includes(k))) {
-      base = g.base;
-      break;
-    }
-  }
-
-  // Size score from words
-  let size = 5;
-  for (const [key, val] of SIZE_ORDER) {
-    if (name.includes(key)) {
-      size = val;
-      break;
-    }
-  }
-
-  // Seater count has priority over generic size words (2 seater before 3 seater)
-  const seaterMatch = name.match(/(\d+)\s*seater/);
-  if (seaterMatch) {
-    size = parseInt(seaterMatch[1], 10);
-  }
-
-  return base + size;
-};
 
 const standardItemCtrl = {
   createStandardItem: async (req, res) => {
@@ -376,61 +243,11 @@ const standardItemCtrl = {
             _id: { $ne: baseItem._id }
           }
         },
-        // {
-        //   // Lookup popularity information from tasks collection
-        //   $lookup: {
-        //     from: 'tasks',
-        //     let: { itemId: '$_id' },
-        //     pipeline: [
-        //       {
-        //         $match: {
-        //           paymentStatus: { $in: ['Paid', 'partial_Paid'] },
-        //           taskStatus: { $ne: 'Cancelled' },
-        //           'items.standardItemId': { $ne: null }
-        //         }
-        //       },
-        //       { $unwind: '$items' },
-        //       {
-        //         $match: {
-        //           $expr: {
-        //             $and: [
-        //               { $eq: ['$items.standardItemId', '$$itemId'] },
-        //               { $ne: ['$items.standardItemId', null] }
-        //             ]
-        //           }
-        //         }
-        //       },
-        //       {
-        //         $group: {
-        //           _id: '$items.standardItemId',
-        //           totalQuantity: {
-        //             $sum: {
-        //               $cond: [
-        //                 { $gt: ['$items.quantity', 0] },
-        //                 '$items.quantity',
-        //                 1
-        //               ]
-        //             }
-        //           },
-        //           timesOrdered: { $sum: 1 }
-        //         }
-        //       }
-        //     ],
-        //     as: 'popularity'
-        //   }
-        // },
         {
-          // Also compute a "nameMatch" score (1/0) when a regex keyword is available
-          // so that matching names can be ranked higher without excluding others.
+          // Popularity from cached fields (updated weekly by cron).
           $addFields: {
-            // totalQuantity: {
-            //   $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
-            // },
-            // timesOrdered: {
-            //   $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
-            // },
-            totalQuantity: 0,
-            timesOrdered: 0,
+            totalQuantity: { $ifNull: ['$purchasedCount', 0] },
+            timesOrdered: { $ifNull: ['$timesPurchased', 0] },
             nameMatch: nameRegex
               ? {
                 $cond: [
@@ -462,11 +279,11 @@ const standardItemCtrl = {
         },
         {
           $sort: {
-            nameMatch: -1,      // name matches (regex) first, if any
-            // timesOrdered: -1,   // then most frequently ordered
-            // totalQuantity: -1,  // then by total units sold
-            price: 1,           // then cheapest first
-            itemName: 1         // tie‑breaker
+            nameMatch: -1,
+            timesOrdered: -1,
+            totalQuantity: -1,
+            price: 1,
+            itemName: 1,
           }
         }
       ];
@@ -488,58 +305,10 @@ const standardItemCtrl = {
               _id: { $ne: baseItem._id }
             }
           },
-          // {
-          //   $lookup: {
-          //     from: 'tasks',
-          //     let: { itemId: '$_id' },
-          //     pipeline: [
-          //       {
-          //         $match: {
-          //           paymentStatus: { $in: ['Paid', 'partial_Paid'] },
-          //           taskStatus: { $ne: 'Cancelled' },
-          //           'items.standardItemId': { $ne: null }
-          //         }
-          //       },
-          //       { $unwind: '$items' },
-          //       {
-          //         $match: {
-          //           $expr: {
-          //             $and: [
-          //               { $eq: ['$items.standardItemId', '$$itemId'] },
-          //               { $ne: ['$items.standardItemId', null] }
-          //             ]
-          //           }
-          //         }
-          //       },
-          //       {
-          //         $group: {
-          //           _id: '$items.standardItemId',
-          //           totalQuantity: {
-          //             $sum: {
-          //               $cond: [
-          //                 { $gt: ['$items.quantity', 0] },
-          //                 '$items.quantity',
-          //                 1
-          //               ]
-          //             }
-          //           },
-          //           timesOrdered: { $sum: 1 }
-          //         }
-          //       }
-          //     ],
-          //     as: 'popularity'
-          //   }
-          // },
           {
             $addFields: {
-              // totalQuantity: {
-              //   $ifNull: [{ $arrayElemAt: ['$popularity.totalQuantity', 0] }, 0]
-              // },
-              // timesOrdered: {
-              //   $ifNull: [{ $arrayElemAt: ['$popularity.timesOrdered', 0] }, 0]
-              // },
-              totalQuantity: 0,
-              timesOrdered: 0,
+              totalQuantity: { $ifNull: ['$purchasedCount', 0] },
+              timesOrdered: { $ifNull: ['$timesPurchased', 0] },
               nameMatch: nameRegex
                 ? {
                   $cond: [
@@ -572,10 +341,10 @@ const standardItemCtrl = {
           {
             $sort: {
               nameMatch: -1,
-              // timesOrdered: -1,
-              // totalQuantity: -1,
+              timesOrdered: -1,
+              totalQuantity: -1,
               price: 1,
-              itemName: 1
+              itemName: 1,
             }
           },
           { $limit: globalLimit }
@@ -585,7 +354,7 @@ const standardItemCtrl = {
 
         return res.status(200).json({
           message:
-            'No related items found in the same category, showing cheap items instead',
+            'No related items found in the same category, showing top popular & cheap items instead',
           baseItem: {
             id: baseItem._id,
             itemName: baseItem.itemName
@@ -690,41 +459,45 @@ const standardItemCtrl = {
       const total = await StandardItem.countDocuments(filter);
 
       // Popularity-first default ordering when no explicit sort is requested.
-      // If sort is provided, keep existing explicit behavior.
-      // if (!sort) {
-      //   const allItems = await StandardItem.find(filter).populate('category').exec();
-      //   const popularityMap = await getPopularityMapForItems();
-      //   const sortedItems = sortItemsByPopularity(allItems, popularityMap);
-      //
-      //   if (isPaginationDisabled) {
-      //     return res.status(200).json({
-      //       message: 'All standard items fetched successfully',
-      //       items: sortedItems,
-      //       meta: {
-      //         currentPage: 1,
-      //         limit: total,
-      //         total,
-      //         count: sortedItems.length
-      //       }
-      //     });
-      //   }
-      //
-      //   const skip = (pageNum - 1) * limitNum;
-      //   const pagedItems = sortedItems.slice(skip, skip + limitNum);
-      //
-      //   return res.status(200).json({
-      //     message: 'All standard items fetched successfully',
-      //     items: pagedItems,
-      //     meta: {
-      //       currentPage: pageNum,
-      //       limit: limitNum,
-      //       total,
-      //       count: pagedItems.length
-      //     }
-      //   });
-      // }
+      // Uses cached scores from monthly cron; falls back to newest-first when stale.
+      if (!sort) {
+        const popularityStale = await isPopularityStale();
 
-      // Normal explicit sorting (use MongoDB sort)
+        if (!popularityStale) {
+          const allItems = await StandardItem.find(filter).populate('category').exec();
+          const sortedItems = sortItemsByPopularity(allItems);
+
+          if (isPaginationDisabled) {
+            return res.status(200).json({
+              message: 'All standard items fetched successfully',
+              items: sortedItems,
+              meta: {
+                currentPage: 1,
+                limit: total,
+                total,
+                count: sortedItems.length,
+              },
+            });
+          }
+
+          const skip = (pageNum - 1) * limitNum;
+          const pagedItems = sortedItems.slice(skip, skip + limitNum);
+
+          return res.status(200).json({
+            message: 'All standard items fetched successfully',
+            items: pagedItems,
+            meta: {
+              currentPage: pageNum,
+              limit: limitNum,
+              total,
+              count: pagedItems.length,
+            },
+          });
+        }
+
+        sortOption = defaultItemSort;
+      }
+
       const query = StandardItem.find(filter).populate('category').sort(sortOption);
 
       if (isPaginationDisabled) {
@@ -780,19 +553,21 @@ const standardItemCtrl = {
         query.category = category; // Add category filter to the query
       }
 
-      // Fetch all category items first, then sort by popularity before pagination
-      // const allItems = await StandardItem.find(query).populate('category', 'name');
-      // const popularityMap = await getPopularityMapForItems();
-      // const sortedItems = sortItemsByPopularity(allItems, popularityMap);
-      // const items = sortedItems.slice((page - 1) * limit, page * limit);
-      // const totalItems = sortedItems.length;
-
       const totalItems = await StandardItem.countDocuments(query);
-      const items = await StandardItem.find(query)
-        .populate('category', 'name')
-        .sort({ createdAt: -1, _id: 1 })
-        .skip((page - 1) * limit)
-        .limit(limit);
+      const popularityStale = await isPopularityStale();
+
+      let items;
+      if (popularityStale) {
+        items = await StandardItem.find(query)
+          .populate('category', 'name')
+          .sort(defaultItemSort)
+          .skip((page - 1) * limit)
+          .limit(limit);
+      } else {
+        const allItems = await StandardItem.find(query).populate('category', 'name');
+        const sortedItems = sortItemsByPopularity(allItems);
+        items = sortedItems.slice((page - 1) * limit, page * limit);
+      }
 
       if (items.length === 0) {
         return res.status(404).json({ message: 'No standard items found' });

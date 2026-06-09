@@ -1,5 +1,7 @@
 const ServiceCategory = require('../models/ServiceCategory');
 const loggingService = require('../services/loggingService');
+const { isPopularityStale } = require('../services/popularityService');
+const { popularityCategorySort } = require('../utils/itemPopularitySort');
 
 const serviceCategoryCtrl = {
   createServiceCategory: async (req, res) => {
@@ -43,7 +45,14 @@ const serviceCategoryCtrl = {
 
   getAllServiceCategories: async (req, res) => {
     try {
-      const serviceCategories = await ServiceCategory.find().sort({ name: 1 }).lean();
+      const popularityStale = await isPopularityStale();
+      const sortOption = popularityStale
+        ? { name: 1 }
+        : popularityCategorySort;
+
+      const serviceCategories = await ServiceCategory.find()
+        .sort(sortOption)
+        .lean();
 
       res.status(200).json({
         message: 'All service categories fetched successfully',

@@ -38,6 +38,7 @@ connectToDatabase()
     require('./cron/remindVanCapacityCheck');
     require('./cron/dayOffUnitReminders');
     require('./cron/cleanupTaskPhotoUploads');
+    require('./cron/updatePopularityScores');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })

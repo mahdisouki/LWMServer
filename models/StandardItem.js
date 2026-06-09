@@ -19,7 +19,10 @@ const standardItemSchema = new mongoose.Schema({
   spaceOfVan: { type: Number, required: false },
   timespentOutside: { type: Number, required: false },
   timespentInside: { type: Number, required: false },
-  timespentInsdiewithDis: { type: Number, required: false }
+  timespentInsdiewithDis: { type: Number, required: false },
+  purchasedCount: { type: Number, default: 0 },
+  timesPurchased: { type: Number, default: 0 },
+  popularityUpdatedAt: { type: Date, default: null },
 });
 
 const StandardItem = mongoose.model('StandardItem', standardItemSchema);
