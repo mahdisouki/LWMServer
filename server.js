@@ -17,8 +17,11 @@ const helmet = require('helmet');
 
 const server = http.createServer(app);
 connectToDatabase()
-  .then(() => {
+  .then(async () => {
     console.log("✅ MongoDB Connected");
+
+    const MailSignature = require('./models/MailSignature');
+    await MailSignature.dropLegacyIndexes();
 
     // ✅ Now it's safe to initialize sockets
     initSocket(server);
@@ -34,11 +37,15 @@ connectToDatabase()
     require('./cron/checkQuotationReminders');
     require('./cron/deleteExpiredCoupons');
     require('./cron/sendRetargetingFailedTasks');
+    require('./cron/gmailLiveSync');
+    require('./cron/gmailWatchRenew');
+    require('./cron/scheduledEmailSender');
     require('./cron/sendWasteTransferNotes');
     require('./cron/remindVanCapacityCheck');
     require('./cron/dayOffUnitReminders');
     require('./cron/cleanupTaskPhotoUploads');
     require('./cron/updatePopularityScores');
+  
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })

@@ -35,4 +35,26 @@ async function getGmailAuth(adminId) {
   return google.gmail({ version: 'v1', auth: oauth2Client });
 }
 
-module.exports = { getGmailAuth };
+async function getPeopleAuth(adminId) {
+  const admin = await Admin.findById(adminId);
+  if (!admin || !admin.gmailTokens) throw new Error('No Google tokens found');
+
+  oauth2Client.setCredentials(admin.gmailTokens);
+
+  if (!registeredAdmins.has(adminId)) {
+    oauth2Client.on('tokens', async (tokens) => {
+      try {
+        await Admin.findByIdAndUpdate(adminId, {
+          gmailTokens: { ...admin.gmailTokens, ...tokens },
+        });
+      } catch (error) {
+        console.error(`Failed to update tokens for admin ${adminId}:`, error);
+      }
+    });
+    registeredAdmins.add(adminId);
+  }
+
+  return google.people({ version: 'v1', auth: oauth2Client });
+}
+
+module.exports = { getGmailAuth, getPeopleAuth };

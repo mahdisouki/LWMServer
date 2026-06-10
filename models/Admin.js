@@ -26,6 +26,18 @@ const adminSchema = new mongoose.Schema({
         token_type: String,
         expiry_date: Number,
       },
+    gmailHistoryId: {
+        type: String,
+        default: null,
+      },
+    gmailEmailAddress: {
+        type: String,
+        default: null,
+      },
+    gmailWatchExpiry: {
+        type: Number,
+        default: null,
+      },
     emailSignature: {
         type: String,
         default: `

@@ -8,7 +8,11 @@ const oauth2Client = new OAuth2(
   process.env.GOOGLE_REDIRECT_URL // Example: 'http://localhost:3000/oauth2callback'
 );
 
-const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send'];
+const SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.settings.basic',
+];
 
 // Generate an authentication URL
 function getAuthUrl() {

@@ -51,8 +51,8 @@ async function sendEmail(adminId, to, subject, text, attachments = []) {
       throw new Error('Admin not found');
     }
 
-    // Prepare email content with signature
-    const htmlContent = `${text}<br><br>${admin.emailSignature || ''}`;
+    // Appended signature disabled — re-enable: `${text}<br><br>${admin.emailSignature || ''}`
+    const htmlContent = `${text}`;
 
     // Prepare attachments for nodemailer
     const nodemailerAttachments = attachments.map(file => {
@@ -150,7 +150,8 @@ async function replyToEmail(adminId, originalMessageId, replyText, attachments =
     // For nodemailer, we'll use a simple reply format
     // In a real implementation, you might want to fetch the original email details
     const replySubject = `Re: Email Reply - ${new Date().toISOString()}`;
-    const htmlContent = `${replyText}<br><br>${admin.emailSignature || ''}`;
+    // Appended signature disabled — re-enable: `${replyText}<br><br>${admin.emailSignature || ''}`
+    const htmlContent = `${replyText}`;
 
     // Prepare attachments for nodemailer
     const nodemailerAttachments = attachments.map(file => {
@@ -225,7 +226,8 @@ async function forwardEmail(adminId, originalMessageId, forwardTo, forwardText, 
     }
 
     const forwardSubject = `Fwd: Email Forward - ${new Date().toISOString()}`;
-    const htmlContent = `${forwardText}<br><br>${admin.emailSignature || ''}`;
+    // Appended signature disabled — re-enable: `${forwardText}<br><br>${admin.emailSignature || ''}`
+    const htmlContent = `${forwardText}`;
 
     // Prepare attachments for nodemailer
     const nodemailerAttachments = attachments.map(file => {

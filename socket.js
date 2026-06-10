@@ -1836,12 +1836,22 @@ const disconnectUser = (userId) => {
   return disconnected;
 };
 
+// Emit a generic event to a specific user (by userId)
+const emitToUser = (userId, eventName, payload) => {
+  if (!io) return false;
+  const socketId = userSocketMap[String(userId)];
+  if (!socketId) return false;
+  io.to(socketId).emit(eventName, payload);
+  return true;
+};
+
 module.exports = {
   initSocket,
   emitEvent,
   emitRefresh,
   getIo,
   emitNotificationToUser,
+  emitToUser,
   getOnlineUsers,
   isUserOnline,
   disconnectUser,
