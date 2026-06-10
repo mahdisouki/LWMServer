@@ -15,6 +15,11 @@ const {
   buildCompletedPaidCsv,
   buildCompletedPaidPdfBuffer,
 } = require('../utils/completedPaidExport');
+const {
+  checkAvailability,
+  ALL_TIME_SLOTS,
+  DEFAULT_SUGGESTION_DAYS,
+} = require('../services/taskAvailabilityService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -1953,6 +1958,64 @@ const taskCtrl = {
    * GET /api/tasks/by-date?date=YYYY-MM-DD
    * Same collection-date semantics as paginateQuery date filter; returns a slim task shape for routing/UI.
    */
+  getAvailability: async (req, res) => {
+    try {
+      const dateVal =
+        req.query.date || req.query.collectionDate || req.query.collectiondate;
+      const { timeSlot } = req.query;
+      const suggestionDays = Math.min(
+        Math.max(parseInt(req.query.suggestionDays, 10) || DEFAULT_SUGGESTION_DAYS, 1),
+        60,
+      );
+
+      if (!dateVal) {
+        return res.status(400).json({
+          message: 'date query parameter is required (e.g. YYYY-MM-DD)',
+        });
+      }
+
+      if (timeSlot && !ALL_TIME_SLOTS.includes(timeSlot)) {
+        return res.status(400).json({
+          message: 'Invalid time slot',
+          validTimeSlots: ALL_TIME_SLOTS,
+        });
+      }
+
+      const parsedDate = new Date(dateVal);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid date format' });
+      }
+
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      const requestedDay = new Date(parsedDate);
+      requestedDay.setUTCHours(0, 0, 0, 0);
+      // if (requestedDay < today) {
+      //   return res.status(400).json({
+      //     message: 'Date cannot be in the past',
+      //     error: 'DATE_IN_PAST',
+      //   });
+      // }
+
+      const result = await checkAvailability(dateVal, { timeSlot, suggestionDays });
+      if (result.error === 'INVALID_DATE') {
+        return res.status(400).json({ message: 'Invalid date format' });
+      }
+
+      return res.status(200).json({
+        message: result.available
+          ? 'Date is available for booking'
+          : 'Date is not available for booking',
+        ...result,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to check availability',
+        error: error.message,
+      });
+    }
+  },
+
   getTasksByDateLite: async (req, res) => {
     try {
       const dateVal =
