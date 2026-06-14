@@ -11,7 +11,37 @@ const TippingRequest = require('./models/TippingRequest');
 const Payroll = require('./models/Payroll');
 const sendReviewRequestEmail = require('./utils/sendReviewEmail');
 let io;
-const userSocketMap = {}; // Stores userId:socketId mapping
+/** @type {Record<string, Set<string>>} userId -> active socket ids (supports multiple tabs) */
+const userSocketMap = {};
+
+function addUserSocket(userId, socketId) {
+  const key = String(userId);
+  if (!userSocketMap[key]) {
+    userSocketMap[key] = new Set();
+  }
+  const wasOnline = userSocketMap[key].size > 0;
+  userSocketMap[key].add(socketId);
+  return !wasOnline;
+}
+
+function removeUserSocket(userId, socketId) {
+  const key = String(userId);
+  const sockets = userSocketMap[key];
+  if (!sockets) {
+    return true;
+  }
+  sockets.delete(socketId);
+  if (sockets.size === 0) {
+    delete userSocketMap[key];
+    return true;
+  }
+  return false;
+}
+
+function getUserSocketIds(userId) {
+  const sockets = userSocketMap[String(userId)];
+  return sockets ? [...sockets] : [];
+}
 const Helper = require('./models/Helper');
 const { sendOneSignalNotification } = require('./services/oneSignalService');
 const { processDriverLocationUpdate } = require('./services/proximityAutoStartService');
@@ -236,13 +266,18 @@ const initSocket = (server) => {
   // Handle connection and events
   io.on('connection', (socket) => {
     const userId = socket.user.userId;
-    userSocketMap[userId] = socket.id;
+    const justCameOnline = addUserSocket(userId, socket.id);
     console.log(`User connected: ${userId} with socket ID ${socket.id}`);
-    console.log(userSocketMap)
+    console.log(userSocketMap);
     sendOfflineNotifications(userId, socket);
 
-    // Emit user online status to all connected users
-    io.emit('userStatus', { userId, status: 'online' });
+    // Send current online users to the connecting client
+    socket.emit('onlineUsersList', getOnlineUsers());
+
+    // Notify others only when this is the user's first active connection
+    if (justCameOnline) {
+      io.emit('userStatus', { userId, status: 'online' });
+    }
 
     socket.on('joinRoom', async (roomId) => {
       console.log(`User joined room: ${roomId}`);
@@ -1556,10 +1591,11 @@ const initSocket = (server) => {
 
     socket.on('disconnect', () => {
       console.log(`User disconnected: ${userId}`);
-      delete userSocketMap[userId]; // Remove user from map on disconnect
+      const isNowOffline = removeUserSocket(userId, socket.id);
 
-      // Emit user offline status to all connected users
-      io.emit('userStatus', { userId, status: 'offline' });
+      if (isNowOffline) {
+        io.emit('userStatus', { userId, status: 'offline' });
+      }
     });
   });
 
@@ -1568,7 +1604,7 @@ const initSocket = (server) => {
 
 // Function to emit a notification to a specific user by userId
 const emitNotificationToUser = async (userId, type, notificationMessage, senderName = null, metadata = null) => {
-  const socketId = userSocketMap[userId];
+  const socketIds = getUserSocketIds(userId);
   console.log('entered to not fun');
   const payloadMetadata = metadata && typeof metadata === 'object' ? metadata : null;
   const notificationType = payloadMetadata?.type || type;
@@ -1611,10 +1647,10 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
     // Continue with sending even if DB save fails, but log the error
   }
 
-  if (socketId && io) {
-    // User is online - send via socket
+  if (socketIds.length > 0 && io) {
+    // User is online - send via socket (all active tabs/devices)
     try {
-      io.to(socketId).emit('notification', {
+      const notificationPayload = {
         userId: userId,
         type: notificationType,
         category: type,
@@ -1624,8 +1660,11 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
         ...(payloadMetadata || {}),
         read: false,
         notificationId: savedNotification?._id, // Include DB notification ID
-        createdAt: savedNotification?.createdAt || new Date() // Include timestamp for frontend
-      });
+        createdAt: savedNotification?.createdAt || new Date(), // Include timestamp for frontend
+      };
+      for (const socketId of socketIds) {
+        io.to(socketId).emit('notification', notificationPayload);
+      }
       console.log(`✅ Socket notification sent to online user: ${userId}`);
     } catch (socketError) {
       console.error(`❌ Error sending socket notification to user ${userId}:`, socketError);
@@ -1805,7 +1844,17 @@ const getOnlineUsers = () => {
 
 // Function to check if a specific user is online
 const isUserOnline = (userId) => {
-  return userSocketMap.hasOwnProperty(userId);
+  const sockets = userSocketMap[String(userId)];
+  return Boolean(sockets && sockets.size > 0);
+};
+
+const getUsersPresence = (userIds = []) => {
+  const presence = {};
+  for (const userId of userIds) {
+    const key = String(userId);
+    presence[key] = isUserOnline(key) ? 'online' : 'offline';
+  }
+  return presence;
 };
 
 // Function to disconnect a user from all their socket connections
@@ -1824,10 +1873,7 @@ const disconnectUser = (userId) => {
     }
   }
   
-  // Remove from userSocketMap
-  if (userSocketMap[userIdStr]) {
-    delete userSocketMap[userIdStr];
-  }
+  delete userSocketMap[userIdStr];
   
   if (disconnected) {
     console.log(`User ${userId} disconnected from all socket connections`);
@@ -1839,9 +1885,11 @@ const disconnectUser = (userId) => {
 // Emit a generic event to a specific user (by userId)
 const emitToUser = (userId, eventName, payload) => {
   if (!io) return false;
-  const socketId = userSocketMap[String(userId)];
-  if (!socketId) return false;
-  io.to(socketId).emit(eventName, payload);
+  const socketIds = getUserSocketIds(userId);
+  if (socketIds.length === 0) return false;
+  for (const socketId of socketIds) {
+    io.to(socketId).emit(eventName, payload);
+  }
   return true;
 };
 
@@ -1854,5 +1902,6 @@ module.exports = {
   emitToUser,
   getOnlineUsers,
   isUserOnline,
+  getUsersPresence,
   disconnectUser,
 };
