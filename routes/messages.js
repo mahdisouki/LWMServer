@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
 const messageController = require('../controllers/messagesCtrl');
 const presenceCtrl = require('../controllers/presenceCtrl');
