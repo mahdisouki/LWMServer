@@ -49,6 +49,7 @@ const {
   MESSAGE_SELECT_FIELDS,
   attachReplyTo,
   buildSeenByEntry,
+  getRoomUnreadCount,
 } = require('./utils/chatMessageHelpers');
 
 // Helper function to find truck for a user (including extra drivers/helpers)
@@ -451,6 +452,7 @@ const initSocket = (server) => {
 
           console.log(`Message saved in room ${message}`);
           io.to(roomId).emit('newMessage', message);
+            publishRoomUnreadUpdates(roomId, senderId);
           return;
         }
 
@@ -507,6 +509,7 @@ const initSocket = (server) => {
 
         // Emit the new message to the room
         io.to(roomId).emit('newMessage', message);
+          publishRoomUnreadUpdates(roomId, senderId);
 
         // Determine who should receive notifications
         const allUserIds = await getAllTruckUserIds(truck._id);
@@ -591,6 +594,7 @@ const initSocket = (server) => {
           const message = new Message(messageData);
           await message.save();
           io.to(roomId).emit('newMessage', message);
+          publishRoomUnreadUpdates(roomId, senderId);
           return;
         }
 
@@ -628,6 +632,7 @@ const initSocket = (server) => {
         const message = new Message(messageData);
         await message.save();
         io.to(roomId).emit('newMessage', message);
+          publishRoomUnreadUpdates(roomId, senderId);
 
         // Send notifications
         const allUserIds = await getAllTruckUserIds(truck._id);
@@ -690,6 +695,7 @@ const initSocket = (server) => {
 
           await message.save();
           io.to(roomId).emit('newMessage', message);
+          publishRoomUnreadUpdates(roomId, senderId);
           return;
         }
 
@@ -719,6 +725,7 @@ const initSocket = (server) => {
 
         await message.save();
         io.to(roomId).emit('newMessage', message);
+          publishRoomUnreadUpdates(roomId, senderId);
 
         // Envoyer les notifications
         const allUserIds = [
@@ -788,6 +795,7 @@ const initSocket = (server) => {
           const message = new Message(messageData);
           await message.save();
           io.to(roomId).emit('newMessage', message);
+          publishRoomUnreadUpdates(roomId, senderId);
           return;
         }
 
@@ -823,6 +831,7 @@ const initSocket = (server) => {
         const message = new Message(messageData);
         await message.save();
         io.to(roomId).emit('newMessage', message);
+          publishRoomUnreadUpdates(roomId, senderId);
 
         // Send notifications
         const allUserIds = await getAllTruckUserIds(truck._id);
@@ -1306,6 +1315,7 @@ const initSocket = (server) => {
           messageId,
           seenBy: seenEntry,
         });
+        publishUserRoomUnread(roomId, userId);
       } catch (error) {
         console.error('Error handling message seen:', error);
       }
@@ -1504,6 +1514,7 @@ const initSocket = (server) => {
           seenBy: seenEntry,
           markedCount: markedCount,
         });
+        publishUserRoomUnread(roomId, userId);
       } catch (error) {
         console.error('Error marking all messages as seen:', error);
       }
@@ -1892,6 +1903,40 @@ const emitToUser = (userId, eventName, payload) => {
   }
   return true;
 };
+
+async function publishUserRoomUnread(roomId, viewerUserId) {
+  if (!io) return;
+  const unreadCount = await getRoomUnreadCount(roomId, viewerUserId);
+  emitToUser(viewerUserId, 'roomUnreadUpdate', {
+    roomId: String(roomId),
+    unreadCount,
+  });
+}
+
+async function publishRoomUnreadUpdates(roomId, senderId) {
+  if (!io) return;
+  try {
+    const senderIdStr = String(senderId);
+    const recipientIds = new Set();
+
+    const admins = await User.find({ roleType: 'Admin' }).select('_id');
+    admins.forEach((admin) => recipientIds.add(admin._id.toString()));
+
+    const truck = await Truck.findById(roomId).select('_id');
+    if (truck) {
+      const crewIds = await getAllTruckUserIds(truck._id);
+      crewIds.forEach((id) => recipientIds.add(String(id)));
+    }
+
+    recipientIds.delete(senderIdStr);
+
+    await Promise.all(
+      [...recipientIds].map((recipientId) => publishUserRoomUnread(roomId, recipientId)),
+    );
+  } catch (error) {
+    console.error('Error publishing room unread updates:', error);
+  }
+}
 
 module.exports = {
   initSocket,

@@ -9,8 +9,7 @@ const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const { User } = require('../models/User');
 const { findTruckByTruckName } = require('../utils/truckHelpers');
 const {
-  buildMessagePreview,
-  getLatestMessageByRoomIds,
+  buildChatTrucksPayload,
 } = require('../utils/chatMessageHelpers');
 const formatDate = (date) => {
   const d = new Date(date);
@@ -300,6 +299,7 @@ const truckCtrl = {
   },
   getAllTrucksForChat: async (req, res) => {
     try {
+      const userId = req.user._id || req.user.id;
       const trucks = await Truck.find()
         .populate('vanId')
         .populate('driverId', 'username picture')
@@ -307,28 +307,12 @@ const truckCtrl = {
         .populate('extraDrivers.driverId', 'username picture')
         .populate('extraHelpers.helperId', 'username picture');
 
-      const roomIds = trucks.map((t) => String(t._id));
-      const lastByRoom = await getLatestMessageByRoomIds(roomIds);
-
-      const trucksWithLast = trucks.map((truck) => {
-        const truckObj = truck.toObject();
-        const last = lastByRoom[String(truck._id)];
-        return {
-          ...truckObj,
-          lastMessageAt: last?.createdAt ?? null,
-          lastMessagePreview: last ? buildMessagePreview(last) : null,
-        };
-      });
-
-      trucksWithLast.sort((a, b) => {
-        const aT = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-        const bT = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-        return bT - aT;
-      });
+      const { trucks: trucksWithMeta, stats } = await buildChatTrucksPayload(trucks, userId);
 
       res.status(200).json({
         message: 'All trucks retrieved successfully',
-        trucks: trucksWithLast,
+        trucks: trucksWithMeta,
+        stats,
       });
     } catch (error) {
       res.status(500).json({
