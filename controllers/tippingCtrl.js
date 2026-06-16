@@ -473,23 +473,25 @@ const tippingController = {
 
   getAllTippingRequestsForAdmin: async (req, res) => {
     try {
-      const { keyword, tippingPlace, storagePlace } = req.query;
+      const { keyword, pagination = 'true', sort = '-createdAt' } = req.query;
 
-      // Build query filters
-      const queryFilters = {};
-      if (tippingPlace) {
-        queryFilters.tippingPlace = tippingPlace;
+      let data;
+      let meta;
+
+      if (pagination === 'false') {
+        const total = await TippingRequest.countDocuments();
+        data = await TippingRequest.find().sort(sort);
+        meta = { currentPage: 1, limit: total, total, count: data.length, pagination: false };
+      } else {
+        const result = await paginateQuery(
+          TippingRequest,
+          req.query,
+          ['tippingPlace', 'storagePlace'],
+          []
+        );
+        data = result.data;
+        meta = result.meta;
       }
-      if (storagePlace) {
-        queryFilters.storagePlace = storagePlace;
-      }
-      // Pass the model, not .find(), and let paginateQuery apply filters
-      const { data, meta } = await paginateQuery(
-        TippingRequest,
-        req.query, // Merge filters into req.query if paginateQuery supports it
-        ['collectionDate', 'paymentStatus', 'tippingPlace', 'storagePlace'],
-        []
-      );
 
       // Populate related fields, including _id
       const populatedData = await TippingRequest.populate(data, [
