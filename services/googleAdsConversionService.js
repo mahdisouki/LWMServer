@@ -8,7 +8,7 @@ const {
 } = require('../utils/googleAdsEnhancedConversions');
 
 const CURRENCY = 'GBP';
-const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v18';
+const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v23';
 
 // Labels from frontend (AW-696532233/RHcJCKfAxtEDEIn6kMwC etc.) — map to numeric action IDs in env.
 const PURCHASE_LABEL = 'RHcJCKfAxtEDEIn6kMwC';
@@ -138,8 +138,17 @@ async function uploadClickConversions(conversions) {
     partialFailure: true,
   };
 
-  const { data } = await axios.post(url, payload, { headers });
-  return data;
+  try {
+    const { data } = await axios.post(url, payload, { headers });
+    return data;
+  } catch (error) {
+    const status = error.response?.status;
+    const detail = error.response?.data;
+    const detailText = detail ? JSON.stringify(detail) : error.message;
+    throw new Error(
+      `Google Ads uploadClickConversions failed (${GOOGLE_ADS_API_VERSION}, HTTP ${status || 'n/a'}): ${detailText}`,
+    );
+  }
 }
 
 function resolvePurchaseValue(task, amount) {
@@ -318,12 +327,18 @@ async function uploadQuoteConversion(quotation) {
 function firePurchaseConversionUpload(task, options = {}) {
   uploadPurchaseConversion(task, options).catch((error) => {
     console.error('[Google Ads] Purchase conversion upload failed:', error.message);
+    if (error.stack) {
+      console.error(error.stack);
+    }
   });
 }
 
 function fireQuoteConversionUpload(quotation) {
   uploadQuoteConversion(quotation).catch((error) => {
     console.error('[Google Ads] Quote conversion upload failed:', error.message);
+    if (error.stack) {
+      console.error(error.stack);
+    }
   });
 }
 
