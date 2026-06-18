@@ -227,10 +227,27 @@ async function linkQuotationToTask(quotation, task) {
   await clearIneligibleTaskQuotationLinks(quotation._id);
 
   task.quotationId = quotation._id;
+
+  const clickIdsBefore = {
+    gclid: task.gclid || null,
+    gbraid: task.gbraid || null,
+    wbraid: task.wbraid || null,
+  };
   if (!task.gclid && quotation.gclid) task.gclid = quotation.gclid;
   if (!task.gbraid && quotation.gbraid) task.gbraid = quotation.gbraid;
   if (!task.wbraid && quotation.wbraid) task.wbraid = quotation.wbraid;
   await task.save();
+  console.log('[Quotation Link] linkQuotationToTask click IDs', {
+    taskId: task._id?.toString?.() || task._id,
+    quotationId: quotation._id?.toString?.() || quotation._id,
+    quotationGclid: quotation.gclid || null,
+    before: clickIdsBefore,
+    after: {
+      gclid: task.gclid || null,
+      gbraid: task.gbraid || null,
+      wbraid: task.wbraid || null,
+    },
+  });
   await applyQuotationTaskCreatedReason(quotation);
   return task;
 }
