@@ -281,6 +281,10 @@ const taskSchema = new Schema(
       type: String,
       required: false
     },
+    gclid: { type: String, required: false },
+    gbraid: { type: String, required: false },
+    wbraid: { type: String, required: false },
+    googleAdsPurchaseConversionSentAt: { type: Date, required: false },
   },
   { timestamps: true }
 );

@@ -72,6 +72,7 @@ const Coupon = require('../models/Coupon');
 const AdditionalItemRequest = require('../models/AdditionalItemRequest');
 const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentFailedEmail } = require('../services/emailsService');
 const { sendRetargetingEmailForTask } = require('../services/retargetingService');
+const { firePurchaseConversionUpload } = require('../services/googleAdsConversionService');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -1387,6 +1388,9 @@ const taskCtrl = {
         priority,
         redflag,
         redflagNote,
+        gclid,
+        gbraid,
+        wbraid,
       } = req.body;
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
@@ -1685,6 +1689,9 @@ const taskCtrl = {
         ...(redflagBoolean && redflagNoteTrimmed
           ? { redflagNote: redflagNoteTrimmed, redflagBy: req.user?._id, redflagAt: new Date() }
           : {}),
+        ...(gclid ? { gclid: String(gclid).trim() } : {}),
+        ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
+        ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
       });
 
       const savedTask = await newTask.save();
@@ -4611,6 +4618,13 @@ const taskCtrl = {
           statusMessage: `Payment successful via Stripe. Transaction ID: ${paymentIntentId}. Amount: £${amountInGBP.toFixed(2)}.`,
         });
 
+        if (task.paymentStatus === 'Paid') {
+          firePurchaseConversionUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
+        }
+
         // Envoyer l'email de confirmation
         await sendPaymentConfirmationEmail({
           email: task.email,
@@ -4866,6 +4880,13 @@ const taskCtrl = {
           status: 'success',
           statusMessage: `Payment successful via PayPal. Transaction ID: ${transactionId}. Amount: £${amountInGBP.toFixed(2)}.`,
         });
+
+        if (task.paymentStatus === 'Paid') {
+          firePurchaseConversionUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
+        }
 
         // Envoyer l'email de confirmation
         await sendPaymentConfirmationEmail({
@@ -5631,6 +5652,13 @@ const taskCtrl = {
           statusMessage: `Payment successful via Stripe. Transaction ID: ${transactionId}. Amount: £${amountInGBP.toFixed(2)}. Payment type: ${paymentAmountType === 'deposit' ? 'Deposit' : paymentAmountType === 'remaining' ? 'Remaining' : 'Full payment'}.`,
         });
 
+        if (task.paymentStatus === 'Paid') {
+          firePurchaseConversionUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
+        }
+
         // Construire le breakdown complet pour l'email
         const breakdown = task.items.map((item) => ({
           itemDescription: item.standardItemId
@@ -6048,6 +6076,13 @@ const taskCtrl = {
             console.log('PayPal webhook: PaymentHistory already exists for transaction:', cap.id);
           }
 
+          if (task.paymentStatus === 'Paid') {
+            firePurchaseConversionUpload(task, {
+              amount: task.totalPrice,
+              conversionDateTime: new Date(cap.create_time),
+            });
+          }
+
           // fire-and-forget the email (don't block webhook)
           if (!existingSuccess) {
             sendPaymentConfirmationEmail({
@@ -6268,6 +6303,13 @@ const taskCtrl = {
             });
           } else {
             console.log('PayPal webhook: PaymentHistory already exists for transaction:', capture.id);
+          }
+
+          if (task.paymentStatus === 'Paid') {
+            firePurchaseConversionUpload(task, {
+              amount: task.totalPrice,
+              conversionDateTime: paymentDate,
+            });
           }
 
           // fire-and-forget customer email (same behavior as CHECKOUT.ORDER.APPROVED)

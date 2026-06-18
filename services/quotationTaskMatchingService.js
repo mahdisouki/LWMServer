@@ -227,6 +227,9 @@ async function linkQuotationToTask(quotation, task) {
   await clearIneligibleTaskQuotationLinks(quotation._id);
 
   task.quotationId = quotation._id;
+  if (!task.gclid && quotation.gclid) task.gclid = quotation.gclid;
+  if (!task.gbraid && quotation.gbraid) task.gbraid = quotation.gbraid;
+  if (!task.wbraid && quotation.wbraid) task.wbraid = quotation.wbraid;
   await task.save();
   await applyQuotationTaskCreatedReason(quotation);
   return task;
