@@ -311,15 +311,34 @@ async function tryLinkTaskToMatchingQuotation(task) {
  */
 async function syncTaskQuotationLink(task) {
   if (!task) {
+    console.log('[Quotation Link] syncTaskQuotationLink skipped: no task');
     return { action: 'skipped' };
   }
 
+  const taskId = task._id?.toString?.() || task._id;
+  console.log('[Quotation Link] syncTaskQuotationLink start', {
+    taskId,
+    paymentStatus: task.paymentStatus,
+    quotationId: task.quotationId?.toString?.() || task.quotationId || null,
+    email: task.email || null,
+    phoneNumber: task.phoneNumber || null,
+  });
+
   if (!isTaskEligibleForQuotationLink(task)) {
     if (!task.quotationId) {
+      console.log('[Quotation Link] syncTaskQuotationLink deferred: ineligible payment, no quotationId', {
+        taskId,
+        paymentStatus: task.paymentStatus,
+      });
       return { action: 'deferred' };
     }
 
     const quotationId = task.quotationId;
+    console.log('[Quotation Link] syncTaskQuotationLink unlinking: ineligible payment', {
+      taskId,
+      quotationId: quotationId.toString(),
+      paymentStatus: task.paymentStatus,
+    });
     task.quotationId = null;
     await task.save();
     await revertQuotationTaskCreatedReasonIfOrphaned(quotationId);
@@ -331,10 +350,21 @@ async function syncTaskQuotationLink(task) {
     if (quotation) {
       await applyQuotationTaskCreatedReason(quotation);
     }
+    console.log('[Quotation Link] syncTaskQuotationLink already_has_quotation', {
+      taskId,
+      quotationId: task.quotationId.toString(),
+      quotationFound: Boolean(quotation),
+    });
     return { action: 'already_has_quotation' };
   }
 
-  return tryLinkTaskToMatchingQuotation(task);
+  const result = await tryLinkTaskToMatchingQuotation(task);
+  console.log('[Quotation Link] syncTaskQuotationLink tryLinkTaskToMatchingQuotation', {
+    taskId,
+    action: result.action,
+    matchedQuotationId: result.quotationId || null,
+  });
+  return result;
 }
 
 module.exports = {

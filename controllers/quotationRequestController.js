@@ -8,6 +8,7 @@ const axios = require('axios');
 const { emitNotificationToUser } = require('../socket');
 const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
 const { User } = require('../models/User');
+const { fireQuoteConversionUpload } = require('../services/googleAdsConversionService');
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
         try {
@@ -104,7 +105,7 @@ const quotationRequestController = {
             // Save quotation to database
             await newQuotation.save();
 
-            // Quote lead conversion is tracked client-side (gtag + enhanced conversions).
+            fireQuoteConversionUpload(newQuotation);
 
             // Send email to responsible person (similar to contact request / moving service)
             const quotationData = {
