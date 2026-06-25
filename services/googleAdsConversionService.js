@@ -5,10 +5,15 @@ const QuotationRequest = require('../models/QuotationRequest');
 const {
   buildUserIdentifiers,
   formatConversionDateTime,
+  formatEventTimestamp,
+  parseConversionDateTime,
+  buildDataManagerUserData,
 } = require('../utils/googleAdsEnhancedConversions');
 
 const CURRENCY = 'GBP';
 const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION || 'v23';
+const DATA_MANAGER_API_VERSION = process.env.GOOGLE_DATA_MANAGER_API_VERSION || 'v1';
+const DATA_MANAGER_INGEST_URL = `https://datamanager.googleapis.com/${DATA_MANAGER_API_VERSION}/events:ingest`;
 
 // Labels from frontend (AW-696532233/RHcJCKfAxtEDEIn6kMwC etc.) — map to numeric action IDs in env.
 const PURCHASE_LABEL = 'RHcJCKfAxtEDEIn6kMwC';
@@ -50,6 +55,171 @@ function getQuoteConversionAction() {
   );
 }
 
+function getOfflinePurchaseConversionAction() {
+  return buildConversionActionResource(
+    process.env.GOOGLE_ADS_CONVERSION_ACTION_OFFLINE_PURCHASE_ID
+      || process.env.GOOGLE_ADS_CONVERSION_ACTION_OFFLINE_PURCHASE_RESOURCE,
+  );
+}
+
+function getConversionTransport() {
+  const transport = String(process.env.GOOGLE_ADS_CONVERSION_TRANSPORT || 'data_manager').toLowerCase();
+  return transport === 'legacy' ? 'legacy' : 'data_manager';
+}
+
+function extractConversionActionId(conversionAction) {
+  if (!conversionAction) {
+    return null;
+  }
+  const resourceMatch = String(conversionAction).match(/conversionActions\/(\d+)$/);
+  if (resourceMatch) {
+    return resourceMatch[1];
+  }
+  if (/^\d+$/.test(String(conversionAction))) {
+    return String(conversionAction);
+  }
+  return null;
+}
+
+function buildDataManagerDestination(conversionActionId) {
+  const customerId = getCustomerId();
+  if (!customerId || !conversionActionId) {
+    return null;
+  }
+
+  const destination = {
+    operatingAccount: {
+      accountType: 'GOOGLE_ADS',
+      accountId: customerId,
+    },
+    productDestinationId: String(conversionActionId),
+  };
+
+  const loginCustomerId = String(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || '').replace(/-/g, '');
+  if (loginCustomerId) {
+    destination.loginAccount = {
+      accountType: 'GOOGLE_ADS',
+      accountId: loginCustomerId,
+    };
+  }
+
+  return destination;
+}
+
+function buildDataManagerEvent(conversion) {
+  const event = {
+    eventTimestamp: formatEventTimestamp(parseConversionDateTime(conversion.conversionDateTime)),
+    eventSource: 'WEB',
+  };
+
+  if (conversion.orderId) {
+    event.transactionId = String(conversion.orderId);
+  }
+
+  const adIdentifiers = {};
+  if (conversion.gclid) {
+    adIdentifiers.gclid = conversion.gclid;
+  }
+  if (conversion.gbraid) {
+    adIdentifiers.gbraid = conversion.gbraid;
+  }
+  if (conversion.wbraid) {
+    adIdentifiers.wbraid = conversion.wbraid;
+  }
+  if (Object.keys(adIdentifiers).length > 0) {
+    event.adIdentifiers = adIdentifiers;
+  }
+
+  const userData = buildDataManagerUserData(conversion.userIdentifiers || []);
+  if (userData) {
+    event.userData = userData;
+  }
+
+  if (conversion.conversionValue != null && !Number.isNaN(Number(conversion.conversionValue))) {
+    event.conversionValue = Number(conversion.conversionValue);
+  }
+  if (conversion.currencyCode) {
+    event.currency = conversion.currencyCode;
+  }
+
+  return event;
+}
+
+function parseDataManagerError(error) {
+  const detail = error.response?.data?.error;
+  if (!detail) {
+    return null;
+  }
+  const parts = [detail.message, detail.status].filter(Boolean);
+  for (const err of detail.errors || []) {
+    if (err.message) {
+      parts.push(err.message);
+    }
+  }
+  return parts.join('; ') || JSON.stringify(detail);
+}
+
+async function ingestDataManagerEvents(conversions, options = {}) {
+  if (!conversions?.length) {
+    throw new Error('No conversions to ingest');
+  }
+
+  const conversionActionId = extractConversionActionId(conversions[0].conversionAction);
+  const destination = buildDataManagerDestination(conversionActionId);
+  if (!destination) {
+    throw new Error('Data Manager destination is not configured (customer ID or conversion action ID missing)');
+  }
+
+  const events = conversions.map(buildDataManagerEvent);
+  const hasIdentifiers = events.every((event) => (
+    event.adIdentifiers
+    || event.userData?.userIdentifiers?.length
+  ));
+  if (!hasIdentifiers) {
+    throw new Error('Data Manager event requires adIdentifiers (gclid/gbraid/wbraid) or userData');
+  }
+
+  const accessToken = await getAccessToken();
+  const payload = {
+    destinations: [destination],
+    encoding: 'HEX',
+    events,
+    validateOnly: Boolean(options.validateOnly),
+  };
+
+  try {
+    const { data } = await axios.post(DATA_MANAGER_INGEST_URL, payload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (options.validateOnly) {
+      console.log('[Google Ads] Data Manager validateOnly passed — payload accepted by Google');
+    }
+
+    return data;
+  } catch (error) {
+    const dmError = parseDataManagerError(error);
+    const status = error.response?.status;
+    const detailText = dmError || (error.response?.data
+      ? JSON.stringify(error.response.data)
+      : error.message);
+
+    if (status === 403 && /insufficient|scope|permission/i.test(detailText)) {
+      throw new Error(
+        `Data Manager API auth failed (HTTP ${status}): ${detailText}. `
+        + 'Re-authorize OAuth with scope https://www.googleapis.com/auth/datamanager',
+      );
+    }
+
+    throw new Error(
+      `Data Manager events:ingest failed (${DATA_MANAGER_API_VERSION}, HTTP ${status || 'n/a'}): ${detailText}`,
+    );
+  }
+}
+
 async function getAccessToken() {
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET;
@@ -86,7 +256,61 @@ function mapUserIdentifiersForApi(identifiers) {
   }).filter(Boolean);
 }
 
-async function uploadClickConversions(conversions) {
+function parsePartialFailureError(response) {
+  const failure = response?.partialFailureError;
+  if (!failure) {
+    return null;
+  }
+
+  const messages = [];
+  for (const detail of failure.details || []) {
+    for (const err of detail.errors || []) {
+      const code = err.errorCode
+        ? Object.values(err.errorCode).find(Boolean) || JSON.stringify(err.errorCode)
+        : 'UNKNOWN';
+      messages.push(`${code}: ${err.message || ''}`.trim());
+    }
+  }
+
+  if (messages.length > 0) {
+    return messages.join('; ');
+  }
+
+  return failure.message || JSON.stringify(failure);
+}
+
+function logConversionAttempt(label, {
+  orderId,
+  conversionAction,
+  gclid,
+  gbraid,
+  wbraid,
+  validateOnly,
+  transport,
+}) {
+  console.log('[Google Ads] Upload attempt', {
+    type: label,
+    orderId,
+    conversionAction,
+    transport: transport || getConversionTransport(),
+    validateOnly: Boolean(validateOnly),
+    clickIds: {
+      gclid: Boolean(gclid),
+      gbraid: Boolean(gbraid),
+      wbraid: Boolean(wbraid),
+    },
+  });
+}
+
+async function uploadConversions(conversions, options = {}) {
+  const transport = options.transport || getConversionTransport();
+  if (transport === 'legacy') {
+    return uploadClickConversions(conversions, options);
+  }
+  return ingestDataManagerEvents(conversions, options);
+}
+
+async function uploadClickConversions(conversions, options = {}) {
   const customerId = getCustomerId();
   const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
 
@@ -136,12 +360,24 @@ async function uploadClickConversions(conversions) {
       return row;
     }),
     partialFailure: true,
+    validateOnly: Boolean(options.validateOnly),
   };
 
   try {
     const { data } = await axios.post(url, payload, { headers });
+    const partialFailure = parsePartialFailureError(data);
+    if (partialFailure) {
+      const suffix = options.validateOnly ? ' (validateOnly)' : '';
+      throw new Error(`Google Ads conversion rejected${suffix}: ${partialFailure}`);
+    }
+    if (options.validateOnly) {
+      console.log('[Google Ads] validateOnly passed — payload accepted by Google');
+    }
     return data;
   } catch (error) {
+    if (error.message?.startsWith('Google Ads conversion rejected')) {
+      throw error;
+    }
     const status = error.response?.status;
     const detail = error.response?.data;
     const detailText = detail ? JSON.stringify(detail) : error.message;
@@ -165,13 +401,6 @@ function resolvePurchaseValue(task, amount) {
     return Number(task.totalPrice);
   }
   return 1;
-}
-
-function getOfflinePurchaseConversionAction() {
-  return buildConversionActionResource(
-    process.env.GOOGLE_ADS_CONVERSION_ACTION_OFFLINE_PURCHASE_ID
-      || process.env.GOOGLE_ADS_CONVERSION_ACTION_OFFLINE_PURCHASE_RESOURCE,
-  );
 }
 
 async function resolveClickIdsForTask(taskDoc) {
@@ -205,7 +434,6 @@ function shouldUploadPurchase(task) {
   if (task.paymentStatus !== 'Paid') {
     return false;
   }
-  // Quote-to-purchase: task may be created by staff; payment is still a valid conversion.
   if (task.quotationId) {
     return true;
   }
@@ -215,19 +443,23 @@ function shouldUploadPurchase(task) {
   return true;
 }
 
-async function uploadPurchaseConversion(task, options = {}) {
-  if (!isEnabled()) {
-    return { skipped: true, reason: 'disabled' };
+function shouldValidatePurchase(task) {
+  if (!task) {
+    return false;
   }
-
-  const taskDoc = task?._id && typeof task.save === 'function'
-    ? task
-    : await Task.findById(task?._id || task);
-
-  if (!taskDoc || !shouldUploadPurchase(taskDoc)) {
-    return { skipped: true, reason: 'not_eligible' };
+  if (task.paymentStatus !== 'Paid') {
+    return false;
   }
+  if (task.quotationId) {
+    return true;
+  }
+  if (task.createdByType && task.createdByType !== 'public') {
+    return false;
+  }
+  return true;
+}
 
+async function buildPurchaseConversionRow(taskDoc, options = {}) {
   const isQuotePurchase = Boolean(taskDoc.quotationId);
   const conversionAction = isQuotePurchase
     ? getOfflinePurchaseConversionAction()
@@ -255,27 +487,80 @@ async function uploadPurchaseConversion(task, options = {}) {
   const conversionValue = resolvePurchaseValue(taskDoc, options.amount);
   const conversionDateTime = formatConversionDateTime(options.conversionDateTime || new Date());
 
-  const result = await uploadClickConversions([{
+  return {
+    isQuotePurchase,
     conversionAction,
-    conversionDateTime,
-    conversionValue,
-    currencyCode: CURRENCY,
     orderId,
-    userIdentifiers,
-    gclid: clickIds.gclid,
-    gbraid: clickIds.gbraid,
-    wbraid: clickIds.wbraid,
-  }]);
-
-  taskDoc.googleAdsPurchaseConversionSentAt = new Date();
-  await taskDoc.save();
-
-  const purchaseType = isQuotePurchase ? 'offline quote' : 'online';
-  console.log(`[Google Ads] ${purchaseType} purchase conversion uploaded for order ${orderId}`);
-  return { success: true, orderId, result };
+    row: {
+      conversionAction,
+      conversionDateTime,
+      conversionValue,
+      currencyCode: CURRENCY,
+      orderId,
+      userIdentifiers,
+      gclid: clickIds.gclid,
+      gbraid: clickIds.gbraid,
+      wbraid: clickIds.wbraid,
+    },
+  };
 }
 
-async function uploadQuoteConversion(quotation) {
+async function uploadPurchaseConversion(task, options = {}) {
+  if (!isEnabled()) {
+    return { skipped: true, reason: 'disabled' };
+  }
+
+  const taskDoc = task?._id && typeof task.save === 'function'
+    ? task
+    : await Task.findById(task?._id || task);
+
+  const validateOnly = Boolean(options.validateOnly);
+  const eligible = validateOnly
+    ? shouldValidatePurchase(taskDoc)
+    : shouldUploadPurchase(taskDoc);
+
+  if (!taskDoc || !eligible) {
+    return { skipped: true, reason: 'not_eligible' };
+  }
+
+  const built = await buildPurchaseConversionRow(taskDoc, options);
+  if (built.skipped) {
+    return built;
+  }
+
+  const { isQuotePurchase, conversionAction, orderId, row } = built;
+  const purchaseType = isQuotePurchase ? 'offline quote purchase' : 'online purchase';
+
+  logConversionAttempt(purchaseType, {
+    orderId,
+    conversionAction,
+    gclid: row.gclid,
+    gbraid: row.gbraid,
+    wbraid: row.wbraid,
+    validateOnly,
+  });
+
+  try {
+    const result = await uploadConversions([row], { validateOnly });
+
+    if (!validateOnly) {
+      taskDoc.googleAdsPurchaseConversionSentAt = new Date();
+      taskDoc.googleAdsConversionError = null;
+      await taskDoc.save();
+      console.log(`[Google Ads] Google accepted ${purchaseType} conversion for order ${orderId}`);
+    }
+
+    return { success: true, orderId, validateOnly, result };
+  } catch (error) {
+    if (!validateOnly) {
+      taskDoc.googleAdsConversionError = error.message;
+      await taskDoc.save();
+    }
+    throw error;
+  }
+}
+
+async function uploadQuoteConversion(quotation, options = {}) {
   if (!isEnabled()) {
     return { skipped: true, reason: 'disabled' };
   }
@@ -284,7 +569,13 @@ async function uploadQuoteConversion(quotation) {
     ? quotation
     : await QuotationRequest.findById(quotation?._id || quotation);
 
-  if (!quoteDoc || quoteDoc.googleAdsQuoteConversionSentAt) {
+  const validateOnly = Boolean(options.validateOnly);
+
+  if (!quoteDoc) {
+    return { skipped: true, reason: 'not_eligible' };
+  }
+
+  if (!validateOnly && quoteDoc.googleAdsQuoteConversionSentAt) {
     return { skipped: true, reason: 'not_eligible' };
   }
 
@@ -304,24 +595,55 @@ async function uploadQuoteConversion(quotation) {
 
   const orderId = `Q-${quoteDoc._id}`;
   const conversionDateTime = formatConversionDateTime(quoteDoc.createdAt || new Date());
+  const gclid = quoteDoc.gclid || undefined;
+  const gbraid = quoteDoc.gbraid || undefined;
+  const wbraid = quoteDoc.wbraid || undefined;
 
-  const result = await uploadClickConversions([{
-    conversionAction,
-    conversionDateTime,
-    conversionValue: 0,
-    currencyCode: CURRENCY,
+  logConversionAttempt('quote', {
     orderId,
-    userIdentifiers,
-    gclid: quoteDoc.gclid || undefined,
-    gbraid: quoteDoc.gbraid || undefined,
-    wbraid: quoteDoc.wbraid || undefined,
-  }]);
+    conversionAction,
+    gclid,
+    gbraid,
+    wbraid,
+    validateOnly,
+  });
 
-  quoteDoc.googleAdsQuoteConversionSentAt = new Date();
-  await quoteDoc.save();
+  try {
+    const result = await uploadConversions([{
+      conversionAction,
+      conversionDateTime,
+      conversionValue: 0,
+      currencyCode: CURRENCY,
+      orderId,
+      userIdentifiers,
+      gclid,
+      gbraid,
+      wbraid,
+    }], { validateOnly });
 
-  console.log(`[Google Ads] Quote conversion uploaded for ${orderId}`);
-  return { success: true, orderId, result };
+    if (!validateOnly) {
+      quoteDoc.googleAdsQuoteConversionSentAt = new Date();
+      quoteDoc.googleAdsConversionError = null;
+      await quoteDoc.save();
+      console.log(`[Google Ads] Google accepted quote conversion for ${orderId}`);
+    }
+
+    return { success: true, orderId, validateOnly, result };
+  } catch (error) {
+    if (!validateOnly) {
+      quoteDoc.googleAdsConversionError = error.message;
+      await quoteDoc.save();
+    }
+    throw error;
+  }
+}
+
+function validatePurchaseConversion(task, options = {}) {
+  return uploadPurchaseConversion(task, { ...options, validateOnly: true });
+}
+
+function validateQuoteConversion(quotation, options = {}) {
+  return uploadQuoteConversion(quotation, { ...options, validateOnly: true });
 }
 
 function firePurchaseConversionUpload(task, options = {}) {
@@ -347,8 +669,11 @@ module.exports = {
   PURCHASE_LABEL,
   QUOTE_LABEL,
   isEnabled,
+  getConversionTransport,
   uploadPurchaseConversion,
   uploadQuoteConversion,
+  validatePurchaseConversion,
+  validateQuoteConversion,
   firePurchaseConversionUpload,
   fireQuoteConversionUpload,
 };

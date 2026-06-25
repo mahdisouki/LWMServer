@@ -54,6 +54,7 @@ const quotationRequestSchema = new Schema({
   gbraid: { type: String, required: false },
   wbraid: { type: String, required: false },
   googleAdsQuoteConversionSentAt: { type: Date, required: false },
+  googleAdsConversionError: { type: String, required: false },
 
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true }); // Enable timestamps to get updatedAt

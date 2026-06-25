@@ -83,6 +83,60 @@ function formatConversionDateTime(date = new Date()) {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}+00:00`;
 }
 
+/** RFC 3339 UTC timestamp for Data Manager API eventTimestamp. */
+function formatEventTimestamp(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) {
+    return formatEventTimestamp(new Date());
+  }
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function parseConversionDateTime(value) {
+  if (!value) {
+    return new Date();
+  }
+  if (value instanceof Date) {
+    return value;
+  }
+  const adsStyle = String(value).match(
+    /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\+00:00$/,
+  );
+  if (adsStyle) {
+    const [, year, month, day, hours, minutes, seconds] = adsStyle;
+    return new Date(Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes),
+      Number(seconds),
+    ));
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+/** Map Google Ads API user identifiers to Data Manager UserData.userIdentifiers. */
+function buildDataManagerUserData(userIdentifiers = []) {
+  const dmIdentifiers = [];
+
+  for (const entry of userIdentifiers) {
+    if (entry.hashedEmail) {
+      dmIdentifiers.push({ emailAddress: entry.hashedEmail });
+    }
+    if (entry.hashedPhoneNumber) {
+      dmIdentifiers.push({ phoneNumber: entry.hashedPhoneNumber });
+    }
+  }
+
+  if (dmIdentifiers.length === 0) {
+    return undefined;
+  }
+
+  return { userIdentifiers: dmIdentifiers };
+}
+
 module.exports = {
   normalizeEmail,
   normalizePhone,
@@ -90,4 +144,7 @@ module.exports = {
   hashPhone,
   buildUserIdentifiers,
   formatConversionDateTime,
+  formatEventTimestamp,
+  parseConversionDateTime,
+  buildDataManagerUserData,
 };
