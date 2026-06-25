@@ -1418,6 +1418,27 @@ const taskCtrl = {
             error: 'DATE_IN_PAST'
           });
         }
+
+        const availability = await checkAvailability(date);
+        if (availability.error === 'INVALID_DATE') {
+          return res.status(400).json({
+            message: 'Invalid date format',
+            error: 'INVALID_DATE',
+          });
+        }
+        if (!availability.available) {
+          const isDateBlocked = availability.reasons.includes('ALL_TIME_SLOTS_BLOCKED');
+          return res.status(400).json({
+            message: isDateBlocked
+              ? 'The selected collection date is blocked. Please choose a valid date.'
+              : 'The selected collection date is not available. Please choose a different date.',
+            error: 'DATE_NOT_AVAILABLE',
+            reasons: availability.reasons,
+            blockedTimeSlots: availability.blockedTimeSlots,
+            availableTimeSlots: availability.availableTimeSlots,
+            suggestedDays: availability.suggestedDays,
+          });
+        }
       }
       console.log('req.body.location', req.body.location);
       // ✅ Convert FormData string to boolean
