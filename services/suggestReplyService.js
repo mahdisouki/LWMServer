@@ -169,7 +169,11 @@ function isOutboundFromAddress(fromAddress, businessEmail) {
   return domain.includes('londonwaste');
 }
 
-async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
+async function buildSuggestReplyPythonPayloadForThread(
+  adminId,
+  threadId,
+  messageId
+) {
   const ctx = await getSuggestReplyThreadContext(adminId, threadId, messageId);
   const category = await getCategoryForThread(adminId, ctx.threadId);
   const payload = buildPythonSuggestPayload({
@@ -178,15 +182,31 @@ async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
     businessEmail: ctx.businessEmail,
   });
 
+  return { payload, ctx, category };
+}
+
+async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
+  const { payload, ctx, category } =
+    await buildSuggestReplyPythonPayloadForThread(adminId, threadId, messageId);
+
   console.log(
     `[Suggest Reply] threadId=${ctx.threadId} targetMessageId=${ctx.messageId} threadCount=${ctx.threadHistory.length}`
   );
 
-  return callPythonSuggestReply(payload, category, {
+  const suggestion = await callPythonSuggestReply(payload, category, {
     from: payload.message.from,
     threadId: ctx.threadId,
     id: ctx.messageId,
   });
+
+  return {
+    ...suggestion,
+    inReplyToMessageId: ctx.messageId,
+    suggestReplyContext: {
+      message: payload.message,
+      thread: payload.thread,
+    },
+  };
 }
 
 /** Uses messageId when provided; otherwise newest message in thread. */
@@ -209,4 +229,5 @@ async function suggestReplyForMessage(adminId, threadId, messageId) {
 module.exports = {
   suggestReplyForThread,
   suggestReplyForMessage,
+  buildSuggestReplyPythonPayloadForThread,
 };

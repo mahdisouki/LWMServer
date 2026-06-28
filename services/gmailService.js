@@ -375,6 +375,7 @@ async function getThreadClassifyPayload(adminId, threadId) {
   const contentMain = extractClassifierContentMain(oldest.payload);
   const from = getHeaderValue(headers, 'From') || '';
   const snippet = oldest.snippet || '';
+  const listSnapshot = extractThreadListSnapshot(thread);
 
   return {
     threadId: tid,
@@ -383,7 +384,73 @@ async function getThreadClassifyPayload(adminId, threadId) {
     contentMain,
     from,
     snippet,
+    listSnapshot,
   };
+}
+
+/** Latest-message list row fields from a full Gmail thread object. */
+function extractThreadListSnapshot(thread) {
+  const tid = thread?.id;
+  const sorted = sortThreadMessagesOldestFirst(thread?.messages || []);
+  if (!sorted.length) return null;
+
+  const latest = sorted[sorted.length - 1];
+  const headers = latest.payload?.headers || [];
+
+  return {
+    latestMessageId: latest.id,
+    threadId: tid,
+    snippet: latest.snippet || '',
+    labelIds: latest.labelIds || [],
+    from: getHeaderValue(headers, 'From') || '',
+    to: getHeaderValue(headers, 'To') || '',
+    cc: getHeaderValue(headers, 'Cc') || '',
+    subject: getHeaderValue(headers, 'Subject') || '(no subject)',
+    date: getHeaderValue(headers, 'Date') || '',
+    internalDate:
+      latest.internalDate != null ? String(latest.internalDate) : '',
+    threadMessageCount: sorted.length,
+  };
+}
+
+/** Fetch latest-message list snapshot (minimal thread + metadata). */
+async function getThreadListSnapshot(adminId, threadId) {
+  if (!threadId) return null;
+  try {
+    const gmail = await getGmailAuth(adminId);
+    const threadRes = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'minimal',
+    });
+    const msgs = threadRes.data.messages || [];
+    if (!msgs.length) return null;
+
+    const latest = msgs.reduce((best, cur) => {
+      const da = Number(cur.internalDate) || 0;
+      const db = Number(best.internalDate) || 0;
+      return da >= db ? cur : best;
+    });
+
+    const meta = await getMessageListItemMetadata(gmail, latest.id);
+    return {
+      latestMessageId: meta.id,
+      threadId: threadRes.data.id || threadId,
+      snippet: meta.snippet || '',
+      labelIds: meta.labelIds || [],
+      from: meta.from || '',
+      to: meta.to || '',
+      cc: meta.cc || '',
+      subject: meta.subject || '(no subject)',
+      date: meta.date || '',
+      internalDate: meta.internalDate || '',
+      threadMessageCount: msgs.length,
+    };
+  } catch (err) {
+    const code = err.code || err.response?.status;
+    if (code === 404 || code === '404') return null;
+    throw err;
+  }
 }
 
 function escapeRegExp(s) {
@@ -626,6 +693,44 @@ function extractAttachmentMetaWithMessageId(parts = [], messageId, acc = []) {
     }
   }
   return acc;
+}
+
+const ORDER_ATTACHMENT_ROLES = new Set(['file_attachment', 'html_inline']);
+
+/** Attachments from thread messages (inclusive), deduped by filename, order roles only. */
+function collectOrderAttachmentsFromMessages(messages = []) {
+  const seenFilenames = new Set();
+  const attachments = [];
+
+  for (const msg of messages) {
+    const messageId = msg.id;
+    const metaList = extractAttachmentMetaWithMessageId(
+      msg.payload?.parts || [],
+      messageId
+    );
+
+    for (const meta of metaList) {
+      if (!ORDER_ATTACHMENT_ROLES.has(meta.attachmentRole)) continue;
+
+      const filenameKey = String(meta.filename || '')
+        .trim()
+        .toLowerCase();
+      if (!filenameKey || seenFilenames.has(filenameKey)) continue;
+
+      seenFilenames.add(filenameKey);
+      attachments.push({
+        messageId: meta.messageId,
+        attachmentId: meta.attachmentId,
+        filename: meta.filename,
+        mimeType: meta.mimeType,
+        size: meta.size,
+        attachmentRole: meta.attachmentRole,
+        downloadUrl: `/api/gmail/messages/${meta.messageId}/attachments/${encodeURIComponent(meta.attachmentId)}`,
+      });
+    }
+  }
+
+  return attachments;
 }
 
 function sliceThreadMessagesPage(sortedMessages, options = {}) {
@@ -895,6 +1000,7 @@ async function getSuggestReplyThreadContext(adminId, threadId, messageId) {
     target,
     threadHistory,
     businessEmail,
+    messagesThroughTarget,
   };
 }
 
@@ -2285,9 +2391,12 @@ module.exports = {
   getMessagePlainContextForSuggest,
   getSuggestReplyThreadContext,
   getLatestMessageIdInThread,
+  collectOrderAttachmentsFromMessages,
   getMessageBodyForClient,
   getThreadFullForClient,
   getThreadClassifyPayload,
+  getThreadListSnapshot,
+  extractThreadListSnapshot,
   modifyThread,
   trashThread,
   untrashThread,

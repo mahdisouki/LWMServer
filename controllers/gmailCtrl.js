@@ -42,6 +42,13 @@ const {
   deleteDraft,
 } = require('../services/gmailService');
 const { suggestReplyForThread, suggestReplyForMessage } = require('../services/suggestReplyService');
+const { llmOrderForThread } = require('../services/llmOrderService');
+const {
+  createReplyLog,
+  listReplyLogs,
+  listThreadReplyLogs,
+  getReplyStats,
+} = require('../services/emailReplyLogService');
 const { pollNewMessagesWithClassification } = require('../services/gmailInboxSync');
 const {
   attachStoredAiCategories,
@@ -406,7 +413,17 @@ const gmailCtrl = {
       console.log('Request body:', req.body);
       console.log('Files:', req.files);
 
-      const { originalMessageId, content, contentMain, subject, to } = req.body;
+      const {
+        originalMessageId,
+        content,
+        contentMain,
+        subject,
+        to,
+        threadId,
+        replySource,
+        suggestedReplies,
+        suggestReplyContext,
+      } = req.body;
       const adminId = req.user._id;
       const attachments = req.files || [];
 
@@ -426,6 +443,7 @@ const gmailCtrl = {
         adminId,
         originalMessageId,
         attachmentCount: attachments.length,
+        replySource,
       });
 
       const result = await replyToEmail(adminId, originalMessageId, attachments, {
@@ -435,6 +453,28 @@ const gmailCtrl = {
         contentMain,
       });
 
+      const resolvedThreadId = threadId || result?.threadId;
+      let replyLog = null;
+
+      if (result?.id && resolvedThreadId) {
+        try {
+          replyLog = await createReplyLog({
+            adminId,
+            threadId: resolvedThreadId,
+            messageId: result.id,
+            inReplyToMessageId: originalMessageId,
+            replySource,
+            suggestedReplies,
+            suggestReplyContext,
+            subject,
+            to,
+            sentAt: new Date(),
+          });
+        } catch (logError) {
+          console.error('Failed to log email reply:', logError.message);
+        }
+      }
+
       res.json({
         success: true,
         message: 'Reply sent successfully',
@@ -443,6 +483,7 @@ const gmailCtrl = {
         content: content ?? '',
         contentMain: contentMain ?? '',
         data: result,
+        replyLog,
       });
     } catch (error) {
       console.error('Error replying to email:', error);
@@ -752,7 +793,12 @@ const gmailCtrl = {
         req.params.id,
         messageId
       );
-      res.json({ success: true, suggestion });
+      res.json({
+        success: true,
+        suggestion,
+        suggestReplyContext: suggestion.suggestReplyContext || null,
+        inReplyToMessageId: suggestion.inReplyToMessageId || null,
+      });
     } catch (error) {
       const status =
         error.status === 404 || error.response?.status === 404
@@ -790,7 +836,12 @@ const gmailCtrl = {
         req.params.id,
         messageId
       );
-      res.json({ success: true, suggestion });
+      res.json({
+        success: true,
+        suggestion,
+        suggestReplyContext: suggestion.suggestReplyContext || null,
+        inReplyToMessageId: suggestion.inReplyToMessageId || null,
+      });
     } catch (error) {
       const status =
         error.status === 400
@@ -805,6 +856,88 @@ const gmailCtrl = {
         message: error.message || 'Failed to generate suggested reply',
         error: error.message,
         details: error.response?.data || undefined,
+      });
+    }
+  },
+
+  /**
+   * Extract order details from thread via Python /order_llm.
+   * Pass body/query messageId for the clicked row; omit for latest in thread.
+   */
+  llmOrder: async (req, res) => {
+    try {
+      const messageId =
+        req.body?.messageId ||
+        req.query?.messageId ||
+        req.body?.id ||
+        req.body?.selectedMessageId;
+      const order = await llmOrderForThread(
+        req.user._id,
+        req.params.id,
+        messageId
+      );
+      res.json({
+        success: true,
+        order,
+      });
+    } catch (error) {
+      const status =
+        error.status === 404 || error.response?.status === 404
+          ? 404
+          : error.response?.status && error.response.status < 500
+            ? error.response.status
+            : 500;
+      res.status(status).json({
+        success: false,
+        message:
+          status === 404
+            ? error.message || 'Thread not found'
+            : 'Failed to extract order from thread',
+        error: error.message,
+        details: error.response?.data || undefined,
+      });
+    }
+  },
+
+  listEmailReplies: async (req, res) => {
+    try {
+      const result = await listReplyLogs(req.user._id, req.query);
+      res.json({ success: true, ...result });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to list email replies',
+        error: error.message,
+      });
+    }
+  },
+
+  getEmailReplyStats: async (req, res) => {
+    try {
+      const stats = await getReplyStats(req.user._id, req.query);
+      res.json({ success: true, stats });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get email reply stats',
+        error: error.message,
+      });
+    }
+  },
+
+  listThreadEmailReplies: async (req, res) => {
+    try {
+      const result = await listThreadReplyLogs(
+        req.user._id,
+        req.params.id,
+        req.query
+      );
+      res.json({ success: true, threadId: req.params.id, ...result });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to list thread email replies',
+        error: error.message,
       });
     }
   },

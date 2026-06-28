@@ -5,9 +5,9 @@ const { getCategoryLabel, GMAIL_AI_CATEGORIES } = require('../config/gmailCatego
 const { getGmailAuth } = require('./gmailAuthHelper');
 const {
   getThreadClassifyPayload,
+  getThreadListSnapshot,
   getThreadLatestListItem,
   getThreadMessageCount,
-  mapWithConcurrency,
 } = require('./gmailService');
 
 const CLASSIFIER_URL =
@@ -22,6 +22,26 @@ function extractEmailAddress(fromHeader) {
   if (m) return m[1].trim();
   if (/@/.test(fromHeader)) return String(fromHeader).trim();
   return null;
+}
+
+function listSnapshotToMongoFields(snapshot) {
+  if (!snapshot) return {};
+  return {
+    latestMessageId: snapshot.latestMessageId || null,
+    snippet: snapshot.snippet || '',
+    from: snapshot.from || '',
+    to: snapshot.to || '',
+    cc: snapshot.cc || '',
+    subject: snapshot.subject || '',
+    date: snapshot.date || '',
+    internalDate: snapshot.internalDate || null,
+    threadMessageCount: snapshot.threadMessageCount ?? 1,
+    labelIds: Array.isArray(snapshot.labelIds) ? snapshot.labelIds : [],
+  };
+}
+
+function docHasListSnapshot(doc) {
+  return Boolean(doc?.latestMessageId && doc?.threadId);
 }
 
 function formatClassificationDoc(doc) {
@@ -68,6 +88,20 @@ async function classifyEmailViaPython({
   };
 }
 
+/** Update stored list snapshot for an already-classified thread. */
+async function refreshThreadListSnapshot(adminId, threadId) {
+  const snapshot = await getThreadListSnapshot(adminId, threadId);
+  if (!snapshot) return null;
+
+  const doc = await ThreadClassification.findOneAndUpdate(
+    { adminId, threadId },
+    listSnapshotToMongoFields(snapshot),
+    { new: true }
+  ).lean();
+
+  return doc;
+}
+
 /**
  * Classify one thread (oldest message) and upsert Mongo. Skips if already done unless force.
  */
@@ -83,9 +117,12 @@ async function classifyAndStoreThread(adminId, threadId, options = {}) {
     return formatClassificationDoc(existing);
   }
 
-  const payload = await getThreadClassifyPayload(adminId, threadId);
+  const classifyPayload = await getThreadClassifyPayload(adminId, threadId);
+  const listSnapshot =
+    classifyPayload.listSnapshot ||
+    (await getThreadListSnapshot(adminId, threadId));
 
-  const from_address = extractEmailAddress(payload.from);
+  const from_address = extractEmailAddress(classifyPayload.from);
 
   let aiCategory = null;
   let confidence = null;
@@ -94,9 +131,9 @@ async function classifyAndStoreThread(adminId, threadId, options = {}) {
 
   try {
     const result = await classifyEmailViaPython({
-      subject: payload.subject,
-      contentMain: payload.contentMain,
-      snippet: payload.snippet || null,
+      subject: classifyPayload.subject,
+      contentMain: classifyPayload.contentMain,
+      snippet: classifyPayload.snippet || null,
       from_address,
     });
     aiCategory = result.category;
@@ -115,12 +152,13 @@ async function classifyAndStoreThread(adminId, threadId, options = {}) {
     {
       adminId,
       threadId,
-      messageId: payload.messageId,
+      messageId: classifyPayload.messageId,
       aiCategory,
       confidence,
       reason,
       status,
       classifiedAt: new Date(),
+      ...listSnapshotToMongoFields(listSnapshot),
     },
     { upsert: true, new: true }
   );
@@ -189,7 +227,17 @@ async function enrichNewMessagesWithAiCategory(adminId, messages = []) {
 
   for (const threadId of threadIds) {
     const existing = classMap.get(threadId);
-    if (existing?.status === 'done' && existing.aiCategory) continue;
+    if (existing?.status === 'done' && existing.aiCategory) {
+      try {
+        await refreshThreadListSnapshot(adminId, threadId);
+      } catch (err) {
+        console.warn(
+          `[emailClassifier] snapshot refresh failed thread ${threadId}:`,
+          err.message
+        );
+      }
+      continue;
+    }
 
     try {
       const stored = await classifyAndStoreThread(adminId, threadId);
@@ -318,13 +366,34 @@ function classificationToMessageFields(doc) {
     aiCategoryLabel: getCategoryLabel(doc.aiCategory),
     aiClassificationStatus: doc.status || null,
     aiClassificationConfidence: doc.confidence ?? null,
-  };z
+  };
 }
 
-/** Slim row for GET /messages?aiCategory=… (no label/status/confidence/internalDate). */
-function formatAiCategoryListMessage(listItem, classificationDoc, threadMessageCount) {
+/** Slim row for GET /messages?aiCategory=… from stored Mongo snapshot. */
+function formatAiCategoryListMessageFromDoc(doc) {
   return {
-    id: listItem.id,
+    id: doc.latestMessageId,
+    threadId: doc.threadId,
+    snippet: doc.snippet || '',
+    labelIds: doc.labelIds || [],
+    from: doc.from || '',
+    to: doc.to || '',
+    cc: doc.cc || '',
+    subject: doc.subject || '',
+    date: doc.date || '',
+    aiCategory: doc.aiCategory || null,
+    threadMessageCount: doc.threadMessageCount ?? 1,
+  };
+}
+
+/** Legacy Gmail fallback for rows classified before snapshot fields existed. */
+async function formatAiCategoryListMessageFromGmail(adminId, doc) {
+  const listItem = await getThreadLatestListItem(adminId, doc.threadId);
+  if (!listItem) return null;
+
+  const threadMessageCount = await getThreadMessageCount(adminId, doc.threadId);
+  const snapshot = {
+    latestMessageId: listItem.id,
     threadId: listItem.threadId,
     snippet: listItem.snippet || '',
     labelIds: listItem.labelIds || [],
@@ -333,13 +402,24 @@ function formatAiCategoryListMessage(listItem, classificationDoc, threadMessageC
     cc: listItem.cc || '',
     subject: listItem.subject || '',
     date: listItem.date || '',
-    aiCategory: classificationDoc?.aiCategory || null,
+    internalDate: listItem.internalDate || null,
     threadMessageCount,
   };
+
+  await ThreadClassification.updateOne(
+    { adminId, threadId: doc.threadId },
+    listSnapshotToMongoFields(snapshot)
+  );
+
+  return formatAiCategoryListMessageFromDoc({
+    ...doc,
+    ...snapshot,
+    aiCategory: doc.aiCategory,
+  });
 }
 
 /**
- * List messages for an AI category: Mongo threadclassifications first, then Gmail latest per thread.
+ * List messages for an AI category from Mongo snapshots (no per-row Gmail calls).
  * pageToken is a numeric offset into classified threads (not a Gmail token).
  */
 async function listMessagesByAiCategory(adminId, options = {}) {
@@ -370,26 +450,26 @@ async function listMessagesByAiCategory(adminId, options = {}) {
 
   while (messages.length < limit && cursor < total) {
     const docs = await ThreadClassification.find(filter)
-      .sort({ classifiedAt: -1, updatedAt: -1 })
+      .sort({ internalDate: -1, classifiedAt: -1, updatedAt: -1 })
       .skip(cursor)
       .limit(batchSize)
       .lean();
 
     if (!docs.length) break;
 
-    const rows = await mapWithConcurrency(docs, 6, async (doc) => {
-      const listItem = await getThreadLatestListItem(adminId, doc.threadId);
-      if (!listItem) return null;
-      if (!messageMatchesLabelFilter(listItem, labelIds, includeSpamTrash)) {
-        return null;
+    for (const doc of docs) {
+      let row;
+      if (docHasListSnapshot(doc)) {
+        row = formatAiCategoryListMessageFromDoc(doc);
+      } else {
+        row = await formatAiCategoryListMessageFromGmail(adminId, doc);
       }
 
-      const threadMessageCount = await getThreadMessageCount(adminId, doc.threadId);
-      return formatAiCategoryListMessage(listItem, doc, threadMessageCount);
-    });
-
-    for (const row of rows) {
       if (!row) continue;
+      if (!messageMatchesLabelFilter(row, labelIds, includeSpamTrash)) {
+        continue;
+      }
+
       messages.push(row);
       if (messages.length >= limit) break;
     }
@@ -409,6 +489,7 @@ async function listMessagesByAiCategory(adminId, options = {}) {
 module.exports = {
   classifyEmailViaPython,
   classifyAndStoreThread,
+  refreshThreadListSnapshot,
   getClassificationMapForThreads,
   attachStoredAiCategories,
   attachThreadAiCategorySlug,

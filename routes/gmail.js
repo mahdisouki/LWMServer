@@ -190,6 +190,10 @@ router.delete('/send/scheduled/:id', isAuth, gmailCtrl.cancelScheduledEmail);
 // Reply to an email with optional attachments
 router.post('/reply', isAuth, upload.array('attachments', 10), gmailCtrl.replyToEmail);
 
+// Outbound reply tracking (admin / ai / ai_edited)
+router.get('/replies/stats', isAuth, gmailCtrl.getEmailReplyStats);
+router.get('/replies', isAuth, gmailCtrl.listEmailReplies);
+
 // Forward email with optional attachments
 router.post('/forward', isAuth, upload.array('attachments', 10), gmailCtrl.forwardEmail);
 
@@ -260,11 +264,13 @@ router.get(
   gmailCtrl.getThreadLatestMessage
 );
 router.post('/threads/:id/suggest-reply', isAuth, gmailCtrl.suggestReply);
+router.post('/threads/:id/llmorder', isAuth, gmailCtrl.llmOrder);
 router.post(
   '/threads/:id/suggest-reply/test',
   isAuth,
   gmailCtrl.suggestReplyTest
 );
+router.get('/threads/:id/replies', isAuth, gmailCtrl.listThreadEmailReplies);
 router.get('/threads/:id/messages', isAuth, gmailCtrl.getThreadMessages);
 router.get('/threads/:id/full', isAuth, gmailCtrl.getThreadFull);
 router.get('/threads/:id', isAuth, gmailCtrl.getThread);
