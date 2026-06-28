@@ -215,6 +215,34 @@ async function revertQuotationTaskCreatedReasonIfOrphaned(quotationId) {
   }
 }
 
+function copyClickIdsFromQuotationToTask(task, quotation) {
+  if (!task || !quotation) {
+    return { changed: false, before: {}, after: {} };
+  }
+
+  const before = {
+    gclid: task.gclid || null,
+    gbraid: task.gbraid || null,
+    wbraid: task.wbraid || null,
+  };
+
+  if (!task.gclid && quotation.gclid) task.gclid = quotation.gclid;
+  if (!task.gbraid && quotation.gbraid) task.gbraid = quotation.gbraid;
+  if (!task.wbraid && quotation.wbraid) task.wbraid = quotation.wbraid;
+
+  const after = {
+    gclid: task.gclid || null,
+    gbraid: task.gbraid || null,
+    wbraid: task.wbraid || null,
+  };
+
+  const changed = before.gclid !== after.gclid
+    || before.gbraid !== after.gbraid
+    || before.wbraid !== after.wbraid;
+
+  return { changed, before, after };
+}
+
 async function linkQuotationToTask(quotation, task) {
   if (!isTaskEligibleForQuotationLink(task)) {
     throw new Error('Cannot link quotation to a task with failed payment status');
@@ -228,25 +256,14 @@ async function linkQuotationToTask(quotation, task) {
 
   task.quotationId = quotation._id;
 
-  const clickIdsBefore = {
-    gclid: task.gclid || null,
-    gbraid: task.gbraid || null,
-    wbraid: task.wbraid || null,
-  };
-  if (!task.gclid && quotation.gclid) task.gclid = quotation.gclid;
-  if (!task.gbraid && quotation.gbraid) task.gbraid = quotation.gbraid;
-  if (!task.wbraid && quotation.wbraid) task.wbraid = quotation.wbraid;
+  const { before: clickIdsBefore, after } = copyClickIdsFromQuotationToTask(task, quotation);
   await task.save();
   console.log('[Quotation Link] linkQuotationToTask click IDs', {
     taskId: task._id?.toString?.() || task._id,
     quotationId: quotation._id?.toString?.() || quotation._id,
     quotationGclid: quotation.gclid || null,
     before: clickIdsBefore,
-    after: {
-      gclid: task.gclid || null,
-      gbraid: task.gbraid || null,
-      wbraid: task.wbraid || null,
-    },
+    after,
   });
   await applyQuotationTaskCreatedReason(quotation);
   return task;
@@ -366,6 +383,16 @@ async function syncTaskQuotationLink(task) {
     const quotation = await QuotationRequest.findById(task.quotationId);
     if (quotation) {
       await applyQuotationTaskCreatedReason(quotation);
+      const { changed, before, after } = copyClickIdsFromQuotationToTask(task, quotation);
+      if (changed) {
+        await task.save();
+        console.log('[Quotation Link] syncTaskQuotationLink copied click IDs from quotation', {
+          taskId,
+          quotationId: task.quotationId.toString(),
+          before,
+          after,
+        });
+      }
     }
     console.log('[Quotation Link] syncTaskQuotationLink already_has_quotation', {
       taskId,
@@ -402,6 +429,7 @@ module.exports = {
   findMatchingTaskForQuotation,
   findMatchingQuotationForTask,
   linkQuotationToTask,
+  copyClickIdsFromQuotationToTask,
   findLinkedTaskForQuotation,
   tryLinkQuotationToMatchingTask,
   tryLinkTaskToMatchingQuotation,

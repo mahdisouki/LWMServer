@@ -2,6 +2,7 @@ const axios = require('axios');
 const { OAuth2Client } = require('google-auth-library');
 const Task = require('../models/Task');
 const QuotationRequest = require('../models/QuotationRequest');
+const PaymentHistory = require('../models/PaymentHistory');
 const {
   buildUserIdentifiers,
   formatConversionDateTime,
@@ -106,6 +107,43 @@ function buildDataManagerDestination(conversionActionId) {
   return destination;
 }
 
+/**
+ * Data Manager / offline uploads: prefer gclid alone; gbraid/wbraid cannot be
+ * combined with enhanced-conversion userData (hashed email/phone).
+ */
+function resolveDataManagerAttribution({ gclid, gbraid, wbraid, userIdentifiers = [] }) {
+  if (gclid) {
+    return {
+      gclid,
+      gbraid: undefined,
+      wbraid: undefined,
+      userIdentifiers,
+    };
+  }
+  if (gbraid) {
+    return {
+      gclid: undefined,
+      gbraid,
+      wbraid: undefined,
+      userIdentifiers: [],
+    };
+  }
+  if (wbraid) {
+    return {
+      gclid: undefined,
+      gbraid: undefined,
+      wbraid,
+      userIdentifiers: [],
+    };
+  }
+  return {
+    gclid: undefined,
+    gbraid: undefined,
+    wbraid: undefined,
+    userIdentifiers,
+  };
+}
+
 function buildDataManagerEvent(conversion) {
   const event = {
     eventTimestamp: formatEventTimestamp(parseConversionDateTime(conversion.conversionDateTime)),
@@ -116,21 +154,28 @@ function buildDataManagerEvent(conversion) {
     event.transactionId = String(conversion.orderId);
   }
 
+  const attribution = resolveDataManagerAttribution({
+    gclid: conversion.gclid,
+    gbraid: conversion.gbraid,
+    wbraid: conversion.wbraid,
+    userIdentifiers: conversion.userIdentifiers || [],
+  });
+
   const adIdentifiers = {};
-  if (conversion.gclid) {
-    adIdentifiers.gclid = conversion.gclid;
+  if (attribution.gclid) {
+    adIdentifiers.gclid = attribution.gclid;
   }
-  if (conversion.gbraid) {
-    adIdentifiers.gbraid = conversion.gbraid;
+  if (attribution.gbraid) {
+    adIdentifiers.gbraid = attribution.gbraid;
   }
-  if (conversion.wbraid) {
-    adIdentifiers.wbraid = conversion.wbraid;
+  if (attribution.wbraid) {
+    adIdentifiers.wbraid = attribution.wbraid;
   }
   if (Object.keys(adIdentifiers).length > 0) {
     event.adIdentifiers = adIdentifiers;
   }
 
-  const userData = buildDataManagerUserData(conversion.userIdentifiers || []);
+  const userData = buildDataManagerUserData(attribution.userIdentifiers);
   if (userData) {
     event.userData = userData;
   }
@@ -154,6 +199,15 @@ function parseDataManagerError(error) {
   for (const err of detail.errors || []) {
     if (err.message) {
       parts.push(err.message);
+    }
+  }
+  for (const violation of detail.details || []) {
+    if (violation['@type']?.includes('BadRequest')) {
+      for (const fieldViolation of violation.fieldViolations || []) {
+        parts.push(
+          `${fieldViolation.field || 'field'}: ${fieldViolation.description || fieldViolation.reason || ''}`.trim(),
+        );
+      }
     }
   }
   return parts.join('; ') || JSON.stringify(detail);
@@ -334,11 +388,18 @@ async function uploadClickConversions(conversions, options = {}) {
 
   const payload = {
     conversions: conversions.map((conversion) => {
+      const attribution = resolveDataManagerAttribution({
+        gclid: conversion.gclid,
+        gbraid: conversion.gbraid,
+        wbraid: conversion.wbraid,
+        userIdentifiers: conversion.userIdentifiers || [],
+      });
+
       const row = {
         conversionAction: conversion.conversionAction,
         conversionDateTime: conversion.conversionDateTime,
         currencyCode: conversion.currencyCode || CURRENCY,
-        userIdentifiers: mapUserIdentifiersForApi(conversion.userIdentifiers || []),
+        userIdentifiers: mapUserIdentifiersForApi(attribution.userIdentifiers),
       };
 
       if (conversion.conversionValue != null && !Number.isNaN(Number(conversion.conversionValue))) {
@@ -347,14 +408,14 @@ async function uploadClickConversions(conversions, options = {}) {
       if (conversion.orderId) {
         row.orderId = String(conversion.orderId);
       }
-      if (conversion.gclid) {
-        row.gclid = conversion.gclid;
+      if (attribution.gclid) {
+        row.gclid = attribution.gclid;
       }
-      if (conversion.gbraid) {
-        row.gbraid = conversion.gbraid;
+      if (attribution.gbraid) {
+        row.gbraid = attribution.gbraid;
       }
-      if (conversion.wbraid) {
-        row.wbraid = conversion.wbraid;
+      if (attribution.wbraid) {
+        row.wbraid = attribution.wbraid;
       }
 
       return row;
@@ -401,6 +462,30 @@ function resolvePurchaseValue(task, amount) {
     return Number(task.totalPrice);
   }
   return 1;
+}
+
+async function resolvePurchaseConversionDateTime(taskDoc, options = {}) {
+  if (options.conversionDateTime) {
+    return options.conversionDateTime;
+  }
+
+  const payment = await PaymentHistory.findOne({
+    taskId: taskDoc._id,
+    status: 'success',
+  })
+    .sort({ paymentDate: -1 })
+    .select('paymentDate')
+    .lean();
+
+  if (payment?.paymentDate) {
+    return payment.paymentDate;
+  }
+
+  if (taskDoc.updatedAt) {
+    return taskDoc.updatedAt;
+  }
+
+  return taskDoc.createdAt || new Date();
 }
 
 async function resolveClickIdsForTask(taskDoc) {
@@ -485,7 +570,9 @@ async function buildPurchaseConversionRow(taskDoc, options = {}) {
   const clickIds = await resolveClickIdsForTask(taskDoc);
   const orderId = taskDoc.orderNumber || String(taskDoc._id);
   const conversionValue = resolvePurchaseValue(taskDoc, options.amount);
-  const conversionDateTime = formatConversionDateTime(options.conversionDateTime || new Date());
+  const conversionDateTime = formatConversionDateTime(
+    await resolvePurchaseConversionDateTime(taskDoc, options),
+  );
 
   return {
     isQuotePurchase,
