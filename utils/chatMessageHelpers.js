@@ -5,6 +5,7 @@ const MESSAGE_SELECT_FIELDS =
   'roomId senderId messageText image fileUrl fileType fileUrls fileTypes audioUrl audioDuration videoUrl videoDuration videoThumbnail videoUrls videoDurations videoThumbnails messageType seen seenAt seenBy reactions replyTo createdAt';
 
 const REPLY_SNIPPET_MAX = 120;
+const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const REPLY_TYPE_LABELS = {
   image: 'Photo',
@@ -104,11 +105,118 @@ async function getLatestMessageByRoomIds(roomIds) {
   return Object.fromEntries(latestByRoom.map((r) => [r._id, r]));
 }
 
+async function getUnreadCountsByRoomIds(roomIds, userId) {
+  const userIdStr = String(userId);
+  const ids = roomIds.map(String).filter(Boolean);
+  if (!ids.length) {
+    return {};
+  }
+
+  const rows = await Message.aggregate([
+    {
+      $match: {
+        roomId: { $in: ids },
+        senderId: { $ne: userIdStr },
+        seenBy: { $not: { $elemMatch: { userId: userIdStr } } },
+      },
+    },
+    {
+      $group: {
+        _id: '$roomId',
+        unreadCount: { $sum: 1 },
+      },
+    },
+  ]);
+
+  return Object.fromEntries(rows.map((row) => [row._id, row.unreadCount]));
+}
+
+async function getRoomUnreadCount(roomId, userId) {
+  const counts = await getUnreadCountsByRoomIds([roomId], userId);
+  return counts[String(roomId)] || 0;
+}
+
+function isRoomActive(lastMessageAt, activeWindowMs = ACTIVE_WINDOW_MS) {
+  if (!lastMessageAt) {
+    return false;
+  }
+  const lastAt = new Date(lastMessageAt).getTime();
+  if (Number.isNaN(lastAt) || lastAt <= 0) {
+    return false;
+  }
+  return Date.now() - lastAt < activeWindowMs;
+}
+
+function buildChatStats(roomIds, lastByRoom, unreadByRoom, activeWindowMs = ACTIVE_WINDOW_MS) {
+  let active = 0;
+  let unreadRooms = 0;
+  let unreadMessages = 0;
+
+  for (const roomId of roomIds) {
+    const last = lastByRoom[roomId];
+    if (isRoomActive(last?.createdAt, activeWindowMs)) {
+      active += 1;
+    }
+
+    const unreadCount = unreadByRoom[roomId] || 0;
+    if (unreadCount > 0) {
+      unreadRooms += 1;
+      unreadMessages += unreadCount;
+    }
+  }
+
+  return {
+    total: roomIds.length,
+    active,
+    unreadRooms,
+    unreadMessages,
+    unread: unreadRooms,
+  };
+}
+
+async function buildChatTrucksPayload(trucks, userId) {
+  const roomIds = trucks.map((truck) => String(truck._id));
+  const [lastByRoom, unreadByRoom] = await Promise.all([
+    getLatestMessageByRoomIds(roomIds),
+    getUnreadCountsByRoomIds(roomIds, userId),
+  ]);
+
+  const stats = buildChatStats(roomIds, lastByRoom, unreadByRoom);
+
+  const trucksWithMeta = trucks.map((truck) => {
+    const truckObj = truck.toObject ? truck.toObject() : truck;
+    const roomId = String(truck._id);
+    const last = lastByRoom[roomId];
+
+    return {
+      ...truckObj,
+      lastMessageAt: last?.createdAt ?? null,
+      lastMessagePreview: last ? buildMessagePreview(last) : null,
+      unreadCount: unreadByRoom[roomId] || 0,
+      isActive: isRoomActive(last?.createdAt),
+    };
+  });
+
+  trucksWithMeta.sort((a, b) => {
+    const aT = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+    const bT = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+    return bT - aT;
+  });
+
+  return { trucks: trucksWithMeta, stats };
+}
+
 module.exports = {
   MESSAGE_SELECT_FIELDS,
+  ACTIVE_WINDOW_MS,
   buildReplyToSnapshot,
   attachReplyTo,
   buildMessagePreview,
   buildSeenByEntry,
   getLatestMessageByRoomIds,
+  getUnreadCountsByRoomIds,
+  getRoomUnreadCount,
+  isRoomActive,
+  buildChatStats,
+  buildChatTrucksPayload,
 };

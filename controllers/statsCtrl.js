@@ -2,13 +2,31 @@ const Blog = require('../models/Blog');
 const Payroll = require('../models/Payroll');
 const Task = require('../models/Task');
 const APIfeatures = require('../utils/APIFeatures'); // If you're using a utility for API features
-const calculateIncomeForDate = async (startDate, endDate) => {
+const buildCompletedTasksMatch = (startDate, endDate) => ({
+  date: { $gte: new Date(startDate), $lt: new Date(endDate) },
+  taskStatus: 'Completed',
+  paymentStatus: { $ne: 'Failed' },
+});
+
+const parseStatsDate = (dateVal) => {
+  const dayStart = new Date(dateVal);
+  if (isNaN(dayStart.getTime())) {
+    return null;
+  }
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+  return { dayStart, dayEnd };
+};
+
+const calculateIncomeForDate = async (startDate, endDate, extraMatch = {}) => {
     const stats = await Task.aggregate([
       {
         $match: {
           date: { $gte: new Date(startDate), $lt: new Date(endDate) },
           paymentStatus: { $ne: 'Failed' },  // Exclude 'Failed' status
-          $nor: [{ taskStatus: 'Cancelled', paymentStatus: 'Unpaid' }] // Exclude 'Cancelled' and 'Unpaid' status
+          $nor: [{ taskStatus: 'Cancelled', paymentStatus: 'Unpaid' }], // Exclude 'Cancelled' and 'Unpaid' status
+          ...extraMatch,
         }
       },
       {
@@ -235,7 +253,57 @@ const statsCtrl = {
         } catch (err) {
           res.status(500).json({ status: "error", error: err.message });
         }
-      }
+      },
+    getCompletedTasksByDate: async (req, res) => {
+        const dateVal = req.query.date;
+        if (!dateVal) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'date query parameter is required (e.g. YYYY-MM-DD)',
+          });
+        }
+
+        const parsed = parseStatsDate(dateVal);
+        if (!parsed) {
+          return res.status(400).json({
+            status: 'error',
+            message: 'Invalid date format. Use YYYY-MM-DD',
+          });
+        }
+
+        const { dayStart, dayEnd } = parsed;
+
+        try {
+          const eligibleTasksMatch = {
+            date: { $gte: dayStart, $lt: dayEnd },
+            paymentStatus: { $ne: 'Failed' },
+            taskStatus: { $ne: 'Cancelled' },
+          };
+
+          const [tasks, summary, totalTasksCount] = await Promise.all([
+            Task.find(buildCompletedTasksMatch(dayStart, dayEnd))
+              .select(
+                'orderNumber date firstName lastName postcode totalPrice paymentStatus paymentMethod taskStatus location available finishDate',
+              )
+              .sort({ date: 1, orderNumber: 1 })
+              .lean(),
+            calculateIncomeForDate(dayStart, dayEnd, { taskStatus: 'Completed' }),
+            Task.countDocuments(eligibleTasksMatch),
+          ]);
+
+          res.json({
+            status: 'success',
+            date: dateVal,
+            count: tasks.length,
+            completedTasksCount: tasks.length,
+            totalTasksCount,
+            summary,
+            tasks,
+          });
+        } catch (err) {
+          res.status(500).json({ status: 'error', error: err.message });
+        }
+      },
       
 };
 

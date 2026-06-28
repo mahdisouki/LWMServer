@@ -7,4 +7,5 @@ const router = express.Router();
 router.get('/annualPayrollSummary/:year', statsCtrl.getAnnualPayrollSummary);
 router.get('/incomeSummary', statsCtrl.getIncomeSummary);
 router.get('/incomes', statsCtrl.getIncomeStats);
+router.get('/completed-tasks', statsCtrl.getCompletedTasksByDate);
 module.exports = router;

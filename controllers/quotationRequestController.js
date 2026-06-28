@@ -8,6 +8,7 @@ const axios = require('axios');
 const { emitNotificationToUser } = require('../socket');
 const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
 const { User } = require('../models/User');
+const { fireQuoteConversionUpload } = require('../services/googleAdsConversionService');
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
         try {
@@ -19,6 +20,9 @@ const quotationRequestController = {
                 phoneNumber,
                 postcode,
                 comments,
+                gclid,
+                gbraid,
+                wbraid,
             } = req.body;
             console.log("req.body", req.body)
 
@@ -90,6 +94,9 @@ const quotationRequestController = {
                 comments,
                 items,
                 estimatedPrices,
+                ...(gclid ? { gclid: String(gclid).trim() } : {}),
+                ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
+                ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
             });
 
             // Send confirmation email to user
@@ -97,6 +104,8 @@ const quotationRequestController = {
 
             // Save quotation to database
             await newQuotation.save();
+
+            fireQuoteConversionUpload(newQuotation);
 
             // Send email to responsible person (similar to contact request / moving service)
             const quotationData = {

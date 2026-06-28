@@ -215,6 +215,34 @@ async function revertQuotationTaskCreatedReasonIfOrphaned(quotationId) {
   }
 }
 
+function copyClickIdsFromQuotationToTask(task, quotation) {
+  if (!task || !quotation) {
+    return { changed: false, before: {}, after: {} };
+  }
+
+  const before = {
+    gclid: task.gclid || null,
+    gbraid: task.gbraid || null,
+    wbraid: task.wbraid || null,
+  };
+
+  if (!task.gclid && quotation.gclid) task.gclid = quotation.gclid;
+  if (!task.gbraid && quotation.gbraid) task.gbraid = quotation.gbraid;
+  if (!task.wbraid && quotation.wbraid) task.wbraid = quotation.wbraid;
+
+  const after = {
+    gclid: task.gclid || null,
+    gbraid: task.gbraid || null,
+    wbraid: task.wbraid || null,
+  };
+
+  const changed = before.gclid !== after.gclid
+    || before.gbraid !== after.gbraid
+    || before.wbraid !== after.wbraid;
+
+  return { changed, before, after };
+}
+
 async function linkQuotationToTask(quotation, task) {
   if (!isTaskEligibleForQuotationLink(task)) {
     throw new Error('Cannot link quotation to a task with failed payment status');
@@ -227,7 +255,16 @@ async function linkQuotationToTask(quotation, task) {
   await clearIneligibleTaskQuotationLinks(quotation._id);
 
   task.quotationId = quotation._id;
+
+  const { before: clickIdsBefore, after } = copyClickIdsFromQuotationToTask(task, quotation);
   await task.save();
+  console.log('[Quotation Link] linkQuotationToTask click IDs', {
+    taskId: task._id?.toString?.() || task._id,
+    quotationId: quotation._id?.toString?.() || quotation._id,
+    quotationGclid: quotation.gclid || null,
+    before: clickIdsBefore,
+    after,
+  });
   await applyQuotationTaskCreatedReason(quotation);
   return task;
 }
@@ -308,15 +345,34 @@ async function tryLinkTaskToMatchingQuotation(task) {
  */
 async function syncTaskQuotationLink(task) {
   if (!task) {
+    console.log('[Quotation Link] syncTaskQuotationLink skipped: no task');
     return { action: 'skipped' };
   }
 
+  const taskId = task._id?.toString?.() || task._id;
+  console.log('[Quotation Link] syncTaskQuotationLink start', {
+    taskId,
+    paymentStatus: task.paymentStatus,
+    quotationId: task.quotationId?.toString?.() || task.quotationId || null,
+    email: task.email || null,
+    phoneNumber: task.phoneNumber || null,
+  });
+
   if (!isTaskEligibleForQuotationLink(task)) {
     if (!task.quotationId) {
+      console.log('[Quotation Link] syncTaskQuotationLink deferred: ineligible payment, no quotationId', {
+        taskId,
+        paymentStatus: task.paymentStatus,
+      });
       return { action: 'deferred' };
     }
 
     const quotationId = task.quotationId;
+    console.log('[Quotation Link] syncTaskQuotationLink unlinking: ineligible payment', {
+      taskId,
+      quotationId: quotationId.toString(),
+      paymentStatus: task.paymentStatus,
+    });
     task.quotationId = null;
     await task.save();
     await revertQuotationTaskCreatedReasonIfOrphaned(quotationId);
@@ -327,11 +383,32 @@ async function syncTaskQuotationLink(task) {
     const quotation = await QuotationRequest.findById(task.quotationId);
     if (quotation) {
       await applyQuotationTaskCreatedReason(quotation);
+      const { changed, before, after } = copyClickIdsFromQuotationToTask(task, quotation);
+      if (changed) {
+        await task.save();
+        console.log('[Quotation Link] syncTaskQuotationLink copied click IDs from quotation', {
+          taskId,
+          quotationId: task.quotationId.toString(),
+          before,
+          after,
+        });
+      }
     }
+    console.log('[Quotation Link] syncTaskQuotationLink already_has_quotation', {
+      taskId,
+      quotationId: task.quotationId.toString(),
+      quotationFound: Boolean(quotation),
+    });
     return { action: 'already_has_quotation' };
   }
 
-  return tryLinkTaskToMatchingQuotation(task);
+  const result = await tryLinkTaskToMatchingQuotation(task);
+  console.log('[Quotation Link] syncTaskQuotationLink tryLinkTaskToMatchingQuotation', {
+    taskId,
+    action: result.action,
+    matchedQuotationId: result.quotationId || null,
+  });
+  return result;
 }
 
 module.exports = {
@@ -352,6 +429,7 @@ module.exports = {
   findMatchingTaskForQuotation,
   findMatchingQuotationForTask,
   linkQuotationToTask,
+  copyClickIdsFromQuotationToTask,
   findLinkedTaskForQuotation,
   tryLinkQuotationToMatchingTask,
   tryLinkTaskToMatchingQuotation,
