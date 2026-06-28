@@ -2,7 +2,7 @@ const BlockingDays = require('../models/BlockingDays');
 const Task = require('../models/Task');
 
 const ALL_TIME_SLOTS = ['AnyTime', '7am-12pm', '12pm-5pm'];
-const MAX_ORDERS_PER_DAY = 30;
+const MAX_ORDERS_PER_DAY = 200;
 const DEFAULT_SUGGESTION_DAYS = 14;
 
 function parseDayBounds(dateInput) {
