@@ -1298,6 +1298,26 @@ function hasPerItemDiscount(arr) {
   );
 }
 
+function parseJsonArray(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function isMeaningfulTaskLineItem(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (item.standardItemId && String(item.standardItemId).trim()) return true;
+  return Boolean(item.object && String(item.object).trim());
+}
+
 /**
  * Get duration in minutes for one item based on Objectsposition.
  * @param {Object} source - Object with timespentOutside, timespentInside, timespentInsdiewithDis (numbers or undefined)
@@ -1497,6 +1517,8 @@ const taskCtrl = {
       } = req.body;
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
+      const orderItems = parseJsonArray(items);
+      const orderObjects = parseJsonArray(objects);
       if (createdByType === 'public') {
         const dateObj = new Date(date);
         const now = new Date();
@@ -1573,15 +1595,15 @@ const taskCtrl = {
         (customDiscountPercent !== undefined &&
           !isNaN(customDiscountPercent) &&
           customDiscountPercent > 0) ||
-        hasPerItemDiscount(items) ||
-        hasPerItemDiscount(objects);
+        hasPerItemDiscount(orderItems) ||
+        hasPerItemDiscount(orderObjects);
 
       // Calculate preliminary subtotal for coupon validation (before discounts)
       let preliminarySubtotal = 0;
 
       // Add custom items (objects)
-      if (objects && Array.isArray(objects)) {
-        objects.forEach((customObject) => {
+      if (orderObjects.length > 0) {
+        orderObjects.forEach((customObject) => {
           if (customObject.object && customObject.price) {
             const itemTotal = Number(customObject.price) * (Number(customObject.quantity) || 1);
             preliminarySubtotal += itemTotal;
@@ -1590,25 +1612,23 @@ const taskCtrl = {
       }
 
       // Add standard items
-      if (items && Array.isArray(items)) {
-        for (const item of items) {
-          if (!item.standardItemId) continue;
-          const standardItem = await StandardItem.findById(item.standardItemId);
-          if (!standardItem) continue;
+      for (const item of orderItems) {
+        if (!item.standardItemId) continue;
+        const standardItem = await StandardItem.findById(item.standardItemId);
+        if (!standardItem) continue;
 
-          const quantity = Number(item.quantity) || 1;
-          let baseItemPrice = Number(standardItem.price);
-          let positionFee = 0;
+        const quantity = Number(item.quantity) || 1;
+        let baseItemPrice = Number(standardItem.price);
+        let positionFee = 0;
 
-          if (item.Objectsposition === 'InsideWithDismantling') {
-            positionFee = Number(standardItem.insideWithDismantlingPrice);
-          } else if (item.Objectsposition === 'Inside') {
-            positionFee = Number(standardItem.insidePrice);
-          }
-
-          const itemSubtotal = (baseItemPrice * quantity) + (positionFee * quantity);
-          preliminarySubtotal += itemSubtotal;
+        if (item.Objectsposition === 'InsideWithDismantling') {
+          positionFee = Number(standardItem.insideWithDismantlingPrice);
+        } else if (item.Objectsposition === 'Inside') {
+          positionFee = Number(standardItem.insidePrice);
         }
+
+        const itemSubtotal = (baseItemPrice * quantity) + (positionFee * quantity);
+        preliminarySubtotal += itemSubtotal;
       }
 
       // Validate coupon code if provided
@@ -1658,15 +1678,15 @@ const taskCtrl = {
 
       // Calculate price using new logic
       console.log('=== PRICE CALCULATION DEBUG ===');
-      console.log('Items being passed to calculateTotalPrice:', items);
-      console.log('Objects being passed to calculateTotalPrice:', objects);
+      console.log('Items being passed to calculateTotalPrice:', orderItems);
+      console.log('Objects being passed to calculateTotalPrice:', orderObjects);
       console.log('available being passed:', available, 'Type:', typeof available);
       console.log('createdByType being passed:', createdByType, 'Type:', typeof createdByType);
       console.log('couponCode being passed:', couponCode);
 
       const { totalPrice, vat, couponDiscount, couponPercentage } = await calculateTotalPrice({
-        items, // Pass items directly for the function
-        objects,
+        items: orderItems,
+        objects: orderObjects,
         customDiscountPercent,
         discountType,
         hasDiscount,
@@ -1686,9 +1706,9 @@ const taskCtrl = {
       console.log('Calculated vat:', vat);
       // Prepare items array for DB (merge standard and custom if needed)
       let allItems = [];
-      if (items && Array.isArray(items)) {
+      if (orderItems.length > 0) {
         allItems.push(
-          ...items.map((item) => ({
+          ...orderItems.map((item) => ({
             standardItemId: item.standardItemId || null,
             quantity: Number(item.quantity) || 1,
             Objectsposition: item.Objectsposition || 'Outside',
@@ -1703,10 +1723,10 @@ const taskCtrl = {
       }
       // Merge custom items (objects): validate vanLoadOption; when set, copy times/position from matching StandardItem
       const VAN_LOAD_OPTIONS = ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
-      if (objects && Array.isArray(objects)) {
-        console.log('objects', objects);
+      if (orderObjects.length > 0) {
+        console.log('objects', orderObjects);
         const customItems = [];
-        for (const item of objects) {
+        for (const item of orderObjects) {
           const vanLoadOption = VAN_LOAD_OPTIONS.includes(item.vanLoadOption) ? item.vanLoadOption : undefined;
           let timespentOutside = item.timespentOutside !== undefined ? Number(item.timespentOutside) : undefined;
           let timespentInside = item.timespentInside !== undefined ? Number(item.timespentInside) : undefined;
@@ -1737,21 +1757,13 @@ const taskCtrl = {
         }
         allItems.push(...customItems);
       }
-      // // Nettoyer allItems avant de sauvegarder (anti NaN, 'undefined', etc)
-      // allItems = allItems.map(item => {
-      //   if (
-      //     item.customPrice === '' ||
-      //     item.customPrice === null ||
-      //     item.customPrice === undefined ||
-      //     item.customPrice === 'undefined' ||
-      //     isNaN(Number(item.customPrice))
-      //   ) {
-      //     delete item.customPrice;
-      //   } else {
-      //     item.customPrice = Number(item.customPrice);
-      //   }
-      //   return item;
-      // });
+
+      if (!allItems.some(isMeaningfulTaskLineItem)) {
+        return res.status(400).json({
+          message: 'At least one item is required to create an order.',
+          error: 'ITEMS_EMPTY',
+        });
+      }
 
       const taskDuration = await calculateTaskDuration(allItems);
       const taskVanSpacePercent = await calculateTaskVanSpacePercent(allItems);
