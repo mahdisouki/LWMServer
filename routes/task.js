@@ -256,6 +256,19 @@ router.get('/tasks/lock-status/:taskId', isAuth, taskCtrl.getTaskLockStatus);
 router.post('/tasks/take-over/:taskId', isAuth, checkRole('Admin'), taskCtrl.takeOverOrder);
 router.post('/create-request', multer.array('clientObjectPhotos'), taskCtrl.createTask);
 router.post('/assignTruck/:taskId', isAuth, checkRole('Admin'), taskCtrl.assignTruckToTask);
+router.get('/tasks/business-customers', taskCtrl.getBusinessCustomerTasks);
+router.patch(
+  '/tasks/:taskId/business-customer/remove',
+  isAuth,
+  checkRole('Admin'),
+  taskCtrl.removeFromBusinessCustomers
+);
+router.patch(
+  '/tasks/:taskId/business-customer',
+  isAuth,
+  checkRole('Admin'),
+  taskCtrl.updateBusinessCustomerMeta
+);
 router.get('/tasks', taskCtrl.getAllTasks);
 router.get('/tasks/export/completed-paid', taskCtrl.exportCompletedPaidCsv);
 router.get('/tasks/export/recent-emails', taskCtrl.exportRecentOrderEmailsCsv);

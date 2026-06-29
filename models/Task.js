@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
+const { resolveIsBusinessEmail } = require('../utils/businessEmail');
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
 const Counter = require('./Counter');
 const DailySheet = require('./DailySheet');
@@ -226,6 +227,12 @@ const taskSchema = new Schema(
     couponId: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to coupon used
     couponUsageIncremented: { type: Boolean, default: false }, // Prevent double increment of coupon usage (idempotency)
     email: { type: String },
+    isBusinessEmail: { type: Boolean, default: false },
+    excludedFromBusinessList: { type: Boolean, default: false },
+    note: { type: String, default: '', trim: true },
+    followUp: { type: String, default: '', trim: true },
+    industry: { type: String, default: '', trim: true },
+    call: { type: Boolean, default: false },
     additionalNotes: { type: String, required: false },
     privateNotes: { type: String },
     itemDescription: { type: String, required: false },
@@ -293,6 +300,17 @@ const taskSchema = new Schema(
 
 // Add a pre-save hook to clean up empty items and validate data
 taskSchema.pre('save', function (next) {
+  if (
+    this.isNew ||
+    this.isModified('email') ||
+    this.isModified('excludedFromBusinessList')
+  ) {
+    this.isBusinessEmail = resolveIsBusinessEmail(
+      this.email,
+      this.excludedFromBusinessList,
+    );
+  }
+
   // Filter out items where both standardItemId is null and object is empty
   this.items = this.items.filter(item => {
     return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
@@ -499,11 +517,50 @@ taskSchema.pre('save', async function (next) {
   }
 });
 
+taskSchema.pre(['findOneAndUpdate', 'updateOne'], async function (next) {
+  try {
+    const update = this.getUpdate() || {};
+    const $set = update.$set || {};
+    const emailInUpdate = $set.email ?? update.email;
+    const excludedInUpdate =
+      $set.excludedFromBusinessList ?? update.excludedFromBusinessList;
+
+    if (emailInUpdate !== undefined || excludedInUpdate !== undefined) {
+      const doc = await this.model
+        .findOne(this.getQuery())
+        .select('email excludedFromBusinessList')
+        .lean();
+
+      const email = emailInUpdate !== undefined ? emailInUpdate : doc?.email;
+      const excluded =
+        excludedInUpdate !== undefined
+          ? excludedInUpdate
+          : (doc?.excludedFromBusinessList ?? false);
+      const isBusinessEmail = resolveIsBusinessEmail(email, excluded);
+
+      if (update.$set) {
+        update.$set.isBusinessEmail = isBusinessEmail;
+      } else if (update.$setOnInsert && !update.$set) {
+        update.$setOnInsert.isBusinessEmail = isBusinessEmail;
+      } else {
+        this.setUpdate({
+          ...update,
+          $set: { ...(update.$set || {}), isBusinessEmail },
+        });
+      }
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 taskSchema.index({ date: 1 });
 taskSchema.index({ createdAt: -1 });
 taskSchema.index({ paymentStatus: 1, taskStatus: 1 });
 taskSchema.index({ date: 1, createdAt: -1 });
 taskSchema.index({ taskStatus: 1, paymentStatus: 1, finishDate: 1 });
+taskSchema.index({ isBusinessEmail: 1, createdAt: -1 });
 
 const Task = mongoose.model("Task", taskSchema);
 module.exports = Task;

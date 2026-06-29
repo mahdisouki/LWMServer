@@ -90,6 +90,109 @@ const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers
 const { syncRepeatCustomerForEmail } = require('../utils/repeatCustomerSync');
 const PaymentLink = require('../models/PaymentLink');
 
+const BUSINESS_CUSTOMER_FILTER_FIELDS = [
+  'paymentStatus',
+  'date',
+  'createdAt',
+  'orderNumber',
+  'quotationId',
+];
+const BUSINESS_CUSTOMER_SEARCH_FIELDS = [
+  'firstName',
+  'lastName',
+  'email',
+  'username',
+  'phoneNumber',
+  'postcode',
+  'orderNumber',
+];
+
+async function paginateBusinessCustomerTasks(queryParams) {
+  const {
+    page = 1,
+    limit = 100,
+    keyword,
+    sort = '-createdAt',
+  } = queryParams;
+
+  const pageNum = parseInt(page, 10);
+  const limitNum = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 200);
+  const skip = (pageNum - 1) * limitNum;
+  const queryFilter = { isBusinessEmail: true };
+
+  if (keyword && BUSINESS_CUSTOMER_SEARCH_FIELDS.length > 0) {
+    const hasFirstName = BUSINESS_CUSTOMER_SEARCH_FIELDS.includes('firstName');
+    const hasLastName = BUSINESS_CUSTOMER_SEARCH_FIELDS.includes('lastName');
+    const keywordParts = keyword.trim().split(/\s+/);
+
+    if (hasFirstName && hasLastName && keywordParts.length >= 2) {
+      const orConditions = BUSINESS_CUSTOMER_SEARCH_FIELDS
+        .filter((field) => field !== 'firstName' && field !== 'lastName')
+        .map((field) => ({
+          [field]: { $regex: keyword, $options: 'i' },
+        }));
+
+      orConditions.push(
+        {
+          $and: [
+            { firstName: { $regex: keywordParts[0], $options: 'i' } },
+            { lastName: { $regex: keywordParts.slice(1).join(' '), $options: 'i' } },
+          ],
+        },
+        {
+          $and: [
+            { firstName: { $regex: keywordParts.slice(1).join(' '), $options: 'i' } },
+            { lastName: { $regex: keywordParts[0], $options: 'i' } },
+          ],
+        },
+      );
+
+      queryFilter.$or = orConditions;
+    } else {
+      queryFilter.$or = BUSINESS_CUSTOMER_SEARCH_FIELDS.map((field) => ({
+        [field]: { $regex: keyword, $options: 'i' },
+      }));
+    }
+  }
+
+  for (const field of BUSINESS_CUSTOMER_FILTER_FIELDS) {
+    const value = queryParams[field];
+    if (value !== undefined && value !== '') {
+      const parsedDate = new Date(value);
+      const isDate = !isNaN(parsedDate.getTime());
+
+      if (isDate) {
+        const dayStart = new Date(parsedDate);
+        dayStart.setUTCHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayStart);
+        dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+        queryFilter[field] = {
+          $gte: dayStart,
+          $lt: dayEnd,
+        };
+      } else {
+        queryFilter[field] = value;
+      }
+    }
+  }
+
+  const [total, data] = await Promise.all([
+    Task.countDocuments(queryFilter),
+    Task.find(queryFilter).sort(sort).skip(skip).limit(limitNum),
+  ]);
+
+  return {
+    data,
+    meta: {
+      currentPage: pageNum,
+      limit: limitNum,
+      total,
+      count: data.length,
+    },
+  };
+}
+
 /**
  * Calculate task van space as percentage from items.
  * spaceOfVan on StandardItem = how many of that item fit in the van (e.g. 100 chairs).
@@ -1977,6 +2080,134 @@ const taskCtrl = {
     } catch (error) {
       res.status(500).json({
         message: 'Failed to retrieve tasks',
+        error: error.message,
+      });
+    }
+  },
+
+  getBusinessCustomerTasks: async (req, res) => {
+    try {
+      if (req.query.collectiondate && !req.query.date) {
+        req.query.date = req.query.collectiondate;
+      }
+      if (req.query.collectionDate && !req.query.date) {
+        req.query.date = req.query.collectionDate;
+      }
+
+      const { data: tasks, meta } = await paginateBusinessCustomerTasks(req.query);
+
+      const tasksWithTrucks = await Promise.all(
+        tasks.map(async (task) => {
+          if (task.truckId) {
+            const truck = await Truck.findById(task.truckId).populate('vanId');
+            task = task.toObject();
+            task.truckName = truck ? truckDisplayName(truck) : null;
+          }
+          return task;
+        }),
+      );
+
+      res.status(200).json({
+        message: 'Business customer tasks retrieved successfully',
+        tasks: tasksWithTrucks,
+        meta,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to retrieve business customer tasks',
+        error: error.message,
+      });
+    }
+  },
+
+  updateBusinessCustomerMeta: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const { note, followUp, industry, call } = req.body;
+
+      if (!mongoose.Types.ObjectId.isValid(taskId)) {
+        return res.status(400).json({ message: 'Invalid task ID.' });
+      }
+
+      const task = await Task.findById(taskId).select('isBusinessEmail');
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found.' });
+      }
+
+      if (!task.isBusinessEmail) {
+        return res.status(400).json({
+          message: 'Task does not have a professional business email.',
+        });
+      }
+
+      const update = {};
+      if (note !== undefined) update.note = String(note).trim();
+      if (followUp !== undefined) update.followUp = String(followUp).trim();
+      if (industry !== undefined) update.industry = String(industry).trim();
+      if (call !== undefined) {
+        update.call = call === true || call === 'true';
+      }
+
+      if (Object.keys(update).length === 0) {
+        return res.status(400).json({
+          message:
+            'At least one of note, followUp, industry, or call is required.',
+        });
+      }
+
+      const updatedTask = await Task.findByIdAndUpdate(taskId, update, {
+        new: true,
+      });
+
+      res.status(200).json({
+        message: 'Business customer metadata updated successfully.',
+        task: updatedTask,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to update business customer metadata',
+        error: error.message,
+      });
+    }
+  },
+
+  removeFromBusinessCustomers: async (req, res) => {
+    try {
+      const { taskId } = req.params;
+
+      if (!mongoose.Types.ObjectId.isValid(taskId)) {
+        return res.status(400).json({ message: 'Invalid task ID.' });
+      }
+
+      const task = await Task.findById(taskId).select('isBusinessEmail');
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found.' });
+      }
+
+      if (!task.isBusinessEmail) {
+        return res.status(400).json({
+          message: 'Task is not in the business customer list.',
+        });
+      }
+
+      const updatedTask = await Task.findByIdAndUpdate(
+        taskId,
+        {
+          $set: {
+            isBusinessEmail: false,
+            excludedFromBusinessList: true,
+          },
+        },
+        { new: true },
+      );
+
+      res.status(200).json({
+        message: 'Task removed from business customers.',
+        task: updatedTask,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to remove task from business customers',
         error: error.message,
       });
     }
