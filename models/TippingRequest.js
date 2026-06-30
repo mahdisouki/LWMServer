@@ -46,6 +46,8 @@ const tippingRequestSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: "StoragePlace"
     },
+    isAiGenerated: { type: Boolean, default: false },
+    aiGeneratedAt: { type: Date, required: false },
     createdBy: {
         type: Schema.Types.ObjectId,
         ref: "User"

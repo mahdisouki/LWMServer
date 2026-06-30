@@ -177,7 +177,7 @@ const updateDailySheetForTippingRequest = async (tippingRequest) => {
 const tippingController = {
   createTippingRequest: async (req, res) => {
     const userId = req.user._id;
-    const { notes, tipdate, emptyTipping } = req.body;
+    const { notes, tipdate, emptyTipping , isAiGenerated=false } = req.body;
 
     try {
       const user = await User.findById(userId);
@@ -201,6 +201,8 @@ const tippingController = {
         userId: userId,
         truckId: truck._id, // Set truckId when creating
         notes: notes,
+        isAiGenerated: isAiGenerated,
+        aiGeneratedAt: isAiGenerated ? Date.now() : null,
         status: 'Pending',
         tipdate: Date.now(), // Set tipdate to current date when created by non-admin
         emptyTipping: toBooleanOrUndefined(emptyTipping),
