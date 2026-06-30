@@ -4,6 +4,16 @@ const Task = require('../models/Task');
 
 const USER_SELECT = 'firstName lastName email username';
 
+const TICK_LIST_SEARCH_FIELDS = [
+  'firstName',
+  'lastName',
+  'email',
+  'username',
+  'phoneNumber',
+  'postcode',
+  'orderNumber',
+];
+
 function parsePagination(query) {
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 20));
@@ -24,6 +34,57 @@ function prefixTaskFilter(filter) {
     }
   }
   return prefixed;
+}
+
+function buildTaskSearchMatch(keyword) {
+  const trimmed = String(keyword || '').trim();
+  if (!trimmed || TICK_LIST_SEARCH_FIELDS.length === 0) return null;
+
+  const keywordParts = trimmed.split(/\s+/);
+  const hasFirstName = TICK_LIST_SEARCH_FIELDS.includes('firstName');
+  const hasLastName = TICK_LIST_SEARCH_FIELDS.includes('lastName');
+  const taskField = (field) => `task.${field}`;
+
+  let orConditions;
+
+  if (hasFirstName && hasLastName && keywordParts.length >= 2) {
+    orConditions = TICK_LIST_SEARCH_FIELDS.filter(
+      (field) => field !== 'firstName' && field !== 'lastName'
+    ).map((field) => ({
+      [taskField(field)]: { $regex: trimmed, $options: 'i' },
+    }));
+
+    orConditions.push(
+      {
+        $and: [
+          { [taskField('firstName')]: { $regex: keywordParts[0], $options: 'i' } },
+          {
+            [taskField('lastName')]: {
+              $regex: keywordParts.slice(1).join(' '),
+              $options: 'i',
+            },
+          },
+        ],
+      },
+      {
+        $and: [
+          {
+            [taskField('firstName')]: {
+              $regex: keywordParts.slice(1).join(' '),
+              $options: 'i',
+            },
+          },
+          { [taskField('lastName')]: { $regex: keywordParts[0], $options: 'i' } },
+        ],
+      }
+    );
+  } else {
+    orConditions = TICK_LIST_SEARCH_FIELDS.map((field) => ({
+      [taskField(field)]: { $regex: trimmed, $options: 'i' },
+    }));
+  }
+
+  return { $or: orConditions };
 }
 
 function buildTaskMatchForFilter(paymentFilter) {
@@ -144,6 +205,10 @@ const tickCtrl = {
       await Tick.syncFromEligibleTasks();
 
       const taskMatch = buildTaskMatchForFilter(paymentFilter);
+      const searchMatch = buildTaskSearchMatch(req.query.keyword);
+      const combinedMatch = searchMatch
+        ? { $and: [taskMatch, searchMatch] }
+        : taskMatch;
 
       const [stats, aggregation] = await Promise.all([
         computeStats(),
@@ -157,7 +222,7 @@ const tickCtrl = {
             },
           },
           { $unwind: '$task' },
-          { $match: taskMatch },
+          { $match: combinedMatch },
           { $sort: { 'task.date': -1 } },
           {
             $facet: {
@@ -191,6 +256,7 @@ const tickCtrl = {
         message: 'Tick list retrieved successfully.',
         stats,
         filter: paymentFilter,
+        keyword: req.query.keyword?.trim() || '',
         orders,
         pagination: {
           page,
