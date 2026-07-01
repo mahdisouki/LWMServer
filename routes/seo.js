@@ -21,4 +21,11 @@ router.delete('/keywords/:id', ...admin, seoCtrl.deleteKeyword);
 router.post('/refresh', ...admin, seoCtrl.triggerRefresh);
 router.get('/refresh/status', ...admin, seoCtrl.getRefreshStatus);
 
+router.get('/competitors', ...admin, seoCtrl.getCompetitors);
+router.post('/competitors', ...admin, seoCtrl.addCompetitor);
+router.post('/competitors/sync', ...admin, seoCtrl.syncCompetitorMetrics);
+router.delete('/competitors/:id', ...admin, seoCtrl.deleteCompetitor);
+router.get('/competitors/content-gaps', ...admin, seoCtrl.getContentGaps);
+router.post('/competitors/content-gaps/:id/create-page', ...admin, seoCtrl.createPageFromContentGap);
+
 module.exports = router;

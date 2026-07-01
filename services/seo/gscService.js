@@ -18,7 +18,7 @@ async function getSearchConsoleClient() {
   return google.searchconsole({ version: 'v1', auth: oauth2Client });
 }
 
-async function fetchTopQueries(days = 28) {
+async function fetchTopQueries(days = 28, rowLimit = 1000) {
   if (!isGscEnabled()) {
     return [];
   }
@@ -35,7 +35,7 @@ async function fetchTopQueries(days = 28) {
       startDate: start.toISOString().slice(0, 10),
       endDate: end.toISOString().slice(0, 10),
       dimensions: ['query'],
-      rowLimit: 50,
+      rowLimit: Math.min(rowLimit, 25000),
     },
   });
 
@@ -53,6 +53,46 @@ async function fetchTopQueries(days = 28) {
   }));
 }
 
+async function fetchSiteSummary(days = 28) {
+  if (!isGscEnabled()) {
+    return null;
+  }
+
+  const siteUrl = getGscSiteUrl();
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - days);
+
+  const searchconsole = await getSearchConsoleClient();
+  const { data } = await searchconsole.searchanalytics.query({
+    siteUrl,
+    requestBody: {
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+    },
+  });
+
+  const row = data.rows?.[0];
+  if (!row) {
+    return {
+      clicks28d: 0,
+      impressions28d: 0,
+      avgPosition: null,
+      ctr: null,
+      periodDays: days,
+    };
+  }
+
+  return {
+    clicks28d: row.clicks ?? 0,
+    impressions28d: row.impressions ?? 0,
+    avgPosition: row.position != null ? Math.round(row.position * 10) / 10 : null,
+    ctr: row.ctr != null ? Math.round(row.ctr * 10000) / 100 : null,
+    periodDays: days,
+  };
+}
+
 module.exports = {
   fetchTopQueries,
+  fetchSiteSummary,
 };
