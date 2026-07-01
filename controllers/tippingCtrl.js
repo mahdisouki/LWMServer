@@ -288,7 +288,7 @@ const tippingController = {
   createTippingRequestByAdmin: async (req, res) => {
     const adminId = req.user._id;
     // const { driverId, truckId, tippingPlace, notes, status } = req.body;
-    const { driverId, notes, status, tipdate, price, tippingPlace, isShipped, emptyTipping } = req.body;
+    const { driverId, notes, status, tipdate, price, tippingPlace, isShipped, emptyTipping, isAiGenerated } = req.body;
 
     // Handle file uploads for tipping proof
     let tippingProof = [];
@@ -334,6 +334,8 @@ const tippingController = {
         status: status,
         isShipped: isShipped,
         emptyTipping: toBooleanOrUndefined(emptyTipping),
+        isAiGenerated: toBooleanOrUndefined(isAiGenerated),
+        aiGeneratedAt: toBooleanOrUndefined(isAiGenerated) ? Date.now() : null,
         tipdate: tipdate || Date.now(), // Tip date set by admin, default to current date if not provided
         tippingProof: tippingProof.length > 0 ? tippingProof : undefined, // Tipping proof images from files
         price: price, // Price
@@ -372,6 +374,8 @@ const tippingController = {
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
           emptyTipping: newTippingRequest.emptyTipping,
+          isAiGenerated: newTippingRequest.isAiGenerated,
+          aiGeneratedAt: newTippingRequest.aiGeneratedAt,
           tipdate: newTippingRequest.tipdate,
           tippingProof: newTippingRequest.tippingProof,
           isShipped: newTippingRequest.isShipped,
