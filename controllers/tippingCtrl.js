@@ -177,7 +177,7 @@ const updateDailySheetForTippingRequest = async (tippingRequest) => {
 const tippingController = {
   createTippingRequest: async (req, res) => {
     const userId = req.user._id;
-    const { notes, tipdate, emptyTipping , isAiGenerated=false } = req.body;
+    const { notes, tipdate, emptyTipping , isAiGenerated } = req.body;
 
     try {
       const user = await User.findById(userId);

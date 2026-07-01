@@ -194,27 +194,12 @@ async function paginateBusinessCustomerTasks(queryParams) {
 }
 
 /**
- * Calculate task van space as percentage from items.
- * spaceOfVan on StandardItem = how many of that item fit in the van (e.g. 100 chairs).
- * So 2 chairs → 2/100 = 2%.
+ * Calculate task van space as percentage (0–100) from items.
+ * Delegates to calculateVanLoadPercentage so standard items, custom spaceOfVan,
+ * and vanLoadOption (1/4 Load → 25%, etc.) are handled consistently.
  */
 async function calculateTaskVanSpacePercent(allItems) {
-  let fraction = 0;
-  for (const item of allItems) {
-    let capacity = null;
-    if (item.standardItemId) {
-      const std = await StandardItem.findById(item.standardItemId).select('spaceOfVan').lean();
-      capacity = std?.spaceOfVan;
-    } else {
-      capacity = item.spaceOfVan;
-    }
-    const qty = Number(item.quantity) || 1;
-    if (capacity != null && capacity > 0) {
-      fraction += qty / capacity;
-    }
-  }
-  const percent = fraction * 100;
-  return Math.min(100, Math.round(percent * 100) / 100); // cap 100%, 2 decimals
+  return calculateVanLoadPercentage({ items: allItems });
 }
 
 // Helper to update daily sheets when a task changes (e.g. status moved to Completed)
@@ -3662,10 +3647,12 @@ const taskCtrl = {
         console.log('Items after sanitization:', JSON.stringify(updates.items, null, 2));
       }
 
-      // Recalc taskDuration from updated items when provided, otherwise from existing task items
+      // Recalc taskDuration and spaceOfVan from updated items when provided, otherwise from existing task items
       const itemsToUse = updates.items && updates.items.length > 0 ? updates.items : (oldTask.items || []);
       if (itemsToUse.length > 0) {
-        updates.taskDuration = await calculateTaskDuration(itemsToUse);
+        const plainItems = itemsToUse.map((item) => (item.toObject ? item.toObject() : item));
+        updates.taskDuration = await calculateTaskDuration(plainItems);
+        updates.spaceOfVan = await calculateTaskVanSpacePercent(plainItems);
       }
 
       // Sanitize ObjectId fields: empty string cannot be cast to ObjectId
