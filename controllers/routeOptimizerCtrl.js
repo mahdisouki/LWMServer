@@ -17,7 +17,7 @@ const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.1.102:8000';
 /** External optimizer: manual job groups (POST body: date, truck_contexts, job_groups). */
 const EXTERNAL_ROUTE_GROUPS_API_PATH =
   process.env.EXTERNAL_ROUTE_GROUPS_API_PATH || '/api/v1/custom';
@@ -2580,6 +2580,115 @@ async function discardRoutePreview(req, res) {
   }
 }
 
+/**
+ * POST /api/route-optimizer/external/reset-vans-for-date
+ * Body: { date: string|Date, truckIds?: string[] }
+ * Clears all truck routes for the date (empties van/task lists) and unassigns tasks + tipping requests.
+ */
+async function resetAllVansForDate(req, res) {
+  try {
+    const { date, truckIds, selectedTruckIds } = req.body;
+    const requestedTruckIds = truckIds || selectedTruckIds;
+
+    const parsed = parseRouteOptimizerDate(date);
+    if (!parsed.ok) {
+      return res.status(400).json({ message: parsed.message });
+    }
+
+    const { dateStr, startOfDay, endOfDay } = parsed;
+    const hasTruckSelection = Array.isArray(requestedTruckIds) && requestedTruckIds.length > 0;
+    const truckQuery = hasTruckSelection ? { _id: { $in: requestedTruckIds } } : {};
+    const trucks = await Truck.find(truckQuery);
+
+    if (hasTruckSelection && !trucks.length) {
+      return res.status(400).json({ message: 'No valid trucks found for provided truckIds' });
+    }
+
+    const clearedTippingIds = new Set();
+    let trucksCleared = 0;
+
+    for (const truck of trucks) {
+      let tasksForDate = [];
+      if (truck.tasks instanceof Map) {
+        tasksForDate = truck.tasks.get(dateStr) || [];
+      } else if (truck.tasks && typeof truck.tasks === 'object') {
+        tasksForDate = truck.tasks[dateStr] || [];
+      }
+
+      for (const entry of tasksForDate) {
+        const rawId = entry?.taskId;
+        const taskId = normalizeMongoId(rawId);
+        if (!taskId) continue;
+        const segType = entry.type === 'TippingRequest' ? 'TippingRequest' : 'task';
+        if (segType === 'TippingRequest') {
+          clearedTippingIds.add(taskId);
+        }
+      }
+
+      if (!truck.tasks) {
+        truck.tasks = new Map();
+      }
+      truck.tasks.set(dateStr, []);
+      truck.markModified('tasks');
+      await truck.save();
+      trucksCleared += 1;
+    }
+
+    const taskFilter = {
+      date: { $gte: startOfDay, $lte: endOfDay },
+      truckId: { $ne: null },
+    };
+    if (hasTruckSelection) {
+      taskFilter.truckId = { $in: requestedTruckIds };
+    }
+
+    const taskResult = await Task.updateMany(taskFilter, { $set: { truckId: null } });
+
+    const tippingFilters = [];
+    if (clearedTippingIds.size) {
+      tippingFilters.push({ _id: { $in: [...clearedTippingIds] } });
+    }
+    const tippingByDateFilter = {
+      tipdate: { $gte: startOfDay, $lte: endOfDay },
+      truckId: { $ne: null },
+    };
+    if (hasTruckSelection) {
+      tippingByDateFilter.truckId = { $in: requestedTruckIds };
+    }
+    tippingFilters.push(tippingByDateFilter);
+
+    let tippingUnassigned = 0;
+    for (const filter of tippingFilters) {
+      const result = await TippingRequest.updateMany(filter, { $set: { truckId: null } });
+      tippingUnassigned += result.modifiedCount || 0;
+    }
+
+    try {
+      const mockReq = { body: { date: dateStr } };
+      const mockRes = { status: () => ({ json: () => {} }), json: () => {} };
+      await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
+    } catch (dailySheetErr) {
+      console.error('[RouteOptimizer:reset-vans] daily sheet sync error', dailySheetErr);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'All van routes cleared for the selected date',
+      date: dateStr,
+      trucksCleared,
+      tasksUnassigned: taskResult.modifiedCount || 0,
+      tippingUnassigned,
+      scope: hasTruckSelection ? 'selected_trucks' : 'all_trucks',
+    });
+  } catch (error) {
+    console.error('Route optimizer reset-vans-for-date error:', error);
+    return res.status(500).json({
+      message: 'Reset vans for date failed',
+      error: error.message,
+    });
+  }
+}
+
 module.exports = {
   calculateRoutesExternal,
   calculateRoutesExternalWithGroups,
@@ -2588,5 +2697,6 @@ module.exports = {
   discardRoutePreview,
   recalculateTruckRoute,
   requestBestTippingPlace,
-  refreshRoute
+  refreshRoute,
+  resetAllVansForDate,
 };
