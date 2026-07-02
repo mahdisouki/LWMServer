@@ -96,6 +96,7 @@ const BUSINESS_CUSTOMER_FILTER_FIELDS = [
   'createdAt',
   'orderNumber',
   'quotationId',
+  'trafficSource',
 ];
 const BUSINESS_CUSTOMER_SEARCH_FIELDS = [
   'firstName',
@@ -2046,7 +2047,7 @@ const taskCtrl = {
       const { data: tasks, meta } = await paginateQuery(
         Task,
         req.query,
-        ['paymentStatus', 'date', 'createdAt', 'orderNumber', 'quotationId'], // filters
+        ['paymentStatus', 'date', 'createdAt', 'orderNumber', 'quotationId', 'trafficSource'], // filters
         [
           'firstName',
           'lastName',
