@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 const { resolveIsBusinessEmail } = require('../utils/businessEmail');
+const { resolveTrafficSource } = require('../utils/trafficSource');
 const StandardItem = require('../models/StandardItem'); // Ajustez le chemin si nécessaire
 const Counter = require('./Counter');
 const DailySheet = require('./DailySheet');
@@ -291,6 +292,11 @@ const taskSchema = new Schema(
     gclid: { type: String, required: false },
     gbraid: { type: String, required: false },
     wbraid: { type: String, required: false },
+    trafficSource: {
+      type: String,
+      enum: ['Google Ads', 'Organic'],
+      default: 'Organic',
+    },
     googleAdsPurchaseConversionSentAt: { type: Date, required: false },
     googleAdsConversionError: { type: String, required: false },
   },
@@ -316,6 +322,12 @@ taskSchema.pre('save', function (next) {
     return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
   });
 
+  this.trafficSource = resolveTrafficSource({
+    gclid: this.gclid,
+    gbraid: this.gbraid,
+    wbraid: this.wbraid,
+  });
+
   // Validate items have proper pricing
   this.items.forEach((item, index) => {
     // If standardItemId is null, ensure item.price exists and is > 0
@@ -339,6 +351,24 @@ taskSchema.pre('save', function (next) {
 // Add pre-findOneAndUpdate middleware to clean up empty items
 taskSchema.pre('findOneAndUpdate', function (next) {
   const update = this.getUpdate();
+  const $set = update.$set || update;
+
+  if (
+    $set.gclid !== undefined
+    || $set.gbraid !== undefined
+    || $set.wbraid !== undefined
+  ) {
+    const trafficSource = resolveTrafficSource({
+      gclid: $set.gclid,
+      gbraid: $set.gbraid,
+      wbraid: $set.wbraid,
+    });
+    if (update.$set) {
+      update.$set.trafficSource = trafficSource;
+    } else {
+      update.trafficSource = trafficSource;
+    }
+  }
 
   // Check if items array is being updated
   if (update.$set && update.$set.items) {

@@ -10,6 +10,7 @@ const mongoose = require('mongoose');
 const Task = require('../models/Task');
 const QuotationRequest = require('../models/QuotationRequest');
 const { copyClickIdsFromQuotationToTask } = require('../services/quotationTaskMatchingService');
+const { resolveTrafficSource } = require('../utils/trafficSource');
 
 const PAID_STATUSES = ['Paid', 'partial_Paid'];
 
@@ -112,6 +113,7 @@ async function main() {
               ...(row.after.gclid ? { gclid: row.after.gclid } : {}),
               ...(row.after.gbraid ? { gbraid: row.after.gbraid } : {}),
               ...(row.after.wbraid ? { wbraid: row.after.wbraid } : {}),
+              trafficSource: resolveTrafficSource(row.after),
             },
           },
         );
