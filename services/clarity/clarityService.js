@@ -76,9 +76,8 @@ async function getTopPages(numOfDays = 3) {
 async function getTrafficSources(numOfDays = 3) {
   return fetchProjectLiveInsights({
     numOfDays,
-    dimension1: 'Source',
-    dimension2: 'Medium',
-    dimension3: 'Campaign',
+    dimension1: 'Channel',
+    dimension2: 'Source',
   });
 }
 

@@ -1,4 +1,13 @@
 const InterestTracking = require('../models/InterestTracking');
+const dashboardService = require('../services/analytics/dashboardService');
+const trafficOverviewService = require('../services/analytics/trafficOverviewService');
+const conversionFunnelService = require('../services/analytics/conversionFunnelService');
+const goalCompletionsService = require('../services/analytics/goalCompletionsService');
+const devicesService = require('../services/analytics/devicesService');
+const pagePerformanceService = require('../services/analytics/pagePerformanceService');
+const topPostcodesService = require('../services/analytics/topPostcodesService');
+const trafficSourcesService = require('../services/analytics/trafficSourcesService');
+const { getPageFilters } = require('../config/analyticsPageMap');
 
 const analyticsCtrl = {
   /**
@@ -253,7 +262,184 @@ const analyticsCtrl = {
         error: error.message
       });
     }
-  }
+  },
+
+  getDashboard: async (req, res) => {
+    try {
+      const data = await dashboardService.getDashboard({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        page: req.query.page || 'all',
+      });
+      res.status(200).json({
+        message: 'Analytics dashboard retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') || error.message.includes('Unknown') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load analytics dashboard',
+        error: error.message,
+      });
+    }
+  },
+
+  getDashboardPages: async (req, res) => {
+    try {
+      res.status(200).json({
+        message: 'Page filters retrieved successfully',
+        pages: getPageFilters(),
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to load page filters',
+        error: error.message,
+      });
+    }
+  },
+
+  getTrafficOverview: async (req, res) => {
+    try {
+      const data = await trafficOverviewService.getTrafficOverview({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Traffic overview retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load traffic overview',
+        error: error.message,
+      });
+    }
+  },
+
+  getConversionFunnel: async (req, res) => {
+    try {
+      const data = await conversionFunnelService.getConversionFunnel({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Conversion funnel retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load conversion funnel',
+        error: error.message,
+      });
+    }
+  },
+
+  getGoalCompletions: async (req, res) => {
+    try {
+      const data = await goalCompletionsService.getGoalCompletions({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Goal completions retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load goal completions',
+        error: error.message,
+      });
+    }
+  },
+
+  getDevices: async (req, res) => {
+    try {
+      const data = await devicesService.getDevices({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Device analytics retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load device analytics',
+        error: error.message,
+      });
+    }
+  },
+
+  getPagePerformance: async (req, res) => {
+    try {
+      const data = await pagePerformanceService.getPagePerformance({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Page performance retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load page performance',
+        error: error.message,
+      });
+    }
+  },
+
+  getTopPostcodes: async (req, res) => {
+    try {
+      const data = await topPostcodesService.getTopPostcodes({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        limit: req.query.limit,
+      });
+      res.status(200).json({
+        message: 'Top postcodes retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load top postcodes',
+        error: error.message,
+      });
+    }
+  },
+
+  getTrafficSources: async (req, res) => {
+    try {
+      const data = await trafficSourcesService.getTrafficSources({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        limit: req.query.limit,
+      });
+      res.status(200).json({
+        message: 'Traffic sources retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load traffic sources',
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = analyticsCtrl;
