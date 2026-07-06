@@ -1,11 +1,56 @@
+const crypto = require('crypto');
 const { User } = require('../models/User');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const Truck = require('../models/Truck');
+const { sendPasswordResetEmail } = require('../utils/sendPasswordResetEmail');
 require('dotenv').config();
 
+const GENERIC_FORGOT_PASSWORD_MESSAGE =
+  'If an account exists for this email, a password reset link has been sent.';
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function hashResetToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function generateResetToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function getResetExpiresAt() {
+  const minutes = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60);
+  const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 60;
+  return new Date(Date.now() + safeMinutes * 60 * 1000);
+}
+
+function getPasswordResetFrontendUrl(audience) {
+  const base = audience === 'driver'
+    ? (process.env.DRIVER_APP_URL || process.env.CLIENT_URL || 'http://localhost:5173')
+    : (process.env.BO_FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:5173');
+  return String(base).replace(/\/$/, '');
+}
+
+async function findUserForPasswordReset(email, audience) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) {
+    return null;
+  }
+
+  if (audience === 'driver') {
+    return User.findOne({
+      email: normalized,
+      role: { $in: ['Driver', 'Helper'] },
+    });
+  }
+
+  return User.findOne({ email: normalized, role: 'Admin' });
+}
 
 const generateAccessToken = (user) => {
   return jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
@@ -199,5 +244,92 @@ exports.logout = async (req, res) => {
   } catch (error) {
     console.error("Error during logout:", error);
     res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email, audience = 'admin' } = req.body;
+    const normalized = normalizeEmail(email);
+
+    if (!normalized) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    const resolvedAudience = audience === 'driver' ? 'driver' : 'admin';
+    const user = await findUserForPasswordReset(normalized, resolvedAudience);
+
+    if (user) {
+      const rawToken = generateResetToken();
+      user.passwordResetToken = hashResetToken(rawToken);
+      user.passwordResetExpires = getResetExpiresAt();
+      user.refreshToken = undefined;
+      await user.save();
+
+      const resetUrl = `${getPasswordResetFrontendUrl(resolvedAudience)}/reset-password?token=${rawToken}`;
+      await sendPasswordResetEmail({
+        to: user.email,
+        resetUrl,
+        firstName: user.firstName || user.username,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: GENERIC_FORGOT_PASSWORD_MESSAGE,
+    });
+  } catch (error) {
+    console.error('Error during forgot password:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword, confirmPassword } = req.body;
+
+    if (!token || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token, newPassword, and confirmPassword are required',
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Passwords do not match' });
+    }
+
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters',
+      });
+    }
+
+    const user = await User.findOne({
+      passwordResetToken: hashResetToken(token),
+      passwordResetExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset link. Please request a new one.',
+      });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.refreshToken = undefined;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password updated successfully. You can sign in with your new password.',
+    });
+  } catch (error) {
+    console.error('Error during reset password:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 };

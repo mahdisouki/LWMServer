@@ -1,6 +1,31 @@
 const Van = require('../models/Van');
 const APIfeatures = require('../utils/APIFeatures');
 
+function normalizeItemsInTruck(raw) {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw
+    .map((row) => ({
+      item: String(row?.item ?? '').trim(),
+      quantity: Math.max(0, Number(row?.quantity) || 0),
+      spaceOfVan: Math.max(0, Number(row?.spaceOfVan) || 0),
+    }))
+    .filter((row) => row.item && (row.quantity > 0 || row.spaceOfVan > 0));
+}
+
+function parseCurrentCapacity(value) {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) {
+    return null;
+  }
+  return Math.round(n * 100) / 100;
+}
+
 const vanCtrl = {
   createVan: async (req, res) => {
     try {
@@ -108,6 +133,59 @@ const vanCtrl = {
     } catch (error) {
       res.status(500).json({
         message: 'Failed to retrieve items in truck',
+        error: error.message,
+      });
+    }
+  },
+
+  updateVanItemsInTruck: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { currentCapacity, itemsInTruck } = req.body;
+
+      const van = await Van.findById(id);
+      if (!van) {
+        return res.status(404).json({ message: 'Van not found' });
+      }
+
+      const update = {};
+
+      if (itemsInTruck !== undefined) {
+        update.itemsInTruck = normalizeItemsInTruck(itemsInTruck);
+      }
+
+      if (currentCapacity !== undefined) {
+        const parsedCapacity = parseCurrentCapacity(currentCapacity);
+        if (parsedCapacity === null) {
+          return res.status(400).json({
+            message: 'currentCapacity must be a non-negative number',
+            error: 'INVALID_CURRENT_CAPACITY',
+          });
+        }
+        update.currentCapacity = parsedCapacity;
+      } else if (itemsInTruck !== undefined) {
+        const itemsSum = update.itemsInTruck.reduce(
+          (sum, row) => sum + (Number(row.spaceOfVan) || 0),
+          0,
+        );
+        update.currentCapacity = Math.round(itemsSum * 100) / 100;
+      }
+
+      const updatedVan = await Van.findByIdAndUpdate(
+        id,
+        { $set: update },
+        { new: true },
+      ).select('itemsInTruck currentCapacity matricule');
+
+      res.status(200).json({
+        message: 'Van load updated successfully',
+        itemsInTruck: updatedVan.itemsInTruck || [],
+        currentCapacity: updatedVan.currentCapacity ?? 0,
+        matricule: updatedVan.matricule,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to update van load',
         error: error.message,
       });
     }

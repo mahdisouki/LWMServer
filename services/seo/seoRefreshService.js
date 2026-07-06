@@ -14,6 +14,10 @@ const {
   computeSeoScore,
   scoreStatusFromScore,
 } = require('./seoAuditService');
+const {
+  syncContentGapsFromKeywords,
+  syncCompetitorMetricsFromProvider,
+} = require('./seoCompetitorService');
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -349,6 +353,10 @@ async function executeRefresh(jobId, siteUrl) {
     }
 
     const now = new Date();
+    const existingSnapshot = await SeoSiteSnapshot.findOne({ siteUrl }).lean();
+    const preservedKeyMetrics = existingSnapshot?.siteHealth?.keyMetrics || {};
+    const preservedDomainAuthority = existingSnapshot?.domainAuthority ?? null;
+
     await SeoSiteSnapshot.findOneAndUpdate(
       { siteUrl },
       {
@@ -358,6 +366,7 @@ async function executeRefresh(jobId, siteUrl) {
           liveMonitoring: true,
           lastRefreshedAt: now,
           refreshJobId: jobId,
+          domainAuthority: preservedDomainAuthority,
           siteHealth: {
             overallScore: seoScore,
             scoreStatus,
@@ -374,7 +383,7 @@ async function executeRefresh(jobId, siteUrl) {
               blocked: noindexCount,
             },
             keyMetrics: {
-              organicTrafficMonthly: null,
+              ...preservedKeyMetrics,
               sitemapPageCount: crawlResult.sitemapPageCount,
               crawledPageCount: crawlResult.pages.length,
             },
@@ -385,6 +394,14 @@ async function executeRefresh(jobId, siteUrl) {
       },
       { upsert: true },
     );
+
+    await job.updateOne({ progress: { step: 'competitors', percent: 92 } });
+    try {
+      await syncContentGapsFromKeywords(siteUrl, jobId);
+      await syncCompetitorMetricsFromProvider(siteUrl);
+    } catch (competitorError) {
+      console.warn('[SEO Refresh] Competitor sync skipped:', competitorError.message);
+    }
 
     await job.updateOne({
       status: 'completed',

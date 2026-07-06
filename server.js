@@ -45,6 +45,7 @@ connectToDatabase()
     require('./cron/dayOffUnitReminders');
     require('./cron/cleanupTaskPhotoUploads');
     require('./cron/updatePopularityScores');
+    require('./cron/syncClaritySnapshots');
   
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
@@ -218,6 +219,7 @@ const routeOptimizerRoutes = require('./routes/routeOptimizer');
 const vanRoutes = require('./routes/van');
 const tickRoutes = require('./routes/tick');
 const seoRoutes = require('./routes/seo');
+const clarityRoutes = require('./routes/clarity');
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app);
@@ -262,6 +264,7 @@ app.use('/api', vanRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/ticks', tickRoutes);
 app.use('/api/seo', seoRoutes);
+app.use('/api/clarity', clarityRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;

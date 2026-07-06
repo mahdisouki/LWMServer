@@ -99,4 +99,15 @@ router.post(
   routeOptimizerCtrl.requestBestTippingPlace
 );
 
+/**
+ * POST /api/route-optimizer/external/reset-vans-for-date
+ * Body: { date, truckIds? } — clears all truck routes for the date and unassigns tasks/tippings.
+ */
+router.post(
+  '/external/reset-vans-for-date',
+  isAuth,
+  checkRole('Admin'),
+  routeOptimizerCtrl.resetAllVansForDate
+);
+
 module.exports = router;

@@ -177,7 +177,7 @@ const updateDailySheetForTippingRequest = async (tippingRequest) => {
 const tippingController = {
   createTippingRequest: async (req, res) => {
     const userId = req.user._id;
-    const { notes, tipdate, emptyTipping } = req.body;
+    const { notes, tipdate, emptyTipping , isAiGenerated } = req.body;
 
     try {
       const user = await User.findById(userId);
@@ -201,6 +201,8 @@ const tippingController = {
         userId: userId,
         truckId: truck._id, // Set truckId when creating
         notes: notes,
+        isAiGenerated: isAiGenerated,
+        aiGeneratedAt: isAiGenerated ? Date.now() : null,
         status: 'Pending',
         tipdate: Date.now(), // Set tipdate to current date when created by non-admin
         emptyTipping: toBooleanOrUndefined(emptyTipping),
@@ -286,7 +288,7 @@ const tippingController = {
   createTippingRequestByAdmin: async (req, res) => {
     const adminId = req.user._id;
     // const { driverId, truckId, tippingPlace, notes, status } = req.body;
-    const { driverId, notes, status, tipdate, price, tippingPlace, isShipped, emptyTipping } = req.body;
+    const { driverId, notes, status, tipdate, price, tippingPlace, isShipped, emptyTipping, isAiGenerated } = req.body;
 
     // Handle file uploads for tipping proof
     let tippingProof = [];
@@ -332,6 +334,8 @@ const tippingController = {
         status: status,
         isShipped: isShipped,
         emptyTipping: toBooleanOrUndefined(emptyTipping),
+        isAiGenerated: toBooleanOrUndefined(isAiGenerated),
+        aiGeneratedAt: toBooleanOrUndefined(isAiGenerated) ? Date.now() : null,
         tipdate: tipdate || Date.now(), // Tip date set by admin, default to current date if not provided
         tippingProof: tippingProof.length > 0 ? tippingProof : undefined, // Tipping proof images from files
         price: price, // Price
@@ -370,6 +374,8 @@ const tippingController = {
           notes: newTippingRequest.notes,
           status: newTippingRequest.status,
           emptyTipping: newTippingRequest.emptyTipping,
+          isAiGenerated: newTippingRequest.isAiGenerated,
+          aiGeneratedAt: newTippingRequest.aiGeneratedAt,
           tipdate: newTippingRequest.tipdate,
           tippingProof: newTippingRequest.tippingProof,
           isShipped: newTippingRequest.isShipped,
