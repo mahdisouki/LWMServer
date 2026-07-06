@@ -1,6 +1,6 @@
 const axios = require('axios');
-const mongoose = require('mongoose');
 const ThreadClassification = require('../models/ThreadClassification');
+const Admin = require('../models/Admin');
 const { getCategoryLabel, GMAIL_AI_CATEGORIES } = require('../config/gmailCategories');
 const { getGmailAuth } = require('./gmailAuthHelper');
 const {
@@ -94,7 +94,7 @@ async function refreshThreadListSnapshot(adminId, threadId) {
   if (!snapshot) return null;
 
   const doc = await ThreadClassification.findOneAndUpdate(
-    { adminId, threadId },
+    { threadId },
     listSnapshotToMongoFields(snapshot),
     { new: true }
   ).lean();
@@ -107,7 +107,7 @@ async function refreshThreadListSnapshot(adminId, threadId) {
  */
 async function classifyAndStoreThread(adminId, threadId, options = {}) {
   const force = Boolean(options.force);
-  const existing = await ThreadClassification.findOne({ adminId, threadId }).lean();
+  const existing = await ThreadClassification.findOne({ threadId }).lean();
 
   if (
     !force &&
@@ -148,9 +148,8 @@ async function classifyAndStoreThread(adminId, threadId, options = {}) {
   }
 
   const doc = await ThreadClassification.findOneAndUpdate(
-    { adminId, threadId },
+    { threadId },
     {
-      adminId,
       threadId,
       messageId: classifyPayload.messageId,
       aiCategory,
@@ -166,13 +165,12 @@ async function classifyAndStoreThread(adminId, threadId, options = {}) {
   return formatClassificationDoc(doc);
 }
 
-async function getClassificationMapForThreads(adminId, threadIds = []) {
+async function getClassificationMapForThreads(_adminId, threadIds = []) {
   const ids = [...new Set(threadIds.filter(Boolean))];
   const map = new Map();
   if (!ids.length) return map;
 
   const docs = await ThreadClassification.find({
-    adminId,
     threadId: { $in: ids },
   }).lean();
 
@@ -253,59 +251,54 @@ async function enrichNewMessagesWithAiCategory(adminId, messages = []) {
   return applyAiCategoryFields(messages, classMap);
 }
 
-/** All Gmail thread IDs that currently have unread mail. */
-async function fetchUnreadThreadIdSet(adminId) {
-  let gmail;
-  try {
-    gmail = await getGmailAuth(adminId);
-  } catch {
-    return new Set();
+/** Any admin with Gmail connected — for legacy snapshot backfill only. */
+async function resolveGmailAdminId(preferredAdminId) {
+  if (preferredAdminId) {
+    const preferred = await Admin.findById(preferredAdminId)
+      .select('gmailTokens')
+      .lean();
+    if (preferred?.gmailTokens?.access_token) {
+      return String(preferredAdminId);
+    }
   }
 
-  const ids = new Set();
-  let pageToken;
-  let pages = 0;
-  const maxPages = 20;
+  const fallback = await Admin.findOne({
+    'gmailTokens.access_token': { $exists: true, $ne: null },
+  })
+    .select('_id')
+    .lean();
 
-  do {
-    const res = await gmail.users.threads.list({
-      userId: 'me',
-      q: 'is:unread',
-      maxResults: 500,
-      pageToken,
-    });
-    for (const t of res.data.threads || []) {
-      if (t.id) ids.add(t.id);
-    }
-    pageToken = res.data.nextPageToken;
-    pages += 1;
-  } while (pageToken && pages < maxPages);
-
-  return ids;
+  return fallback?._id ? String(fallback._id) : preferredAdminId || null;
 }
 
-/** Per-category thread + unread counts (unread = classified thread still unread in Gmail). */
-async function listGmailCategories(adminId) {
-  const adminObjectId = new mongoose.Types.ObjectId(adminId);
-
-  const [grouped, unreadThreadIds] = await Promise.all([
-    ThreadClassification.aggregate([
-      {
-        $match: {
-          adminId: adminObjectId,
-          status: 'done',
-          aiCategory: { $exists: true, $nin: [null, ''] },
+/** Per-category thread + unread counts (global — all admins share classifications). */
+async function listGmailCategories() {
+  const grouped = await ThreadClassification.aggregate([
+    {
+      $match: {
+        status: 'done',
+        aiCategory: { $exists: true, $nin: [null, ''] },
+      },
+    },
+    { $sort: { internalDate: -1, updatedAt: -1 } },
+    {
+      $group: {
+        _id: '$threadId',
+        aiCategory: { $first: '$aiCategory' },
+        labelIds: { $first: '$labelIds' },
+      },
+    },
+    {
+      $group: {
+        _id: '$aiCategory',
+        threadCount: { $sum: 1 },
+        unreadCount: {
+          $sum: {
+            $cond: [{ $in: ['UNREAD', { $ifNull: ['$labelIds', []] }] }, 1, 0],
+          },
         },
       },
-      {
-        $group: {
-          _id: '$aiCategory',
-          threadCount: { $sum: 1 },
-          threadIds: { $addToSet: '$threadId' },
-        },
-      },
-    ]),
-    fetchUnreadThreadIdSet(adminId),
+    },
   ]);
 
   const statsBySlug = new Map(
@@ -313,16 +306,15 @@ async function listGmailCategories(adminId) {
       String(row._id),
       {
         threadCount: row.threadCount,
-        threadIds: row.threadIds || [],
+        unreadCount: row.unreadCount || 0,
       },
     ])
   );
 
   const categories = GMAIL_AI_CATEGORIES.map((c) => {
     const stats = statsBySlug.get(c.slug);
-    const threadIds = stats?.threadIds || [];
     const threadCount = stats?.threadCount || 0;
-    const unreadCount = threadIds.filter((id) => unreadThreadIds.has(id)).length;
+    const unreadCount = stats?.unreadCount || 0;
 
     return {
       id: c.slug,
@@ -342,7 +334,7 @@ async function listGmailCategories(adminId) {
     0
   );
 
-  return { categories, totalClassified, totalUnreadClassified };
+  return { categories, totalClassified, totalUnreadClassified, allAdmins: true };
 }
 
 function filterMessagesByAiCategory(messages, aiCategory) {
@@ -407,7 +399,7 @@ async function formatAiCategoryListMessageFromGmail(adminId, doc) {
   };
 
   await ThreadClassification.updateOne(
-    { adminId, threadId: doc.threadId },
+    { threadId: doc.threadId },
     listSnapshotToMongoFields(snapshot)
   );
 
@@ -419,14 +411,16 @@ async function formatAiCategoryListMessageFromGmail(adminId, doc) {
 }
 
 /**
- * List messages for an AI category from Mongo snapshots (no per-row Gmail calls).
+ * List messages for an AI category from Mongo snapshots (global, all admins).
  * pageToken is a numeric offset into classified threads (not a Gmail token).
  */
-async function listMessagesByAiCategory(adminId, options = {}) {
+async function listMessagesByAiCategory(options = {}) {
   const slug = String(options.aiCategory || '').trim().toLowerCase();
   if (!slug) {
-    return { messages: [], nextPageToken: null, resultSizeEstimate: 0 };
+    return { messages: [], nextPageToken: null, resultSizeEstimate: 0, allAdmins: true };
   }
+
+  const gmailAdminId = await resolveGmailAdminId(options.gmailAdminId);
 
   const limit = Math.min(Math.max(Number(options.maxResults) || 20, 1), 50);
   const offset = Math.max(0, parseInt(String(options.pageToken || ''), 10) || 0);
@@ -434,7 +428,6 @@ async function listMessagesByAiCategory(adminId, options = {}) {
   const includeSpamTrash = Boolean(options.includeSpamTrash);
 
   const filter = {
-    adminId,
     aiCategory: slug,
     status: 'done',
   };
@@ -445,6 +438,7 @@ async function listMessagesByAiCategory(adminId, options = {}) {
   }
 
   const messages = [];
+  const seenThreadIds = new Set();
   let cursor = offset;
   const batchSize = Math.max(limit, 10);
 
@@ -458,11 +452,15 @@ async function listMessagesByAiCategory(adminId, options = {}) {
     if (!docs.length) break;
 
     for (const doc of docs) {
+      if (seenThreadIds.has(doc.threadId)) continue;
+
       let row;
       if (docHasListSnapshot(doc)) {
         row = formatAiCategoryListMessageFromDoc(doc);
+      } else if (gmailAdminId) {
+        row = await formatAiCategoryListMessageFromGmail(gmailAdminId, doc);
       } else {
-        row = await formatAiCategoryListMessageFromGmail(adminId, doc);
+        row = formatAiCategoryListMessageFromDoc(doc);
       }
 
       if (!row) continue;
@@ -470,6 +468,7 @@ async function listMessagesByAiCategory(adminId, options = {}) {
         continue;
       }
 
+      seenThreadIds.add(doc.threadId);
       messages.push(row);
       if (messages.length >= limit) break;
     }
@@ -483,6 +482,7 @@ async function listMessagesByAiCategory(adminId, options = {}) {
     messages,
     nextPageToken,
     resultSizeEstimate: total,
+    allAdmins: true,
   };
 }
 

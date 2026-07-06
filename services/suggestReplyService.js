@@ -58,9 +58,8 @@ async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageCo
   };
 }
 
-async function getCategoryForThread(adminId, threadId) {
+async function getCategoryForThread(_adminId, threadId) {
   const classification = await ThreadClassification.findOne({
-    adminId,
     threadId,
     status: 'done',
   }).lean();
@@ -202,10 +201,7 @@ async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
   return {
     ...suggestion,
     inReplyToMessageId: ctx.messageId,
-    suggestReplyContext: {
-      message: payload.message,
-      thread: payload.thread,
-    },
+    suggestReplyContext: payload.thread,
   };
 }
 

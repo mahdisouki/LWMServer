@@ -11,30 +11,6 @@ const suggestReplyThreadRowSchema = new mongoose.Schema(
   { _id: false }
 );
 
-const suggestReplyMessageSchema = new mongoose.Schema(
-  {
-    id: { type: String, default: null },
-    messageId: { type: String, default: null },
-    threadId: { type: String, default: null },
-    from: { type: String, default: null },
-    to: { type: String, default: null },
-    subject: { type: String, default: null },
-    contentMain: { type: String, default: null },
-    direction: { type: String, default: null },
-    is_quotation_form: { type: Boolean, default: false },
-    aiCategory: { type: String, default: null },
-  },
-  { _id: false }
-);
-
-const suggestReplyContextSchema = new mongoose.Schema(
-  {
-    message: { type: suggestReplyMessageSchema, default: null },
-    thread: { type: [suggestReplyThreadRowSchema], default: [] },
-  },
-  { _id: false }
-);
-
 const emailReplyLogSchema = new mongoose.Schema(
   {
     adminId: {
@@ -53,9 +29,20 @@ const emailReplyLogSchema = new mongoose.Schema(
       index: true,
     },
     suggestedReplies: { type: [String], default: [] },
-    suggestReplyContext: { type: suggestReplyContextSchema, default: null },
+    suggestReplyContext: { type: [suggestReplyThreadRowSchema], default: [] },
     subject: { type: String, default: '' },
     to: { type: String, default: '' },
+    reply: { type: String, default: '' },
+    attachments: {
+      type: [
+        {
+          filename: { type: String, default: '' },
+          mimetype: { type: String, default: '' },
+          size: { type: Number, default: 0 },
+        },
+      ],
+      default: [],
+    },
     sentAt: { type: Date, required: true, index: true },
   },
   { timestamps: true }

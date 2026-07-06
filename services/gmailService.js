@@ -1702,7 +1702,13 @@ async function replyToEmail(
 
     console.log('Gmail API response:', res.data);
     console.log('=== REPLY EMAIL DEBUG END ===');
-  return res.data;
+    return {
+      ...res.data,
+      threadId,
+      subject: subjectLine,
+      to: toHeader,
+      reply: htmlContent,
+    };
   } catch (error) {
     console.error('=== REPLY EMAIL ERROR ===');
     console.error('Error details:', {

@@ -32,16 +32,27 @@ function normalizeReplySource(value) {
 }
 
 function normalizeSuggestReplyContext(value) {
-  const ctx = parseJsonField(value);
-  if (!ctx || typeof ctx !== 'object') return null;
+  const parsed = parseJsonField(value);
+  if (Array.isArray(parsed)) {
+    const thread = parsed.filter((row) => row && typeof row === 'object');
+    return thread.length ? thread : [];
+  }
+  if (parsed && typeof parsed === 'object' && Array.isArray(parsed.thread)) {
+    const thread = parsed.thread.filter((row) => row && typeof row === 'object');
+    return thread.length ? thread : [];
+  }
+  return [];
+}
 
-  const message =
-    ctx.message && typeof ctx.message === 'object' ? ctx.message : null;
-  const thread = Array.isArray(ctx.thread) ? ctx.thread : [];
-
-  if (!message && thread.length === 0) return null;
-
-  return { message, thread };
+function normalizeAttachments(files = []) {
+  if (!Array.isArray(files)) return [];
+  return files
+    .map((file) => ({
+      filename: String(file?.originalname || file?.filename || ''),
+      mimetype: String(file?.mimetype || ''),
+      size: Number(file?.size) || 0,
+    }))
+    .filter((a) => a.filename);
 }
 
 async function createReplyLog({
@@ -54,6 +65,8 @@ async function createReplyLog({
   suggestReplyContext,
   subject,
   to,
+  reply,
+  attachments,
   sentAt,
 }) {
   return EmailReplyLog.create({
@@ -66,6 +79,8 @@ async function createReplyLog({
     suggestReplyContext: normalizeSuggestReplyContext(suggestReplyContext),
     subject: String(subject || ''),
     to: String(to || ''),
+    reply: String(reply || ''),
+    attachments: normalizeAttachments(attachments),
     sentAt: sentAt || new Date(),
   });
 }
