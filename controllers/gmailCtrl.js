@@ -263,14 +263,15 @@ const gmailCtrl = {
       const categorySlug = aiCategory || ai_category;
 
       if (categorySlug) {
-        const result = await listMessagesByAiCategory(adminId, {
+        const result = await listMessagesByAiCategory({
           aiCategory: categorySlug,
           labelIds: parseCsvParam(labelIds),
           maxResults,
           pageToken,
           includeSpamTrash: includeSpamTrash === 'true',
+          gmailAdminId: adminId,
         });
-        return res.json({ success: true, ...result });
+        return res.json({ success: true, allAdmins: true, ...result });
       }
 
       const result = await listMessages(adminId, {
@@ -454,6 +455,9 @@ const gmailCtrl = {
       });
 
       const resolvedThreadId = threadId || result?.threadId;
+      const sentReply = result?.reply || contentMain || content || '';
+      const sentSubject = result?.subject || subject || '';
+      const sentTo = result?.to || to || '';
       let replyLog = null;
 
       if (result?.id && resolvedThreadId) {
@@ -466,8 +470,10 @@ const gmailCtrl = {
             replySource,
             suggestedReplies,
             suggestReplyContext,
-            subject,
-            to,
+            subject: sentSubject,
+            to: sentTo,
+            reply: sentReply,
+            attachments,
             sentAt: new Date(),
           });
         } catch (logError) {
@@ -478,10 +484,9 @@ const gmailCtrl = {
       res.json({
         success: true,
         message: 'Reply sent successfully',
-        subject: subject ?? '',
-        to: to ?? '',
-        content: content ?? '',
-        contentMain: contentMain ?? '',
+        subject: sentSubject,
+        to: sentTo,
+        reply: sentReply,
         data: result,
         replyLog,
       });
@@ -693,9 +698,10 @@ const gmailCtrl = {
   listGmailCategories: async (req, res) => {
     try {
       const { categories, totalClassified, totalUnreadClassified } =
-        await listGmailCategories(req.user._id);
+        await listGmailCategories();
       res.json({
         success: true,
+        allAdmins: true,
         categories,
         totalClassified,
         totalUnreadClassified,

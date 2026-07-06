@@ -2,13 +2,7 @@ const mongoose = require('mongoose');
 
 const threadClassificationSchema = new mongoose.Schema(
   {
-    adminId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Admin',
-      required: true,
-      index: true,
-    },
-    threadId: { type: String, required: true, trim: true },
+    threadId: { type: String, required: true, trim: true, unique: true },
     messageId: { type: String, default: null },
     aiCategory: { type: String, default: null },
     confidence: { type: Number, default: null },
@@ -33,9 +27,9 @@ const threadClassificationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-threadClassificationSchema.index({ adminId: 1, threadId: 1 }, { unique: true });
-threadClassificationSchema.index({ adminId: 1, aiCategory: 1 });
-threadClassificationSchema.index({ adminId: 1, aiCategory: 1, internalDate: -1 });
+threadClassificationSchema.index({ aiCategory: 1 });
+threadClassificationSchema.index({ aiCategory: 1, internalDate: -1 });
+threadClassificationSchema.index({ status: 1, aiCategory: 1, internalDate: -1 });
 
 module.exports = mongoose.model(
   'ThreadClassification',

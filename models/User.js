@@ -52,7 +52,9 @@ const userSchema = new mongoose.Schema({
   addressProof: { type: String },
   NatInsurance: { type: String },
   refreshToken: { type: String },
-  
+  passwordResetToken: { type: String },
+  passwordResetExpires: { type: Date },
+
   fcmToken: { type: String },
   apnsToken: { type: String }, // For backward compatibility
   totalHoursWorked: {

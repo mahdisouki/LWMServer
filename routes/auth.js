@@ -31,12 +31,16 @@ const {
     driverSignIn,
     refresh,
     logout,
+    forgotPassword,
+    resetPassword,
   } = require("../controllers/authCtrl");
 const { verifyRefreshToken, isAuth } = require("../middlewares/auth");
 
 
 router.post("/sign-in" , userSignIn);
 router.post("/driver-sign-in" , driverSignIn);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 router.post("/refresh" ,verifyRefreshToken, refresh);
 router.post("/logout" , isAuth, logout);
 
