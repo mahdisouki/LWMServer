@@ -411,7 +411,7 @@ const CLARITY_CHANNEL_LABELS = {
   Direct: 'Direct',
   Email: 'Email',
   AIPlatform: 'AI',
-  Other: 'Other',
+  Other: 'Other (Unclassified / Self-Referral)',
 };
 
 const CLARITY_CHANNEL_COLORS = {
@@ -468,7 +468,10 @@ function formatClarityChannelPlatform(channel, source) {
     return null;
   }
   if (channelKey === 'Other' && !sourceLower) {
-    return null;
+    return 'Mixed / Unknown';
+  }
+  if (channelKey === 'Other' && sourceLower.includes('londonwastemanagement.com')) {
+    return 'Self-referral (own domain)';
   }
   if (channelKey === 'PaidSearch' && sourceLower === 'google') {
     return 'Google Ads';
@@ -482,13 +485,26 @@ function formatClarityChannelPlatform(channel, source) {
   return null;
 }
 
+function resolveClarityChannel(channel, source) {
+  const channelKey = normalizeClarityChannel(channel);
+  const sourceLower = String(source || '').toLowerCase().trim();
+
+  // Clarity can report self-referrals as "Other"; treat own domain as Direct.
+  if (channelKey === 'Other' && sourceLower.includes('londonwastemanagement.com')) {
+    return 'Direct';
+  }
+
+  return channel;
+}
+
 function extractChannelSourceRows(trafficSourcesData) {
   const traffic = findMetric(trafficSourcesData, 'Traffic');
   const rows = [];
 
   for (const row of traffic?.information || []) {
-    const channel = String(row.Channel || row.channel || '').trim();
+    const rawChannel = String(row.Channel || row.channel || '').trim();
     const source = String(row.Source || row.source || '').trim();
+    const channel = resolveClarityChannel(rawChannel, source);
     const sessions = parseIntSafe(row.totalSessionCount);
     if (!channel || sessions <= 0) {
       continue;

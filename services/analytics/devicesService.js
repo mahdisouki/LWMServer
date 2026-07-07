@@ -4,8 +4,6 @@ const Task = require('../../models/Task');
 const { resolvePeriod } = require('./dashboardService');
 const { findMetric, parseIntSafe } = require('../../utils/clarityMetricsParser');
 
-const PAID_TASK_STATUSES = ['Paid', 'partial_Paid', 'partial_Refunded', 'refunded', 'On_Hold'];
-
 const DEVICE_BUCKETS = [
   { id: 'mobile', label: 'Mobile', clarityValues: ['Mobile'], color: 'blue' },
   { id: 'desktop', label: 'Desktop', clarityValues: ['PC'], color: 'green' },
@@ -82,8 +80,8 @@ async function getDevices({ preset, startDate, endDate } = {}) {
     }),
     Task.countDocuments({
       createdAt: { $gte: period.start, $lte: period.end },
-      paymentStatus: { $in: PAID_TASK_STATUSES },
-      taskStatus: { $ne: 'Cancelled' },
+      paymentStatus: { $ne: 'Failed' },
+      createdByType: 'public',
     }),
   ]);
 

@@ -8,8 +8,6 @@ const {
   SOURCE_LABELS,
 } = require('../../utils/clarityMetricsParser');
 
-const PAID_TASK_STATUSES = ['Paid', 'partial_Paid', 'partial_Refunded', 'refunded', 'On_Hold'];
-
 function startOfUtcDay(date) {
   const d = new Date(date);
   d.setUTCHours(0, 0, 0, 0);
@@ -42,8 +40,8 @@ async function loadOrdersAndRevenueByDay(start, end) {
     {
       $match: {
         createdAt: { $gte: start, $lte: end },
-        paymentStatus: { $in: PAID_TASK_STATUSES },
-        taskStatus: { $ne: 'Cancelled' },
+        paymentStatus: { $ne: 'Failed' },
+        createdByType: 'public',
       },
     },
     {
@@ -148,8 +146,8 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       pageViews: 'Clarity overview snapshots (PopularPages)',
       visitors: 'Clarity overview snapshots (distinctUserCount)',
       sources: 'Clarity traffic_sources snapshots (Channel + Source dimensions)',
-      orders: 'Task collection — paid bookings created per day',
-      revenue: 'Task collection — sum of totalPrice for paid bookings created per day',
+      orders: 'Task collection — public bookings with paymentStatus not Failed, created per day',
+      revenue: 'Task collection — sum of totalPrice for public bookings with paymentStatus not Failed, created per day',
     },
   };
 }

@@ -4,8 +4,6 @@ const QuotationRequest = require('../../models/QuotationRequest');
 const { resolvePeriod } = require('./dashboardService');
 const { findMetric, parseIntSafe } = require('../../utils/clarityMetricsParser');
 
-const PAID_TASK_STATUSES = ['Paid', 'partial_Paid', 'partial_Refunded', 'refunded', 'On_Hold'];
-
 const FUNNEL_STAGES = [
   { id: 'visitors', label: 'Website Visitors' },
   { id: 'pageEngagements', label: 'Page Engagements' },
@@ -96,8 +94,8 @@ async function getConversionFunnel({ preset, startDate, endDate } = {}) {
     countQuoteRequests(period.start, period.end),
     Task.countDocuments({
       createdAt: { $gte: period.start, $lte: period.end },
-      paymentStatus: { $in: PAID_TASK_STATUSES },
-      taskStatus: { $ne: 'Cancelled' },
+      paymentStatus: { $ne: 'Failed' },
+      createdByType: 'public',
     }),
   ]);
 
@@ -134,7 +132,7 @@ async function getConversionFunnel({ preset, startDate, endDate } = {}) {
       visitors: 'Clarity overview snapshots — distinctUserCount (summed per day)',
       pageEngagements: 'Clarity overview snapshots — sessions minus quick-back sessions with active time',
       quoteRequests: 'QuotationRequest collection',
-      confirmedOrders: 'Task collection — paid bookings created in period',
+      confirmedOrders: 'Task collection — public bookings with paymentStatus not Failed, created in period',
     },
   };
 }

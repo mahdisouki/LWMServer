@@ -2,7 +2,6 @@ const Task = require('../../models/Task');
 const QuotationRequest = require('../../models/QuotationRequest');
 const { resolvePeriod } = require('./dashboardService');
 
-const PAID_TASK_STATUSES = ['Paid', 'partial_Paid', 'partial_Refunded', 'refunded', 'On_Hold'];
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 50;
 
@@ -13,8 +12,8 @@ const BAR_COLORS = [
 
 const ORDER_MATCH = (start, end) => ({
   createdAt: { $gte: start, $lte: end },
-  paymentStatus: { $in: PAID_TASK_STATUSES },
-  taskStatus: { $ne: 'Cancelled' },
+  paymentStatus: { $ne: 'Failed' },
+  createdByType: 'public',
   postcode: { $exists: true, $nin: ['', null] },
 });
 
@@ -200,7 +199,7 @@ async function getTopPostcodes({ preset, startDate, endDate, limit = DEFAULT_LIM
     totals,
     limit: rowLimit,
     dataSources: {
-      orders: 'Task collection — paid orders aggregated by postcode outward code in MongoDB',
+      orders: 'Task collection — public orders with paymentStatus not Failed, aggregated by postcode outward code in MongoDB',
       quotes: 'QuotationRequest collection — quote counts for the returned postcode areas only',
       ranking: 'Postcode areas ranked by order count; only top N rows returned from the database',
     },
