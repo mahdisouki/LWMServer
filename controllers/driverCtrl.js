@@ -11,7 +11,7 @@ const Driver = require('../models/Driver');
 const { emitNotificationToUser, emitEvent } = require('../socket');
 const taskPhotoUploadService = require('../services/taskPhotoUploadService');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
-const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
+const { applyTruckStaffPopulate } = require('../utils/truckHelpers');
 const { processDriverLocationUpdate } = require('../services/proximityAutoStartService');
 const {
   findActivePayrollForDay,
@@ -169,11 +169,7 @@ async function getTruckForUser(userId) {
 }
 
 async function getAllTruckUserIds(truckId) {
-  const truck = await Truck.findById(truckId)
-    .populate('driverId')
-    .populate('helperId')
-    .populate('extraDrivers.driverId')
-    .populate('extraHelpers.helperId');
+  const truck = await applyTruckStaffPopulate(Truck.findById(truckId));
 
   if (!truck) return [];
 

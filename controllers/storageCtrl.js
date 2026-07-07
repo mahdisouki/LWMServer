@@ -7,6 +7,7 @@ const { User } = require('../models/User');
 const Driver = require('../models/Driver');
 const jwt = require('jsonwebtoken');
 const loggingService = require('../services/loggingService');
+const { populateHelperId } = require('../utils/truckHelpers');
 const adminId = "67cb6810c9e768ec25d39523";
 
 // Helper function to get current available quantities for each item type
@@ -575,7 +576,8 @@ const storageCtrl = {
       const skip = (Number(page) - 1) * Number(limit);
 
       const storagesQuery = Storage.find(query)
-        .populate('driverId storagePlace truckId helperId')
+        .populate('driverId storagePlace truckId')
+        .populate(populateHelperId())
         .skip(skip)
         .limit(Number(limit))
         .sort({ date: -1, _id: -1 });
@@ -620,7 +622,9 @@ const storageCtrl = {
 
       if (driverId) query.driverId = driverId;
       if (storagePlace) query.storagePlace = storagePlace;
-      const storagesQuery = Storage.find(query).populate('driverId storagePlace truckId helperId');
+      const storagesQuery = Storage.find(query)
+        .populate('driverId storagePlace truckId')
+        .populate(populateHelperId());
       const total = await Storage.countDocuments();
 
       const skip = (page - 1) * limit;
@@ -943,7 +947,8 @@ const storageCtrl = {
 
       const skip = (Number(page) - 1) * Number(limit);
       const storagesQuery = Storage.find(query)
-        .populate('driverId helperId truckId storagePlace')
+        .populate('driverId truckId storagePlace')
+        .populate(populateHelperId())
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit));

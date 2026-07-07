@@ -51,6 +51,7 @@ const {
   buildSeenByEntry,
   getRoomUnreadCount,
 } = require('./utils/chatMessageHelpers');
+const { applyTruckStaffPopulate } = require('./utils/truckHelpers');
 
 // Helper function to find truck for a user (including extra drivers/helpers)
 async function findTruckForUser(userId) {
@@ -75,11 +76,7 @@ async function findTruckForUser(userId) {
 
 // Helper function to get all user IDs for a truck (drivers + helpers, including extra)
 async function getAllTruckUserIds(truckId) {
-  const truck = await Truck.findById(truckId)
-    .populate('driverId')
-    .populate('helperId')
-    .populate('extraDrivers.driverId')
-    .populate('extraHelpers.helperId');
+  const truck = await applyTruckStaffPopulate(Truck.findById(truckId));
   
   if (!truck) return [];
   
@@ -326,10 +323,10 @@ const initSocket = (server) => {
         console.log(`Room ${roomId} now has ${roomSockets.length} sockets:`, roomSockets.map(s => s.id));
 
         // Get truck information for context
-        const truck = await Truck.findById(roomId)
-          .populate('driverId helperId', 'username picture')
-          .populate('extraDrivers.driverId', 'username picture')
-          .populate('extraHelpers.helperId', 'username picture');
+        const truck = await applyTruckStaffPopulate(
+          Truck.findById(roomId),
+          'username picture',
+        );
         if (truck) {
           socket.emit('roomInfo', {
             roomId,
@@ -368,12 +365,10 @@ const initSocket = (server) => {
         }
 
         // Get all trucks with their driver and helper info
-        const trucks = await Truck.find()
-          .populate('driverId', 'username picture')
-          .populate('helperId', 'username picture')
-          .populate('extraDrivers.driverId', 'username picture')
-          .populate('extraHelpers.helperId', 'username picture')
-          .select('_id driverId helperId extraDrivers extraHelpers');
+        const trucks = await applyTruckStaffPopulate(
+          Truck.find().select('_id driverId helperId extraDrivers extraHelpers'),
+          'username picture',
+        );
 
         const rooms = trucks.map(truck => ({
           roomId: truck._id,

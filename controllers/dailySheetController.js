@@ -7,6 +7,7 @@ const APIfeatures = require('../utils/APIFeatures');
 const Truck = require('../models/Truck');
 const { User } = require('../models/User');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
+const { populateHelperId } = require('../utils/truckHelpers');
 const Payroll = require('../models/Payroll');
 const Expense = require('../models/Expense');
 const { recalculatePayrollExpenses } = require('./expenseController');
@@ -276,7 +277,8 @@ const dailySheetController = {
         { driverId, date, ...(req.body.truckId && { truckId: req.body.truckId }) },
         updates,
         { new: true },
-      ).populate('driverId truckId vanId helperId jobsDone jobsPending jobsCancelled tippingRequests');
+      ).populate('driverId truckId vanId jobsDone jobsPending jobsCancelled tippingRequests')
+        .populate(populateHelperId());
 
       if (!dailySheet) {
         return res.status(404).json({ message: 'Daily sheet not found' });

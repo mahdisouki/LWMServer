@@ -3,7 +3,7 @@ const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const Admin = require('../models/Admin');
 const Truck = require('../models/Truck');
-const { findTruckByTruckName } = require('../utils/truckHelpers');
+const { findTruckByTruckName, isHelperUser } = require('../utils/truckHelpers');
 const bcrypt = require('bcrypt');
 const socket = require('../socket'); // Ensure you have the correct path to your socket module
 const APIfeatures = require('../utils/APIFeatures');
@@ -559,6 +559,10 @@ const staffManagement = {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
+      if (!helper || !isHelperUser(helper)) {
+        return res.status(404).json({ message: 'Helper not found' });
+      }
+
       if (truck.helperId) {
         return res
           .status(400)
@@ -700,13 +704,13 @@ const staffManagement = {
 
     try {
       const truck = await findTruckByTruckName(truckName);
-      const helper = await Helper.findById(helperId);
+      const helper = await User.findById(helperId);
 
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
-      if (!helper) {
+      if (!helper || !isHelperUser(helper)) {
         return res.status(404).json({ message: 'Helper not found' });
       }
 
