@@ -3,10 +3,26 @@ const { SNAPSHOT_TYPES } = require('../../models/ClaritySnapshot');
 const { isClarityEnabled } = require('../../config/clarityConfig');
 const clarityService = require('./clarityService');
 
+const CLARITY_CRON_TIMEZONE = 'Europe/London';
+
 function startOfUtcDay(date) {
   const d = new Date(date);
   d.setUTCHours(0, 0, 0, 0);
   return d;
+}
+
+function startOfTimeZoneDay(date, timeZone) {
+  // Convert a JS Date into a YYYY-MM-DD in the target time zone, then store
+  // snapshotDate as 00:00:00Z of that same labeled day. This keeps Mongo ranges
+  // consistent with the dashboard's YYYY-MM-DD date filters.
+  const dayKey = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date); // YYYY-MM-DD
+
+  return new Date(`${dayKey}T00:00:00.000Z`);
 }
 
 function endOfUtcDay(date) {
@@ -27,7 +43,7 @@ async function syncDailySnapshots({ snapshotDate = new Date() } = {}) {
     throw new Error('Clarity is not configured');
   }
 
-  const dayStart = startOfUtcDay(snapshotDate);
+  const dayStart = startOfTimeZoneDay(snapshotDate, CLARITY_CRON_TIMEZONE);
   const fetchedAt = new Date();
   const results = [];
 

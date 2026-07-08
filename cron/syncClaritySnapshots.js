@@ -3,7 +3,7 @@ const { syncDailySnapshots } = require('../services/clarity/claritySnapshotServi
 const { isClarityEnabled } = require('../config/clarityConfig');
 
 const CLARITY_CRON_TIMEZONE = 'Europe/London';
-const CLARITY_CRON_EXPRESSION = '30 23 * * *';
+const CLARITY_CRON_EXPRESSION = '59 23 * * *';
 
 async function runClaritySnapshotSync(reason = 'scheduled') {
   if (!isClarityEnabled()) {
@@ -23,7 +23,7 @@ async function runClaritySnapshotSync(reason = 'scheduled') {
   }
 }
 
-// Daily at 11:30 PM (Europe/London by default)
+// Daily at 11:59 PM (Europe/London by default)
 cron.schedule(CLARITY_CRON_EXPRESSION, () => runClaritySnapshotSync('scheduled'), {
   timezone: CLARITY_CRON_TIMEZONE,
 });
