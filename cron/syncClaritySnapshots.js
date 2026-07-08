@@ -2,7 +2,8 @@ const cron = require('node-cron');
 const { syncDailySnapshots } = require('../services/clarity/claritySnapshotService');
 const { isClarityEnabled } = require('../config/clarityConfig');
 
-const CLARITY_CRON_TIMEZONE = process.env.CLARITY_CRON_TIMEZONE || 'Europe/London';
+const CLARITY_CRON_TIMEZONE = 'Europe/London';
+const CLARITY_CRON_EXPRESSION = '30 23 * * *';
 
 async function runClaritySnapshotSync(reason = 'scheduled') {
   if (!isClarityEnabled()) {
@@ -22,13 +23,13 @@ async function runClaritySnapshotSync(reason = 'scheduled') {
   }
 }
 
-// Daily at 6:00 AM (Europe/London by default)
-cron.schedule('0 6 * * *', () => runClaritySnapshotSync('scheduled'), {
+// Daily at 11:30 PM (Europe/London by default)
+cron.schedule(CLARITY_CRON_EXPRESSION, () => runClaritySnapshotSync('scheduled'), {
   timezone: CLARITY_CRON_TIMEZONE,
 });
 
 console.log(
-  `[Clarity Snapshot] Scheduler running — daily sync at 6:00 AM (${CLARITY_CRON_TIMEZONE})`,
+  `[Clarity Snapshot] Scheduler running — daily sync (${CLARITY_CRON_EXPRESSION}, ${CLARITY_CRON_TIMEZONE})`,
 );
 
 module.exports = { runClaritySnapshotSync };

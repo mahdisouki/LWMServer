@@ -1,5 +1,17 @@
 const clarityService = require('../services/clarity/clarityService');
 const claritySnapshotService = require('../services/clarity/claritySnapshotService');
+const ClarityManualSync = require('../models/ClarityManualSync');
+
+const CLARITY_CRON_TIMEZONE = process.env.CLARITY_CRON_TIMEZONE || 'Europe/London';
+
+function dayKeyInTimeZone(date, timeZone) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
 
 const clarityCtrl = {
   getOverview: async (req, res) => {
@@ -77,16 +89,38 @@ const clarityCtrl = {
 
   triggerSync: async (req, res) => {
     try {
+      const dayKey = dayKeyInTimeZone(new Date(), CLARITY_CRON_TIMEZONE);
+      const existingManualSync = await ClarityManualSync.findOne({ dayKey }).select('_id createdAt').lean();
+      if (existingManualSync) {
+        return res.status(429).json({
+          message: `Manual sync already used for ${dayKey} (${CLARITY_CRON_TIMEZONE})`,
+          dayKey,
+        });
+      }
+
       const snapshotDate = req.body?.snapshotDate ? new Date(req.body.snapshotDate) : new Date();
       if (Number.isNaN(snapshotDate.getTime())) {
         return res.status(400).json({ message: 'Invalid snapshotDate' });
       }
       const result = await claritySnapshotService.syncDailySnapshots({ snapshotDate });
+      await ClarityManualSync.create({
+        dayKey,
+        timezone: CLARITY_CRON_TIMEZONE,
+        snapshotDate: result.snapshotDate,
+        synced: result.synced,
+        triggeredBy: req.user?._id || null,
+      });
       res.status(200).json({
         message: 'Clarity snapshots synced successfully',
         ...result,
       });
     } catch (error) {
+      if (error?.code === 11000) {
+        return res.status(429).json({
+          message: 'Manual sync already used for today',
+          timezone: CLARITY_CRON_TIMEZONE,
+        });
+      }
       res.status(500).json({ message: 'Failed to sync Clarity snapshots', error: error.message });
     }
   },
