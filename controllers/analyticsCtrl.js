@@ -211,7 +211,13 @@ const analyticsCtrl = {
                 businessDate: '$_id.businessDate'
               }
             },
-            total: { $sum: '$count' }
+            total: { $sum: '$count' },
+            sundayClicks: {
+              $sum: { $cond: [{ $eq: ['$_id.type', 'sunday_click'] }, '$count', 0] },
+            },
+            nightSlotClicks: {
+              $sum: { $cond: [{ $eq: ['$_id.type', 'night_slot_click'] }, '$count', 0] },
+            },
           }
         },
         { $sort: { _id: -1 } }
@@ -232,7 +238,9 @@ const analyticsCtrl = {
               createdAtDate: '$_id',
               businessDates: 1,
               clicks: 1,
-              total: 1
+              total: 1,
+              sundayClicks: 1,
+              nightSlotClicks: 1,
             }
           }
         ])
