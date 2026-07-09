@@ -1,6 +1,7 @@
 const Task = require('../../models/Task');
 const QuotationRequest = require('../../models/QuotationRequest');
 const { resolvePeriod } = require('./dashboardService');
+const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
 
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 50;
@@ -32,16 +33,6 @@ const POSTCODE_PREFIX_PROJECT = {
     },
   },
 };
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
 
 function roundPercent(value) {
   return Math.round(value * 100) / 100;
@@ -172,8 +163,7 @@ async function getTopPostcodes({ preset, startDate, endDate, limit = DEFAULT_LIM
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
     badge: {
       label: 'Postcode areas',

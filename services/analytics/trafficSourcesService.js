@@ -1,5 +1,6 @@
 const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const { resolvePeriod } = require('./dashboardService');
+const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
 const {
   CATEGORY_COLORS,
   CLARITY_CHANNEL_COLORS,
@@ -16,16 +17,6 @@ const {
 
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 50;
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
 
 function roundPercent(value) {
   return Math.round(value * 100) / 100;
@@ -159,8 +150,7 @@ async function getTrafficSources({ preset, startDate, endDate, limit = DEFAULT_L
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
     snapshotCoverage: {
       daysInPeriod: snapshots.length,

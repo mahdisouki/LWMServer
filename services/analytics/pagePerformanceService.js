@@ -1,6 +1,7 @@
 const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const { PAGE_FILTERS } = require('../../config/analyticsPageMap');
 const { resolvePeriod } = require('./dashboardService');
+const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
 const {
   findMetric,
   parseIntSafe,
@@ -11,16 +12,6 @@ const {
 } = require('../../utils/clarityMetricsParser');
 
 const TABLE_PAGES = PAGE_FILTERS.filter((page) => page.id !== 'all');
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
 
 function roundPercent(value) {
   return Math.round(value * 100) / 100;
@@ -118,8 +109,7 @@ async function getPagePerformance({ preset, startDate, endDate } = {}) {
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
     snapshotCoverage: {
       daysInPeriod: snapshots.length,

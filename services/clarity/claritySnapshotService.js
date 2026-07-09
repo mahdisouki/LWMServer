@@ -2,34 +2,12 @@ const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const { SNAPSHOT_TYPES } = require('../../models/ClaritySnapshot');
 const { isClarityEnabled } = require('../../config/clarityConfig');
 const clarityService = require('./clarityService');
+const {
+  startOfTimeZoneDay,
+  parseDateInput,
+} = require('../../utils/analyticsDateRange');
 
-const CLARITY_CRON_TIMEZONE = 'Europe/London';
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function startOfTimeZoneDay(date, timeZone) {
-  // Convert a JS Date into a YYYY-MM-DD in the target time zone, then store
-  // snapshotDate as 00:00:00Z of that same labeled day. This keeps Mongo ranges
-  // consistent with the dashboard's YYYY-MM-DD date filters.
-  const dayKey = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date); // YYYY-MM-DD
-
-  return new Date(`${dayKey}T00:00:00.000Z`);
-}
-
-function endOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(23, 59, 59, 999);
-  return d;
-}
+const CLARITY_CRON_TIMEZONE = process.env.CLARITY_CRON_TIMEZONE || 'Europe/London';
 
 const SNAPSHOT_FETCHERS = [
   { snapshotType: 'overview', fetch: () => clarityService.getOverview(1) },
@@ -87,17 +65,11 @@ async function getSnapshotHistory({
   if (startDate || endDate) {
     filter.snapshotDate = {};
     if (startDate) {
-      const start = startOfUtcDay(new Date(startDate));
-      if (Number.isNaN(start.getTime())) {
-        throw new Error('Invalid startDate');
-      }
+      const start = parseDateInput(startDate, false);
       filter.snapshotDate.$gte = start;
     }
     if (endDate) {
-      const end = endOfUtcDay(new Date(endDate));
-      if (Number.isNaN(end.getTime())) {
-        throw new Error('Invalid endDate');
-      }
+      const end = parseDateInput(endDate, true);
       filter.snapshotDate.$lte = end;
     }
   }

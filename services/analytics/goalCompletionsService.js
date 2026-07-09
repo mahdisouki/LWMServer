@@ -1,21 +1,17 @@
 const QuotationRequest = require('../../models/QuotationRequest');
 const ContactRequest = require('../../models/ContactRequest');
 const { resolvePeriod } = require('./dashboardService');
+const {
+  ANALYTICS_TIMEZONE,
+  toDateString,
+  eachDayKeyInPeriod,
+  getPeriodLabels,
+} = require('../../utils/analyticsDateRange');
 
 const GOAL_TYPES = [
   { id: 'quoteRequests', label: 'Quote Requests', color: 'orange' },
   { id: 'contactForms', label: 'Contact Forms', color: 'blue' },
 ];
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
 
 async function countByDay(Model, start, end) {
   const rows = await Model.aggregate([
@@ -27,7 +23,11 @@ async function countByDay(Model, start, end) {
     {
       $group: {
         _id: {
-          $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' },
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$createdAt',
+            timezone: ANALYTICS_TIMEZONE,
+          },
         },
         count: { $sum: 1 },
       },
@@ -38,22 +38,15 @@ async function countByDay(Model, start, end) {
   return new Map(rows.map((row) => [row._id, row.count]));
 }
 
-function buildDailySeries(start, end, quoteByDay, contactByDay) {
-  const daily = [];
-  const cursor = startOfUtcDay(start);
-  const endDay = startOfUtcDay(end);
-
-  while (cursor <= endDay) {
-    const date = toDateString(cursor);
-    daily.push({
-      date,
-      quoteRequests: quoteByDay.get(date) || 0,
-      contactForms: contactByDay.get(date) || 0,
-    });
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
-  }
-
-  return daily;
+function buildDailySeries(start, end, quoteByDay, contactByDay, period = {}) {
+  return eachDayKeyInPeriod(start, end, {
+    startKey: period.startKey,
+    endKey: period.endKey,
+  }).map((date) => ({
+    date,
+    quoteRequests: quoteByDay.get(date) || 0,
+    contactForms: contactByDay.get(date) || 0,
+  }));
 }
 
 async function getGoalCompletions({ preset, startDate, endDate } = {}) {
@@ -64,7 +57,7 @@ async function getGoalCompletions({ preset, startDate, endDate } = {}) {
     countByDay(ContactRequest, period.start, period.end),
   ]);
 
-  const daily = buildDailySeries(period.start, period.end, quoteByDay, contactByDay);
+  const daily = buildDailySeries(period.start, period.end, quoteByDay, contactByDay, period);
 
   const totals = daily.reduce(
     (acc, day) => ({
@@ -77,8 +70,7 @@ async function getGoalCompletions({ preset, startDate, endDate } = {}) {
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
     goalTypes: GOAL_TYPES,
     daily,

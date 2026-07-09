@@ -1,22 +1,13 @@
 const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const Task = require('../../models/Task');
 const { resolvePeriod } = require('./dashboardService');
+const { ANALYTICS_TIMEZONE, toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
 const {
   extractOverviewTrafficSeries,
   extractSnapshotSourceBreakdown,
   getTopSourceLabel,
   SOURCE_LABELS,
 } = require('../../utils/clarityMetricsParser');
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
 
 function emptySourceBreakdown() {
   return {
@@ -47,7 +38,11 @@ async function loadOrdersAndRevenueByDay(start, end) {
     {
       $group: {
         _id: {
-          $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' },
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$createdAt',
+            timezone: ANALYTICS_TIMEZONE,
+          },
         },
         orders: { $sum: 1 },
         revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
@@ -122,8 +117,7 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
     snapshotCoverage: {
       daysInPeriod: overviewSnapshots.length,

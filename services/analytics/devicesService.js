@@ -2,6 +2,7 @@ const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const QuotationRequest = require('../../models/QuotationRequest');
 const Task = require('../../models/Task');
 const { resolvePeriod } = require('./dashboardService');
+const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
 const { findMetric, parseIntSafe } = require('../../utils/clarityMetricsParser');
 
 const DEVICE_BUCKETS = [
@@ -9,16 +10,6 @@ const DEVICE_BUCKETS = [
   { id: 'desktop', label: 'Desktop', clarityValues: ['PC'], color: 'green' },
   { id: 'tablet', label: 'Tablet', clarityValues: ['Tablet'], color: 'orange' },
 ];
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
 
 function roundPercent(value) {
   return Math.round(value * 100) / 100;
@@ -108,8 +99,7 @@ async function getDevices({ preset, startDate, endDate } = {}) {
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
     snapshotCoverage: {
       daysInPeriod: deviceSnapshots.length,

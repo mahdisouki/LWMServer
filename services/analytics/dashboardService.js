@@ -8,66 +8,12 @@ const {
   formatDuration,
   percentChange,
 } = require('../../utils/clarityMetricsParser');
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function endOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(23, 59, 59, 999);
-  return d;
-}
-
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
-
-function parseDateInput(value, endOfDay = false) {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) {
-    throw new Error(`Invalid date: ${value}`);
-  }
-  return endOfDay ? endOfUtcDay(d) : startOfUtcDay(d);
-}
-
-function resolvePeriod({ preset, startDate, endDate } = {}) {
-  const now = new Date();
-  let start;
-  let end = endOfUtcDay(now);
-
-  if (startDate && endDate) {
-    start = parseDateInput(startDate, false);
-    end = parseDateInput(endDate, true);
-  } else {
-    const daysMap = { today: 1, '7d': 7, '30d': 30, '90d': 90 };
-    const key = preset || '30d';
-    const days = daysMap[key];
-    if (!days) {
-      throw new Error('preset must be one of: today, 7d, 30d, 90d');
-    }
-    start = startOfUtcDay(now);
-    start.setUTCDate(start.getUTCDate() - (days - 1));
-  }
-
-  if (start > end) {
-    throw new Error('startDate must be before or equal to endDate');
-  }
-
-  return { start, end, preset: preset || (startDate ? 'custom' : '30d') };
-}
-
-function getPreviousPeriod(start, end) {
-  const durationMs = end.getTime() - start.getTime();
-  const prevEnd = new Date(start.getTime() - 1);
-  const prevStart = new Date(prevEnd.getTime() - durationMs);
-  return {
-    start: startOfUtcDay(prevStart),
-    end: endOfUtcDay(prevEnd),
-  };
-}
+const {
+  toDateString,
+  resolvePeriod,
+  getPreviousPeriod,
+  getPeriodLabels,
+} = require('../../utils/analyticsDateRange');
 
 async function countQuoteRequests(start, end) {
   return QuotationRequest.countDocuments({
@@ -79,13 +25,13 @@ async function loadClarityMetricsForPeriod(start, end, pageFilter) {
   const [overviewSnapshots, topPagesSnapshots] = await Promise.all([
     ClaritySnapshot.find({
       snapshotType: 'overview',
-      snapshotDate: { $gte: startOfUtcDay(start), $lte: endOfUtcDay(end) },
+      snapshotDate: { $gte: start, $lte: end },
     }).sort({ snapshotDate: 1 }).lean(),
     pageFilter.id === 'all'
       ? Promise.resolve([])
       : ClaritySnapshot.find({
         snapshotType: 'top_pages',
-        snapshotDate: { $gte: startOfUtcDay(start), $lte: endOfUtcDay(end) },
+        snapshotDate: { $gte: start, $lte: end },
       }).sort({ snapshotDate: 1 }).lean(),
   ]);
 
@@ -233,7 +179,10 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
   }
 
   const period = resolvePeriod({ preset, startDate, endDate });
-  const previousPeriod = getPreviousPeriod(period.start, period.end);
+  const previousPeriod = getPreviousPeriod(period.start, period.end, {
+    startKey: period.startKey,
+    endKey: period.endKey,
+  });
   const quotesApplicable = pageFilterTracksQuotes(pageFilter);
 
   const quoteQueries = quotesApplicable
@@ -273,13 +222,9 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
-    previousPeriod: {
-      startDate: toDateString(previousPeriod.start),
-      endDate: toDateString(previousPeriod.end),
-    },
+    previousPeriod: getPeriodLabels(previousPeriod),
     page: {
       id: pageFilter.id,
       label: pageFilter.label,
