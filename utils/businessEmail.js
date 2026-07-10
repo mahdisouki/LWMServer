@@ -5,6 +5,8 @@ const FREE_EMAIL_DOMAINS = [
   'googlemail.co.uk',
   'yahoo.com',
   'yahoo.co.uk',
+  'ymail.com',
+  'ymail.co.uk',
   'hotmail.com',
   'hotmail.co.uk',
   'outlook.com',
