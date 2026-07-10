@@ -9,9 +9,9 @@ const serviceCategoryCtrl = {
       if (!req.file) {
         return res.status(400).json({ message: 'Icon image is required' });
       }
-      const { name, topDescription, bottomDescription } = req.body;
+      const { name, topDescription, bottomDescription , description } = req.body;
       const icon = req.file.path;
-      const newServiceCategory = new ServiceCategory({ name, icon, topDescription, bottomDescription });
+      const newServiceCategory = new ServiceCategory({ name, icon, topDescription, bottomDescription, description });
       await newServiceCategory.save();
 
       // Create a log of the service category creation
@@ -87,7 +87,7 @@ const serviceCategoryCtrl = {
 
   updateServiceCategory: async (req, res) => {
     const { id } = req.params;
-    const { name, topDescription, bottomDescription } = req.body;
+    const { name, topDescription, bottomDescription, description } = req.body;
     try {
       const oldServiceCategory = await ServiceCategory.findById(id);
       if (!oldServiceCategory) {
@@ -97,7 +97,7 @@ const serviceCategoryCtrl = {
 
       const updatedServiceCategory = await ServiceCategory.findByIdAndUpdate(
         id,
-        { name, icon, topDescription, bottomDescription },
+        { name, icon, topDescription, bottomDescription, description },
         { new: true },
       );
 
