@@ -86,6 +86,16 @@ const seoCtrl = {
     }
   },
 
+  getTopSearchKeywords: async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit, 10) || 10;
+      const data = await seoService.listTopSearchKeywords(siteUrlFromReq(req), { limit });
+      res.status(200).json(data);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to load top search keywords', error: error.message });
+    }
+  },
+
   trackKeyword: async (req, res) => {
     try {
       const { keyword, targetUrl } = req.body;

@@ -14,6 +14,7 @@ router.get('/audit/issues', ...admin, seoCtrl.getAuditIssues);
 router.get('/audit/issues/:id', ...admin, seoCtrl.getAuditIssueById);
 
 router.get('/keywords/summary', ...admin, seoCtrl.getKeywordsSummary);
+router.get('/keywords/top-search', ...admin, seoCtrl.getTopSearchKeywords);
 router.get('/keywords', ...admin, seoCtrl.getKeywords);
 router.post('/keywords/track', ...admin, seoCtrl.trackKeyword);
 router.delete('/keywords/:id', ...admin, seoCtrl.deleteKeyword);
