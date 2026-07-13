@@ -51,7 +51,6 @@ function accumulateTopPagesSnapshot(accumulator, data) {
     }
 
     const sessions = parseIntSafe(row.totalSessionCount);
-    const views = Math.round(sessions * parseFloatSafe(row.pagesPerSessionPercentage || 1));
     const engagementRow = engagementByUrl.get(url);
     const quickbackRow = quickbackByUrl.get(url);
 
@@ -61,7 +60,7 @@ function accumulateTopPagesSnapshot(accumulator, data) {
       }
 
       const bucket = accumulator[pageFilter.id];
-      bucket.views += views;
+      bucket.views += sessions;
       bucket.sessions += sessions;
       bucket.weightedActiveTime += parseIntSafe(engagementRow?.activeTime) * sessions;
       bucket.weightedQuickExit += parseFloatSafe(quickbackRow?.sessionsWithMetricPercentage) * sessions;
@@ -120,7 +119,7 @@ async function getPagePerformance({ preset, startDate, endDate } = {}) {
     columns: ['page', 'views', 'avgTime', 'quickExitPercent'],
     rows,
     dataSources: {
-      views: 'Clarity top_pages snapshots — visits per URL grouped by site section',
+      views: 'Clarity top_pages snapshots — totalSessionCount per URL (sessions/visitors that hit matching pages), summed for the period',
       avgTime: 'Clarity top_pages snapshots — active time per URL',
       quickExitPercent: 'Clarity top_pages snapshots — quick-back % (proxy for bounce)',
     },

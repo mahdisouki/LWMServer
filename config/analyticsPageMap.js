@@ -17,9 +17,16 @@ const PAGE_FILTERS = [
   {
     id: QUOTE_PAGE_ID,
     label: 'Request A Quote',
-    pathLabel: '/order-checkout/',
-    pathPatterns: ['^/order-checkout', '^/request-a-quote', '^/quote'],
+    pathLabel: '/quote/',
+    pathPatterns: ['^/quote', '^/request-a-quote'],
     tracksQuotes: true,
+  },
+  {
+    id: 'orders',
+    label: 'Orders',
+    pathLabel: '/order-checkout/',
+    pathPatterns: ['^/order-checkout'],
+    tracksQuotes: false,
   },
   {
     id: 'moving-services',
