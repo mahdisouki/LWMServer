@@ -1,7 +1,7 @@
 const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const Task = require('../../models/Task');
 const { resolvePeriod } = require('./dashboardService');
-const { ANALYTICS_TIMEZONE, toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
+const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
 const {
   extractOverviewTrafficSeries,
   extractSnapshotSourceBreakdown,
@@ -41,7 +41,7 @@ async function loadOrdersAndRevenueByDay(start, end) {
           $dateToString: {
             format: '%Y-%m-%d',
             date: '$createdAt',
-            timezone: ANALYTICS_TIMEZONE,
+            timezone: 'UTC',
           },
         },
         orders: { $sum: 1 },
@@ -140,8 +140,8 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       pageViews: 'Clarity overview snapshots (PopularPages)',
       visitors: 'Clarity overview snapshots (distinctUserCount)',
       sources: 'Clarity traffic_sources snapshots (Channel + Source dimensions)',
-      orders: 'Task collection — public bookings with paymentStatus not Failed, created per day',
-      revenue: 'Task collection — sum of totalPrice for public bookings with paymentStatus not Failed, created per day',
+      orders: 'Task collection — public bookings with paymentStatus not Failed, created per UTC day',
+      revenue: 'Task collection — sum of totalPrice for public bookings with paymentStatus not Failed, created per UTC day',
     },
   };
 }
