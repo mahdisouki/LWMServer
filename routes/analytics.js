@@ -18,5 +18,6 @@ router.get('/devices', ...admin, analyticsCtrl.getDevices);
 router.get('/page-performance', ...admin, analyticsCtrl.getPagePerformance);
 router.get('/top-postcodes', ...admin, analyticsCtrl.getTopPostcodes);
 router.get('/traffic-sources', ...admin, analyticsCtrl.getTrafficSources);
+router.get('/admin-orders', ...admin, analyticsCtrl.getAdminOrders);
 
 module.exports = router;

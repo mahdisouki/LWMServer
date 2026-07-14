@@ -7,6 +7,7 @@ const devicesService = require('../services/analytics/devicesService');
 const pagePerformanceService = require('../services/analytics/pagePerformanceService');
 const topPostcodesService = require('../services/analytics/topPostcodesService');
 const trafficSourcesService = require('../services/analytics/trafficSourcesService');
+const adminOrdersService = require('../services/analytics/adminOrdersService');
 const { getPageFilters } = require('../config/analyticsPageMap');
 
 const analyticsCtrl = {
@@ -444,6 +445,30 @@ const analyticsCtrl = {
       const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
       res.status(status).json({
         message: 'Failed to load traffic sources',
+        error: error.message,
+      });
+    }
+  },
+
+  getAdminOrders: async (req, res) => {
+    try {
+      const data = await adminOrdersService.getAdminOrders({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Admin order analytics retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid')
+        || error.message.includes('preset')
+        || error.message.includes('startDate')
+        ? 400
+        : 500;
+      res.status(status).json({
+        message: 'Failed to load admin order analytics',
         error: error.message,
       });
     }
