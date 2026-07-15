@@ -1,5 +1,6 @@
 const seoService = require('../services/seo/seoRefreshService');
 const competitorService = require('../services/seo/seoCompetitorService');
+const { getTopSearchKeywords } = require('../services/topSearchKeywordsService');
 const { getSiteUrl } = require('../config/seoConfig');
 
 function siteUrlFromReq(req) {
@@ -89,10 +90,26 @@ const seoCtrl = {
   getTopSearchKeywords: async (req, res) => {
     try {
       const limit = parseInt(req.query.limit, 10) || 10;
-      const data = await seoService.listTopSearchKeywords(siteUrlFromReq(req), { limit });
+      const data = await getTopSearchKeywords({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        limit,
+      });
       res.status(200).json(data);
     } catch (error) {
-      res.status(500).json({ message: 'Failed to load top search keywords', error: error.message });
+      const status = error.message.includes('not enabled')
+        || error.message.includes('not configured')
+        || error.message.includes('must be')
+        || error.message.includes('Invalid date')
+        || error.message.includes('startDate')
+        || error.message.includes('preset')
+        ? 400
+        : 500;
+      res.status(status).json({
+        message: 'Failed to load top search keywords',
+        error: error.message,
+      });
     }
   },
 
