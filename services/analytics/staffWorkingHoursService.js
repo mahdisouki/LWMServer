@@ -91,27 +91,26 @@ function buildDailyMap(dailyRows) {
   const byDate = new Map();
 
   for (const row of dailyRows) {
-    const dateKey = row._id.date;
-    const roleType = row._id.roleType;
+    const dateKey = row.date;
 
     if (!byDate.has(dateKey)) {
       byDate.set(dateKey, {
         date: dateKey,
-        shiftCount: 0,
-        totalHours: 0,
-        drivers: { shiftCount: 0, totalHours: 0 },
-        helpers: { shiftCount: 0, totalHours: 0 },
+        staff: [],
       });
     }
 
-    const day = byDate.get(dateKey);
-    const hours = roundHours(row.totalHours);
-    day.shiftCount += row.shiftCount;
-    day.totalHours = roundHours(day.totalHours + hours);
+    byDate.get(dateKey).staff.push({
+      userId: row.userId,
+      username: row.username || 'Unknown',
+      roleType: row.roleType,
+      shiftCount: row.shiftCount,
+      totalHours: roundHours(row.totalHours),
+    });
+  }
 
-    const roleKey = roleType === 'Driver' ? 'drivers' : 'helpers';
-    day[roleKey].shiftCount += row.shiftCount;
-    day[roleKey].totalHours = roundHours(day[roleKey].totalHours + hours);
+  for (const day of byDate.values()) {
+    day.staff.sort((a, b) => b.totalHours - a.totalHours || a.username.localeCompare(b.username));
   }
 
   return byDate;
@@ -122,35 +121,7 @@ function buildDailySeries(period, dailyMap) {
 
   return dayKeys.map((date) => {
     const day = dailyMap.get(date);
-    if (!day) {
-      return {
-        date,
-        shiftCount: 0,
-        totalHours: 0,
-        avgHoursPerShift: 0,
-        drivers: { shiftCount: 0, totalHours: 0, avgHoursPerShift: 0 },
-        helpers: { shiftCount: 0, totalHours: 0, avgHoursPerShift: 0 },
-      };
-    }
-
-    return {
-      ...day,
-      avgHoursPerShift: day.shiftCount > 0
-        ? roundHours(day.totalHours / day.shiftCount)
-        : 0,
-      drivers: {
-        ...day.drivers,
-        avgHoursPerShift: day.drivers.shiftCount > 0
-          ? roundHours(day.drivers.totalHours / day.drivers.shiftCount)
-          : 0,
-      },
-      helpers: {
-        ...day.helpers,
-        avgHoursPerShift: day.helpers.shiftCount > 0
-          ? roundHours(day.helpers.totalHours / day.helpers.shiftCount)
-          : 0,
-      },
-    };
+    return day || { date, staff: [] };
   });
 }
 
@@ -185,7 +156,7 @@ async function aggregateStaffWorkingHours(start, end) {
             },
           },
         ],
-        byDayAndRole: [
+        byDayAndStaff: [
           {
             $group: {
               _id: {
@@ -211,16 +182,17 @@ async function aggregateStaffWorkingHours(start, end) {
             },
           },
           {
-            $group: {
-              _id: {
-                date: '$_id.date',
-                roleType: '$user.roleType',
-              },
-              shiftCount: { $sum: '$shiftCount' },
-              totalHours: { $sum: '$totalHours' },
+            $project: {
+              _id: 0,
+              date: '$_id.date',
+              userId: '$_id.userId',
+              username: '$user.username',
+              roleType: '$user.roleType',
+              shiftCount: 1,
+              totalHours: 1,
             },
           },
-          { $sort: { '_id.date': 1 } },
+          { $sort: { date: 1, totalHours: -1, username: 1 } },
         ],
       },
     },
@@ -228,7 +200,7 @@ async function aggregateStaffWorkingHours(start, end) {
 
   return {
     staffRows: result?.byStaff || [],
-    dailyRows: result?.byDayAndRole || [],
+    dailyRows: result?.byDayAndStaff || [],
   };
 }
 
@@ -272,13 +244,15 @@ async function getStaffWorkingHours({
     chartHints: {
       driverBarChart: 'Use drivers.segments[].username as label, drivers.segments[].avgHoursPerShift as value',
       helperBarChart: 'Use helpers.segments[].username as label, helpers.segments[].avgHoursPerShift as value',
-      colors: 'Use segments[].color for consistent bar colors',
+      dailyLineChart: 'Use dailyBreakdown[].staff[] — one series per userId, totalHours per date',
+      colors: 'Use segments[].color for consistent bar/line colors',
     },
     dataSources: {
       payroll: 'Payroll collection — completed shifts only (endTime set, totalHoursWorked > 0)',
       grouping: 'Grouped by userId; split into Driver and Helper via User.roleType',
       dateFilter: 'Filtered by shift start timestamp (Payroll.startTime)',
       avgHoursPerShift: 'Average of totalHoursWorked across completed shifts in the selected period',
+      dailyBreakdown: 'Grouped by date + userId — totalHoursWorked summed per person per day',
     },
   };
 }
