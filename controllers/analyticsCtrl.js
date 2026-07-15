@@ -1,5 +1,6 @@
 const InterestTracking = require('../models/InterestTracking');
 const dashboardService = require('../services/analytics/dashboardService');
+const { resolvePeriod } = dashboardService;
 const trafficOverviewService = require('../services/analytics/trafficOverviewService');
 const conversionFunnelService = require('../services/analytics/conversionFunnelService');
 const goalCompletionsService = require('../services/analytics/goalCompletionsService');
@@ -71,6 +72,7 @@ const analyticsCtrl = {
    * Get aggregated analytics data
    * GET /api/analytics/interest-analytics
    * Query params:
+   * - preset: today | 7d | 30d | 90d (optional, filters createdAt like Website Analytics)
    * - date: single business date (optional)
    * - startDate, endDate: createdAt date range (optional)
    * - type: sundays | night_shift (optional, supports comma-separated values)
@@ -78,7 +80,7 @@ const analyticsCtrl = {
    */
   getInterestAnalytics: async (req, res) => {
     try {
-      const { date, startDate, endDate, type } = req.query;
+      const { date, startDate, endDate, type, preset } = req.query;
       const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 200);
       const skip = (page - 1) * limit;
@@ -130,7 +132,18 @@ const analyticsCtrl = {
         matchFilter.date = { $gte: dayStart, $lte: dayEnd };
       }
 
-      if (startDate || endDate) {
+      if (preset || (startDate && endDate)) {
+        let period;
+        try {
+          period = resolvePeriod({ preset, startDate, endDate });
+        } catch (error) {
+          return res.status(400).json({
+            message: 'Invalid period filter',
+            error: error.message,
+          });
+        }
+        matchFilter.createdAt = { $gte: period.start, $lte: period.end };
+      } else if (startDate || endDate) {
         matchFilter.createdAt = {};
         if (startDate) {
           const createdStart = new Date(startDate);
