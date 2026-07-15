@@ -169,6 +169,9 @@ router.post('/item',
 // Get all standard items
 router.get('/items', standardItemCtrl.getAllStandardItems);
 
+// Export visible items (name + price) as CSV or PDF
+router.get('/items/export', standardItemCtrl.exportVisibleItems);
+
 // Get items by category
 router.get('/items/category/:category', standardItemCtrl.getItemsByCategory);
 

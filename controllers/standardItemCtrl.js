@@ -16,6 +16,10 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const paypal = require('@paypal/checkout-server-sdk');
 const { PayPalClient } = require('../services/paymentService.js');
 const loggingService = require('../services/loggingService');
+const {
+  VISIBLE_ITEMS_FILTER,
+  buildVisibleItemsCsv,
+} = require('../utils/standardItemsExport');
 
 const standardItemCtrl = {
   createStandardItem: async (req, res) => {
@@ -803,6 +807,35 @@ const standardItemCtrl = {
       console.error('Error updating categories:', error);
     }
   },
+  /**
+   * GET /api/standard/items/export
+   * Name and price for all non-hidden standard items (CSV).
+   */
+  exportVisibleItems: async (req, res) => {
+    try {
+      const items = await StandardItem.find(VISIBLE_ITEMS_FILTER)
+        .select('itemName price')
+        .sort({ itemName: 1 })
+        .lean();
+
+      const timestamp = new Date().toISOString().slice(0, 10);
+      const baseName = `visible-items-${timestamp}`;
+      const csv = buildVisibleItemsCsv(items);
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${baseName}.csv"`,
+      );
+      res.send(csv);
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to export visible items',
+        error: error.message,
+      });
+    }
+  },
+
   // Add this after getStandardItemById
   getStandardItemBySlug: async (req, res) => {
     const { slug } = req.params;
