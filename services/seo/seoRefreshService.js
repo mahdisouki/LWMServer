@@ -194,6 +194,9 @@ async function listKeywords(siteUrl = getSiteUrl(), options = {}) {
       id: k._id.toString(),
       keyword: k.keyword,
       volume: k.volume,
+      clicks: k.clicks,
+      impressions: k.impressions,
+      ctr: k.ctr,
       keywordDifficulty: k.keywordDifficulty,
       position: k.position,
       positionChange: k.positionChange,
@@ -208,6 +211,31 @@ async function listKeywords(siteUrl = getSiteUrl(), options = {}) {
       limit,
       total,
       count: rows.length,
+    },
+  };
+}
+
+async function listTopSearchKeywords(siteUrl = getSiteUrl(), options = {}) {
+  const limit = Math.min(Math.max(1, options.limit || 10), 50);
+
+  const rows = await SeoKeyword.find({ siteUrl, source: 'gsc' })
+    .sort({ clicks: -1 })
+    .limit(limit)
+    .lean();
+
+  return {
+    keywords: rows.map((k) => ({
+      keyword: k.keyword,
+      clicks: k.clicks ?? 0,
+      impressions: k.impressions ?? k.volume ?? 0,
+      ctr: k.ctr ?? null,
+      position: k.position ?? null,
+    })),
+    meta: {
+      limit,
+      count: rows.length,
+      periodDays: 28,
+      source: 'gsc',
     },
   };
 }
@@ -338,7 +366,10 @@ async function executeRefresh(jobId, siteUrl) {
             $set: {
               siteUrl,
               keyword: row.keyword.toLowerCase(),
-              volume: row.volume,
+              volume: row.volume ?? row.impressions,
+              clicks: row.clicks,
+              impressions: row.impressions,
+              ctr: row.ctr,
               position: row.position,
               isSuggestion: true,
               isTracked: false,
@@ -431,6 +462,7 @@ module.exports = {
   getAuditIssueById,
   getKeywordsSummary,
   listKeywords,
+  listTopSearchKeywords,
   trackKeyword,
   deleteKeyword,
   runRefresh,

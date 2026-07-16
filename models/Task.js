@@ -593,6 +593,7 @@ taskSchema.index({ taskStatus: 1, paymentStatus: 1, finishDate: 1 });
 taskSchema.index({ isBusinessEmail: 1, createdAt: -1 });
 
 taskSchema.index({ trafficSource: 1, createdAt: -1 });
+taskSchema.index({ createdByType: 1, createdAt: -1 });
 
 const Task = mongoose.model("Task", taskSchema);
 module.exports = Task;

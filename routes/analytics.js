@@ -18,5 +18,7 @@ router.get('/devices', ...admin, analyticsCtrl.getDevices);
 router.get('/page-performance', ...admin, analyticsCtrl.getPagePerformance);
 router.get('/top-postcodes', ...admin, analyticsCtrl.getTopPostcodes);
 router.get('/traffic-sources', ...admin, analyticsCtrl.getTrafficSources);
+router.get('/admin-orders', ...admin, analyticsCtrl.getAdminOrders);
+router.get('/staff-working-hours', ...admin, analyticsCtrl.getStaffWorkingHours);
 
 module.exports = router;
