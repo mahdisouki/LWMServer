@@ -12,6 +12,7 @@ const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
 const { logUnitAssignment } = require('../services/unitAssignmentLogService');
 const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
+const { sanitizePermissions } = require('../config/permissionModules');
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -137,6 +138,7 @@ const staffManagement = {
       } else if (role === 'Admin') {
         const parsedPermissions =
           typeof permissions === 'string' ? JSON.parse(permissions) : permissions;
+        const sanitizedPermissions = sanitizePermissions(parsedPermissions);
         newUser = new Admin({
           username,
           email,
@@ -157,7 +159,7 @@ const staffManagement = {
           signedStarterForm: signedStarterFormUrl,
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
-          permissions: parsedPermissions || {},
+          permissions: sanitizedPermissions,
           isStillWorking,
           terminationReason,
         });
@@ -354,6 +356,10 @@ const staffManagement = {
         } catch (e) {
           return res.status(400).json({ message: 'Invalid permissions format. Must be JSON.' });
         }
+      }
+
+      if (oldUser.roleType === 'Admin' && updateData.permissions !== undefined) {
+        updateData.permissions = sanitizePermissions(updateData.permissions);
       }
 
       if (updateData.role && typeof updateData.role === 'string') {
