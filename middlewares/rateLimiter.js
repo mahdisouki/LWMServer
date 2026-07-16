@@ -130,11 +130,37 @@ const paymentLinkTokenLimiter = rateLimit({
   },
 });
 
+// Login rate limiter: 3 failed attempts, then wait 5 minutes
+const LOGIN_WINDOW_MS = 5 * 60 * 1000;
+const loginLimiter = rateLimit({
+  windowMs: LOGIN_WINDOW_MS,
+  max: 3,
+  message: 'Too many login attempts. Please try again in 5 minutes.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Successful logins do not count
+  skipFailedRequests: false,
+  keyGenerator: (req) => {
+    const ip = getRealIP(req);
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    return email ? `${ip}:${email}` : ip;
+  },
+  handler: (req, res, next, options) => {
+    const retryAfterSeconds = Math.ceil(LOGIN_WINDOW_MS / 1000);
+    return res.status(options.statusCode).json({
+      success: false,
+      message: options.message,
+      retryAfter: retryAfterSeconds,
+    });
+  },
+});
+
 module.exports = {
   apiLimiter,
   strictLimiter,
   formLimiter,
   paymentLinkIpLimiter,
   paymentLinkTokenLimiter,
+  loginLimiter,
 };
 
