@@ -17,6 +17,7 @@ async function sendScheduledWasteTransferNotes() {
       paymentStatus: 'Paid',
       wasteTransferNoteSent: { $ne: true },
       email: { $exists: true, $ne: null, $ne: '' },
+      createdBy: { $ne: 'MigrationScript' }, // Exclude CSV-migrated orders
     }).sort({ finishDate: 1, createdAt: 1 });
 
     console.log(`[Send WTN] Found ${tasksToProcess.length} completed paid tasks to process`);
