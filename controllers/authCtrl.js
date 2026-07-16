@@ -6,6 +6,8 @@ const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const Truck = require('../models/Truck');
 const { sendPasswordResetEmail } = require('../utils/sendPasswordResetEmail');
+const loggingService = require('../services/loggingService');
+const sessionService = require('../services/sessionService');
 require('dotenv').config();
 
 const GENERIC_FORGOT_PASSWORD_MESSAGE =
@@ -84,7 +86,23 @@ exports.userSignIn = async (req, res) => {
     const token = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
     user.refreshToken = refreshToken;
+    await sessionService.createSession({ user, refreshToken, req });
     await user.save();
+
+    try {
+      await loggingService.createLog({
+        userId: user._id,
+        username: user.username,
+        action: 'LOGIN',
+        entityType: 'USER',
+        entityId: user._id,
+        changes: { role: user.roleType || user.role?.[0], via: 'sign-in' },
+        ipAddress: sessionService.getRealIP(req),
+        userAgent: req.headers['user-agent'],
+      });
+    } catch (logError) {
+      console.error('Failed to write LOGIN log:', logError);
+    }
 
     let startTime = null;
     let truck = null;
@@ -148,7 +166,23 @@ exports.driverSignIn = async (req, res) => {
     const token = generateAccessToken(driver);
     const refreshToken = generateRefreshToken(driver);
     driver.refreshToken = refreshToken;
+    await sessionService.createSession({ user: driver, refreshToken, req });
     await driver.save();
+
+    try {
+      await loggingService.createLog({
+        userId: driver._id,
+        username: driver.username,
+        action: 'LOGIN',
+        entityType: 'USER',
+        entityId: driver._id,
+        changes: { role: driver.roleType || driver.role?.[0], via: 'driver-sign-in' },
+        ipAddress: sessionService.getRealIP(req),
+        userAgent: req.headers['user-agent'],
+      });
+    } catch (logError) {
+      console.error('Failed to write LOGIN log:', logError);
+    }
 
     let startTime = null;
     let truck = null;
@@ -210,6 +244,10 @@ exports.refresh = async (req, res) => {
 
     const newToken = generateAccessToken(user);
     const newRefreshToken = generateRefreshToken(user);
+    await sessionService.touchSession({
+      oldRefreshToken: refreshToken,
+      newRefreshToken,
+    });
     user.refreshToken = newRefreshToken;
     await user.save();
 
@@ -231,9 +269,32 @@ exports.logout = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    // Invalidate refresh token by clearing it
+    const previousRefresh = user.refreshToken;
+    if (previousRefresh) {
+      await sessionService.revokeSessionByRefreshToken(previousRefresh, {
+        revokedBy: user._id,
+      });
+    } else {
+      await sessionService.revokeAllForUser(user._id, { revokedBy: user._id });
+    }
+
     user.refreshToken = undefined;
     await user.save();
+
+    try {
+      await loggingService.createLog({
+        userId: user._id,
+        username: user.username,
+        action: 'LOGOUT',
+        entityType: 'USER',
+        entityId: user._id,
+        changes: { via: 'self-logout' },
+        ipAddress: sessionService.getRealIP(req),
+        userAgent: req.headers['user-agent'],
+      });
+    } catch (logError) {
+      console.error('Failed to write LOGOUT log:', logError);
+    }
 
     console.log(`User ${user._id} logged out successfully`);
 
@@ -264,6 +325,7 @@ exports.forgotPassword = async (req, res) => {
       user.passwordResetToken = hashResetToken(rawToken);
       user.passwordResetExpires = getResetExpiresAt();
       user.refreshToken = undefined;
+      await sessionService.revokeAllForUser(user._id);
       await user.save();
 
       const resetUrl = `${getPasswordResetFrontendUrl(resolvedAudience)}/reset-password?token=${rawToken}`;
@@ -322,6 +384,7 @@ exports.resetPassword = async (req, res) => {
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     user.refreshToken = undefined;
+    await sessionService.revokeAllForUser(user._id);
     await user.save();
 
     res.status(200).json({

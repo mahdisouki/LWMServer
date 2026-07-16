@@ -52,6 +52,8 @@ const userSchema = new mongoose.Schema({
   addressProof: { type: String },
   NatInsurance: { type: String },
   refreshToken: { type: String },
+  lastLoginAt: { type: Date },
+  lastLoginIp: { type: String },
   passwordResetToken: { type: String },
   passwordResetExpires: { type: Date },
 

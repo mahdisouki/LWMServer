@@ -220,6 +220,7 @@ const vanRoutes = require('./routes/van');
 const tickRoutes = require('./routes/tick');
 const seoRoutes = require('./routes/seo');
 const clarityRoutes = require('./routes/clarity');
+const networkRouter = require('./routes/network');
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app);
@@ -265,6 +266,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/ticks', tickRoutes);
 app.use('/api/seo', seoRoutes);
 app.use('/api/clarity', clarityRoutes);
+app.use('/api', networkRouter);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;

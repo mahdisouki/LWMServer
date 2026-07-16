@@ -1264,6 +1264,9 @@ const staffManagement = {
 
       await userToLogout.save();
 
+      const sessionService = require('../services/sessionService');
+      await sessionService.revokeAllForUser(userId, { revokedBy: req.user._id });
+
       // Get socket instance and emit logout event before disconnecting
       const { getIo, disconnectUser } = require('../socket');
       let disconnected = false;
