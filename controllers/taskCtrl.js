@@ -2300,7 +2300,7 @@ const taskCtrl = {
         },
       })
         .select(
-          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority _id items',
+          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority _id items postcode',
         )
         .populate('items.standardItemId', 'itemName')
         .sort({ createdAt: -1 })

@@ -593,7 +593,7 @@ async function resolveCompareRoutesExternal({
 }
 
 async function resolveAutoRoutes(basePayload) {
-  const url = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`;
+  const url = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/grouped-routes`;
   const { data, status } = await postExternalOptimizer(url, basePayload);
   const hasRoutes = data != null && data.routes != null && typeof data.routes === 'object';
   const externalOk = hasRoutes && (status === 200 || data.success === true);
@@ -1069,7 +1069,7 @@ async function calculateRoutesExternal(req, res) {
     }
     console.log("payload", payload);
     const { data, status } = await axios.post(
-      `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`,
+      `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/grouped-routes`,
       payload,
       {
         timeout: 120000,
