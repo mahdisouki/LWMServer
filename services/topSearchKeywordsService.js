@@ -21,7 +21,7 @@ async function getSearchConsoleClient() {
 
 /**
  * Live Top Search Keywords from Google Search Console.
- * keyword + impressions + position only.
+ * keyword + impressions + clicks + ctr + position.
  */
 async function getTopSearchKeywords({
   preset,
@@ -57,6 +57,8 @@ async function getTopSearchKeywords({
     .map((row) => ({
       keyword: row.keys[0],
       impressions: row.impressions,
+      clicks: row.clicks,
+      ctr: Math.round(row.ctr * 10000) / 100,
       position: Math.round(row.position * 10) / 10,
     }))
     .sort((a, b) => b.impressions - a.impressions);
