@@ -7340,6 +7340,7 @@ const taskCtrl = {
       console.error('Error stack:', error.stack);
       const knownBadRequestMessages = new Set([
         'Task not found',
+        'Retargeting email is not available for migrated orders',
         'This feature is only available for public orders',
         'This feature is only available for orders with failed payment status',
         'Customer email is required to send retargeting email',

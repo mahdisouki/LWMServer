@@ -16,6 +16,7 @@ async function hasAnyNonFailedTaskForEmail(email) {
   const count = await Task.countDocuments({
     email: emailExactCi,
     paymentStatus: { $ne: 'Failed' },
+    createdBy: { $ne: 'MigrationScript' }, // Ignore CSV-migrated orders
   });
   return count > 0;
 }
@@ -34,6 +35,10 @@ async function sendRetargetingEmailForTask(taskId, options = {}) {
   const task = await Task.findById(taskId).populate('items.standardItemId');
   if (!task) {
     throw new Error('Task not found');
+  }
+
+  if (task.createdBy === 'MigrationScript') {
+    throw new Error('Retargeting email is not available for migrated orders');
   }
 
   if (task.createdByType !== 'public') {
