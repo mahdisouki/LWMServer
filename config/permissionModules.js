@@ -4,6 +4,7 @@ const MODULES = [
   'Dashboard',
   'Staff',
   'Orders',
+  'Business_Customers',
   'Driver_Tracking',
   'Payroll',
   'Chat',
