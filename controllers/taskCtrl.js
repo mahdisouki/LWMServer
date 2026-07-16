@@ -2047,7 +2047,7 @@ const taskCtrl = {
       const { data: tasks, meta } = await paginateQuery(
         Task,
         req.query,
-        ['paymentStatus', 'date', 'createdAt', 'orderNumber', 'quotationId', 'trafficSource'], // filters
+        ['paymentStatus', 'taskStatus', 'date', 'createdAt', 'orderNumber', 'quotationId', 'trafficSource'], // filters
         [
           'firstName',
           'lastName',
