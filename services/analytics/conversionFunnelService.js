@@ -2,8 +2,10 @@ const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const Task = require('../../models/Task');
 const QuotationRequest = require('../../models/QuotationRequest');
 const { resolvePeriod } = require('./dashboardService');
-const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
-const { findMetric, parseIntSafe } = require('../../utils/clarityMetricsParser');
+const { getPeriodLabels } = require('../../utils/analyticsDateRange');
+const { isGa4Enabled } = require('../../config/ga4Config');
+const { findMetric, parseIntSafe, parseDistinctUserCount } = require('../../utils/clarityMetricsParser');
+const { fetchPeriodTraffic } = require('./ga4Service');
 
 const FUNNEL_STAGES = [
   { id: 'visitors', label: 'Website Visitors' },
@@ -25,7 +27,7 @@ function extractEngagedSessions(overviewData) {
   const engagementInfo = engagement?.information?.[0] || {};
   const quickbackInfo = quickback?.information?.[0] || {};
 
-  const visitors = parseIntSafe(trafficInfo.distinctUserCount);
+  const visitors = parseDistinctUserCount(trafficInfo);
   const sessions = parseIntSafe(trafficInfo.totalSessionCount);
   const activeTimeSeconds = parseIntSafe(engagementInfo.activeTime);
   const quickbackSessions = Math.round(
@@ -77,7 +79,7 @@ function buildFunnelSteps(counts) {
 async function getConversionFunnel({ preset, startDate, endDate } = {}) {
   const period = resolvePeriod({ preset, startDate, endDate });
 
-  const [overviewSnapshots, quoteRequests, confirmedOrders] = await Promise.all([
+  const [overviewSnapshots, quoteRequests, confirmedOrders, ga4Period] = await Promise.all([
     ClaritySnapshot.find({
       snapshotType: 'overview',
       snapshotDate: { $gte: period.start, $lte: period.end },
@@ -88,6 +90,9 @@ async function getConversionFunnel({ preset, startDate, endDate } = {}) {
       paymentStatus: { $ne: 'Failed' },
       createdByType: 'public',
     }),
+    isGa4Enabled()
+      ? fetchPeriodTraffic({ startKey: period.startKey, endKey: period.endKey })
+      : Promise.resolve(null),
   ]);
 
   const counts = {
@@ -103,7 +108,19 @@ async function getConversionFunnel({ preset, startDate, endDate } = {}) {
     counts.pageEngagements += day.pageEngagements;
   }
 
+  const visitorsFromGa4 = Boolean(ga4Period?.available);
+  if (visitorsFromGa4) {
+    counts.visitors = ga4Period.users;
+  }
+
   const { steps, overallConversion } = buildFunnelSteps(counts);
+
+  let coverageNote;
+  if (!visitorsFromGa4 && overviewSnapshots.length === 0) {
+    coverageNote = 'Visitor stage needs GA4 or Clarity data for this period.';
+  } else if (!visitorsFromGa4 && isGa4Enabled()) {
+    coverageNote = 'GA4 unavailable; visitor stage uses Clarity distinct users (summed per day).';
+  }
 
   return {
     period: {
@@ -112,14 +129,15 @@ async function getConversionFunnel({ preset, startDate, endDate } = {}) {
     },
     snapshotCoverage: {
       daysInPeriod: overviewSnapshots.length,
-      note: overviewSnapshots.length === 0
-        ? 'Visitor and engagement stages need Clarity snapshots for this period.'
-        : undefined,
+      note: coverageNote,
+      trafficSource: visitorsFromGa4 ? 'ga4' : 'clarity',
     },
     funnel: steps,
     overallConversion,
     dataSources: {
-      visitors: 'Clarity overview snapshots — distinctUserCount (summed per day)',
+      visitors: visitorsFromGa4
+        ? 'Google Analytics 4 — totalUsers for the selected period'
+        : 'Clarity overview snapshots — distinctUserCount (summed per day)',
       pageEngagements: 'Clarity overview snapshots — sessions minus quick-back sessions with active time',
       quoteRequests: 'QuotationRequest collection',
       confirmedOrders: 'Task collection — public bookings with paymentStatus not Failed, created in period',

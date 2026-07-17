@@ -1,6 +1,7 @@
 const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const QuotationRequest = require('../../models/QuotationRequest');
-const { getPageFilterById, pageFilterTracksQuotes } = require('../../config/analyticsPageMap');
+const { getPageFilterById, pageFilterTracksQuotes, getPageViewFilter } = require('../../config/analyticsPageMap');
+const { isGa4Enabled } = require('../../config/ga4Config');
 const {
   extractOverviewDayMetrics,
   extractTopPagesDayMetrics,
@@ -14,6 +15,10 @@ const {
   getPreviousPeriod,
   getPeriodLabels,
 } = require('../../utils/analyticsDateRange');
+const {
+  fetchPeriodTrafficForPageFilter,
+  fetchSessionsTrend,
+} = require('./ga4Service');
 
 async function countQuoteRequests(start, end) {
   return QuotationRequest.countDocuments({
@@ -22,6 +27,7 @@ async function countQuoteRequests(start, end) {
 }
 
 async function loadClarityMetricsForPeriod(start, end, pageFilter) {
+  const pageViewFilter = getPageViewFilter(pageFilter);
   const [overviewSnapshots, topPagesSnapshots] = await Promise.all([
     ClaritySnapshot.find({
       snapshotType: 'overview',
@@ -58,7 +64,7 @@ async function loadClarityMetricsForPeriod(start, end, pageFilter) {
       const topSnapshot = topByDate.get(dateKey);
       const overviewDay = extractOverviewDayMetrics(snapshot.data, pageFilter);
       const topDay = topSnapshot
-        ? extractTopPagesDayMetrics(topSnapshot.data, pageFilter)
+        ? extractTopPagesDayMetrics(topSnapshot.data, pageViewFilter)
         : {
           sessions: 0,
           pageViews: overviewDay.pageViews,
@@ -115,46 +121,80 @@ function buildMetricBlock(current, previous, { formatter = (v) => v, applicable 
   };
 }
 
-function buildDataSources(pageFilter) {
+function buildDataSources(pageFilter, { trafficFromGa4 = false } = {}) {
   const claritySource = 'Clarity daily snapshots (MongoDB)';
+  const ga4Source = 'Google Analytics 4 Data API';
   const quotesSource = 'QuotationRequest collection (MongoDB)';
+  const trafficSource = trafficFromGa4 ? ga4Source : claritySource;
 
   if (pageFilter.id === 'all') {
     return {
-      totalPageViews: { source: claritySource, detail: 'Sum of PopularPages visits across all site URLs per day' },
+      totalPageViews: {
+        source: trafficSource,
+        detail: trafficFromGa4
+          ? 'GA4 screenPageViews (site-wide)'
+          : 'Sessions × pages per session from Clarity overview Traffic metric',
+      },
       quoteRequests: { source: quotesSource, detail: 'All quote form submissions in the selected period' },
       avgTimeOnSite: { source: claritySource, detail: 'Site-wide average active engagement time per session' },
       conversionRate: {
         source: 'Calculated',
-        detail: 'All quote requests ÷ all page views in the period',
+        detail: 'All quote requests ÷ page views in the period',
       },
-      sessionsTrend: { source: claritySource, detail: 'Daily session counts from overview snapshots' },
+      sessionsTrend: {
+        source: trafficSource,
+        detail: trafficFromGa4
+          ? 'GA4 daily sessions and screenPageViews'
+          : 'Daily session counts from Clarity overview snapshots',
+      },
+      sessions: {
+        source: trafficSource,
+        detail: trafficFromGa4 ? 'GA4 sessions' : 'Clarity totalSessionCount',
+      },
     };
   }
 
   if (pageFilterTracksQuotes(pageFilter)) {
     return {
       totalPageViews: {
-        source: claritySource,
-        detail: `Visits to URLs matching: ${pageFilter.label}`,
+        source: trafficSource,
+        detail: trafficFromGa4
+          ? `GA4 screenPageViews on ${pageFilter.pathLabel}`
+          : `Visits to URLs matching: ${pageFilter.label}`,
       },
-      quoteRequests: { source: quotesSource, detail: 'All quote form submissions in the selected period' },
+      quoteRequests: {
+        source: quotesSource,
+        detail: 'All quote form submissions in the selected period',
+      },
       avgTimeOnSite: {
         source: claritySource,
         detail: `Average active time on URLs matching: ${pageFilter.label}`,
       },
       conversionRate: {
         source: 'Calculated',
-        detail: `Quote requests ÷ page views on ${pageFilter.label} URLs only`,
+        detail: `All quote requests ÷ page views on ${pageFilter.pathLabel}`,
       },
-      sessionsTrend: { source: claritySource, detail: 'Daily sessions for filtered URLs from top_pages snapshots' },
+      sessionsTrend: {
+        source: trafficSource,
+        detail: trafficFromGa4
+          ? `GA4 daily traffic for ${pageFilter.pathLabel}`
+          : 'Daily sessions for filtered URLs from Clarity top_pages snapshots',
+      },
+      sessions: {
+        source: trafficSource,
+        detail: trafficFromGa4
+          ? `GA4 sessions on ${pageFilter.pathLabel}`
+          : 'Clarity sessions for filtered URLs',
+      },
     };
   }
 
   return {
     totalPageViews: {
-      source: claritySource,
-      detail: `Visits to URLs matching: ${pageFilter.label}`,
+      source: trafficSource,
+      detail: trafficFromGa4
+        ? `GA4 screenPageViews on ${pageFilter.pathLabel}`
+        : `Visits to URLs matching: ${pageFilter.label}`,
     },
     quoteRequests: {
       source: null,
@@ -168,7 +208,18 @@ function buildDataSources(pageFilter) {
       source: null,
       detail: 'Not applicable — conversion is only calculated for All Pages or Request A Quote',
     },
-    sessionsTrend: { source: claritySource, detail: 'Daily sessions for filtered URLs from top_pages snapshots' },
+    sessionsTrend: {
+      source: trafficSource,
+      detail: trafficFromGa4
+        ? `GA4 daily traffic for ${pageFilter.pathLabel}`
+        : 'Daily sessions for filtered URLs from Clarity top_pages snapshots',
+    },
+    sessions: {
+      source: trafficSource,
+      detail: trafficFromGa4
+        ? `GA4 sessions on ${pageFilter.pathLabel}`
+        : 'Clarity sessions for filtered URLs',
+    },
   };
 }
 
@@ -197,26 +248,73 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
     previousClarity,
     currentQuotes,
     previousQuotes,
+    currentGa4,
+    previousGa4,
+    currentGa4Trend,
   ] = await Promise.all([
     loadClarityMetricsForPeriod(period.start, period.end, pageFilter),
     loadClarityMetricsForPeriod(previousPeriod.start, previousPeriod.end, pageFilter),
     ...quoteQueries,
+    isGa4Enabled()
+      ? fetchPeriodTrafficForPageFilter({
+        startKey: period.startKey,
+        endKey: period.endKey,
+        pageFilter,
+      })
+      : Promise.resolve(null),
+    isGa4Enabled()
+      ? fetchPeriodTrafficForPageFilter({
+        startKey: previousPeriod.startKey,
+        endKey: previousPeriod.endKey,
+        pageFilter,
+      })
+      : Promise.resolve(null),
+    isGa4Enabled()
+      ? fetchSessionsTrend({
+        startKey: period.startKey,
+        endKey: period.endKey,
+        pageFilter,
+      })
+      : Promise.resolve(null),
   ]);
+
+  const trafficFromGa4 = Boolean(currentGa4?.available);
+  const currentPageViews = trafficFromGa4 ? currentGa4.pageViews : currentClarity.aggregated.pageViews;
+  const previousPageViews = previousGa4?.available
+    ? previousGa4.pageViews
+    : previousClarity.aggregated.pageViews;
+  const currentSessions = trafficFromGa4 ? currentGa4.sessions : currentClarity.aggregated.sessions;
+  const previousSessions = previousGa4?.available
+    ? previousGa4.sessions
+    : previousClarity.aggregated.sessions;
 
   const current = currentClarity.aggregated;
   const previous = previousClarity.aggregated;
 
   let conversionRate = null;
   let previousConversionRate = null;
-  if (quotesApplicable && current.pageViews > 0) {
-    conversionRate = Math.round((currentQuotes / current.pageViews) * 10000) / 100;
+  if (quotesApplicable && currentPageViews > 0) {
+    conversionRate = Math.round((currentQuotes / currentPageViews) * 10000) / 100;
   } else if (quotesApplicable) {
     conversionRate = 0;
   }
-  if (quotesApplicable && previous.pageViews > 0) {
-    previousConversionRate = Math.round((previousQuotes / previous.pageViews) * 10000) / 100;
+  if (quotesApplicable && previousPageViews > 0) {
+    previousConversionRate = Math.round((previousQuotes / previousPageViews) * 10000) / 100;
   } else if (quotesApplicable) {
     previousConversionRate = 0;
+  }
+
+  const coverageDays = trafficFromGa4
+    ? (currentGa4Trend?.trend?.length || 0)
+    : currentClarity.snapshotDaysAvailable;
+
+  let coverageNote;
+  if (trafficFromGa4) {
+    coverageNote = undefined;
+  } else if (isGa4Enabled()) {
+    coverageNote = 'GA4 is configured but unavailable for this request; showing Clarity fallback for traffic metrics.';
+  } else if (currentClarity.snapshotDaysAvailable === 0) {
+    coverageNote = 'No Clarity snapshots for this period. Set GA4_ENABLED=true and GA4_PROPERTY_ID for trusted page views / sessions / users.';
   }
 
   return {
@@ -230,13 +328,12 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
       label: pageFilter.label,
     },
     snapshotCoverage: {
-      daysInPeriod: currentClarity.snapshotDaysAvailable,
-      note: currentClarity.snapshotDaysAvailable === 0
-        ? 'No Clarity snapshots for this period. Data will improve as daily sync runs.'
-        : undefined,
+      daysInPeriod: coverageDays,
+      note: coverageNote,
+      trafficSource: trafficFromGa4 ? 'ga4' : 'clarity',
     },
     metrics: {
-      totalPageViews: buildMetricBlock(current.pageViews, previous.pageViews),
+      totalPageViews: buildMetricBlock(currentPageViews, previousPageViews),
       quoteRequests: buildMetricBlock(currentQuotes, previousQuotes, { applicable: quotesApplicable }),
       avgTimeOnSite: buildMetricBlock(
         current.avgTimeOnSiteSeconds,
@@ -256,9 +353,15 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
           changePercent: null,
           applicable: false,
         },
-      sessions: buildMetricBlock(current.sessions, previous.sessions),
+      sessions: buildMetricBlock(currentSessions, previousSessions),
+      users: trafficFromGa4
+        ? buildMetricBlock(
+          currentGa4.users,
+          previousGa4?.available ? previousGa4.users : null,
+        )
+        : buildMetricBlock(null, null, { applicable: false }),
     },
-    dataSources: buildDataSources(pageFilter),
+    dataSources: buildDataSources(pageFilter, { trafficFromGa4 }),
     details: {
       botSessionsExcluded: current.botSessionsExcluded,
       scrollDepthAverage: current.scrollDepthAverage,
@@ -266,7 +369,9 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
       avgTimeOnSiteSeconds: current.avgTimeOnSiteSeconds,
       totalTimeSeconds: current.totalTimeSeconds,
     },
-    sessionsTrend: currentClarity.sessionsTrend,
+    sessionsTrend: currentGa4Trend?.available
+      ? currentGa4Trend.trend
+      : currentClarity.sessionsTrend,
     topPages: current.topPages,
   };
 }

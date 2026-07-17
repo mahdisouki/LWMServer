@@ -2,8 +2,11 @@
  * Maps backoffice page filter labels to URL path patterns on the public site.
  * Patterns are tested against Clarity URL pathnames (case-insensitive).
  *
- * Metrics (views, avg time, quick exit %) come from Microsoft Clarity snapshots.
- * pathLabel is the canonical path shown in the analytics UI.
+ * Metrics:
+ * - Page views / sessions / users: Google Analytics 4 when enabled (fallback: Clarity)
+ * - Avg time / quick exit: Microsoft Clarity snapshots
+ * pathLabel is the canonical landing URL shown in the analytics UI.
+ * pageViewPatterns (when set) limits view/session metrics to the main landing page only.
  */
 const QUOTE_PAGE_ID = 'request-a-quote';
 
@@ -57,17 +60,15 @@ const PAGE_FILTERS = [
     label: 'Request A Quote',
     pathLabel: '/quote/',
     pathPatterns: ['^/quote/?$'],
+    pageViewPatterns: ['^/quote/?$'],
     tracksQuotes: true,
   },
   {
     id: 'orders',
     label: 'Orders',
     pathLabel: '/order-checkout/',
-    pathPatterns: [
-      '^/order-checkout',
-      '^/cart/?$',
-      '^/checkout/?$',
-    ],
+    pathPatterns: ['^/order-checkout/?$'],
+    pageViewPatterns: ['^/order-checkout/?$'],
     tracksQuotes: false,
   },
   {
@@ -127,10 +128,21 @@ function getPageFilterById(pageId) {
   return PAGE_FILTERS.find((p) => p.id === pageId) || null;
 }
 
+function getPageViewFilter(pageFilter) {
+  if (!pageFilter || pageFilter.id === 'all' || !pageFilter.pageViewPatterns?.length) {
+    return pageFilter;
+  }
+  return {
+    ...pageFilter,
+    pathPatterns: pageFilter.pageViewPatterns,
+  };
+}
+
 module.exports = {
   QUOTE_PAGE_ID,
   PAGE_FILTERS,
   getPageFilters,
   getPageFilterById,
+  getPageViewFilter,
   pageFilterTracksQuotes,
 };

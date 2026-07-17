@@ -31,11 +31,49 @@ function getUrlPathname(url) {
 }
 
 function urlMatchesPageFilter(url, pageFilter) {
-  if (!pageFilter || pageFilter.id === 'all' || !pageFilter.pathPatterns?.length) {
+  if (!pageFilter || pageFilter.id === 'all') {
+    return true;
+  }
+  const patterns = pageFilter.pageViewPatterns?.length
+    ? pageFilter.pageViewPatterns
+    : pageFilter.pathPatterns;
+  if (!patterns?.length) {
     return true;
   }
   const pathname = getUrlPathname(url);
-  return pageFilter.pathPatterns.some((pattern) => new RegExp(pattern, 'i').test(pathname));
+  return patterns.some((pattern) => new RegExp(pattern, 'i').test(pathname));
+}
+
+function parsePagesPerSession(trafficInfo = {}) {
+  return parseFloatSafe(
+    trafficInfo.pagesPerSessionPercentage ?? trafficInfo.PagesPerSessionPercentage,
+  );
+}
+
+function parseDistinctUserCount(trafficInfo = {}) {
+  return parseIntSafe(trafficInfo.distinctUserCount ?? trafficInfo.distantUserCount);
+}
+
+function estimatePageViews(sessions, pagesPerSession) {
+  const safeSessions = parseIntSafe(sessions);
+  const safePagesPerSession = parseFloatSafe(pagesPerSession);
+  if (safeSessions <= 0) {
+    return 0;
+  }
+  const multiplier = safePagesPerSession > 0 ? safePagesPerSession : 1;
+  return Math.round(safeSessions * multiplier);
+}
+
+function parseTrafficTotals(trafficInfo = {}) {
+  const sessions = parseIntSafe(trafficInfo.totalSessionCount);
+  const visitors = parseDistinctUserCount(trafficInfo);
+  const pagesPerSession = parsePagesPerSession(trafficInfo);
+  return {
+    sessions,
+    visitors,
+    pagesPerSession,
+    pageViews: estimatePageViews(sessions, pagesPerSession),
+  };
 }
 
 function extractOverviewDayMetrics(overviewData, pageFilter = null) {
@@ -48,9 +86,12 @@ function extractOverviewDayMetrics(overviewData, pageFilter = null) {
   const engagementInfo = engagement?.information?.[0] || {};
   const scrollInfo = scroll?.information?.[0] || {};
 
-  const sessions = parseIntSafe(trafficInfo.totalSessionCount);
+  const {
+    sessions,
+    pagesPerSession,
+    pageViews: sitePageViews,
+  } = parseTrafficTotals(trafficInfo);
   const botSessions = parseIntSafe(trafficInfo.totalBotSessionCount);
-  const pagesPerSession = parseFloatSafe(trafficInfo.pagesPerSessionPercentage);
   const activeTimeSeconds = parseIntSafe(engagementInfo.activeTime);
   const totalTimeSeconds = parseIntSafe(engagementInfo.totalTime);
   const scrollDepth = parseFloatSafe(scrollInfo.averageScrollDepth);
@@ -66,7 +107,9 @@ function extractOverviewDayMetrics(overviewData, pageFilter = null) {
     ? popularPages
     : popularPages.filter((row) => urlMatchesPageFilter(row.url, pageFilter));
 
-  const pageViews = filteredPopular.reduce((sum, row) => sum + row.visitsCount, 0);
+  const pageViews = pageFilter?.id === 'all'
+    ? sitePageViews
+    : filteredPopular.reduce((sum, row) => sum + row.visitsCount, 0);
 
   return {
     sessions,
@@ -94,7 +137,10 @@ function extractTopPagesDayMetrics(topPagesData, pageFilter = null) {
     }
     const rowSessions = parseIntSafe(row.totalSessionCount);
     sessionsByUrl.set(url, rowSessions);
-    pageViews += Math.round(rowSessions * parseFloatSafe(row.pagesPerSessionPercentage || 1));
+    pageViews += estimatePageViews(
+      rowSessions,
+      parsePagesPerSession(row),
+    );
   }
 
   let sessions = 0;
@@ -238,18 +284,13 @@ function mapTrafficSourceCategory(source, medium) {
 
 function extractOverviewTrafficSeries(overviewData) {
   const traffic = findMetric(overviewData, 'Traffic');
-  const popular = findMetric(overviewData, 'PopularPages');
   const trafficInfo = traffic?.information?.[0] || {};
-
-  const pageViews = (popular?.information || []).reduce(
-    (sum, row) => sum + parseIntSafe(row.visitsCount || row.visits),
-    0,
-  );
+  const totals = parseTrafficTotals(trafficInfo);
 
   return {
-    sessions: parseIntSafe(trafficInfo.totalSessionCount),
-    visitors: parseIntSafe(trafficInfo.distinctUserCount),
-    pageViews,
+    sessions: totals.sessions,
+    visitors: totals.visitors,
+    pageViews: totals.pageViews,
   };
 }
 
@@ -573,6 +614,10 @@ module.exports = {
   buildSourceKey,
   aggregateDayMetrics,
   urlMatchesPageFilter,
+  parseTrafficTotals,
+  parseDistinctUserCount,
+  estimatePageViews,
+  parsePagesPerSession,
   formatDuration,
   percentChange,
 };

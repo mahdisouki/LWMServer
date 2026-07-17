@@ -1,13 +1,18 @@
 const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const Task = require('../../models/Task');
 const { resolvePeriod } = require('./dashboardService');
-const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
+const { toDateString, getPeriodLabels, eachDayKeyInPeriod } = require('../../utils/analyticsDateRange');
+const { isGa4Enabled } = require('../../config/ga4Config');
 const {
   extractOverviewTrafficSeries,
   extractSnapshotSourceBreakdown,
   getTopSourceLabel,
   SOURCE_LABELS,
 } = require('../../utils/clarityMetricsParser');
+const {
+  fetchDailyTraffic,
+  fetchPeriodTraffic,
+} = require('./ga4Service');
 
 function emptySourceBreakdown() {
   return {
@@ -57,7 +62,7 @@ async function loadOrdersAndRevenueByDay(start, end) {
 async function getTrafficOverview({ preset, startDate, endDate } = {}) {
   const period = resolvePeriod({ preset, startDate, endDate });
 
-  const [overviewSnapshots, sourceSnapshots, ordersByDay] = await Promise.all([
+  const [overviewSnapshots, sourceSnapshots, ordersByDay, ga4Daily, ga4Period] = await Promise.all([
     ClaritySnapshot.find({
       snapshotType: 'overview',
       snapshotDate: { $gte: period.start, $lte: period.end },
@@ -67,6 +72,12 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       snapshotDate: { $gte: period.start, $lte: period.end },
     }).sort({ snapshotDate: 1 }).lean(),
     loadOrdersAndRevenueByDay(period.start, period.end),
+    isGa4Enabled()
+      ? fetchDailyTraffic({ startKey: period.startKey, endKey: period.endKey })
+      : Promise.resolve(null),
+    isGa4Enabled()
+      ? fetchPeriodTraffic({ startKey: period.startKey, endKey: period.endKey })
+      : Promise.resolve(null),
   ]);
 
   const sourcesByDate = new Map(
@@ -76,17 +87,37 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
     ]),
   );
 
-  const daily = overviewSnapshots.map((snapshot) => {
-    const date = toDateString(snapshot.snapshotDate);
-    const traffic = extractOverviewTrafficSeries(snapshot.data);
+  const trafficFromGa4 = Boolean(ga4Daily?.available);
+  const dayKeys = trafficFromGa4
+    ? Array.from(ga4Daily.byDate.keys())
+    : overviewSnapshots.map((snapshot) => toDateString(snapshot.snapshotDate));
+
+  const clarityByDate = new Map(
+    overviewSnapshots.map((snapshot) => [
+      toDateString(snapshot.snapshotDate),
+      extractOverviewTrafficSeries(snapshot.data),
+    ]),
+  );
+
+  // When GA4 is available, fill every day in the period so the chart is continuous.
+  const chartDayKeys = trafficFromGa4
+    ? eachDayKeyInPeriod(period.start, period.end, {
+      startKey: period.startKey,
+      endKey: period.endKey,
+    })
+    : dayKeys;
+
+  const daily = chartDayKeys.map((date) => {
+    const ga4 = ga4Daily?.byDate?.get(date);
+    const clarity = clarityByDate.get(date);
     const sources = sourcesByDate.get(date) || emptySourceBreakdown();
     const business = ordersByDay.get(date) || { orders: 0, revenue: 0 };
 
     return {
       date,
-      pageViews: traffic.pageViews,
-      visitors: traffic.visitors,
-      sessions: traffic.sessions,
+      pageViews: trafficFromGa4 ? (ga4?.pageViews || 0) : (clarity?.pageViews || 0),
+      visitors: trafficFromGa4 ? (ga4?.users || 0) : (clarity?.visitors || 0),
+      sessions: trafficFromGa4 ? (ga4?.sessions || 0) : (clarity?.sessions || 0),
       orders: business.orders,
       revenue: Math.round(business.revenue * 100) / 100,
       sources,
@@ -111,8 +142,26 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
     sumSourceBreakdown(totals.sources, day.sources);
   }
 
+  // Prefer period-level unique users from GA4 (not summed daily uniques).
+  if (ga4Period?.available) {
+    totals.pageViews = ga4Period.pageViews;
+    totals.sessions = ga4Period.sessions;
+    totals.visitors = ga4Period.users;
+  }
+
   totals.revenue = Math.round(totals.revenue * 100) / 100;
   totals.topSource = getTopSourceLabel(totals.sources);
+
+  let coverageNote;
+  if (trafficFromGa4) {
+    coverageNote = undefined;
+  } else if (isGa4Enabled()) {
+    coverageNote = 'GA4 is configured but unavailable; showing Clarity fallback for page views / visitors / sessions.';
+  } else if (overviewSnapshots.length === 0) {
+    coverageNote = 'No Clarity snapshots for this period. Enable GA4 for trusted traffic totals.';
+  } else {
+    coverageNote = undefined;
+  }
 
   return {
     period: {
@@ -120,10 +169,9 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       ...getPeriodLabels(period),
     },
     snapshotCoverage: {
-      daysInPeriod: overviewSnapshots.length,
-      note: overviewSnapshots.length === 0
-        ? 'No Clarity snapshots for this period. Traffic and source data will appear as daily sync runs.'
-        : undefined,
+      daysInPeriod: chartDayKeys.length,
+      note: coverageNote,
+      trafficSource: trafficFromGa4 ? 'ga4' : 'clarity',
     },
     daily,
     totals: {
@@ -137,8 +185,15 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
     },
     sourceLabels: SOURCE_LABELS,
     dataSources: {
-      pageViews: 'Clarity overview snapshots (PopularPages)',
-      visitors: 'Clarity overview snapshots (distinctUserCount)',
+      pageViews: trafficFromGa4
+        ? 'Google Analytics 4 — screenPageViews'
+        : 'Clarity overview snapshots (sessions × pages per session)',
+      visitors: trafficFromGa4
+        ? 'Google Analytics 4 — totalUsers (period unique; daily chart uses per-day users)'
+        : 'Clarity overview snapshots (distinctUserCount)',
+      sessions: trafficFromGa4
+        ? 'Google Analytics 4 — sessions'
+        : 'Clarity overview snapshots (totalSessionCount)',
       sources: 'Clarity traffic_sources snapshots (Channel + Source dimensions)',
       orders: 'Task collection — public bookings with paymentStatus not Failed, created per UTC day',
       revenue: 'Task collection — sum of totalPrice for public bookings with paymentStatus not Failed, created per UTC day',
