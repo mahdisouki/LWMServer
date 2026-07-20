@@ -37,8 +37,33 @@ const addStagingBanner = (html) => {
   return html;
 };
 
+function isBankTransferPayment(task) {
+  return (
+    task?.paymentMethod === 'BankTransfer' ||
+    task?.paidAmount?.method === 'BankTransfer' ||
+    task?.remainingAmount?.method === 'BankTransfer'
+  );
+}
+
+function buildBankTransferDetailsHtml(orderNumber) {
+  return `
+          <div class="bank-details-section">
+            <div class="bank-details-header">
+              <span>🏦 Bank Details:</span>
+            </div>
+            <div class="bank-details-content">
+              <div class="value"><strong>Business Account Name:</strong> London Waste Management</div>
+              <div class="value"><strong>Sort Code:</strong> 30-96-26</div>
+              <div class="value"><strong>Account Number:</strong> 55867268</div>
+              <div class="value"><strong>Reference:</strong> ${orderNumber}</div>
+            </div>
+          </div>`;
+}
+
 module.exports = {
   isStaging,
   addStagingToSubject,
   addStagingBanner,
+  isBankTransferPayment,
+  buildBankTransferDetailsHtml,
 };
