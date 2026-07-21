@@ -1500,6 +1500,7 @@ const taskCtrl = {
         gclid,
         gbraid,
         wbraid,
+        msclkid,
       } = req.body;
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
@@ -1814,6 +1815,7 @@ const taskCtrl = {
         ...(gclid ? { gclid: String(gclid).trim() } : {}),
         ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
         ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
+        ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
       });
 
       const savedTask = await newTask.save();

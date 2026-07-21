@@ -224,21 +224,25 @@ function copyClickIdsFromQuotationToTask(task, quotation) {
     gclid: task.gclid || null,
     gbraid: task.gbraid || null,
     wbraid: task.wbraid || null,
+    msclkid: task.msclkid || null,
   };
 
   if (!task.gclid && quotation.gclid) task.gclid = quotation.gclid;
   if (!task.gbraid && quotation.gbraid) task.gbraid = quotation.gbraid;
   if (!task.wbraid && quotation.wbraid) task.wbraid = quotation.wbraid;
+  if (!task.msclkid && quotation.msclkid) task.msclkid = quotation.msclkid;
 
   const after = {
     gclid: task.gclid || null,
     gbraid: task.gbraid || null,
     wbraid: task.wbraid || null,
+    msclkid: task.msclkid || null,
   };
 
   const changed = before.gclid !== after.gclid
     || before.gbraid !== after.gbraid
-    || before.wbraid !== after.wbraid;
+    || before.wbraid !== after.wbraid
+    || before.msclkid !== after.msclkid;
 
   return { changed, before, after };
 }

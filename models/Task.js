@@ -292,13 +292,16 @@ const taskSchema = new Schema(
     gclid: { type: String, required: false },
     gbraid: { type: String, required: false },
     wbraid: { type: String, required: false },
+    msclkid: { type: String, required: false },
     trafficSource: {
       type: String,
-      enum: ['Google Ads', 'Organic'],
+      enum: ['Google Ads', 'Microsoft Ads', 'Organic'],
       default: 'Organic',
     },
     googleAdsPurchaseConversionSentAt: { type: Date, required: false },
     googleAdsConversionError: { type: String, required: false },
+    microsoftAdsOfflineConversionExportedAt: { type: Date, required: false },
+    microsoftAdsConversionError: { type: String, required: false },
   },
   { timestamps: true }
 );
@@ -326,6 +329,7 @@ taskSchema.pre('save', function (next) {
     gclid: this.gclid,
     gbraid: this.gbraid,
     wbraid: this.wbraid,
+    msclkid: this.msclkid,
   });
 
   // Validate items have proper pricing
@@ -357,11 +361,13 @@ taskSchema.pre('findOneAndUpdate', function (next) {
     $set.gclid !== undefined
     || $set.gbraid !== undefined
     || $set.wbraid !== undefined
+    || $set.msclkid !== undefined
   ) {
     const trafficSource = resolveTrafficSource({
       gclid: $set.gclid,
       gbraid: $set.gbraid,
       wbraid: $set.wbraid,
+      msclkid: $set.msclkid,
     });
     if (update.$set) {
       update.$set.trafficSource = trafficSource;

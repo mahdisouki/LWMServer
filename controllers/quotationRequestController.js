@@ -23,6 +23,7 @@ const quotationRequestController = {
                 gclid,
                 gbraid,
                 wbraid,
+                msclkid,
             } = req.body;
             console.log("req.body", req.body)
 
@@ -97,6 +98,7 @@ const quotationRequestController = {
                 ...(gclid ? { gclid: String(gclid).trim() } : {}),
                 ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
                 ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
+                ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
             });
 
             // Send confirmation email to user

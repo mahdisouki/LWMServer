@@ -53,6 +53,7 @@ const quotationRequestSchema = new Schema({
   gclid: { type: String, required: false },
   gbraid: { type: String, required: false },
   wbraid: { type: String, required: false },
+  msclkid: { type: String, required: false },
   googleAdsQuoteConversionSentAt: { type: Date, required: false },
   googleAdsConversionError: { type: String, required: false },
   isAiGenerated: { type: Boolean, default: false },
