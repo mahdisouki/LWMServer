@@ -8,6 +8,7 @@ const PDFDocument = require('pdfkit');
 const Handlebars = require('handlebars');
 const Task = require('../models/Task');
 const StandardItem = require('../models/StandardItem');
+const { cancelScheduledPaymentLinkRetry } = require('./failedPaymentLinkService');
 const {
   addStagingToSubject,
   addStagingBanner,
@@ -1272,6 +1273,10 @@ module.exports = {
       if (!task) {
         throw new Error(`Task not found with ID: ${orderId}`);
       }
+
+      cancelScheduledPaymentLinkRetry(task._id).catch((err) => {
+        console.error('[Payment Link Retry] Failed to cancel after payment:', err.message);
+      });
 
       // Generate invoice PDF
       const dirPath = path.join(__dirname, '../generated');

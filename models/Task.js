@@ -253,6 +253,8 @@ const taskSchema = new Schema(
     wasteTransferNoteSent: { type: Boolean, default: false },
     retargetingEmailSent: { type: Boolean, default: false }, // Track if retargeting email was sent
     retargetingEmailSentAt: { type: Date }, // When retargeting email was sent
+    paymentLinkRetryEmailSent: { type: Boolean, default: false },
+    paymentLinkRetryEmailSentAt: { type: Date },
     retargetingCoupon20Id: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to 20% coupon
     retargetingCoupon10Id: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to 10% coupon
     reasonForCancellation: { type: String },

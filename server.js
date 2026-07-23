@@ -40,6 +40,7 @@ connectToDatabase()
     require('./cron/gmailLiveSync');
     require('./cron/gmailWatchRenew');
     require('./cron/scheduledEmailSender');
+    require('./workers/paymentLinkRetryWorker');
     require('./cron/sendWasteTransferNotes');
     require('./cron/remindVanCapacityCheck');
     require('./cron/dayOffUnitReminders');

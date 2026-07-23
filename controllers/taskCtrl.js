@@ -59,6 +59,7 @@ const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogSe
 const payrollCtrl = require('./payrollCtrl');
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
 const CLIENT_URL = 'https://www.londonwastemanagement.com';
+// const CLIENT_URL = 'http://localhost:5173';
 const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
@@ -72,6 +73,7 @@ const Coupon = require('../models/Coupon');
 const AdditionalItemRequest = require('../models/AdditionalItemRequest');
 const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentFailedEmail } = require('../services/emailsService');
 const { sendRetargetingEmailForTask } = require('../services/retargetingService');
+const { schedulePaymentLinkRetry } = require('../services/failedPaymentLinkService');
 const { firePurchaseConversionUpload } = require('../services/googleAdsConversionService');
 const path = require('path');
 const fs = require('fs');
@@ -632,6 +634,45 @@ const TASK_PRIORITIES = ['low', 'medium', 'high'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
+async function schedulePaymentLinkRetryAfterCheckout(taskId, paymentAmountType) {
+  try {
+    const normalized = String(paymentAmountType || 'total').toLowerCase();
+    const paymentType =
+      normalized === 'deposit'
+        ? 'deposit'
+        : normalized === 'remaining'
+          ? 'remaining'
+          : 'total';
+    await schedulePaymentLinkRetry(taskId, { paymentType });
+  } catch (error) {
+    console.error('[Payment Link Retry] Failed to schedule:', error.message);
+  }
+}
+
+function resolvePaymentLinkAmount(task, paymentType) {
+  const totalPrice = Number(task.totalPrice);
+  const normalized = String(paymentType || 'total').toLowerCase();
+
+  if (normalized === 'deposit') {
+    const depositAmount = Number(task.paidAmount?.amount);
+    if (Number.isFinite(depositAmount) && depositAmount > 0) {
+      return depositAmount;
+    }
+    return 45;
+  }
+
+  if (normalized === 'remaining') {
+    const remainingAmount = Number(task.remainingAmount?.amount);
+    if (Number.isFinite(remainingAmount) && remainingAmount > 0) {
+      return remainingAmount;
+    }
+    const paidAmount = Number(task.paidAmount?.amount) || 0;
+    return Math.max(totalPrice - paidAmount, 0);
+  }
+
+  return totalPrice;
+}
+
 function hashPaymentToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
@@ -827,7 +868,7 @@ function buildPaymentEmailBreakdownFromTask(task) {
   return breakdown;
 }
 
-async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes = '' } = {}) {
+async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes = '', introText = '', emailTitle = '' } = {}) {
   const task = await Task.findById(taskId).populate('items.standardItemId');
   if (!task) {
     throw new Error('Task not found');
@@ -838,7 +879,19 @@ async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes
     return { sent: false, reason: 'no_email' };
   }
 
-  const amountToPay = Number(task.totalPrice);
+  const totalPrice = Number(task.totalPrice);
+  if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
+    return { sent: false, reason: 'no_amount' };
+  }
+
+  const normalizedPaymentType = String(paymentType || 'total').toLowerCase();
+  const linkPaymentType =
+    normalizedPaymentType === 'deposit'
+      ? 'deposit'
+      : normalizedPaymentType === 'remaining'
+        ? 'remaining'
+        : 'total';
+  const amountToPay = resolvePaymentLinkAmount(task, linkPaymentType);
   if (!Number.isFinite(amountToPay) || amountToPay <= 0) {
     return { sent: false, reason: 'no_amount' };
   }
@@ -849,14 +902,14 @@ async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes
   const { stableLink: stripeLink } = await createPersistentPaymentLink({
     taskId: task._id,
     provider: 'stripe',
-    paymentType,
+    paymentType: linkPaymentType,
     amountToPay,
     orderNumber,
   });
   const { stableLink: paypalLink } = await createPersistentPaymentLink({
     taskId: task._id,
     provider: 'paypal',
-    paymentType,
+    paymentType: linkPaymentType,
     amountToPay,
     orderNumber,
   });
@@ -867,11 +920,13 @@ async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes
     stripeLink,
     paypalLink,
     totalPrice: amountToPay,
-    totall: amountToPay,
+    totall: totalPrice,
     breakdown,
     notes,
+    introText: introText || notes,
+    emailTitle,
     taskDetails: task,
-    paymentType,
+    paymentType: linkPaymentType,
     amountToPay,
   });
 
@@ -4565,6 +4620,8 @@ const taskCtrl = {
               },
             });
 
+            await schedulePaymentLinkRetryAfterCheckout(taskId, paymentAmountType);
+
             return res.json({
               message: 'Stripe payment initiated successfully',
               redirectUrl: session.url,
@@ -4586,6 +4643,7 @@ const taskCtrl = {
             task,
             paymentAmountType,
           );
+          await schedulePaymentLinkRetryAfterCheckout(taskId, paymentAmountType);
           return res.json({
             message: 'PayPal payment initiated successfully',
             orderID: paymentResult.result.id,
@@ -7761,7 +7819,7 @@ const taskCtrl = {
 
   quoteAdditionalItemRequest: async (req, res) => {
     try {
-      const { taskId, requestId , itemName } = req.params;
+      const { taskId, requestId, itemName } = req.params;
       const quotedPrice = Number(req.body.quotedPrice);
       if (!Number.isFinite(quotedPrice) || quotedPrice < 0) {
         return res.status(400).json({ message: 'quotedPrice must be a valid number >= 0' });
@@ -8182,3 +8240,4 @@ const taskCtrl = {
 };
 
 module.exports = taskCtrl;
+module.exports.deliverPaymentLinksForTask = deliverPaymentLinksForTask;
