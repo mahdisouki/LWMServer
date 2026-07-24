@@ -166,7 +166,7 @@ async function getTrafficSources({ preset, startDate, endDate, limit = DEFAULT_L
     omittedMetrics: {
       goals: 'Not available per channel until UTM/referrer is stored on quote and order submissions',
       conversionRate: 'Requires per-channel goal attribution',
-      revenue: 'Only Google Ads vs Organic is stored on orders today',
+      revenue: 'Order trafficSource supports Google Ads, Microsoft Ads, Instagram, Facebook, Organic when utm_source/click IDs are sent',
     },
     dataSources: {
       sessions: snapshotFormat === 'clarity_channel'

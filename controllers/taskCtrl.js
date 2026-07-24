@@ -20,6 +20,7 @@ const {
   ALL_TIME_SLOTS,
   DEFAULT_SUGGESTION_DAYS,
 } = require('../services/taskAvailabilityService');
+const { normalizeUtmSource } = require('../utils/trafficSource');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -1556,7 +1557,9 @@ const taskCtrl = {
         gbraid,
         wbraid,
         msclkid,
+        utm_source,
       } = req.body;
+      const normalizedUtmSource = normalizeUtmSource(utm_source);
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
       const orderItems = parseJsonArray(items);
@@ -1871,6 +1874,7 @@ const taskCtrl = {
         ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
         ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
         ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
+        ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
       });
 
       const savedTask = await newTask.save();

@@ -9,6 +9,7 @@ const { emitNotificationToUser } = require('../socket');
 const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
 const { User } = require('../models/User');
 const { fireQuoteConversionUpload } = require('../services/googleAdsConversionService');
+const { normalizeUtmSource } = require('../utils/trafficSource');
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
         try {
@@ -24,7 +25,9 @@ const quotationRequestController = {
                 gbraid,
                 wbraid,
                 msclkid,
+                utm_source,
             } = req.body;
+            const normalizedUtmSource = normalizeUtmSource(utm_source);
             console.log("req.body", req.body)
 
             // Handle optional file uploads
@@ -99,6 +102,7 @@ const quotationRequestController = {
                 ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
                 ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
                 ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
+                ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
             });
 
             // Send confirmation email to user
