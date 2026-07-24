@@ -50,6 +50,23 @@ async function findLatestEligibleFailedTaskId(customerEmail) {
   return latest?._id || null;
 }
 
+/** Any later paid order for the same email (admin or public) suppresses the retry. */
+async function hasNewerPaidOrderForEmail(customerEmail, afterDate) {
+  if (!afterDate) return false;
+
+  const normalized = normalizeEmail(customerEmail);
+  const emailRegex = new RegExp(`^${escapeRegExp(normalized)}$`, 'i');
+
+  const newerPaid = await Task.findOne({
+    email: emailRegex,
+    paymentStatus: { $in: ['Paid', 'partial_Paid', 'Unpaid'] },
+    createdAt: { $gt: afterDate },
+    createdBy: { $ne: 'MigrationScript' },
+  }).select('_id');
+
+  return Boolean(newerPaid);
+}
+
 /**
  * One active (pending/processing) slot per customer email.
  * Newer checkout updates that slot and resets the timer.
@@ -152,6 +169,14 @@ async function processOne(item) {
       await PendingPaymentLinkEmail.updateOne(
         { _id: id },
         { status: 'skipped', lastError: 'no_email' },
+      );
+      return;
+    }
+
+    if (await hasNewerPaidOrderForEmail(task.email, task.createdAt)) {
+      await PendingPaymentLinkEmail.updateOne(
+        { _id: id },
+        { status: 'skipped', lastError: 'newer_paid_order' },
       );
       return;
     }
