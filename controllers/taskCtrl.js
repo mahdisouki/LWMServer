@@ -2927,7 +2927,12 @@ const taskCtrl = {
         await updateDailySheetForTask(updatedTask);
         // Send Waste Transfer Note only when the completed task is already paid.
         // Otherwise, noon cron will send it once payment becomes Paid.
-        if (updatedTask.paymentStatus === 'Paid') {
+        if (
+          updatedTask.paymentStatus === 'Paid' ||
+          (updatedTask.paymentStatus === 'partial_Paid' &&
+            updatedTask.paidAmount?.status === 'Paid' &&
+            updatedTask.remainingAmount?.status === 'Paid')
+        ) {
           await sendWasteTransferNoteEmail(updatedTask._id);
         }
       }
@@ -4055,7 +4060,12 @@ const taskCtrl = {
 
         // Send Waste Transfer Note only when the completed task is already paid.
         // Otherwise, noon cron will send it once payment becomes Paid.
-        if (task.paymentStatus === 'Paid') {
+        if (
+          task.paymentStatus === 'Paid' ||
+          (task.paymentStatus === 'partial_Paid' &&
+            task.paidAmount?.status === 'Paid' &&
+            task.remainingAmount?.status === 'Paid')
+        ) {
           await sendWasteTransferNoteEmail(task._id);
         }
 

@@ -1007,7 +1007,13 @@ const driverManagement = {
 
       // Send Waste Transfer Note only when completed and already paid.
       // Otherwise, noon cron will send it once payment becomes Paid.
-      if (task.taskStatus === 'Completed' && task.paymentStatus === 'Paid') {
+      if (
+        task.taskStatus === 'Completed' &&
+        (task.paymentStatus === 'Paid' ||
+          (task.paymentStatus === 'partial_Paid' &&
+            task.paidAmount?.status === 'Paid' &&
+            task.remainingAmount?.status === 'Paid'))
+      ) {
         await sendWasteTransferNoteEmail(task._id);
       }
 
@@ -1232,7 +1238,12 @@ const driverManagement = {
 
       // Send Waste Transfer Note only when completed and already paid.
       // Otherwise, noon cron will send it once payment becomes Paid.
-      if (task.paymentStatus === 'Paid') {
+      if (
+        task.paymentStatus === 'Paid' ||
+        (task.paymentStatus === 'partial_Paid' &&
+          task.paidAmount?.status === 'Paid' &&
+          task.remainingAmount?.status === 'Paid')
+      ) {
         await sendWasteTransferNoteEmail(task._id);
       }
       res.status(200).json({

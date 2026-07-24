@@ -5,7 +5,7 @@ const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 /**
  * Sends Waste Transfer Notes for tasks that are:
  * - completed
- * - paid
+ * - paid (or partial_Paid with deposit + remaining both Paid)
  * - not yet sent
  *
  * Runs daily at 12:00 PM (noon).
@@ -14,7 +14,14 @@ async function sendScheduledWasteTransferNotes() {
   try {
     const tasksToProcess = await Task.find({
       taskStatus: 'Completed',
-      paymentStatus: 'Paid',
+      $or: [
+        { paymentStatus: 'Paid' },
+        {
+          paymentStatus: 'partial_Paid',
+          'paidAmount.status': 'Paid',
+          'remainingAmount.status': 'Paid',
+        },
+      ],
       wasteTransferNoteSent: { $ne: true },
       email: { $exists: true, $ne: null, $ne: '' },
       createdBy: { $ne: 'MigrationScript' }, // Exclude CSV-migrated orders
