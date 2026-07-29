@@ -37,6 +37,7 @@ const MODULES = [
   'Blue_Sheets',
   'Network_Sessions',
   'Ticks',
+  'Brokers',
 ];
 
 function permissionField() {
