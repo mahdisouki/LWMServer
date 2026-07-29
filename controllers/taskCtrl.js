@@ -2054,7 +2054,7 @@ const taskCtrl = {
       const task = await Task.findById(taskId).populate(
         'createdBy',
         'email name',
-      ).populate('couponId', 'code percentage discountType validFrom validTo maxUses currentUses');; // optional fields;
+      ).populate('couponId', 'code percentage discountType discountValue validFrom validTo maxUses currentUses'); // optional fields
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -2077,7 +2077,7 @@ const taskCtrl = {
       const task = await Task.findOne({ orderNumber }).populate(
         'createdBy',
         'email name',
-      ).populate('couponId', 'code percentage discountType validFrom validTo maxUses currentUses');; // optional fields;
+      ).populate('couponId', 'code percentage discountType discountValue validFrom validTo maxUses currentUses'); // optional fields
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -2119,6 +2119,11 @@ const taskCtrl = {
           'orderNumber',
         ], // searchable fields
       );
+
+      await Task.populate(tasks, {
+        path: 'couponId',
+        select: 'code percentage discountType discountValue',
+      });
 
       const tasksWithTrucks = await Promise.all(
         tasks.map(async (task) => {
