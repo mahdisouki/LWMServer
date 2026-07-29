@@ -29,6 +29,7 @@ const router = express.Router();
 const {
     userSignIn,
     driverSignIn,
+    brokerSignIn,
     refresh,
     logout,
     forgotPassword,
@@ -40,6 +41,7 @@ const { loginLimiter } = require("../middlewares/rateLimiter");
 
 router.post("/sign-in" , loginLimiter, userSignIn);
 router.post("/driver-sign-in" , loginLimiter, driverSignIn);
+router.post("/broker-sign-in" , loginLimiter, brokerSignIn);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
 router.post("/refresh" ,verifyRefreshToken, refresh);

@@ -177,7 +177,7 @@ const taskSchema = new Schema(
     },
     createdByType: {
       type: String,
-      enum: ['Admin', 'public'],
+      enum: ['Admin', 'public', 'broker'],
       default: 'public',
     },
     paymentStatus: {
@@ -305,6 +305,17 @@ const taskSchema = new Schema(
     googleAdsConversionError: { type: String, required: false },
     microsoftAdsOfflineConversionExportedAt: { type: Date, required: false },
     microsoftAdsConversionError: { type: String, required: false },
+    brokerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'BrokerOrg',
+      default: null,
+    },
+    brokerOrderId: {
+      type: Schema.Types.ObjectId,
+      ref: 'BrokerOrder',
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true }
 );
