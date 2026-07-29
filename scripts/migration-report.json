@@ -1,0 +1,2142 @@
+{
+  "config": {
+    "ordersCsvPath": "C:\\Users\\souki\\OneDrive\\Bureau\\eyaa\\LWMServer\\csvFiles\\orders-2021.csv",
+    "dryRun": false,
+    "batchSize": 500
+  },
+  "ordersParsed": 3033,
+  "docsBuilt": 3029,
+  "ordersWithNoItems": 4,
+  "itemsResolved": 3896,
+  "itemsCustomFallback": [
+    {
+      "orderNumber": "6415",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6361",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6349",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "6342",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6334",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6327",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6324",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6322",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "6319",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "6309",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6291",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6287",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6262",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6261",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6261",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6249",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6240",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6232",
+      "sku": "loa-sma",
+      "itemName": "Small Load",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6214",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6196",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6184",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6183",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6182",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6162",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6161",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6152",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6145",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "6130",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "6125",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6110",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6099",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6091",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6074",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6073",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6070",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6065",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6062",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6060",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6044",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6029",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6028",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "6006",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5998",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5989",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5977",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5968",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5959",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5948",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5932",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5904",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5889",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5852",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5837",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5825",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5806",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5799",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5792",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5783",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5772",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5771",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5767",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5759",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5736",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5715",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5709",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5697",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5695",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5695",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5691",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5675",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5652",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5641",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5626",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5618",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5614",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5611",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5584",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5583",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5582",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5579",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5575",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5565",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5563",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5525",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5504",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5463",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5437",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5434",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5423",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5409",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5394",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5365",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5361",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5340",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5338",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5335",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5332",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5328",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5327",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5322",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5291",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5283",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5257",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5256",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5238",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5234",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5231",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5224",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5221",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5216",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5210",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5207",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5170",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5167",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5141",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5136",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5134",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5130",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5128",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5123",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5095",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5083",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5076",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5075",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5073",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5070",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5056",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "5053",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5053",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "5029",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4996",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4992",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4979",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4967",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4951",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4945",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4917",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4903",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4866",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4860",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4852",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4849",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4847",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4836",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4814",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4796",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4787",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4786",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4776",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4763",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4727",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4725",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4704",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4699",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4698",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4680",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4655",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4654",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4651",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4650",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4619",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4604",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4603",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4600",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4599",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4595",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4590",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4576",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4569",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4562",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4526",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4511",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4510",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4504",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4497",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4487",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4475",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4473",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4471",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4467",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4458",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4428",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4420",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4419",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4389",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4388",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4360",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4359",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4358",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4350",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4349",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4330",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4323",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4315",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4305",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4296",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4294",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4279",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4251",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4250",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4224",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4219",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4219",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4209",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4206",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4195",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4184",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4175",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4106",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4101",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4098",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4097",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4076",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4046",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "4014",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4013",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "4007",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3992",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3972",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3972",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3971",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3968",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3959",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3958",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3951",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3942",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3917",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3917",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3917",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3917",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3916",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3916",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3916",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3916",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3916",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3916",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3916",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3907",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3906",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3892",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3858",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3837",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3833",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3824",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3805",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3794",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3748",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3747",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3725",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3711",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3694",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3677",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3673",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3666",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3661",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3658",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3642",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3627",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3580",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3566",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3560",
+      "sku": "loa-sma",
+      "itemName": "Small Load",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3557",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3552",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3550",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3545",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3534",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3499",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3484",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3467",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3466",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3454",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3454",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3423",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3382",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3378",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3378",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3378",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3378",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3333",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3331",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3318",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3290",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3273",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3263",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3247",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3237",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3235",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3232",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3232",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3229",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3195",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3165",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3162",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3151",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3134",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3119",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3108",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3099",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3096",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3094",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3092",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3091",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3077",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3073",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3059",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3057",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3053",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3040",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "3029",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "3022",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2996",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2964",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "2945",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2928",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2886",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2884",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2882",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2773",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2770",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "2765",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2691",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2632",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "2632",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2632",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2632",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2567",
+      "sku": "con-car",
+      "itemName": "Carpet",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "2488",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2450",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2448",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2442",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2437",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2435",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2426",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2423",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2406",
+      "sku": "fur-boo-she",
+      "itemName": "Bookshelf",
+      "reason": "no ITEM_MAP entry"
+    },
+    {
+      "orderNumber": "2378",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2352",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2308",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2308",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2298",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2286",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2282",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    },
+    {
+      "orderNumber": "2282",
+      "sku": "loa-cus",
+      "itemName": "Waste Removal",
+      "reason": "explicitly marked custom in ITEM_MAP"
+    }
+  ],
+  "duplicateOrderNumbers": [],
+  "validationErrors": [],
+  "warnings": [
+    "ITEM_MAP target \"Filing Cabinet (Tall)\" not found in StandardItem DB",
+    "Order 5928: unrecognized status \"Card machine\"",
+    "Order 5694: unrecognized status \"Card machine\"",
+    "Order 5693: missing first name",
+    "Order 5693: unrecognized status \"Card machine\"",
+    "Order 5372: unrecognized status \"Over the phone\"",
+    "Order 5361: unrecognized status \"Over the phone\"",
+    "Order 5308: no line items",
+    "Order 5297: no line items",
+    "Order 5240: unrecognized status \"Card machine\"",
+    "Order 5226: unrecognized status \"Card machine\"",
+    "Order 5202: no line items",
+    "Order 5052: unrecognized status \"Card machine\"",
+    "Order 4729: unrecognized status \"Card machine\"",
+    "Order 4722: unrecognized status \"Card machine\"",
+    "Order 4559: unrecognized status \"Card machine\"",
+    "Order 4522: unrecognized status \"Card machine\"",
+    "Order 4398: unrecognized status \"Card machine\"",
+    "Order 4358: unrecognized status \"Card machine\"",
+    "Order 4275: unrecognized status \"Card machine\"",
+    "Order 4242: unrecognized status \"Card machine\"",
+    "Order 4206: unrecognized status \"Card machine\"",
+    "Order 4186: unrecognized status \"Over the phone\"",
+    "Order 4160: unrecognized status \"Card machine\"",
+    "Order 4030: unrecognized status \"Card machine\"",
+    "Order 3984: unrecognized status \"Card machine\"",
+    "Order 3901: unrecognized status \"Card machine\"",
+    "Order 3749: unrecognized status \"Card machine\"",
+    "Order 3690: unrecognized status \"Card machine\"",
+    "Order 3643: unrecognized status \"Card machine\"",
+    "Order 3632: unrecognized status \"Card machine\"",
+    "Order 3591: unrecognized status \"Card machine\"",
+    "Order 3550: missing phone number",
+    "Order 3453: unrecognized status \"Card machine\"",
+    "Order 3350: unrecognized status \"Card machine\"",
+    "Order 3268: unrecognized status \"Card machine\"",
+    "Order 3232: unrecognized status \"Card machine\"",
+    "Order 3194: unrecognized status \"Card machine\"",
+    "Order 3192: missing phone number",
+    "Order 3175: missing phone number",
+    "Order 3162: missing phone number",
+    "Order 3134: unrecognized status \"Card machine\"",
+    "Order 3129: unrecognized status \"Card machine\"",
+    "Order 3107: no line items",
+    "Order 3092: unrecognized status \"Card machine\"",
+    "Order 3091: unrecognized status \"Card machine\"",
+    "Order 3087: unrecognized status \"Card machine\"",
+    "Order 3082: unrecognized status \"Paid Online\"",
+    "Order 3073: unrecognized status \"Card machine\"",
+    "Order 3061: unrecognized status \"Card machine\"",
+    "Order 2968: missing phone number",
+    "Order 2933: unrecognized status \"Card machine\"",
+    "Order 2884: unrecognized status \"Card machine\"",
+    "Order 2765: unrecognized status \"Card machine\"",
+    "Order 2589: missing first name",
+    "Order 2589: missing phone number",
+    "Order 2584: unrecognized status \"Over the phone\"",
+    "Order 2502: unrecognized status \"Card machine\"",
+    "Order 2500: unrecognized status \"Card machine\"",
+    "Order 2437: unrecognized status \"Card machine\"",
+    "Order 2378: unrecognized status \"Card machine\"",
+    "Order 2352: unrecognized status \"Card machine\"",
+    "Order 2315: unrecognized status \"Card machine\"",
+    "Order 2298: unrecognized status \"Card machine\""
+  ],
+  "insertedCount": 3029,
+  "skippedDuplicates": 0,
+  "failedOrders": []
+}
