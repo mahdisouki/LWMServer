@@ -2394,6 +2394,7 @@ const taskCtrl = {
           timeSlot: t.available,
           taskDuration: t.taskDuration,
           priority: t.priority,
+          postcode: t.postcode,
           _id: t._id,
           name: name || null,
           items,

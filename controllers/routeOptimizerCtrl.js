@@ -17,7 +17,7 @@ const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 //https://routeoptimiser.duckdns.org
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
-  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.1.102:8000';
+  process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'http://192.168.0.145:8004';
 /** External optimizer: manual job groups (POST body: date, truck_contexts, job_groups). */
 const EXTERNAL_ROUTE_GROUPS_API_PATH =
   process.env.EXTERNAL_ROUTE_GROUPS_API_PATH || '/api/v1/custom';
@@ -26,6 +26,9 @@ const EXTERNAL_COMPARE_ROUTES_API_PATH =
   process.env.EXTERNAL_COMPARE_ROUTES_API_PATH || '/api/v1/compare-routes';
 
 const ROUTE_PROPOSAL_TTL_MS = Number(process.env.ROUTE_PROPOSAL_TTL_MS) || 24 * 60 * 60 * 1000;
+
+/** Trucks skipped by reset-vans-for-date (e.g. "Cancelled unit" holding archived jobs). */
+const RESET_VANS_EXCLUDED_TRUCK_IDS = new Set(['694d6ec329bc56b433c9891b']);
 
 const OPTIMIZER_AXIOS_OPTS = {
   timeout: 120000,
@@ -39,6 +42,16 @@ function normalizeMongoId(value) {
   if (typeof value === 'object' && value.$oid) return value.$oid;
   if (typeof value.toString === 'function') return value.toString();
   return null;
+}
+
+function isExcludedFromResetVans(truckId) {
+  const id = normalizeMongoId(truckId);
+  return id != null && RESET_VANS_EXCLUDED_TRUCK_IDS.has(id);
+}
+
+function filterResetVansTruckIds(truckIds) {
+  if (!Array.isArray(truckIds)) return [];
+  return truckIds.filter((id) => !isExcludedFromResetVans(id));
 }
 
 /** Mongoose Map-of-arrays subdocs: object spread drops taskId/order; use toObject() or explicit fields. */
@@ -593,7 +606,7 @@ async function resolveCompareRoutesExternal({
 }
 
 async function resolveAutoRoutes(basePayload) {
-  const url = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/grouped-routes`;
+  const url = `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`;
   const { data, status } = await postExternalOptimizer(url, basePayload);
   const hasRoutes = data != null && data.routes != null && typeof data.routes === 'object';
   const externalOk = hasRoutes && (status === 200 || data.success === true);
@@ -1069,7 +1082,7 @@ async function calculateRoutesExternal(req, res) {
     }
     console.log("payload", payload);
     const { data, status } = await axios.post(
-      `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/grouped-routes`,
+      `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/calculate-routes`,
       payload,
       {
         timeout: 120000,
@@ -2583,7 +2596,8 @@ async function discardRoutePreview(req, res) {
 /**
  * POST /api/route-optimizer/external/reset-vans-for-date
  * Body: { date: string|Date, truckIds?: string[] }
- * Clears all truck routes for the date (empties van/task lists) and unassigns tasks + tipping requests.
+ * Clears truck routes for the date (empties van/task lists) and unassigns tasks + tipping requests.
+ * Skips trucks in RESET_VANS_EXCLUDED_TRUCK_IDS (e.g. "Cancelled unit").
  */
 async function resetAllVansForDate(req, res) {
   try {
@@ -2596,9 +2610,22 @@ async function resetAllVansForDate(req, res) {
     }
 
     const { dateStr, startOfDay, endOfDay } = parsed;
+    const excludedTruckIds = [...RESET_VANS_EXCLUDED_TRUCK_IDS];
     const hasTruckSelection = Array.isArray(requestedTruckIds) && requestedTruckIds.length > 0;
-    const truckQuery = hasTruckSelection ? { _id: { $in: requestedTruckIds } } : {};
+    const effectiveTruckIds = hasTruckSelection
+      ? filterResetVansTruckIds(requestedTruckIds)
+      : [];
+    const truckQuery = hasTruckSelection
+      ? { _id: { $in: effectiveTruckIds } }
+      : { _id: { $nin: excludedTruckIds } };
     const trucks = await Truck.find(truckQuery);
+
+    if (hasTruckSelection && !effectiveTruckIds.length) {
+      return res.status(400).json({
+        message: 'No valid trucks found for provided truckIds (excluded trucks only)',
+        excludedTruckIds,
+      });
+    }
 
     if (hasTruckSelection && !trucks.length) {
       return res.status(400).json({ message: 'No valid trucks found for provided truckIds' });
@@ -2636,11 +2663,10 @@ async function resetAllVansForDate(req, res) {
 
     const taskFilter = {
       date: { $gte: startOfDay, $lte: endOfDay },
-      truckId: { $ne: null },
+      truckId: hasTruckSelection
+        ? { $in: effectiveTruckIds }
+        : { $ne: null, $nin: excludedTruckIds },
     };
-    if (hasTruckSelection) {
-      taskFilter.truckId = { $in: requestedTruckIds };
-    }
 
     const taskResult = await Task.updateMany(taskFilter, { $set: { truckId: null } });
 
@@ -2650,11 +2676,10 @@ async function resetAllVansForDate(req, res) {
     }
     const tippingByDateFilter = {
       tipdate: { $gte: startOfDay, $lte: endOfDay },
-      truckId: { $ne: null },
+      truckId: hasTruckSelection
+        ? { $in: effectiveTruckIds }
+        : { $ne: null, $nin: excludedTruckIds },
     };
-    if (hasTruckSelection) {
-      tippingByDateFilter.truckId = { $in: requestedTruckIds };
-    }
     tippingFilters.push(tippingByDateFilter);
 
     let tippingUnassigned = 0;
@@ -2679,6 +2704,7 @@ async function resetAllVansForDate(req, res) {
       tasksUnassigned: taskResult.modifiedCount || 0,
       tippingUnassigned,
       scope: hasTruckSelection ? 'selected_trucks' : 'all_trucks',
+      excludedTruckIds,
     });
   } catch (error) {
     console.error('Route optimizer reset-vans-for-date error:', error);
