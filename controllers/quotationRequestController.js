@@ -1,4 +1,5 @@
 const QuotationRequest = require('../models/QuotationRequest');
+const MovingServiceRequest = require('../models/MovingServiceRequest');
 const Task = require('../models/Task');
 const sendQuotationEmail = require('../utils/sendQuotationEmail'); // Utility function to send email notifications
 const APIfeatures = require('../utils/APIFeatures');
@@ -418,6 +419,20 @@ const quotationRequestController = {
             console.log("req.body", req.body)
             const files = req.files ? req.files.map((file) => file.path) : [];
 
+            const savedRequest = await MovingServiceRequest.create({
+                fullName,
+                contactNumber,
+                email,
+                pickUpLocation,
+                dropOffLocation,
+                pickUpPropertyType,
+                dropOffPropertyType,
+                packingRequired,
+                accessInfo,
+                extraInfo,
+                files,
+            });
+
             const contactData = {
                 fullName,
                 contactNumber,
@@ -436,7 +451,10 @@ const quotationRequestController = {
             const sendContactEmail = require('../utils/sendContactEmail');
             await sendContactEmail({ responsibleEmail, contactData });
 
-            res.status(200).json({ message: 'Moving service email sent successfully.' });
+            res.status(200).json({
+                message: 'Moving service email sent successfully.',
+                request: savedRequest,
+            });
         } catch (error) {
             console.error('Error sending moving service email:', error);
             res.status(500).json({ message: 'Failed to send moving service email', error: error.message });

@@ -1,128 +1,181 @@
 const Task = require('../../models/Task');
 const QuotationRequest = require('../../models/QuotationRequest');
-const { resolvePeriod } = require('./dashboardService');
-const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
+const TopPostcodesSnapshot = require('../../models/TopPostcodesSnapshot');
+const { excludeMigratedOrdersFilter } = require('./taskFilters');
 
 const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 50;
+const CACHE_KEY = TopPostcodesSnapshot.SNAPSHOT_KEY || 'default';
+/** Treat cache as stale after 16 days (biweekly cron + small buffer). */
+const TOP_POSTCODES_STALE_MS = 16 * 24 * 60 * 60 * 1000;
+
+const CHUNK_SIZE = Math.max(
+  parseInt(process.env.TOP_POSTCODES_CHUNK_SIZE, 10) || 500,
+  50,
+);
+const CHUNK_DELAY_MS = Math.max(
+  parseInt(process.env.TOP_POSTCODES_CHUNK_DELAY_MS, 10) || 250,
+  0,
+);
 
 const BAR_COLORS = [
   'green', 'blue', 'purple', 'orange', 'pink', 'cyan', 'amber', 'indigo',
   'teal', 'lime', 'rose', 'violet', 'sky', 'emerald', 'fuchsia', 'red',
 ];
 
-const ORDER_MATCH = (start, end) => ({
-  createdAt: { $gte: start, $lte: end },
+const ORDER_MATCH = {
   paymentStatus: { $ne: 'Failed' },
   createdByType: 'public',
   postcode: { $exists: true, $nin: ['', null] },
-});
-
-const QUOTE_MATCH = (start, end) => ({
-  createdAt: { $gte: start, $lte: end },
-  postcode: { $exists: true, $nin: ['', null] },
-});
-
-const POSTCODE_PREFIX_PROJECT = {
-  postcodePrefix: {
-    $toUpper: {
-      $arrayElemAt: [
-        { $split: [{ $trim: { input: '$postcode' } }, ' '] },
-        0,
-      ],
-    },
-  },
+  ...excludeMigratedOrdersFilter,
 };
+
+const QUOTE_MATCH = {
+  postcode: { $exists: true, $nin: ['', null] },
+};
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function roundPercent(value) {
   return Math.round(value * 100) / 100;
 }
 
-function facetCount(facetResult, key) {
-  return facetResult?.[0]?.count || 0;
+function clampLimit(limit) {
+  return Math.min(Math.max(parseInt(limit, 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
 }
 
-async function aggregateOrderBreakdown(start, end, limit) {
-  const [result] = await Task.aggregate([
-    { $match: ORDER_MATCH(start, end) },
-    { $project: POSTCODE_PREFIX_PROJECT },
-    {
-      $facet: {
-        topByOrders: [
-          { $match: { postcodePrefix: { $ne: '' } } },
-          { $group: { _id: '$postcodePrefix', orders: { $sum: 1 } } },
-          { $sort: { orders: -1, _id: 1 } },
-          { $limit: limit },
-          { $project: { _id: 0, postcode: '$_id', orders: 1 } },
-        ],
-        totalOrders: [{ $count: 'count' }],
-        withValidPostcode: [
-          { $match: { postcodePrefix: { $ne: '' } } },
-          { $count: 'count' },
-        ],
-        invalidPostcodes: [
-          { $match: { postcodePrefix: { $eq: '' } } },
-          { $count: 'count' },
-        ],
-        uniquePostcodeAreas: [
-          { $match: { postcodePrefix: { $ne: '' } } },
-          { $group: { _id: '$postcodePrefix' } },
-          { $count: 'count' },
-        ],
-      },
+function extractPostcodePrefix(postcode) {
+  if (!postcode || typeof postcode !== 'string') return '';
+  const trimmed = postcode.trim();
+  if (!trimmed) return '';
+  return trimmed.split(/\s+/)[0].toUpperCase();
+}
+
+/**
+ * Cursor-scan a collection in small batches with a pause between chunks
+ * so the cron does not pin MongoDB / event loop for one long aggregation.
+ */
+async function forEachDocumentChunk(Model, match, onDoc, label) {
+  let lastId = null;
+  let chunkIndex = 0;
+  let scanned = 0;
+
+  while (true) {
+    const query = lastId
+      ? { $and: [match, { _id: { $gt: lastId } }] }
+      : match;
+
+    const batch = await Model.find(query)
+      .select('_id postcode')
+      .sort({ _id: 1 })
+      .limit(CHUNK_SIZE)
+      .lean();
+
+    if (batch.length === 0) {
+      break;
+    }
+
+    chunkIndex += 1;
+    for (const doc of batch) {
+      onDoc(doc);
+    }
+    scanned += batch.length;
+    lastId = batch[batch.length - 1]._id;
+
+    console.log(
+      `[Top Postcodes Cron] ${label} chunk ${chunkIndex}: +${batch.length} (total ${scanned})`,
+    );
+
+    if (batch.length < CHUNK_SIZE) {
+      break;
+    }
+
+    if (CHUNK_DELAY_MS > 0) {
+      await sleep(CHUNK_DELAY_MS);
+    }
+  }
+
+  return { chunks: chunkIndex, scanned };
+}
+
+async function accumulateOrderBreakdown() {
+  const orderCounts = new Map();
+  let totalOrders = 0;
+  let withValidPostcode = 0;
+  let invalidPostcodes = 0;
+
+  const scan = await forEachDocumentChunk(
+    Task,
+    ORDER_MATCH,
+    (doc) => {
+      totalOrders += 1;
+      const prefix = extractPostcodePrefix(doc.postcode);
+      if (!prefix) {
+        invalidPostcodes += 1;
+        return;
+      }
+      withValidPostcode += 1;
+      orderCounts.set(prefix, (orderCounts.get(prefix) || 0) + 1);
     },
-  ]);
+    'orders',
+  );
+
+  const topRows = [...orderCounts.entries()]
+    .map(([postcode, orders]) => ({ postcode, orders }))
+    .sort((a, b) => b.orders - a.orders || a.postcode.localeCompare(b.postcode))
+    .slice(0, MAX_LIMIT);
 
   return {
-    topRows: result?.topByOrders || [],
-    totalOrders: facetCount(result?.totalOrders, 'count'),
-    withValidPostcode: facetCount(result?.withValidPostcode, 'count'),
-    invalidPostcodes: facetCount(result?.invalidPostcodes, 'count'),
-    uniquePostcodeAreas: facetCount(result?.uniquePostcodeAreas, 'count'),
+    topRows,
+    totalOrders,
+    withValidPostcode,
+    invalidPostcodes,
+    uniquePostcodeAreas: orderCounts.size,
+    scan,
   };
 }
 
-async function aggregateQuoteBreakdown(start, end, postcodes) {
-  const prefixList = [...new Set(postcodes.filter(Boolean))];
+async function accumulateQuoteBreakdown(topPostcodes) {
+  const prefixSet = new Set(topPostcodes.filter(Boolean));
+  const quoteCounts = new Map();
+  let totalQuotes = 0;
+  let withValidPostcode = 0;
+  let invalidPostcodes = 0;
+  const seenPrefixes = new Set();
 
-  const [result] = await QuotationRequest.aggregate([
-    { $match: QUOTE_MATCH(start, end) },
-    { $project: POSTCODE_PREFIX_PROJECT },
-    {
-      $facet: {
-        countsForPrefixes: [
-          { $match: { postcodePrefix: { $in: prefixList } } },
-          { $group: { _id: '$postcodePrefix', quotes: { $sum: 1 } } },
-        ],
-        totalQuotes: [{ $count: 'count' }],
-        withValidPostcode: [
-          { $match: { postcodePrefix: { $ne: '' } } },
-          { $count: 'count' },
-        ],
-        invalidPostcodes: [
-          { $match: { postcodePrefix: { $eq: '' } } },
-          { $count: 'count' },
-        ],
-        uniquePostcodeAreas: [
-          { $match: { postcodePrefix: { $ne: '' } } },
-          { $group: { _id: '$postcodePrefix' } },
-          { $count: 'count' },
-        ],
-      },
+  const scan = await forEachDocumentChunk(
+    QuotationRequest,
+    QUOTE_MATCH,
+    (doc) => {
+      totalQuotes += 1;
+      const prefix = extractPostcodePrefix(doc.postcode);
+      if (!prefix) {
+        invalidPostcodes += 1;
+        return;
+      }
+      withValidPostcode += 1;
+      seenPrefixes.add(prefix);
+      if (prefixSet.has(prefix)) {
+        quoteCounts.set(prefix, (quoteCounts.get(prefix) || 0) + 1);
+      }
     },
-  ]);
+    'quotes',
+  );
 
-  const quoteCounts = {};
-  for (const row of result?.countsForPrefixes || []) {
-    quoteCounts[row._id] = row.quotes;
+  const quoteCountsObj = {};
+  for (const [prefix, count] of quoteCounts.entries()) {
+    quoteCountsObj[prefix] = count;
   }
 
   return {
-    quoteCounts,
-    totalQuotes: facetCount(result?.totalQuotes, 'count'),
-    withValidPostcode: facetCount(result?.withValidPostcode, 'count'),
-    invalidPostcodes: facetCount(result?.invalidPostcodes, 'count'),
-    uniquePostcodeAreas: facetCount(result?.uniquePostcodeAreas, 'count'),
+    quoteCounts: quoteCountsObj,
+    totalQuotes,
+    withValidPostcode,
+    invalidPostcodes,
+    uniquePostcodeAreas: seenPrefixes.size,
+    scan,
   };
 }
 
@@ -139,18 +192,17 @@ function buildPostcodeRows(topOrderRows, quoteCounts) {
   }));
 }
 
-async function getTopPostcodes({ preset, startDate, endDate, limit = DEFAULT_LIMIT } = {}) {
-  const period = resolvePeriod({ preset, startDate, endDate });
-  const rowLimit = Math.min(Math.max(parseInt(limit, 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+async function computeTopPostcodesSnapshot(limit = MAX_LIMIT) {
+  const rowLimit = clampLimit(limit);
 
-  const orderBreakdown = await aggregateOrderBreakdown(period.start, period.end, rowLimit);
-  const quoteBreakdown = await aggregateQuoteBreakdown(
-    period.start,
-    period.end,
-    orderBreakdown.topRows.map((row) => row.postcode),
+  const orderBreakdown = await accumulateOrderBreakdown();
+  const topRows = orderBreakdown.topRows.slice(0, rowLimit);
+
+  const quoteBreakdown = await accumulateQuoteBreakdown(
+    topRows.map((row) => row.postcode),
   );
 
-  const postcodes = buildPostcodeRows(orderBreakdown.topRows, quoteBreakdown.quoteCounts);
+  const postcodes = buildPostcodeRows(topRows, quoteBreakdown.quoteCounts);
 
   const totals = postcodes.reduce(
     (acc, row) => ({
@@ -161,18 +213,8 @@ async function getTopPostcodes({ preset, startDate, endDate, limit = DEFAULT_LIM
   );
 
   return {
-    period: {
-      preset: period.preset,
-      ...getPeriodLabels(period),
-    },
-    badge: {
-      label: 'Postcode areas',
-      icon: 'location',
-    },
-    grouping: {
-      level: 'outward',
-      description: 'Postcodes grouped by outward code (e.g. SW1A from SW1A 2AA)',
-    },
+    postcodes,
+    totals,
     orderAttribution: {
       totalOrders: orderBreakdown.totalOrders,
       withValidPostcode: orderBreakdown.withValidPostcode,
@@ -185,17 +227,113 @@ async function getTopPostcodes({ preset, startDate, endDate, limit = DEFAULT_LIM
       invalidPostcodes: quoteBreakdown.invalidPostcodes,
       uniquePostcodeAreas: quoteBreakdown.uniquePostcodeAreas,
     },
+    grouping: {
+      level: 'outward',
+      description: 'Postcodes grouped by outward code (e.g. SW1A from SW1A 2AA)',
+    },
+    limit: rowLimit,
+    scanStats: {
+      orderChunks: orderBreakdown.scan.chunks,
+      ordersScanned: orderBreakdown.scan.scanned,
+      quoteChunks: quoteBreakdown.scan.chunks,
+      quotesScanned: quoteBreakdown.scan.scanned,
+      chunkSize: CHUNK_SIZE,
+      chunkDelayMs: CHUNK_DELAY_MS,
+    },
+  };
+}
+
+async function updateTopPostcodesCache() {
+  const computedAt = new Date();
+  const snapshot = await computeTopPostcodesSnapshot(MAX_LIMIT);
+
+  await TopPostcodesSnapshot.findOneAndUpdate(
+    { key: CACHE_KEY },
+    {
+      $set: {
+        key: CACHE_KEY,
+        postcodes: snapshot.postcodes,
+        totals: snapshot.totals,
+        orderAttribution: snapshot.orderAttribution,
+        quoteAttribution: snapshot.quoteAttribution,
+        grouping: snapshot.grouping,
+        limit: snapshot.limit,
+        computedAt,
+      },
+    },
+    { upsert: true, new: true },
+  );
+
+  return {
+    computedAt,
+    rowsCached: snapshot.postcodes.length,
+    totals: snapshot.totals,
+    scanStats: snapshot.scanStats,
+  };
+}
+
+async function isTopPostcodesCacheStale() {
+  const snapshot = await TopPostcodesSnapshot.findOne({ key: CACHE_KEY })
+    .select('computedAt')
+    .lean();
+
+  if (!snapshot?.computedAt) {
+    return true;
+  }
+
+  return Date.now() - new Date(snapshot.computedAt).getTime() > TOP_POSTCODES_STALE_MS;
+}
+
+/**
+ * Serve cached all-time top postcodes (refreshed by biweekly cron).
+ * Date-range query params are ignored.
+ */
+async function getTopPostcodes({ limit = DEFAULT_LIMIT } = {}) {
+  const rowLimit = clampLimit(limit);
+  const snapshot = await TopPostcodesSnapshot.findOne({ key: CACHE_KEY }).lean();
+
+  if (!snapshot?.computedAt) {
+    throw new Error('Top postcodes cache is not ready yet');
+  }
+
+  const postcodes = (snapshot.postcodes || []).slice(0, rowLimit);
+  const totals = postcodes.reduce(
+    (acc, row) => ({
+      orders: acc.orders + (row.orders || 0),
+      quotes: acc.quotes + (row.quotes || 0),
+    }),
+    { orders: 0, quotes: 0 },
+  );
+
+  return {
+    badge: {
+      label: 'Cached · biweekly',
+      icon: 'location',
+    },
+    grouping: snapshot.grouping || {
+      level: 'outward',
+      description: 'Postcodes grouped by outward code (e.g. SW1A from SW1A 2AA)',
+    },
+    orderAttribution: snapshot.orderAttribution || {},
+    quoteAttribution: snapshot.quoteAttribution || {},
     postcodes,
     totals,
     limit: rowLimit,
+    computedAt: snapshot.computedAt ? new Date(snapshot.computedAt).toISOString() : null,
+    dateFilterApplied: false,
     dataSources: {
-      orders: 'Task collection — public orders with paymentStatus not Failed, aggregated by postcode outward code in MongoDB',
-      quotes: 'QuotationRequest collection — quote counts for the returned postcode areas only',
-      ranking: 'Postcode areas ranked by order count; only top N rows returned from the database',
+      orders:
+        'TopPostcodesSnapshot — all-time public orders with paymentStatus not Failed, excluding createdBy MigrationScript, aggregated by postcode outward code in paced chunks (refreshed by biweekly cron)',
+      quotes: 'Cached quote counts for the returned postcode areas only',
+      ranking: 'Postcode areas ranked by order count from cached snapshot; date filters not applied',
     },
   };
 }
 
 module.exports = {
   getTopPostcodes,
+  updateTopPostcodesCache,
+  isTopPostcodesCacheStale,
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
 };

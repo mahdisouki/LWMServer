@@ -8,6 +8,11 @@ function parseMetricInt(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function parseMetricNumber(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function formatGa4Date(yyyymmdd) {
   if (!yyyymmdd || String(yyyymmdd).length !== 8) {
     return '';
@@ -38,7 +43,24 @@ function pathMatchesPatterns(pathname, patterns = []) {
 }
 
 function emptyTraffic() {
-  return { pageViews: 0, sessions: 0, users: 0 };
+  return {
+    pageViews: 0,
+    sessions: 0,
+    users: 0,
+    engagementDuration: 0,
+    avgEngagementSeconds: 0,
+    engagedSessions: 0,
+  };
+}
+
+function withAvgEngagement(totals) {
+  const engagementDuration = totals.engagementDuration || 0;
+  const sessions = totals.sessions || 0;
+  return {
+    ...totals,
+    engagementDuration,
+    avgEngagementSeconds: sessions > 0 ? engagementDuration / sessions : 0,
+  };
 }
 
 async function getGa4AuthClient() {
@@ -90,13 +112,19 @@ function sumMetricRows(rows = [], metricIndexes) {
     totals.pageViews += parseMetricInt(values[metricIndexes.pageViews]?.value);
     totals.sessions += parseMetricInt(values[metricIndexes.sessions]?.value);
     totals.users += parseMetricInt(values[metricIndexes.users]?.value);
+    if (metricIndexes.engagementDuration != null) {
+      totals.engagementDuration += parseMetricNumber(
+        values[metricIndexes.engagementDuration]?.value,
+      );
+    }
   }
-  return totals;
+  return withAvgEngagement(totals);
 }
 
 /**
  * Site-wide totals for a period.
  * `users` is GA4 totalUsers for the whole range (true unique users, not summed daily).
+ * `avgEngagementSeconds` is userEngagementDuration / sessions (avg engagement time per session).
  */
 async function fetchPeriodTraffic({ startKey, endKey }) {
   if (!isGa4Enabled()) {
@@ -111,6 +139,8 @@ async function fetchPeriodTraffic({ startKey, endKey }) {
         { name: 'screenPageViews' },
         { name: 'sessions' },
         { name: 'totalUsers' },
+        { name: 'userEngagementDuration' },
+        { name: 'engagedSessions' },
       ],
     });
 
@@ -121,9 +151,13 @@ async function fetchPeriodTraffic({ startKey, endKey }) {
 
     const values = row.metricValues || [];
     return {
-      pageViews: parseMetricInt(values[0]?.value),
-      sessions: parseMetricInt(values[1]?.value),
-      users: parseMetricInt(values[2]?.value),
+      ...withAvgEngagement({
+        pageViews: parseMetricInt(values[0]?.value),
+        sessions: parseMetricInt(values[1]?.value),
+        users: parseMetricInt(values[2]?.value),
+        engagementDuration: parseMetricNumber(values[3]?.value),
+        engagedSessions: parseMetricInt(values[4]?.value),
+      }),
       available: true,
     };
   } catch (error) {
@@ -206,6 +240,7 @@ async function fetchPeriodTrafficForPageFilter({ startKey, endKey, pageFilter })
         { name: 'screenPageViews' },
         { name: 'sessions' },
         { name: 'totalUsers' },
+        { name: 'userEngagementDuration' },
       ],
     });
 
@@ -215,7 +250,12 @@ async function fetchPeriodTrafficForPageFilter({ startKey, endKey, pageFilter })
     });
 
     return {
-      ...sumMetricRows(matchingRows, { pageViews: 0, sessions: 1, users: 2 }),
+      ...sumMetricRows(matchingRows, {
+        pageViews: 0,
+        sessions: 1,
+        users: 2,
+        engagementDuration: 3,
+      }),
       available: true,
     };
   } catch (error) {
@@ -302,7 +342,7 @@ async function fetchSessionsTrend({ startKey, endKey, pageFilter }) {
 }
 
 /**
- * Page Performance style rows: views/sessions per configured landing page filter.
+ * Page Performance rows: views, engagement duration, bounce rate per configured page filter.
  */
 async function fetchPagePerformanceViews({ startKey, endKey, pageFilters = [] }) {
   if (!isGa4Enabled()) {
@@ -317,18 +357,31 @@ async function fetchPagePerformanceViews({ startKey, endKey, pageFilters = [] })
       metrics: [
         { name: 'screenPageViews' },
         { name: 'sessions' },
+        { name: 'userEngagementDuration' },
+        { name: 'bounceRate' },
       ],
     });
 
     const byPageId = {};
     for (const pageFilter of pageFilters) {
-      byPageId[pageFilter.id] = { views: 0, sessions: 0 };
+      byPageId[pageFilter.id] = {
+        views: 0,
+        sessions: 0,
+        engagementDuration: 0,
+        weightedBounceRate: 0,
+      };
     }
 
     for (const row of data?.rows || []) {
       const pathname = getUrlPathname(row.dimensionValues?.[0]?.value || '');
       const views = parseMetricInt(row.metricValues?.[0]?.value);
       const sessions = parseMetricInt(row.metricValues?.[1]?.value);
+      const engagementDuration = parseMetricNumber(row.metricValues?.[2]?.value);
+      let bounceRate = parseMetricNumber(row.metricValues?.[3]?.value);
+      // GA4 API returns bounceRate as a ratio (0–1)
+      if (bounceRate > 0 && bounceRate <= 1) {
+        bounceRate *= 100;
+      }
 
       for (const pageFilter of pageFilters) {
         const patterns = pageFilter.pageViewPatterns?.length
@@ -337,14 +390,127 @@ async function fetchPagePerformanceViews({ startKey, endKey, pageFilters = [] })
         if (!pathMatchesPatterns(pathname, patterns)) {
           continue;
         }
-        byPageId[pageFilter.id].views += views;
-        byPageId[pageFilter.id].sessions += sessions;
+        const bucket = byPageId[pageFilter.id];
+        bucket.views += views;
+        bucket.sessions += sessions;
+        bucket.engagementDuration += engagementDuration;
+        bucket.weightedBounceRate += bounceRate * sessions;
       }
+    }
+
+    for (const pageFilter of pageFilters) {
+      const bucket = byPageId[pageFilter.id];
+      const sessions = bucket.sessions || 0;
+      bucket.avgEngagementSeconds = sessions > 0
+        ? bucket.engagementDuration / sessions
+        : 0;
+      bucket.bounceRate = sessions > 0
+        ? bucket.weightedBounceRate / sessions
+        : 0;
     }
 
     return { byPageId, available: true };
   } catch (error) {
     console.error('[GA4] fetchPagePerformanceViews failed:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Every GA4 pagePath with views / engagement / bounce for Page Performance "all URLs" table.
+ */
+async function fetchAllPagePerformance({ startKey, endKey }) {
+  if (!isGa4Enabled()) {
+    return null;
+  }
+
+  try {
+    const analyticsdata = await getAnalyticsDataClient();
+    const propertyId = getGa4PropertyId();
+    const { data } = await analyticsdata.properties.runReport({
+      property: `properties/${propertyId}`,
+      requestBody: {
+        dateRanges: [{ startDate: startKey, endDate: endKey }],
+        dimensions: [{ name: 'pagePath' }],
+        metrics: [
+          { name: 'screenPageViews' },
+          { name: 'sessions' },
+          { name: 'userEngagementDuration' },
+          { name: 'bounceRate' },
+        ],
+        orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+        limit: 10000,
+        keepEmptyRows: false,
+      },
+    });
+
+    const pages = [];
+    let totalViews = 0;
+
+    for (const row of data?.rows || []) {
+      const rawPath = String(row.dimensionValues?.[0]?.value || '').trim() || '/';
+      const path = getUrlPathname(rawPath) || rawPath;
+      const views = parseMetricInt(row.metricValues?.[0]?.value);
+      const sessions = parseMetricInt(row.metricValues?.[1]?.value);
+      const engagementDuration = parseMetricNumber(row.metricValues?.[2]?.value);
+      let bounceRate = parseMetricNumber(row.metricValues?.[3]?.value);
+      if (bounceRate > 0 && bounceRate <= 1) {
+        bounceRate *= 100;
+      }
+
+      totalViews += views;
+      pages.push({
+        path,
+        views,
+        sessions,
+        avgEngagementSeconds: sessions > 0 ? engagementDuration / sessions : 0,
+        bounceRate,
+      });
+    }
+
+    return { pages, totalViews, available: true };
+  } catch (error) {
+    console.error('[GA4] fetchAllPagePerformance failed:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Sessions by GA4 deviceCategory (mobile / desktop / tablet) for a period.
+ */
+async function fetchSessionsByDeviceCategory({ startKey, endKey }) {
+  if (!isGa4Enabled()) {
+    return null;
+  }
+
+  try {
+    const data = await runReport({
+      startKey,
+      endKey,
+      dimensions: [{ name: 'deviceCategory' }],
+      metrics: [{ name: 'sessions' }],
+    });
+
+    const sessions = {
+      mobile: 0,
+      desktop: 0,
+      tablet: 0,
+      other: 0,
+    };
+
+    for (const row of data?.rows || []) {
+      const category = String(row.dimensionValues?.[0]?.value || '').trim().toLowerCase();
+      const count = parseMetricInt(row.metricValues?.[0]?.value);
+      if (category === 'mobile' || category === 'desktop' || category === 'tablet') {
+        sessions[category] += count;
+      } else {
+        sessions.other += count;
+      }
+    }
+
+    return { sessions, available: true };
+  } catch (error) {
+    console.error('[GA4] fetchSessionsByDeviceCategory failed:', error.message);
     return null;
   }
 }
@@ -356,4 +522,6 @@ module.exports = {
   fetchPeriodTrafficForPageFilter,
   fetchSessionsTrend,
   fetchPagePerformanceViews,
+  fetchAllPagePerformance,
+  fetchSessionsByDeviceCategory,
 };

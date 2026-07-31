@@ -1,12 +1,14 @@
 const StandardItem = require('../models/StandardItem');
 const ServiceCategory = require('../models/ServiceCategory');
 const Task = require('../models/Task');
+const { excludeMigratedOrdersFilter } = require('./analytics/taskFilters');
 
 const POPULARITY_STALE_MS = 35 * 24 * 60 * 60 * 1000;
 
 const paidTaskItemMatch = {
   paymentStatus: { $in: ['Paid', 'partial_Paid'] },
   taskStatus: { $ne: 'Cancelled' },
+  ...excludeMigratedOrdersFilter,
   'items.standardItemId': { $ne: null },
 };
 

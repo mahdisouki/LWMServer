@@ -46,6 +46,7 @@ connectToDatabase()
     require('./cron/dayOffUnitReminders');
     require('./cron/cleanupTaskPhotoUploads');
     require('./cron/updatePopularityScores');
+    require('./cron/updateTopPostcodesCache');
     require('./cron/syncClaritySnapshots');
 
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")

@@ -1,6 +1,7 @@
 const Task = require('../../models/Task');
 const { resolvePeriod } = require('./dashboardService');
 const { getPeriodLabels, eachDayKeyInPeriod } = require('../../utils/analyticsDateRange');
+const { excludeMigratedOrdersFilter } = require('./taskFilters');
 
 const ADMIN_COLORS = [
   'blue', 'green', 'purple', 'orange', 'pink', 'cyan', 'amber', 'indigo',
@@ -24,6 +25,7 @@ const ADMIN_ORDER_MATCH = (start, end) => ({
   createdAt: { $gte: start, $lte: end },
   createdByType: 'Admin',
   paymentStatus: { $ne: 'Failed' },
+  ...excludeMigratedOrdersFilter,
 });
 
 function buildDailyMap(dailyRows) {
@@ -145,6 +147,31 @@ function buildDailySeries(period, dailyMap) {
   });
 }
 
+async function aggregatePublicOrderStats(start, end) {
+  const [row] = await Task.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: start, $lte: end },
+        createdByType: 'public',
+        paymentStatus: { $ne: 'Failed' },
+        ...excludeMigratedOrdersFilter,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        orderCount: { $sum: 1 },
+        totalValue: { $sum: { $ifNull: ['$totalPrice', 0] } },
+      },
+    },
+  ]);
+
+  return {
+    orderCount: row?.orderCount || 0,
+    totalValue: roundMoney(row?.totalValue || 0),
+  };
+}
+
 async function getAdminOrders({
   preset,
   startDate,
@@ -152,10 +179,10 @@ async function getAdminOrders({
 } = {}) {
   const period = resolvePeriod({ preset, startDate, endDate });
 
-  const { adminRows, dailyRows } = await aggregateAdminOrderStats(
-    period.start,
-    period.end,
-  );
+  const [{ adminRows, dailyRows }, publicOrders] = await Promise.all([
+    aggregateAdminOrderStats(period.start, period.end),
+    aggregatePublicOrderStats(period.start, period.end),
+  ]);
 
   const { segments, totals } = buildAdminSegments(adminRows);
   const dailyBreakdown = buildDailySeries(period, buildDailyMap(dailyRows));
@@ -167,6 +194,7 @@ async function getAdminOrders({
     },
     segments,
     totals,
+    publicOrders,
     dailyBreakdown,
     chartHints: {
       orderCountDonut: 'Use segments[].admin as label, segments[].orderCount as value, segments[].orderSharePercent as share',
@@ -174,9 +202,13 @@ async function getAdminOrders({
       colors: 'Use segments[].color for consistent slice colors',
     },
     dataSources: {
-      orders: 'Task collection — admin-created orders (createdByType Admin), excluding Failed payments',
-      grouping: 'Grouped by createdBy (admin username)',
+      orders:
+        'Task collection — admin-created orders (createdByType Admin), excluding Failed payments and createdBy MigrationScript',
+      publicOrders:
+        'Task collection — public website orders (createdByType public), excluding Failed payments and createdBy MigrationScript',
+      grouping: 'Admin breakdown grouped by createdBy (admin username)',
       dateFilter: 'Filtered by order creation timestamp (Task.createdAt)',
+      exclusions: 'createdBy MigrationScript is excluded from all analytics order totals and breakdowns',
     },
   };
 }

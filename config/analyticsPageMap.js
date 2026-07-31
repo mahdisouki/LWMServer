@@ -1,11 +1,13 @@
 /**
- * Maps backoffice page filter labels to URL path patterns on the public site.
- * Patterns are tested against Clarity URL pathnames (case-insensitive).
+ * Maps backoffice page filter labels to URL path patterns on the public site
+ * (client-lwm React Router routes).
  *
- * Metrics:
- * - Page views / sessions / users: Google Analytics 4 when enabled (fallback: Clarity)
- * - Avg time / quick exit: Microsoft Clarity snapshots
- * pathLabel is the canonical landing URL shown in the analytics UI.
+ * Waste Removal:
+ * - Landing: /services/ (legacy /waste-removal* 301 here)
+ * - Category listings: /product-category/:slug/ (separate row)
+ * - Product detail: /product/:slug/ (separate row)
+ *
+ * pathLabel is the canonical URL shown in the analytics UI.
  * pageViewPatterns (when set) limits view/session metrics to the main landing page only.
  */
 const QUOTE_PAGE_ID = 'request-a-quote';
@@ -46,13 +48,28 @@ const PAGE_FILTERS = [
     id: 'waste-removal-services',
     label: 'Waste Removal Services',
     pathLabel: '/services/',
+    // Landing only — matches client-lwm /services/ (legacy waste-removal* redirects here).
+    // Do NOT include /product/ or /product-category/ (those inflate this row above site totals).
     pathPatterns: [
       '^/services/?$',
       '^/waste-removal-services/?$',
       '^/waste-removal/?$',
-      '^/product-category/',
-      '^/product/',
     ],
+    pageViewPatterns: ['^/services/?$'],
+    tracksQuotes: false,
+  },
+  {
+    id: 'waste-removal-categories',
+    label: 'Waste Removal Categories',
+    pathLabel: '/product-category/',
+    pathPatterns: ['^/product-category/[^/]+/?$'],
+    tracksQuotes: false,
+  },
+  {
+    id: 'waste-removal-products',
+    label: 'Waste Removal Products',
+    pathLabel: '/product/',
+    pathPatterns: ['^/product/[^/]+/?$'],
     tracksQuotes: false,
   },
   {
@@ -67,8 +84,8 @@ const PAGE_FILTERS = [
     id: 'orders',
     label: 'Orders',
     pathLabel: '/order-checkout/',
-    pathPatterns: ['^/order-checkout/?$'],
-    pageViewPatterns: ['^/order-checkout/?$'],
+    pathPatterns: ['^/order-checkout/?$', '^/checkout/?$'],
+    pageViewPatterns: ['^/order-checkout/?$', '^/checkout/?$'],
     tracksQuotes: false,
   },
   {

@@ -1,5 +1,6 @@
 const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const QuotationRequest = require('../../models/QuotationRequest');
+const Task = require('../../models/Task');
 const { getPageFilterById, pageFilterTracksQuotes, getPageViewFilter } = require('../../config/analyticsPageMap');
 const { isGa4Enabled } = require('../../config/ga4Config');
 const {
@@ -19,10 +20,20 @@ const {
   fetchPeriodTrafficForPageFilter,
   fetchSessionsTrend,
 } = require('./ga4Service');
+const { excludeMigratedOrdersFilter } = require('./taskFilters');
 
 async function countQuoteRequests(start, end) {
   return QuotationRequest.countDocuments({
     createdAt: { $gte: start, $lte: end },
+  });
+}
+
+/** All orders (public, Admin, broker) — excludes Failed payments and MigrationScript. */
+async function countTotalOrders(start, end) {
+  return Task.countDocuments({
+    createdAt: { $gte: start, $lte: end },
+    paymentStatus: { $ne: 'Failed' },
+    ...excludeMigratedOrdersFilter,
   });
 }
 
@@ -103,32 +114,43 @@ async function loadClarityMetricsForPeriod(start, end, pageFilter) {
   };
 }
 
-function buildMetricBlock(current, previous, { formatter = (v) => v, applicable = true } = {}) {
+function buildMetricBlock(current, previous, { formatter = (v) => v, applicable = true, label } = {}) {
   if (!applicable) {
-    return {
+    const block = {
       value: null,
       formatted: null,
       changePercent: null,
       applicable: false,
     };
+    if (label) block.label = label;
+    return block;
   }
 
-  return {
+  const block = {
     value: current,
     formatted: formatter(current),
     changePercent: percentChange(current, previous),
     applicable: true,
   };
+  if (label) block.label = label;
+  return block;
 }
 
 function buildDataSources(pageFilter, { trafficFromGa4 = false } = {}) {
   const claritySource = 'Clarity daily snapshots (MongoDB)';
   const ga4Source = 'Google Analytics 4 Data API';
   const quotesSource = 'QuotationRequest collection (MongoDB)';
+  const ordersSource = 'Task collection (MongoDB)';
   const trafficSource = trafficFromGa4 ? ga4Source : claritySource;
 
   if (pageFilter.id === 'all') {
     return {
+      users: {
+        source: trafficFromGa4 ? ga4Source : null,
+        detail: trafficFromGa4
+          ? 'GA4 totalUsers — distinct people for the selected period (site-wide)'
+          : 'Requires GA4 — unique users are not available from Clarity fallback',
+      },
       totalPageViews: {
         source: trafficSource,
         detail: trafficFromGa4
@@ -136,7 +158,16 @@ function buildDataSources(pageFilter, { trafficFromGa4 = false } = {}) {
           : 'Sessions × pages per session from Clarity overview Traffic metric',
       },
       quoteRequests: { source: quotesSource, detail: 'All quote form submissions in the selected period' },
-      avgTimeOnSite: { source: claritySource, detail: 'Site-wide average active engagement time per session' },
+      totalOrders: {
+        source: ordersSource,
+        detail: 'All orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript',
+      },
+      avgTimeOnSite: {
+        source: trafficSource,
+        detail: trafficFromGa4
+          ? 'GA4 average engagement time per session (userEngagementDuration ÷ sessions)'
+          : 'Site-wide average active engagement time per session (Clarity)',
+      },
       conversionRate: {
         source: 'Calculated',
         detail: 'All quote requests ÷ page views in the period',
@@ -156,6 +187,12 @@ function buildDataSources(pageFilter, { trafficFromGa4 = false } = {}) {
 
   if (pageFilterTracksQuotes(pageFilter)) {
     return {
+      users: {
+        source: trafficFromGa4 ? ga4Source : null,
+        detail: trafficFromGa4
+          ? `GA4 totalUsers on ${pageFilter.pathLabel}`
+          : 'Requires GA4 — unique users are not available from Clarity fallback',
+      },
       totalPageViews: {
         source: trafficSource,
         detail: trafficFromGa4
@@ -166,9 +203,15 @@ function buildDataSources(pageFilter, { trafficFromGa4 = false } = {}) {
         source: quotesSource,
         detail: 'All quote form submissions in the selected period',
       },
+      totalOrders: {
+        source: ordersSource,
+        detail: 'All orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript — site-wide by date',
+      },
       avgTimeOnSite: {
-        source: claritySource,
-        detail: `Average active time on URLs matching: ${pageFilter.label}`,
+        source: trafficSource,
+        detail: trafficFromGa4
+          ? `GA4 average engagement time per session on ${pageFilter.pathLabel}`
+          : `Average active time on URLs matching: ${pageFilter.label}`,
       },
       conversionRate: {
         source: 'Calculated',
@@ -190,6 +233,12 @@ function buildDataSources(pageFilter, { trafficFromGa4 = false } = {}) {
   }
 
   return {
+    users: {
+      source: trafficFromGa4 ? ga4Source : null,
+      detail: trafficFromGa4
+        ? `GA4 totalUsers on ${pageFilter.pathLabel}`
+        : 'Requires GA4 — unique users are not available from Clarity fallback',
+    },
     totalPageViews: {
       source: trafficSource,
       detail: trafficFromGa4
@@ -200,9 +249,15 @@ function buildDataSources(pageFilter, { trafficFromGa4 = false } = {}) {
       source: null,
       detail: 'Not applicable — quote requests are only shown for All Pages or Request A Quote',
     },
+    totalOrders: {
+      source: ordersSource,
+      detail: 'All orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript — site-wide by date',
+    },
     avgTimeOnSite: {
-      source: claritySource,
-      detail: `Average active time on URLs matching: ${pageFilter.label}`,
+      source: trafficSource,
+      detail: trafficFromGa4
+        ? `GA4 average engagement time per session on ${pageFilter.pathLabel}`
+        : `Average active time on URLs matching: ${pageFilter.label}`,
     },
     conversionRate: {
       source: null,
@@ -248,6 +303,8 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
     previousClarity,
     currentQuotes,
     previousQuotes,
+    currentOrders,
+    previousOrders,
     currentGa4,
     previousGa4,
     currentGa4Trend,
@@ -255,6 +312,8 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
     loadClarityMetricsForPeriod(period.start, period.end, pageFilter),
     loadClarityMetricsForPeriod(previousPeriod.start, previousPeriod.end, pageFilter),
     ...quoteQueries,
+    countTotalOrders(period.start, period.end),
+    countTotalOrders(previousPeriod.start, previousPeriod.end),
     isGa4Enabled()
       ? fetchPeriodTrafficForPageFilter({
         startKey: period.startKey,
@@ -287,6 +346,12 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
   const previousSessions = previousGa4?.available
     ? previousGa4.sessions
     : previousClarity.aggregated.sessions;
+  const currentAvgTime = trafficFromGa4
+    ? currentGa4.avgEngagementSeconds
+    : currentClarity.aggregated.avgTimeOnSiteSeconds;
+  const previousAvgTime = previousGa4?.available
+    ? previousGa4.avgEngagementSeconds
+    : previousClarity.aggregated.avgTimeOnSiteSeconds;
 
   const current = currentClarity.aggregated;
   const previous = previousClarity.aggregated;
@@ -333,11 +398,19 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
       trafficSource: trafficFromGa4 ? 'ga4' : 'clarity',
     },
     metrics: {
+      users: trafficFromGa4
+        ? buildMetricBlock(
+          currentGa4.users,
+          previousGa4?.available ? previousGa4.users : null,
+          { label: 'Unique Visitors' },
+        )
+        : buildMetricBlock(null, null, { applicable: false, label: 'Unique Visitors' }),
       totalPageViews: buildMetricBlock(currentPageViews, previousPageViews),
       quoteRequests: buildMetricBlock(currentQuotes, previousQuotes, { applicable: quotesApplicable }),
+      totalOrders: buildMetricBlock(currentOrders, previousOrders),
       avgTimeOnSite: buildMetricBlock(
-        current.avgTimeOnSiteSeconds,
-        previous.avgTimeOnSiteSeconds,
+        currentAvgTime,
+        previousAvgTime,
         { formatter: formatDuration },
       ),
       conversionRate: quotesApplicable
@@ -354,20 +427,16 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
           applicable: false,
         },
       sessions: buildMetricBlock(currentSessions, previousSessions),
-      users: trafficFromGa4
-        ? buildMetricBlock(
-          currentGa4.users,
-          previousGa4?.available ? previousGa4.users : null,
-        )
-        : buildMetricBlock(null, null, { applicable: false }),
     },
     dataSources: buildDataSources(pageFilter, { trafficFromGa4 }),
     details: {
       botSessionsExcluded: current.botSessionsExcluded,
       scrollDepthAverage: current.scrollDepthAverage,
       pagesPerSession: current.pagesPerSession,
-      avgTimeOnSiteSeconds: current.avgTimeOnSiteSeconds,
-      totalTimeSeconds: current.totalTimeSeconds,
+      avgTimeOnSiteSeconds: currentAvgTime,
+      totalTimeSeconds: trafficFromGa4
+        ? (currentGa4.engagementDuration || 0)
+        : current.totalTimeSeconds,
     },
     sessionsTrend: currentGa4Trend?.available
       ? currentGa4Trend.trend

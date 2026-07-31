@@ -11,32 +11,91 @@ function dayKeyInTimeZone(date, timeZone = ANALYTICS_TIMEZONE) {
   }).format(date);
 }
 
+function getZonedParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+
+  const map = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      map[part.type] = part.value;
+    }
+  }
+
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    // Some engines report midnight as hour "24"
+    hour: Number(map.hour) % 24,
+    minute: Number(map.minute),
+    second: Number(map.second),
+  };
+}
+
+function getTimeZoneOffsetMs(date, timeZone) {
+  const parts = getZonedParts(date, timeZone);
+  const asUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  return asUtc - date.getTime();
+}
+
+/** Convert a wall-clock time on a calendar day in `timeZone` to a UTC Date. */
+function zonedWallTimeToUtc(dayKey, hours, minutes, seconds, ms, timeZone = ANALYTICS_TIMEZONE) {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  const utcGuess = Date.UTC(year, month - 1, day, hours, minutes, seconds, ms);
+  let instant = new Date(utcGuess - getTimeZoneOffsetMs(new Date(utcGuess), timeZone));
+  // Recompute once so DST transition days land on the correct offset
+  instant = new Date(utcGuess - getTimeZoneOffsetMs(instant, timeZone));
+  return instant;
+}
+
 function startOfLabeledDay(dayKey) {
   if (!ISO_DATE_ONLY.test(dayKey)) {
     throw new Error(`Invalid date label: ${dayKey}`);
   }
-  return new Date(`${dayKey}T00:00:00.000Z`);
+  return zonedWallTimeToUtc(dayKey, 0, 0, 0, 0, ANALYTICS_TIMEZONE);
 }
 
 function endOfLabeledDay(dayKey) {
   if (!ISO_DATE_ONLY.test(dayKey)) {
     throw new Error(`Invalid date label: ${dayKey}`);
   }
-  return new Date(`${dayKey}T23:59:59.999Z`);
+  // Next local midnight minus 1ms — avoids Intl second/ms rounding issues
+  return new Date(startOfLabeledDay(addDaysToDayKey(dayKey, 1)).getTime() - 1);
 }
 
 function addDaysToDayKey(dayKey, days) {
-  const date = startOfLabeledDay(dayKey);
-  date.setUTCDate(date.getUTCDate() + days);
+  if (!ISO_DATE_ONLY.test(dayKey)) {
+    throw new Error(`Invalid date label: ${dayKey}`);
+  }
+  const [year, month, day] = dayKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
   return date.toISOString().slice(0, 10);
 }
 
 function startOfTimeZoneDay(date, timeZone = ANALYTICS_TIMEZONE) {
-  return startOfLabeledDay(dayKeyInTimeZone(date, timeZone));
+  return zonedWallTimeToUtc(dayKeyInTimeZone(date, timeZone), 0, 0, 0, 0, timeZone);
 }
 
 function endOfTimeZoneDay(date, timeZone = ANALYTICS_TIMEZONE) {
-  return endOfLabeledDay(dayKeyInTimeZone(date, timeZone));
+  const dayKey = dayKeyInTimeZone(date, timeZone);
+  const nextMidnight = zonedWallTimeToUtc(addDaysToDayKey(dayKey, 1), 0, 0, 0, 0, timeZone);
+  return new Date(nextMidnight.getTime() - 1);
 }
 
 function toDateString(date) {
@@ -57,11 +116,15 @@ function parseDateInput(value, endOfDay = false) {
     throw new Error(`Invalid date: ${value}`);
   }
 
-  return endOfDay ? endOfTimeZoneDay(parsed) : startOfTimeZoneDay(parsed);
+  // Full ISO timestamps (same as Quotations module) are used as exact instants
+  return parsed;
 }
 
 function daysBetweenInclusive(startKey, endKey) {
-  const ms = startOfLabeledDay(endKey).getTime() - startOfLabeledDay(startKey).getTime();
+  const [startYear, startMonth, startDay] = startKey.split('-').map(Number);
+  const [endYear, endMonth, endDay] = endKey.split('-').map(Number);
+  const ms =
+    Date.UTC(endYear, endMonth - 1, endDay) - Date.UTC(startYear, startMonth - 1, startDay);
   return Math.round(ms / (24 * 60 * 60 * 1000)) + 1;
 }
 

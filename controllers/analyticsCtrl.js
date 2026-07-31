@@ -7,6 +7,7 @@ const goalCompletionsService = require('../services/analytics/goalCompletionsSer
 const devicesService = require('../services/analytics/devicesService');
 const pagePerformanceService = require('../services/analytics/pagePerformanceService');
 const topPostcodesService = require('../services/analytics/topPostcodesService');
+const popularItemsService = require('../services/analytics/popularItemsService');
 const trafficSourcesService = require('../services/analytics/trafficSourcesService');
 const adminOrdersService = require('../services/analytics/adminOrdersService');
 const staffWorkingHoursService = require('../services/analytics/staffWorkingHoursService');
@@ -425,9 +426,6 @@ const analyticsCtrl = {
   getTopPostcodes: async (req, res) => {
     try {
       const data = await topPostcodesService.getTopPostcodes({
-        preset: req.query.preset,
-        startDate: req.query.startDate,
-        endDate: req.query.endDate,
         limit: req.query.limit,
       });
       res.status(200).json({
@@ -435,9 +433,27 @@ const analyticsCtrl = {
         ...data,
       });
     } catch (error) {
-      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      const status = error.message.includes('not ready') ? 503 : 500;
       res.status(status).json({
         message: 'Failed to load top postcodes',
+        error: error.message,
+      });
+    }
+  },
+
+  getPopularItems: async (req, res) => {
+    try {
+      const data = await popularItemsService.getPopularItems({
+        limit: req.query.limit,
+      });
+      res.status(200).json({
+        message: 'Popular items retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load popular items',
         error: error.message,
       });
     }

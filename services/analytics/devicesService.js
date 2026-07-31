@@ -1,41 +1,19 @@
-const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const QuotationRequest = require('../../models/QuotationRequest');
 const Task = require('../../models/Task');
 const { resolvePeriod } = require('./dashboardService');
-const { toDateString, getPeriodLabels } = require('../../utils/analyticsDateRange');
-const { findMetric, parseIntSafe } = require('../../utils/clarityMetricsParser');
+const { getPeriodLabels } = require('../../utils/analyticsDateRange');
+const { isGa4Enabled } = require('../../config/ga4Config');
+const { fetchSessionsByDeviceCategory } = require('./ga4Service');
+const { excludeMigratedOrdersFilter } = require('./taskFilters');
 
 const DEVICE_BUCKETS = [
-  { id: 'mobile', label: 'Mobile', clarityValues: ['Mobile'], color: 'blue' },
-  { id: 'desktop', label: 'Desktop', clarityValues: ['PC'], color: 'green' },
-  { id: 'tablet', label: 'Tablet', clarityValues: ['Tablet'], color: 'orange' },
+  { id: 'mobile', label: 'Mobile', color: 'blue' },
+  { id: 'desktop', label: 'Desktop', color: 'green' },
+  { id: 'tablet', label: 'Tablet', color: 'orange' },
 ];
 
 function roundPercent(value) {
   return Math.round(value * 100) / 100;
-}
-
-function normalizeDeviceBucket(deviceValue) {
-  const value = String(deviceValue || '').trim();
-  const match = DEVICE_BUCKETS.find((bucket) => bucket.clarityValues.includes(value));
-  return match?.id || 'other';
-}
-
-function extractDeviceSessions(devicesData) {
-  const traffic = findMetric(devicesData, 'Traffic');
-  const totals = {
-    mobile: 0,
-    desktop: 0,
-    tablet: 0,
-    other: 0,
-  };
-
-  for (const row of traffic?.information || []) {
-    const bucket = normalizeDeviceBucket(row.Device);
-    totals[bucket] += parseIntSafe(row.totalSessionCount);
-  }
-
-  return totals;
 }
 
 function buildDeviceBreakdown(sessionTotals) {
@@ -61,11 +39,15 @@ function buildDeviceBreakdown(sessionTotals) {
 async function getDevices({ preset, startDate, endDate } = {}) {
   const period = resolvePeriod({ preset, startDate, endDate });
 
-  const [deviceSnapshots, quoteRequests, confirmedOrders] = await Promise.all([
-    ClaritySnapshot.find({
-      snapshotType: 'devices',
-      snapshotDate: { $gte: period.start, $lte: period.end },
-    }).sort({ snapshotDate: 1 }).lean(),
+  if (!isGa4Enabled()) {
+    throw new Error('GA4 is not configured — Devices requires Google Analytics 4');
+  }
+
+  const [ga4Devices, quoteRequests, confirmedOrders] = await Promise.all([
+    fetchSessionsByDeviceCategory({
+      startKey: period.startKey,
+      endKey: period.endKey,
+    }),
     QuotationRequest.countDocuments({
       createdAt: { $gte: period.start, $lte: period.end },
     }),
@@ -73,22 +55,20 @@ async function getDevices({ preset, startDate, endDate } = {}) {
       createdAt: { $gte: period.start, $lte: period.end },
       paymentStatus: { $ne: 'Failed' },
       createdByType: 'public',
+      ...excludeMigratedOrdersFilter,
     }),
   ]);
 
-  const sessionTotals = {
-    mobile: 0,
-    desktop: 0,
-    tablet: 0,
-    other: 0,
-  };
-
-  for (const snapshot of deviceSnapshots) {
-    const dayTotals = extractDeviceSessions(snapshot.data);
-    for (const key of Object.keys(sessionTotals)) {
-      sessionTotals[key] += dayTotals[key] || 0;
-    }
+  if (!ga4Devices?.available) {
+    throw new Error('Failed to load device sessions from Google Analytics 4');
   }
+
+  const sessionTotals = {
+    mobile: ga4Devices.sessions.mobile || 0,
+    desktop: ga4Devices.sessions.desktop || 0,
+    tablet: ga4Devices.sessions.tablet || 0,
+    other: ga4Devices.sessions.other || 0,
+  };
 
   const devices = buildDeviceBreakdown(sessionTotals);
   const totalSessions = devices.reduce((sum, device) => sum + device.sessions, 0);
@@ -102,10 +82,9 @@ async function getDevices({ preset, startDate, endDate } = {}) {
       ...getPeriodLabels(period),
     },
     snapshotCoverage: {
-      daysInPeriod: deviceSnapshots.length,
-      note: deviceSnapshots.length === 0
-        ? 'No device snapshots for this period. Data appears as daily Clarity sync runs.'
-        : undefined,
+      daysInPeriod: null,
+      trafficSource: 'ga4',
+      note: undefined,
     },
     devices,
     totals: {
@@ -120,7 +99,7 @@ async function getDevices({ preset, startDate, endDate } = {}) {
       applicable: totalSessions > 0,
     },
     dataSources: {
-      sessions: 'Clarity devices snapshots — sessions grouped as Mobile, Desktop (PC), Tablet',
+      sessions: 'Google Analytics 4 — sessions by deviceCategory (mobile, desktop, tablet)',
       conversionByDevice: 'Not available — quotes and orders do not store device type yet',
     },
   };
