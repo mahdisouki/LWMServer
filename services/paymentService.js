@@ -251,22 +251,29 @@ async function expireStripeCheckoutSessionIfOpen(sessionId) {
 }
 
 /**
- * Refund a completed Checkout Session when the order was already paid (duplicate tab/session).
+ * Collect Checkout Session / PaymentIntent / Charge IDs for PaymentHistory matching.
+ * PaymentHistory may store any of these as transactionId depending on webhook path.
  */
-async function refundStripeCheckoutSessionPayment(session) {
-    if (!session?.payment_intent) return { refunded: false, reason: 'no-payment-intent' };
+async function getStripeCheckoutPaymentIdentifiers(session) {
+    const ids = new Set();
+    if (session?.id) ids.add(String(session.id));
+
     const paymentIntentId =
-        typeof session.payment_intent === 'string'
+        typeof session?.payment_intent === 'string'
             ? session.payment_intent
-            : session.payment_intent.id;
-    try {
-        await stripe.refunds.create({ payment_intent: paymentIntentId });
-        console.log('[paymentService] Refunded duplicate Stripe checkout payment:', paymentIntentId);
-        return { refunded: true, paymentIntentId };
-    } catch (error) {
-        console.error('[paymentService] Failed to refund duplicate Stripe payment:', error.message);
-        return { refunded: false, reason: error.message, paymentIntentId };
+            : session?.payment_intent?.id || null;
+
+    if (paymentIntentId) {
+        ids.add(String(paymentIntentId));
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        const chargeId =
+            typeof paymentIntent.latest_charge === 'string'
+                ? paymentIntent.latest_charge
+                : paymentIntent.latest_charge?.id || null;
+        if (chargeId) ids.add(String(chargeId));
     }
+
+    return { paymentIntentId, ids: [...ids] };
 }
 
 const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentType = 'total', orderNumber = null, paymentLinkId = null) => {
@@ -474,5 +481,5 @@ module.exports = {
     getReusablePayPalCheckoutUrl,
     resolveReusableProviderCheckoutUrl,
     expireStripeCheckoutSessionIfOpen,
-    refundStripeCheckoutSessionPayment,
+    getStripeCheckoutPaymentIdentifiers,
 };

@@ -50,7 +50,7 @@ const {
   calculateTotalPriceUpdate,
   resolveReusableProviderCheckoutUrl,
   expireStripeCheckoutSessionIfOpen,
-  refundStripeCheckoutSessionPayment,
+  getStripeCheckoutPaymentIdentifiers,
 } = require('../services/paymentService.js');
 const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
@@ -635,18 +635,40 @@ const TASK_PRIORITIES = ['low', 'medium', 'high'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
+function normalizePaymentLinkType(paymentTypeRaw) {
+  const normalized = String(paymentTypeRaw || 'total').toLowerCase();
+  if (normalized === 'deposit') return 'deposit';
+  if (normalized === 'remaining') return 'remaining';
+  return 'total';
+}
+
 async function schedulePaymentLinkRetryAfterCheckout(taskId, paymentAmountType) {
   try {
-    const normalized = String(paymentAmountType || 'total').toLowerCase();
-    const paymentType =
-      normalized === 'deposit'
-        ? 'deposit'
-        : normalized === 'remaining'
-          ? 'remaining'
-          : 'total';
-    await schedulePaymentLinkRetry(taskId, { paymentType });
+    await schedulePaymentLinkRetry(taskId, {
+      paymentType: normalizePaymentLinkType(paymentAmountType),
+    });
   } catch (error) {
     console.error('[Payment Link Retry] Failed to schedule:', error.message);
+  }
+}
+
+async function notifyAdminsExtraStripePayment(task, details = {}) {
+  const orderRef = task.orderNumber || task._id;
+  const message =
+    `Extra Stripe payment detected for order #${orderRef} after it was already settled. ` +
+    `Not auto-refunded — review in Stripe` +
+    (details.sessionId ? ` (session ${details.sessionId})` : '') +
+    '.';
+  console.warn('[Stripe] Extra payment — manual review required', {
+    taskId: String(task._id),
+    orderNumber: task.orderNumber,
+    ...details,
+  });
+  const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+  for (const admin of adminUsers) {
+    if (admin._id) {
+      await emitNotificationToUser(admin._id.toString(), 'Orders', message);
+    }
   }
 }
 
@@ -701,9 +723,10 @@ function isPaymentTypeAlreadySettled(task, paymentTypeRaw) {
 }
 
 async function invalidateSiblingPaymentLinks({ taskId, paymentType, excludePaymentLinkId = null }) {
+  const normalizedPaymentType = normalizePaymentLinkType(paymentType);
   const query = {
     taskId,
-    paymentType,
+    paymentType: normalizedPaymentType,
     status: 'active',
     usedAt: null,
   };
@@ -731,6 +754,45 @@ async function invalidateSiblingPaymentLinks({ taskId, paymentType, excludePayme
   }
 }
 
+/** Expire other open Stripe Checkout sessions for the same task/payment type (do not cancel links). */
+async function expireOtherOpenStripeSessions({
+  taskId,
+  paymentType,
+  excludePaymentLinkId = null,
+  excludeSessionId = null,
+}) {
+  const query = {
+    taskId,
+    paymentType: normalizePaymentLinkType(paymentType),
+    provider: 'stripe',
+    activeProviderSessionId: { $nin: [null, ''] },
+  };
+
+  if (excludePaymentLinkId && mongoose.Types.ObjectId.isValid(excludePaymentLinkId)) {
+    query._id = { $ne: excludePaymentLinkId };
+  }
+
+  const links = await PaymentLink.find(query).select('_id activeProviderSessionId');
+  for (const link of links) {
+    if (
+      excludeSessionId &&
+      String(link.activeProviderSessionId) === String(excludeSessionId)
+    ) {
+      continue;
+    }
+    await expireStripeCheckoutSessionIfOpen(link.activeProviderSessionId);
+    await PaymentLink.updateOne(
+      { _id: link._id },
+      {
+        $set: {
+          activeProviderSessionId: null,
+          activeProviderSessionUrl: null,
+        },
+      },
+    );
+  }
+}
+
 async function resolveProviderCheckoutUrl(paymentLink, task, normalizedProvider) {
   const reusableUrl = await resolveReusableProviderCheckoutUrl(
     paymentLink,
@@ -755,11 +817,16 @@ async function resolveProviderCheckoutUrl(paymentLink, task, normalizedProvider)
     return null;
   }
 
-  if (
-    normalizedProvider === 'stripe' &&
-    paymentLink.activeProviderSessionId
-  ) {
-    await expireStripeCheckoutSessionIfOpen(paymentLink.activeProviderSessionId);
+  if (normalizedProvider === 'stripe') {
+    // Prefer a single open Checkout session: expire siblings and this link's old session first.
+    await expireOtherOpenStripeSessions({
+      taskId: task._id,
+      paymentType: paymentLink.paymentType,
+      excludePaymentLinkId: paymentLink._id,
+    });
+    if (paymentLink.activeProviderSessionId) {
+      await expireStripeCheckoutSessionIfOpen(paymentLink.activeProviderSessionId);
+    }
   }
 
   let checkout;
@@ -875,6 +942,11 @@ async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes
     throw new Error('Task not found');
   }
 
+  const linkPaymentType = normalizePaymentLinkType(paymentType);
+  if (isPaymentTypeAlreadySettled(task, linkPaymentType)) {
+    return { sent: false, reason: 'already_paid' };
+  }
+
   const customerEmail = String(task.email || '').trim();
   if (!customerEmail) {
     return { sent: false, reason: 'no_email' };
@@ -885,13 +957,6 @@ async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes
     return { sent: false, reason: 'no_amount' };
   }
 
-  const normalizedPaymentType = String(paymentType || 'total').toLowerCase();
-  const linkPaymentType =
-    normalizedPaymentType === 'deposit'
-      ? 'deposit'
-      : normalizedPaymentType === 'remaining'
-        ? 'remaining'
-        : 'total';
   const amountToPay = resolvePaymentLinkAmount(task, linkPaymentType);
   if (!Number.isFinite(amountToPay) || amountToPay <= 0) {
     return { sent: false, reason: 'no_amount' };
@@ -4335,6 +4400,12 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
 
+      if (isPaymentTypeAlreadySettled(task, paymentAmountType)) {
+        return res.status(409).json({
+          message: 'This payment has already been completed.',
+        });
+      }
+
       // Retrieve coupon code from task if exists
       let coupon = null;
       let couponDiscount = 0;
@@ -5765,14 +5836,73 @@ const taskCtrl = {
         }
 
         if (isPaymentTypeAlreadySettled(task, paymentAmountType)) {
-          const refundResult = await refundStripeCheckoutSessionPayment(session);
+          // Never auto-refund. Block further checkouts and alert if this looks like
+          // a different payment than the one already recorded.
+          await invalidateSiblingPaymentLinks({
+            taskId: task._id,
+            paymentType: paymentAmountType,
+            excludePaymentLinkId: paymentLinkId,
+          });
+
+          let paymentIds = { paymentIntentId: null, ids: [] };
+          try {
+            paymentIds = await getStripeCheckoutPaymentIdentifiers(session);
+          } catch (idError) {
+            console.error(
+              'Stripe checkout.session.completed: already settled; failed to resolve payment IDs',
+              { taskId, sessionId: session.id, error: idError.message },
+            );
+            return res.status(200).send('Already settled');
+          }
+
+          const matchingPayment = paymentIds.ids.length
+            ? await PaymentHistory.findOne({
+                taskId: task._id,
+                paymentType: 'Stripe',
+                status: 'success',
+                transactionId: { $in: paymentIds.ids },
+              }).select('_id transactionId')
+            : null;
+
+          if (matchingPayment) {
+            console.log(
+              'Stripe checkout.session.completed: payment type already settled; same payment already recorded (webhook retry)',
+              {
+                taskId,
+                paymentAmountType,
+                sessionId: session.id,
+                paymentIntentId: paymentIds.paymentIntentId,
+                transactionId: matchingPayment.transactionId,
+              },
+            );
+            return res.status(200).send('Already settled');
+          }
+
+          const otherStripePayment = await PaymentHistory.findOne({
+            taskId: task._id,
+            paymentType: 'Stripe',
+            status: 'success',
+            ...(paymentIds.ids.length
+              ? { transactionId: { $nin: paymentIds.ids } }
+              : {}),
+          }).select('_id transactionId');
+
+          if (otherStripePayment && paymentIds.paymentIntentId) {
+            await notifyAdminsExtraStripePayment(task, {
+              sessionId: session.id,
+              paymentIntentId: paymentIds.paymentIntentId,
+              existingTransactionId: otherStripePayment.transactionId,
+            });
+            return res.status(200).send('Already settled – extra payment flagged');
+          }
+
           console.warn(
-            'Stripe checkout.session.completed: payment type already settled, skipping duplicate',
+            'Stripe checkout.session.completed: payment type already settled; acknowledging without refund',
             {
               taskId,
               paymentAmountType,
               sessionId: session.id,
-              refundResult,
+              paymentIntentId: paymentIds.paymentIntentId,
             },
           );
           return res.status(200).send('Already settled');
@@ -5937,12 +6067,12 @@ const taskCtrl = {
               },
             },
           );
-          await invalidateSiblingPaymentLinks({
-            taskId: task._id,
-            paymentType: paymentAmountType,
-            excludePaymentLinkId: paymentLinkId,
-          });
         }
+        await invalidateSiblingPaymentLinks({
+          taskId: task._id,
+          paymentType: paymentAmountType,
+          excludePaymentLinkId: paymentLinkId,
+        });
         if (task.email) {
           await syncRepeatCustomerForEmail(task.email);
         }
