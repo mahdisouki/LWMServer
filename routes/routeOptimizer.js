@@ -42,6 +42,16 @@ router.post(
 );
 
 /**
+ * POST /api/route-optimizer/external/grouped-routes
+ * Body: { date, truckIds|selectedTruckIds?, vanCurrentCapacities? } — same payload as
+ * /external/calculate-routes, forwarded to the external /api/v1/grouped-routes.
+ */
+router.post(
+  '/external/grouped-routes',
+  routeOptimizerCtrl.calculateRoutesExternalArea
+);
+
+/**
  * POST /api/route-optimizer/external/calculate-routes-groups
  * Body: { date, truckIds?, jobGroups|groups|jobs, vanCurrentCapacities? }
  * Proxies to external POST /api/v1/custom (manual job groups → truck routes).
