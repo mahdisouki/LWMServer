@@ -47,8 +47,6 @@ connectToDatabase()
     require('./cron/cleanupTaskPhotoUploads');
     require('./cron/updatePopularityScores');
     require('./cron/updateTopPostcodesCache');
-    require('./cron/syncClaritySnapshots');
-
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })
@@ -223,7 +221,6 @@ const routeOptimizerRoutes = require('./routes/routeOptimizer');
 const vanRoutes = require('./routes/van');
 const tickRoutes = require('./routes/tick');
 const seoRoutes = require('./routes/seo');
-const clarityRoutes = require('./routes/clarity');
 const networkRouter = require('./routes/network');
 const brokerRoutes = require('./routes/broker');
 const brokerPortalRoutes = require('./routes/brokerPortal');
@@ -271,7 +268,6 @@ app.use('/api', vanRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/ticks', tickRoutes);
 app.use('/api/seo', seoRoutes);
-app.use('/api/clarity', clarityRoutes);
 app.use('/api', networkRouter);
 app.use('/api/brokers', brokerRoutes);
 app.use('/api/broker', brokerPortalRoutes);

@@ -10,7 +10,6 @@
     "backfill:payroll:inconsistent": "node scripts/backfillPayrollInconsistentRows.js",
     "backfill:pcn-deduction-routing": "node scripts/backfillPcnDeductionRouting.js",
     "backfill:pcn-deduction-routing:dry": "node scripts/backfillPcnDeductionRouting.js --dry-run",
-    "clarity:sync": "node scripts/syncClaritySnapshots.js",
     "ga4:authorize": "node scripts/authorizeGoogleAnalytics.js",
     "postinstall": "npx playwright install-deps chromium && npx playwright install chromium"
   },

@@ -515,6 +515,52 @@ async function fetchSessionsByDeviceCategory({ startKey, endKey }) {
   }
 }
 
+/**
+ * Period traffic broken down by GA4 sessionDefaultChannelGroup.
+ * Note: summing totalUsers across channels can exceed period unique users
+ * (a user may appear in more than one channel).
+ */
+async function fetchTrafficByChannel({ startKey, endKey, limit = 8 } = {}) {
+  if (!isGa4Enabled()) {
+    return null;
+  }
+
+  const rowLimit = Math.min(Math.max(parseInt(limit, 10) || 8, 1), 25);
+
+  try {
+    const data = await runReport({
+      startKey,
+      endKey,
+      dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+      metrics: [
+        { name: 'totalUsers' },
+        { name: 'sessions' },
+        { name: 'engagedSessions' },
+      ],
+    });
+
+    const channels = (data?.rows || [])
+      .map((row) => {
+        const channel = String(row.dimensionValues?.[0]?.value || '').trim() || 'Unassigned';
+        const values = row.metricValues || [];
+        return {
+          channel,
+          users: parseMetricInt(values[0]?.value),
+          sessions: parseMetricInt(values[1]?.value),
+          engagedSessions: parseMetricInt(values[2]?.value),
+        };
+      })
+      .filter((row) => row.users > 0 || row.sessions > 0 || row.engagedSessions > 0)
+      .sort((a, b) => b.users - a.users || b.sessions - a.sessions || a.channel.localeCompare(b.channel))
+      .slice(0, rowLimit);
+
+    return { channels, available: true };
+  } catch (error) {
+    console.error('[GA4] fetchTrafficByChannel failed:', error.message);
+    return null;
+  }
+}
+
 module.exports = {
   isGa4Enabled,
   fetchPeriodTraffic,
@@ -524,4 +570,5 @@ module.exports = {
   fetchPagePerformanceViews,
   fetchAllPagePerformance,
   fetchSessionsByDeviceCategory,
+  fetchTrafficByChannel,
 };

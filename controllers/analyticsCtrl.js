@@ -8,7 +8,7 @@ const devicesService = require('../services/analytics/devicesService');
 const pagePerformanceService = require('../services/analytics/pagePerformanceService');
 const topPostcodesService = require('../services/analytics/topPostcodesService');
 const popularItemsService = require('../services/analytics/popularItemsService');
-const trafficSourcesService = require('../services/analytics/trafficSourcesService');
+const orderTrafficSourcesService = require('../services/analytics/orderTrafficSourcesService');
 const adminOrdersService = require('../services/analytics/adminOrdersService');
 const staffWorkingHoursService = require('../services/analytics/staffWorkingHoursService');
 const { getPageFilters } = require('../config/analyticsPageMap');
@@ -349,6 +349,8 @@ const analyticsCtrl = {
         preset: req.query.preset,
         startDate: req.query.startDate,
         endDate: req.query.endDate,
+        includeChannels: req.query.includeChannels,
+        includeLeadDetails: req.query.includeLeadDetails,
       });
       res.status(200).json({
         message: 'Conversion funnel retrieved successfully',
@@ -459,22 +461,22 @@ const analyticsCtrl = {
     }
   },
 
-  getTrafficSources: async (req, res) => {
+  getOrderTrafficSources: async (req, res) => {
     try {
-      const data = await trafficSourcesService.getTrafficSources({
+      const data = await orderTrafficSourcesService.getOrderTrafficSources({
         preset: req.query.preset,
         startDate: req.query.startDate,
         endDate: req.query.endDate,
         limit: req.query.limit,
       });
       res.status(200).json({
-        message: 'Traffic sources retrieved successfully',
+        message: 'Order traffic sources retrieved successfully',
         ...data,
       });
     } catch (error) {
       const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
       res.status(status).json({
-        message: 'Failed to load traffic sources',
+        message: 'Failed to load order traffic sources',
         error: error.message,
       });
     }

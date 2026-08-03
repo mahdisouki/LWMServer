@@ -1,4 +1,3 @@
-const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const Task = require('../../models/Task');
 const QuotationRequest = require('../../models/QuotationRequest');
 const ContactRequest = require('../../models/ContactRequest');
@@ -6,16 +5,24 @@ const MovingServiceRequest = require('../../models/MovingServiceRequest');
 const { resolvePeriod } = require('./dashboardService');
 const { getPeriodLabels } = require('../../utils/analyticsDateRange');
 const { isGa4Enabled } = require('../../config/ga4Config');
-const { findMetric, parseIntSafe, parseDistinctUserCount } = require('../../utils/clarityMetricsParser');
-const { fetchPeriodTraffic } = require('./ga4Service');
+const { fetchPeriodTraffic, fetchTrafficByChannel } = require('./ga4Service');
 const { excludeMigratedOrdersFilter } = require('./taskFilters');
 
 const FUNNEL_STAGES = [
-  { id: 'visitors', label: 'Website Visitors' },
-  { id: 'pageEngagements', label: 'Page Engagements' },
-  { id: 'leadRequests', label: 'Requests', expandable: true, showPercentOfTop: false },
-  { id: 'confirmedOrders', label: 'Confirmed Orders (public)' },
-  { id: 'revenue', label: 'Revenue (public)', valueType: 'currency', showPercentOfTop: false },
+  { id: 'visitors', label: 'Website Visitors', expandable: true, expandKind: 'ga4Visitors' },
+  {
+    id: 'pageEngagements',
+    label: 'Page Engagements',
+    expandable: true,
+    expandKind: 'ga4Sessions',
+  },
+  { id: 'leadRequests', label: 'Requests', expandable: true, expandKind: 'leads', showPercentOfTop: false },
+  {
+    id: 'ordersRevenue',
+    label: 'Orders & Revenue',
+    expandable: true,
+    expandKind: 'orders',
+  },
 ];
 
 const LEAD_BREAKDOWN_LABELS = {
@@ -23,6 +30,16 @@ const LEAD_BREAKDOWN_LABELS = {
   contactRequests: 'Contact Requests',
   movingServiceRequests: 'Moving Service Requests',
 };
+
+const ORDER_ORIGIN_META = {
+  public: { id: 'public', label: 'Public', color: 'green' },
+  Admin: { id: 'admin', label: 'Admin', color: 'orange' },
+  broker: { id: 'broker', label: 'Broker', color: 'purple' },
+};
+
+const CHANNEL_COLORS = [
+  'blue', 'purple', 'green', 'orange', 'pink', 'cyan', 'indigo', 'amber',
+];
 
 function roundPercent(value) {
   return Math.round(value * 100) / 100;
@@ -39,29 +56,32 @@ function statusStat(count, total) {
   };
 }
 
-function extractEngagedSessions(overviewData) {
-  const traffic = findMetric(overviewData, 'Traffic');
-  const engagement = findMetric(overviewData, 'EngagementTime');
-  const quickback = findMetric(overviewData, 'QuickbackClick');
+function slugifyChannel(channel) {
+  return String(channel || 'unassigned')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '') || 'unassigned';
+}
 
-  const trafficInfo = traffic?.information?.[0] || {};
-  const engagementInfo = engagement?.information?.[0] || {};
-  const quickbackInfo = quickback?.information?.[0] || {};
+function buildChannelSourceBreakdown(channels, metricKey) {
+  const rows = (channels || [])
+    .map((row) => ({
+      channel: row.channel,
+      count: row[metricKey] || 0,
+    }))
+    .filter((row) => row.count > 0)
+    .sort((a, b) => b.count - a.count || a.channel.localeCompare(b.channel));
 
-  const visitors = parseDistinctUserCount(trafficInfo);
-  const sessions = parseIntSafe(trafficInfo.totalSessionCount);
-  const activeTimeSeconds = parseIntSafe(engagementInfo.activeTime);
-  const quickbackSessions = Math.round(
-    sessions * (parseFloat(quickbackInfo.sessionsWithMetricPercentage || 0) / 100),
-  );
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
 
-  let engaged = sessions - quickbackSessions;
-  if (activeTimeSeconds <= 0) {
-    engaged = 0;
-  }
-  engaged = Math.max(0, Math.min(engaged, visitors || sessions));
-
-  return { visitors, pageEngagements: engaged };
+  return rows.map((row, index) => ({
+    id: slugifyChannel(row.channel),
+    label: row.channel,
+    count: row.count,
+    sharePercent: total > 0 ? roundPercent((row.count / total) * 100) : 0,
+    color: CHANNEL_COLORS[index % CHANNEL_COLORS.length],
+  }));
 }
 
 async function countContactRequests(start, end) {
@@ -72,6 +92,12 @@ async function countContactRequests(start, end) {
 
 async function countMovingServiceRequests(start, end) {
   return MovingServiceRequest.countDocuments({
+    createdAt: { $gte: start, $lte: end },
+  });
+}
+
+async function countQuoteRequests(start, end) {
+  return QuotationRequest.countDocuments({
     createdAt: { $gte: start, $lte: end },
   });
 }
@@ -133,28 +159,79 @@ async function loadQuotationStats(start, end) {
   };
 }
 
-async function loadConfirmedOrdersAndRevenue(start, end) {
-  const [row] = await Task.aggregate([
+async function loadOrdersByOrigin(start, end) {
+  const rows = await Task.aggregate([
     {
       $match: {
         createdAt: { $gte: start, $lte: end },
         paymentStatus: { $ne: 'Failed' },
-        createdByType: 'public',
+        createdByType: { $in: ['public', 'Admin', 'broker'] },
         ...excludeMigratedOrdersFilter,
       },
     },
     {
       $group: {
-        _id: null,
+        _id: '$createdByType',
         orders: { $sum: 1 },
         revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
       },
     },
   ]);
 
+  const byOrigin = {
+    public: { orders: 0, revenue: 0 },
+    admin: { orders: 0, revenue: 0 },
+    broker: { orders: 0, revenue: 0 },
+  };
+
+  for (const row of rows) {
+    if (row._id === 'public') {
+      byOrigin.public = {
+        orders: row.orders || 0,
+        revenue: roundMoney(row.revenue || 0),
+      };
+    } else if (row._id === 'Admin') {
+      byOrigin.admin = {
+        orders: row.orders || 0,
+        revenue: roundMoney(row.revenue || 0),
+      };
+    } else if (row._id === 'broker') {
+      byOrigin.broker = {
+        orders: row.orders || 0,
+        revenue: roundMoney(row.revenue || 0),
+      };
+    }
+  }
+
+  const totalOrders =
+    byOrigin.public.orders + byOrigin.admin.orders + byOrigin.broker.orders;
+  const totalRevenue = roundMoney(
+    byOrigin.public.revenue + byOrigin.admin.revenue + byOrigin.broker.revenue,
+  );
+
+  const orderOriginBreakdown = ['public', 'Admin', 'broker'].map((key) => {
+    const meta = ORDER_ORIGIN_META[key];
+    const stats = byOrigin[meta.id];
+    return {
+      id: meta.id,
+      label: meta.label,
+      orders: stats.orders,
+      revenue: stats.revenue,
+      sharePercent: totalOrders > 0 ? roundPercent((stats.orders / totalOrders) * 100) : 0,
+      color: meta.color,
+    };
+  });
+
   return {
-    confirmedOrders: row?.orders || 0,
-    revenue: roundMoney(row?.revenue || 0),
+    publicOrders: byOrigin.public.orders,
+    publicRevenue: byOrigin.public.revenue,
+    adminOrders: byOrigin.admin.orders,
+    adminRevenue: byOrigin.admin.revenue,
+    brokerOrders: byOrigin.broker.orders,
+    brokerRevenue: byOrigin.broker.revenue,
+    totalOrders,
+    totalRevenue,
+    orderOriginBreakdown,
   };
 }
 
@@ -166,8 +243,15 @@ function buildLeadBreakdown(counts) {
   }));
 }
 
-function buildFunnelSteps(counts, quotationStats) {
+function buildFunnelSteps(
+  counts,
+  quotationStats,
+  channelTraffic,
+  orderStats,
+  { includeChannels = false, includeLeadDetails = false } = {},
+) {
   const top = counts.visitors || 0;
+  const channels = channelTraffic?.channels || [];
 
   const steps = FUNNEL_STAGES.map((stage, index) => {
     const count = counts[stage.id] || 0;
@@ -191,77 +275,119 @@ function buildFunnelSteps(counts, quotationStats) {
 
     if (stage.expandable) {
       step.expandable = true;
-      step.breakdown = buildLeadBreakdown(counts);
-      step.quotationStats = quotationStats;
+      step.expandKind = stage.expandKind;
+
+      if (stage.expandKind === 'leads') {
+        step.breakdown = buildLeadBreakdown(counts);
+        step.expandHint = 'Quotes, contact & moving';
+        if (includeLeadDetails && quotationStats) {
+          step.quotationStats = quotationStats;
+        }
+      } else if (stage.expandKind === 'ga4Visitors') {
+        step.expandHint = 'By GA4 channel';
+        if (includeChannels) {
+          step.sourceBreakdown = buildChannelSourceBreakdown(channels, 'users');
+        }
+      } else if (stage.expandKind === 'ga4Sessions') {
+        step.expandHint = 'Engaged sessions by GA4 channel';
+        if (includeChannels) {
+          step.sourceBreakdown = buildChannelSourceBreakdown(channels, 'engagedSessions');
+        }
+      } else if (stage.expandKind === 'orders') {
+        step.orderOriginBreakdown = orderStats.orderOriginBreakdown;
+        step.totalRevenue = orderStats.totalRevenue;
+        step.expandHint = `Total revenue £${orderStats.totalRevenue.toLocaleString('en-GB', {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        })} · Public, admin & broker`;
+      }
     }
 
     return step;
   });
 
   const overallConversion = top > 0
-    ? roundPercent((counts.confirmedOrders / top) * 100)
+    ? roundPercent((counts.publicOrders / top) * 100)
     : 0;
 
   return { steps, overallConversion };
 }
 
-async function getConversionFunnel({ preset, startDate, endDate } = {}) {
+function parseBoolFlag(value) {
+  if (value === true || value === 1) return true;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+  }
+  return false;
+}
+
+async function getConversionFunnel({
+  preset,
+  startDate,
+  endDate,
+  includeChannels,
+  includeLeadDetails,
+} = {}) {
   const period = resolvePeriod({ preset, startDate, endDate });
+  const withChannels = parseBoolFlag(includeChannels);
+  const withLeadDetails = parseBoolFlag(includeLeadDetails);
+
+  if (!isGa4Enabled()) {
+    throw new Error('GA4 is not configured — Conversion Funnel requires Google Analytics 4');
+  }
+
+  const quotePromise = withLeadDetails
+    ? loadQuotationStats(period.start, period.end)
+    : countQuoteRequests(period.start, period.end).then((total) => ({ total }));
+
+  const channelPromise = withChannels
+    ? fetchTrafficByChannel({ startKey: period.startKey, endKey: period.endKey, limit: 8 })
+    : Promise.resolve({ channels: [], available: true });
 
   const [
-    overviewSnapshots,
-    quotationStats,
+    quotationResult,
     contactRequests,
     movingServiceRequests,
     orderStats,
     ga4Period,
+    channelTraffic,
   ] = await Promise.all([
-    ClaritySnapshot.find({
-      snapshotType: 'overview',
-      snapshotDate: { $gte: period.start, $lte: period.end },
-    }).sort({ snapshotDate: 1 }).lean(),
-    loadQuotationStats(period.start, period.end),
+    quotePromise,
     countContactRequests(period.start, period.end),
     countMovingServiceRequests(period.start, period.end),
-    loadConfirmedOrdersAndRevenue(period.start, period.end),
-    isGa4Enabled()
-      ? fetchPeriodTraffic({ startKey: period.startKey, endKey: period.endKey })
-      : Promise.resolve(null),
+    loadOrdersByOrigin(period.start, period.end),
+    fetchPeriodTraffic({ startKey: period.startKey, endKey: period.endKey }),
+    channelPromise,
   ]);
 
-  const quoteRequests = quotationStats.total;
+  if (!ga4Period?.available) {
+    throw new Error('Failed to load visitor metrics from Google Analytics 4');
+  }
+
+  const quotationStats = withLeadDetails ? quotationResult : null;
+  const quoteRequests = withLeadDetails
+    ? quotationResult.total
+    : quotationResult.total;
 
   const counts = {
-    visitors: 0,
-    pageEngagements: 0,
+    visitors: ga4Period.users,
+    pageEngagements: ga4Period.engagedSessions ?? 0,
     quoteRequests,
     contactRequests,
     movingServiceRequests,
     leadRequests: quoteRequests + contactRequests + movingServiceRequests,
-    confirmedOrders: orderStats.confirmedOrders,
-    revenue: orderStats.revenue,
+    ordersRevenue: orderStats.totalOrders,
+    publicOrders: orderStats.publicOrders,
   };
 
-  for (const snapshot of overviewSnapshots) {
-    const day = extractEngagedSessions(snapshot.data);
-    counts.visitors += day.visitors;
-    counts.pageEngagements += day.pageEngagements;
-  }
-
-  const visitorsFromGa4 = Boolean(ga4Period?.available);
-  if (visitorsFromGa4) {
-    counts.visitors = ga4Period.users;
-    counts.pageEngagements = ga4Period.engagedSessions ?? 0;
-  }
-
-  const { steps, overallConversion } = buildFunnelSteps(counts, quotationStats);
-
-  let coverageNote;
-  if (!visitorsFromGa4 && overviewSnapshots.length === 0) {
-    coverageNote = 'Visitor & engagement stages need GA4 or Clarity data for this period.';
-  } else if (!visitorsFromGa4 && isGa4Enabled()) {
-    coverageNote = 'GA4 unavailable; visitor/engagement stages use Clarity fallback.';
-  }
+  const { steps, overallConversion } = buildFunnelSteps(
+    counts,
+    quotationStats,
+    channelTraffic?.available ? channelTraffic : { channels: [] },
+    orderStats,
+    { includeChannels: withChannels, includeLeadDetails: withLeadDetails },
+  );
 
   return {
     period: {
@@ -269,28 +395,35 @@ async function getConversionFunnel({ preset, startDate, endDate } = {}) {
       ...getPeriodLabels(period),
     },
     snapshotCoverage: {
-      daysInPeriod: overviewSnapshots.length,
-      note: coverageNote,
-      trafficSource: visitorsFromGa4 ? 'ga4' : 'clarity',
+      daysInPeriod: null,
+      trafficSource: 'ga4',
     },
     funnel: steps,
     overallConversion,
+    details: {
+      channels: withChannels,
+      leadDetails: withLeadDetails,
+    },
     dataSources: {
-      visitors: visitorsFromGa4
-        ? 'Google Analytics 4 — totalUsers for the selected period'
-        : 'Clarity overview snapshots — distinctUserCount (summed per day)',
-      pageEngagements: visitorsFromGa4
-        ? 'Google Analytics 4 — engagedSessions'
-        : 'Clarity overview snapshots — sessions minus quick-back sessions with active time',
+      visitors: 'Google Analytics 4 — totalUsers for the selected period',
+      visitorSources:
+        'Google Analytics 4 — totalUsers by sessionDefaultChannelGroup (loaded on expand)',
+      pageEngagements: 'Google Analytics 4 — engagedSessions',
+      pageEngagementSources:
+        'Google Analytics 4 — engagedSessions by sessionDefaultChannelGroup (loaded on expand)',
       leadRequests:
         'Sum of QuotationRequest + ContactRequest + MovingServiceRequest submissions in period',
       quoteRequests: 'QuotationRequest collection',
       contactRequests: 'ContactRequest collection — contact form submissions in period',
       movingServiceRequests: 'MovingServiceRequest collection — moving service form submissions in period',
       quotationStats:
-        'QuotationRequest status derived from reason (task created = accepted, other reason = rejected, empty = pending)',
-      confirmedOrders: 'Task collection — public bookings with paymentStatus not Failed, excluding createdBy MigrationScript, created in period',
-      revenue: 'Task collection — sum of totalPrice for the same confirmed orders (public, not Failed)',
+        'QuotationRequest status derived from reason (loaded on Requests expand)',
+      ordersRevenue:
+        'Task collection — public + Admin + broker bookings with paymentStatus not Failed, excluding createdBy MigrationScript, created in period',
+      publicOrders: 'createdByType public',
+      adminOrders: 'createdByType Admin',
+      brokerOrders: 'createdByType broker',
+      overallConversion: 'Public orders ÷ website visitors (GA4 totalUsers)',
     },
   };
 }

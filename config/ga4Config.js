@@ -18,9 +18,7 @@ function getGa4PropertyId() {
 }
 
 function getGa4Timezone() {
-  return process.env.GA4_TIMEZONE
-    || process.env.CLARITY_CRON_TIMEZONE
-    || 'Europe/London';
+  return process.env.GA4_TIMEZONE || 'Europe/London';
 }
 
 module.exports = {

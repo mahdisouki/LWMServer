@@ -1,4 +1,4 @@
-const ANALYTICS_TIMEZONE = process.env.CLARITY_CRON_TIMEZONE || 'Europe/London';
+const ANALYTICS_TIMEZONE = process.env.GA4_TIMEZONE || 'Europe/London';
 
 const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 

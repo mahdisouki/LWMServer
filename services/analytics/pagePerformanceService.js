@@ -1,7 +1,7 @@
 const { resolvePeriod } = require('./dashboardService');
 const { getPeriodLabels } = require('../../utils/analyticsDateRange');
 const { isGa4Enabled } = require('../../config/ga4Config');
-const { formatDuration } = require('../../utils/clarityMetricsParser');
+const { formatDuration } = require('../../utils/analyticsFormatters');
 const { fetchAllPagePerformance } = require('./ga4Service');
 
 function roundPercent(value) {
