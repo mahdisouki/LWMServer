@@ -30,7 +30,6 @@ function clampLimit(limit) {
 const ORDER_MATCH = (start, end) => ({
   createdAt: { $gte: start, $lte: end },
   paymentStatus: { $ne: 'Failed' },
-  createdByType: 'public',
   ...excludeMigratedOrdersFilter,
 });
 
@@ -105,7 +104,7 @@ async function getOrderTrafficSources({
     limit: rowLimit,
     dataSources: {
       orders:
-        'Task collection — public orders with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by trafficSource for the selected period',
+        'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by trafficSource for the selected period',
       ranking: 'Fixed channel order (Google Ads, Microsoft Ads, Instagram, Facebook, Organic)',
     },
   };
