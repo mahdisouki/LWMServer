@@ -37,7 +37,6 @@ connectToDatabase()
     require('./cron/checkQuotationReminders');
     require('./cron/deleteExpiredCoupons');
     require('./cron/sendRetargetingFailedTasks');
-    require('./cron/gmailLiveSync');
     require('./cron/gmailWatchRenew');
     require('./cron/scheduledEmailSender');
     require('./cron/sendWasteTransferNotes');
