@@ -35,7 +35,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   role: {
     type: [String],
-    enum: ["Admin", "Helper", "Driver", "HR", "Manager", "CM", "IT", "CEO"]
+    enum: ["Admin", "Helper", "Driver", "HR", "Manager", "CM", "IT", "CEO", "Broker"]
   },
   address: { type: String },
   postcode: { type: String },
@@ -52,6 +52,8 @@ const userSchema = new mongoose.Schema({
   addressProof: { type: String },
   NatInsurance: { type: String },
   refreshToken: { type: String },
+  lastLoginAt: { type: Date },
+  lastLoginIp: { type: String },
   passwordResetToken: { type: String },
   passwordResetExpires: { type: Date },
 

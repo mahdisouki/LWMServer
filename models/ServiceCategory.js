@@ -5,6 +5,7 @@ const serviceCategorySchema = new mongoose.Schema({
     icon: { type: String, required: true },
     topDescription: { type: String },
     bottomDescription: { type: String },
+    description: { type: String },
     purchasedCount: { type: Number, default: 0 },
     timesPurchased: { type: Number, default: 0 },
     popularityUpdatedAt: { type: Date, default: null },

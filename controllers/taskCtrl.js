@@ -20,6 +20,7 @@ const {
   ALL_TIME_SLOTS,
   DEFAULT_SUGGESTION_DAYS,
 } = require('../services/taskAvailabilityService');
+const { normalizeUtmSource } = require('../utils/trafficSource');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -49,7 +50,7 @@ const {
   calculateTotalPriceUpdate,
   resolveReusableProviderCheckoutUrl,
   expireStripeCheckoutSessionIfOpen,
-  refundStripeCheckoutSessionPayment,
+  getStripeCheckoutPaymentIdentifiers,
 } = require('../services/paymentService.js');
 const OrderLock = require('../models/Orderlock');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
@@ -59,6 +60,7 @@ const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogSe
 const payrollCtrl = require('./payrollCtrl');
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
 const CLIENT_URL = 'https://www.londonwastemanagement.com';
+// const CLIENT_URL = 'http://localhost:5173';
 const Handlebars = require('handlebars');
 const LOCK_DURATION = 30 * 60 * 1000;
 const PaymentHistory = require('../models/PaymentHistory.js');
@@ -72,6 +74,7 @@ const Coupon = require('../models/Coupon');
 const AdditionalItemRequest = require('../models/AdditionalItemRequest');
 const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentFailedEmail } = require('../services/emailsService');
 const { sendRetargetingEmailForTask } = require('../services/retargetingService');
+const { schedulePaymentLinkRetry } = require('../services/failedPaymentLinkService');
 const { firePurchaseConversionUpload } = require('../services/googleAdsConversionService');
 const path = require('path');
 const fs = require('fs');
@@ -632,6 +635,67 @@ const TASK_PRIORITIES = ['low', 'medium', 'high'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
+function normalizePaymentLinkType(paymentTypeRaw) {
+  const normalized = String(paymentTypeRaw || 'total').toLowerCase();
+  if (normalized === 'deposit') return 'deposit';
+  if (normalized === 'remaining') return 'remaining';
+  return 'total';
+}
+
+async function schedulePaymentLinkRetryAfterCheckout(taskId, paymentAmountType) {
+  try {
+    await schedulePaymentLinkRetry(taskId, {
+      paymentType: normalizePaymentLinkType(paymentAmountType),
+    });
+  } catch (error) {
+    console.error('[Payment Link Retry] Failed to schedule:', error.message);
+  }
+}
+
+async function notifyAdminsExtraStripePayment(task, details = {}) {
+  const orderRef = task.orderNumber || task._id;
+  const message =
+    `Extra Stripe payment detected for order #${orderRef} after it was already settled. ` +
+    `Not auto-refunded — review in Stripe` +
+    (details.sessionId ? ` (session ${details.sessionId})` : '') +
+    '.';
+  console.warn('[Stripe] Extra payment — manual review required', {
+    taskId: String(task._id),
+    orderNumber: task.orderNumber,
+    ...details,
+  });
+  const adminUsers = await User.find({ roleType: 'Admin' }).select('_id');
+  for (const admin of adminUsers) {
+    if (admin._id) {
+      await emitNotificationToUser(admin._id.toString(), 'Orders', message);
+    }
+  }
+}
+
+function resolvePaymentLinkAmount(task, paymentType) {
+  const totalPrice = Number(task.totalPrice);
+  const normalized = String(paymentType || 'total').toLowerCase();
+
+  if (normalized === 'deposit') {
+    const depositAmount = Number(task.paidAmount?.amount);
+    if (Number.isFinite(depositAmount) && depositAmount > 0) {
+      return depositAmount;
+    }
+    return 45;
+  }
+
+  if (normalized === 'remaining') {
+    const remainingAmount = Number(task.remainingAmount?.amount);
+    if (Number.isFinite(remainingAmount) && remainingAmount > 0) {
+      return remainingAmount;
+    }
+    const paidAmount = Number(task.paidAmount?.amount) || 0;
+    return Math.max(totalPrice - paidAmount, 0);
+  }
+
+  return totalPrice;
+}
+
 function hashPaymentToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
@@ -659,9 +723,10 @@ function isPaymentTypeAlreadySettled(task, paymentTypeRaw) {
 }
 
 async function invalidateSiblingPaymentLinks({ taskId, paymentType, excludePaymentLinkId = null }) {
+  const normalizedPaymentType = normalizePaymentLinkType(paymentType);
   const query = {
     taskId,
-    paymentType,
+    paymentType: normalizedPaymentType,
     status: 'active',
     usedAt: null,
   };
@@ -689,6 +754,45 @@ async function invalidateSiblingPaymentLinks({ taskId, paymentType, excludePayme
   }
 }
 
+/** Expire other open Stripe Checkout sessions for the same task/payment type (do not cancel links). */
+async function expireOtherOpenStripeSessions({
+  taskId,
+  paymentType,
+  excludePaymentLinkId = null,
+  excludeSessionId = null,
+}) {
+  const query = {
+    taskId,
+    paymentType: normalizePaymentLinkType(paymentType),
+    provider: 'stripe',
+    activeProviderSessionId: { $nin: [null, ''] },
+  };
+
+  if (excludePaymentLinkId && mongoose.Types.ObjectId.isValid(excludePaymentLinkId)) {
+    query._id = { $ne: excludePaymentLinkId };
+  }
+
+  const links = await PaymentLink.find(query).select('_id activeProviderSessionId');
+  for (const link of links) {
+    if (
+      excludeSessionId &&
+      String(link.activeProviderSessionId) === String(excludeSessionId)
+    ) {
+      continue;
+    }
+    await expireStripeCheckoutSessionIfOpen(link.activeProviderSessionId);
+    await PaymentLink.updateOne(
+      { _id: link._id },
+      {
+        $set: {
+          activeProviderSessionId: null,
+          activeProviderSessionUrl: null,
+        },
+      },
+    );
+  }
+}
+
 async function resolveProviderCheckoutUrl(paymentLink, task, normalizedProvider) {
   const reusableUrl = await resolveReusableProviderCheckoutUrl(
     paymentLink,
@@ -713,11 +817,16 @@ async function resolveProviderCheckoutUrl(paymentLink, task, normalizedProvider)
     return null;
   }
 
-  if (
-    normalizedProvider === 'stripe' &&
-    paymentLink.activeProviderSessionId
-  ) {
-    await expireStripeCheckoutSessionIfOpen(paymentLink.activeProviderSessionId);
+  if (normalizedProvider === 'stripe') {
+    // Prefer a single open Checkout session: expire siblings and this link's old session first.
+    await expireOtherOpenStripeSessions({
+      taskId: task._id,
+      paymentType: paymentLink.paymentType,
+      excludePaymentLinkId: paymentLink._id,
+    });
+    if (paymentLink.activeProviderSessionId) {
+      await expireStripeCheckoutSessionIfOpen(paymentLink.activeProviderSessionId);
+    }
   }
 
   let checkout;
@@ -827,10 +936,15 @@ function buildPaymentEmailBreakdownFromTask(task) {
   return breakdown;
 }
 
-async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes = '' } = {}) {
+async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes = '', introText = '', emailTitle = '' } = {}) {
   const task = await Task.findById(taskId).populate('items.standardItemId');
   if (!task) {
     throw new Error('Task not found');
+  }
+
+  const linkPaymentType = normalizePaymentLinkType(paymentType);
+  if (isPaymentTypeAlreadySettled(task, linkPaymentType)) {
+    return { sent: false, reason: 'already_paid' };
   }
 
   const customerEmail = String(task.email || '').trim();
@@ -838,7 +952,12 @@ async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes
     return { sent: false, reason: 'no_email' };
   }
 
-  const amountToPay = Number(task.totalPrice);
+  const totalPrice = Number(task.totalPrice);
+  if (!Number.isFinite(totalPrice) || totalPrice <= 0) {
+    return { sent: false, reason: 'no_amount' };
+  }
+
+  const amountToPay = resolvePaymentLinkAmount(task, linkPaymentType);
   if (!Number.isFinite(amountToPay) || amountToPay <= 0) {
     return { sent: false, reason: 'no_amount' };
   }
@@ -849,14 +968,14 @@ async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes
   const { stableLink: stripeLink } = await createPersistentPaymentLink({
     taskId: task._id,
     provider: 'stripe',
-    paymentType,
+    paymentType: linkPaymentType,
     amountToPay,
     orderNumber,
   });
   const { stableLink: paypalLink } = await createPersistentPaymentLink({
     taskId: task._id,
     provider: 'paypal',
-    paymentType,
+    paymentType: linkPaymentType,
     amountToPay,
     orderNumber,
   });
@@ -867,11 +986,13 @@ async function deliverPaymentLinksForTask(taskId, { paymentType = 'total', notes
     stripeLink,
     paypalLink,
     totalPrice: amountToPay,
-    totall: amountToPay,
+    totall: totalPrice,
     breakdown,
     notes,
+    introText: introText || notes,
+    emailTitle,
     taskDetails: task,
-    paymentType,
+    paymentType: linkPaymentType,
     amountToPay,
   });
 
@@ -1500,7 +1621,10 @@ const taskCtrl = {
         gclid,
         gbraid,
         wbraid,
+        msclkid,
+        utm_source,
       } = req.body;
+      const normalizedUtmSource = normalizeUtmSource(utm_source);
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
       const orderItems = parseJsonArray(items);
@@ -1814,6 +1938,8 @@ const taskCtrl = {
         ...(gclid ? { gclid: String(gclid).trim() } : {}),
         ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
         ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
+        ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
+        ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
       });
 
       const savedTask = await newTask.save();
@@ -1993,7 +2119,7 @@ const taskCtrl = {
       const task = await Task.findById(taskId).populate(
         'createdBy',
         'email name',
-      ).populate('couponId', 'code percentage discountType validFrom validTo maxUses currentUses');; // optional fields;
+      ).populate('couponId', 'code percentage discountType discountValue validFrom validTo maxUses currentUses'); // optional fields
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -2016,7 +2142,7 @@ const taskCtrl = {
       const task = await Task.findOne({ orderNumber }).populate(
         'createdBy',
         'email name',
-      ).populate('couponId', 'code percentage discountType validFrom validTo maxUses currentUses');; // optional fields;
+      ).populate('couponId', 'code percentage discountType discountValue validFrom validTo maxUses currentUses'); // optional fields
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
       }
@@ -2047,7 +2173,7 @@ const taskCtrl = {
       const { data: tasks, meta } = await paginateQuery(
         Task,
         req.query,
-        ['paymentStatus', 'date', 'createdAt', 'orderNumber', 'quotationId', 'trafficSource'], // filters
+        ['paymentStatus', 'taskStatus', 'date', 'createdAt', 'orderNumber', 'quotationId', 'trafficSource'], // filters
         [
           'firstName',
           'lastName',
@@ -2058,6 +2184,11 @@ const taskCtrl = {
           'orderNumber',
         ], // searchable fields
       );
+
+      await Task.populate(tasks, {
+        path: 'couponId',
+        select: 'code percentage discountType discountValue',
+      });
 
       const tasksWithTrucks = await Promise.all(
         tasks.map(async (task) => {
@@ -2300,7 +2431,7 @@ const taskCtrl = {
         },
       })
         .select(
-          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority _id items',
+          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority _id items postcode',
         )
         .populate('items.standardItemId', 'itemName')
         .sort({ createdAt: -1 })
@@ -2328,6 +2459,7 @@ const taskCtrl = {
           timeSlot: t.available,
           taskDuration: t.taskDuration,
           priority: t.priority,
+          postcode: t.postcode,
           _id: t._id,
           name: name || null,
           items,
@@ -2866,7 +2998,12 @@ const taskCtrl = {
         await updateDailySheetForTask(updatedTask);
         // Send Waste Transfer Note only when the completed task is already paid.
         // Otherwise, noon cron will send it once payment becomes Paid.
-        if (updatedTask.paymentStatus === 'Paid') {
+        if (
+          updatedTask.paymentStatus === 'Paid' ||
+          (updatedTask.paymentStatus === 'partial_Paid' &&
+            updatedTask.paidAmount?.status === 'Paid' &&
+            updatedTask.remainingAmount?.status === 'Paid')
+        ) {
           await sendWasteTransferNoteEmail(updatedTask._id);
         }
       }
@@ -3994,7 +4131,12 @@ const taskCtrl = {
 
         // Send Waste Transfer Note only when the completed task is already paid.
         // Otherwise, noon cron will send it once payment becomes Paid.
-        if (task.paymentStatus === 'Paid') {
+        if (
+          task.paymentStatus === 'Paid' ||
+          (task.paymentStatus === 'partial_Paid' &&
+            task.paidAmount?.status === 'Paid' &&
+            task.remainingAmount?.status === 'Paid')
+        ) {
           await sendWasteTransferNoteEmail(task._id);
         }
 
@@ -4256,6 +4398,12 @@ const taskCtrl = {
       const task = await Task.findById(taskId).populate('items.standardItemId');
       if (!task) {
         return res.status(404).json({ message: 'Task not found' });
+      }
+
+      if (isPaymentTypeAlreadySettled(task, paymentAmountType)) {
+        return res.status(409).json({
+          message: 'This payment has already been completed.',
+        });
       }
 
       // Retrieve coupon code from task if exists
@@ -4563,6 +4711,8 @@ const taskCtrl = {
               },
             });
 
+            await schedulePaymentLinkRetryAfterCheckout(taskId, paymentAmountType);
+
             return res.json({
               message: 'Stripe payment initiated successfully',
               redirectUrl: session.url,
@@ -4584,6 +4734,7 @@ const taskCtrl = {
             task,
             paymentAmountType,
           );
+          await schedulePaymentLinkRetryAfterCheckout(taskId, paymentAmountType);
           return res.json({
             message: 'PayPal payment initiated successfully',
             orderID: paymentResult.result.id,
@@ -5685,14 +5836,73 @@ const taskCtrl = {
         }
 
         if (isPaymentTypeAlreadySettled(task, paymentAmountType)) {
-          const refundResult = await refundStripeCheckoutSessionPayment(session);
+          // Never auto-refund. Block further checkouts and alert if this looks like
+          // a different payment than the one already recorded.
+          await invalidateSiblingPaymentLinks({
+            taskId: task._id,
+            paymentType: paymentAmountType,
+            excludePaymentLinkId: paymentLinkId,
+          });
+
+          let paymentIds = { paymentIntentId: null, ids: [] };
+          try {
+            paymentIds = await getStripeCheckoutPaymentIdentifiers(session);
+          } catch (idError) {
+            console.error(
+              'Stripe checkout.session.completed: already settled; failed to resolve payment IDs',
+              { taskId, sessionId: session.id, error: idError.message },
+            );
+            return res.status(200).send('Already settled');
+          }
+
+          const matchingPayment = paymentIds.ids.length
+            ? await PaymentHistory.findOne({
+                taskId: task._id,
+                paymentType: 'Stripe',
+                status: 'success',
+                transactionId: { $in: paymentIds.ids },
+              }).select('_id transactionId')
+            : null;
+
+          if (matchingPayment) {
+            console.log(
+              'Stripe checkout.session.completed: payment type already settled; same payment already recorded (webhook retry)',
+              {
+                taskId,
+                paymentAmountType,
+                sessionId: session.id,
+                paymentIntentId: paymentIds.paymentIntentId,
+                transactionId: matchingPayment.transactionId,
+              },
+            );
+            return res.status(200).send('Already settled');
+          }
+
+          const otherStripePayment = await PaymentHistory.findOne({
+            taskId: task._id,
+            paymentType: 'Stripe',
+            status: 'success',
+            ...(paymentIds.ids.length
+              ? { transactionId: { $nin: paymentIds.ids } }
+              : {}),
+          }).select('_id transactionId');
+
+          if (otherStripePayment && paymentIds.paymentIntentId) {
+            await notifyAdminsExtraStripePayment(task, {
+              sessionId: session.id,
+              paymentIntentId: paymentIds.paymentIntentId,
+              existingTransactionId: otherStripePayment.transactionId,
+            });
+            return res.status(200).send('Already settled – extra payment flagged');
+          }
+
           console.warn(
-            'Stripe checkout.session.completed: payment type already settled, skipping duplicate',
+            'Stripe checkout.session.completed: payment type already settled; acknowledging without refund',
             {
               taskId,
               paymentAmountType,
               sessionId: session.id,
-              refundResult,
+              paymentIntentId: paymentIds.paymentIntentId,
             },
           );
           return res.status(200).send('Already settled');
@@ -5857,12 +6067,12 @@ const taskCtrl = {
               },
             },
           );
-          await invalidateSiblingPaymentLinks({
-            taskId: task._id,
-            paymentType: paymentAmountType,
-            excludePaymentLinkId: paymentLinkId,
-          });
         }
+        await invalidateSiblingPaymentLinks({
+          taskId: task._id,
+          paymentType: paymentAmountType,
+          excludePaymentLinkId: paymentLinkId,
+        });
         if (task.email) {
           await syncRepeatCustomerForEmail(task.email);
         }
@@ -7340,6 +7550,7 @@ const taskCtrl = {
       console.error('Error stack:', error.stack);
       const knownBadRequestMessages = new Set([
         'Task not found',
+        'Retargeting email is not available for migrated orders',
         'This feature is only available for public orders',
         'This feature is only available for orders with failed payment status',
         'Customer email is required to send retargeting email',
@@ -7758,7 +7969,7 @@ const taskCtrl = {
 
   quoteAdditionalItemRequest: async (req, res) => {
     try {
-      const { taskId, requestId , itemName } = req.params;
+      const { taskId, requestId, itemName } = req.params;
       const quotedPrice = Number(req.body.quotedPrice);
       if (!Number.isFinite(quotedPrice) || quotedPrice < 0) {
         return res.status(400).json({ message: 'quotedPrice must be a valid number >= 0' });
@@ -8179,3 +8390,4 @@ const taskCtrl = {
 };
 
 module.exports = taskCtrl;
+module.exports.deliverPaymentLinksForTask = deliverPaymentLinksForTask;

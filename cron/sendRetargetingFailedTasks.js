@@ -17,6 +17,7 @@ async function sendScheduledRetargetingEmails() {
 
     const tasksToProcess = await Task.find({
       createdByType: 'public',
+      createdBy: { $ne: 'MigrationScript' }, // Exclude CSV-migrated orders
       paymentStatus: 'Failed',
       retargetingEmailSent: { $ne: true },
       repeatCustomer: 0,

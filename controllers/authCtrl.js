@@ -5,7 +5,12 @@ const jwt = require('jsonwebtoken');
 const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const Truck = require('../models/Truck');
+const Broker = require('../models/Broker');
+const BrokerUser = require('../models/BrokerUser');
 const { sendPasswordResetEmail } = require('../utils/sendPasswordResetEmail');
+const loggingService = require('../services/loggingService');
+const sessionService = require('../services/sessionService');
+const { isBrokerActiveStatus } = require('../utils/brokerScope');
 require('dotenv').config();
 
 const GENERIC_FORGOT_PASSWORD_MESSAGE =
@@ -84,7 +89,23 @@ exports.userSignIn = async (req, res) => {
     const token = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
     user.refreshToken = refreshToken;
+    await sessionService.createSession({ user, refreshToken, req });
     await user.save();
+
+    try {
+      await loggingService.createLog({
+        userId: user._id,
+        username: user.username,
+        action: 'LOGIN',
+        entityType: 'USER',
+        entityId: user._id,
+        changes: { role: user.roleType || user.role?.[0], via: 'sign-in' },
+        ipAddress: sessionService.getRealIP(req),
+        userAgent: req.headers['user-agent'],
+      });
+    } catch (logError) {
+      console.error('Failed to write LOGIN log:', logError);
+    }
 
     let startTime = null;
     let truck = null;
@@ -148,7 +169,23 @@ exports.driverSignIn = async (req, res) => {
     const token = generateAccessToken(driver);
     const refreshToken = generateRefreshToken(driver);
     driver.refreshToken = refreshToken;
+    await sessionService.createSession({ user: driver, refreshToken, req });
     await driver.save();
+
+    try {
+      await loggingService.createLog({
+        userId: driver._id,
+        username: driver.username,
+        action: 'LOGIN',
+        entityType: 'USER',
+        entityId: driver._id,
+        changes: { role: driver.roleType || driver.role?.[0], via: 'driver-sign-in' },
+        ipAddress: sessionService.getRealIP(req),
+        userAgent: req.headers['user-agent'],
+      });
+    } catch (logError) {
+      console.error('Failed to write LOGIN log:', logError);
+    }
 
     let startTime = null;
     let truck = null;
@@ -191,6 +228,79 @@ exports.driverSignIn = async (req, res) => {
 };
 
 
+exports.brokerSignIn = async (req, res) => {
+  console.log('Signing in broker...');
+  const { email, password } = req.body;
+
+  try {
+    const user = await BrokerUser.findOne({ email, role: 'Broker' })
+      || await User.findOne({ email, role: 'Broker' });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Broker not found with the given email!' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: 'Password is incorrect!' });
+    }
+
+    const token = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+    user.refreshToken = refreshToken;
+    await sessionService.createSession({ user, refreshToken, req });
+    await user.save();
+
+    try {
+      await loggingService.createLog({
+        userId: user._id,
+        username: user.username,
+        action: 'LOGIN',
+        entityType: 'USER',
+        entityId: user._id,
+        changes: { role: user.roleType || user.role?.[0], via: 'broker-sign-in' },
+        ipAddress: sessionService.getRealIP(req),
+        userAgent: req.headers['user-agent'],
+      });
+    } catch (logError) {
+      console.error('Failed to write LOGIN log:', logError);
+    }
+
+    const brokerId = user.brokerId || null;
+    let broker = null;
+    if (brokerId) {
+      broker = await Broker.findById(brokerId).lean();
+    } else {
+      broker = await Broker.findOne({ userId: user._id }).lean();
+    }
+
+    if (!broker || !isBrokerActiveStatus(broker.status)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Broker account is inactive. Please contact support.',
+      });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        ...user._doc,
+        id: user._id,
+        phoneNumber: Array.isArray(user.phoneNumber) ? user.phoneNumber[0] : user.phoneNumber,
+        picture: user.picture || null,
+        permissions: null,
+        brokerId: broker?._id || brokerId,
+        broker,
+      },
+      token,
+      refreshToken,
+    });
+  } catch (error) {
+    console.error('Error while signing in broker:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+};
+
 exports.refresh = async (req, res) => {
   const refreshToken = req.body.token;
   if (!refreshToken) {
@@ -210,6 +320,10 @@ exports.refresh = async (req, res) => {
 
     const newToken = generateAccessToken(user);
     const newRefreshToken = generateRefreshToken(user);
+    await sessionService.touchSession({
+      oldRefreshToken: refreshToken,
+      newRefreshToken,
+    });
     user.refreshToken = newRefreshToken;
     await user.save();
 
@@ -231,9 +345,32 @@ exports.logout = async (req, res) => {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    // Invalidate refresh token by clearing it
+    const previousRefresh = user.refreshToken;
+    if (previousRefresh) {
+      await sessionService.revokeSessionByRefreshToken(previousRefresh, {
+        revokedBy: user._id,
+      });
+    } else {
+      await sessionService.revokeAllForUser(user._id, { revokedBy: user._id });
+    }
+
     user.refreshToken = undefined;
     await user.save();
+
+    try {
+      await loggingService.createLog({
+        userId: user._id,
+        username: user.username,
+        action: 'LOGOUT',
+        entityType: 'USER',
+        entityId: user._id,
+        changes: { via: 'self-logout' },
+        ipAddress: sessionService.getRealIP(req),
+        userAgent: req.headers['user-agent'],
+      });
+    } catch (logError) {
+      console.error('Failed to write LOGOUT log:', logError);
+    }
 
     console.log(`User ${user._id} logged out successfully`);
 
@@ -264,6 +401,7 @@ exports.forgotPassword = async (req, res) => {
       user.passwordResetToken = hashResetToken(rawToken);
       user.passwordResetExpires = getResetExpiresAt();
       user.refreshToken = undefined;
+      await sessionService.revokeAllForUser(user._id);
       await user.save();
 
       const resetUrl = `${getPasswordResetFrontendUrl(resolvedAudience)}/reset-password?token=${rawToken}`;
@@ -322,6 +460,7 @@ exports.resetPassword = async (req, res) => {
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     user.refreshToken = undefined;
+    await sessionService.revokeAllForUser(user._id);
     await user.save();
 
     res.status(200).json({

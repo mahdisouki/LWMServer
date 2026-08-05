@@ -11,7 +11,7 @@ const Driver = require('../models/Driver');
 const { emitNotificationToUser, emitEvent } = require('../socket');
 const taskPhotoUploadService = require('../services/taskPhotoUploadService');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
-const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
+const { applyTruckStaffPopulate } = require('../utils/truckHelpers');
 const { processDriverLocationUpdate } = require('../services/proximityAutoStartService');
 const {
   findActivePayrollForDay,
@@ -169,11 +169,7 @@ async function getTruckForUser(userId) {
 }
 
 async function getAllTruckUserIds(truckId) {
-  const truck = await Truck.findById(truckId)
-    .populate('driverId')
-    .populate('helperId')
-    .populate('extraDrivers.driverId')
-    .populate('extraHelpers.helperId');
+  const truck = await applyTruckStaffPopulate(Truck.findById(truckId));
 
   if (!truck) return [];
 
@@ -1011,7 +1007,13 @@ const driverManagement = {
 
       // Send Waste Transfer Note only when completed and already paid.
       // Otherwise, noon cron will send it once payment becomes Paid.
-      if (task.taskStatus === 'Completed' && task.paymentStatus === 'Paid') {
+      if (
+        task.taskStatus === 'Completed' &&
+        (task.paymentStatus === 'Paid' ||
+          (task.paymentStatus === 'partial_Paid' &&
+            task.paidAmount?.status === 'Paid' &&
+            task.remainingAmount?.status === 'Paid'))
+      ) {
         await sendWasteTransferNoteEmail(task._id);
       }
 
@@ -1236,7 +1238,12 @@ const driverManagement = {
 
       // Send Waste Transfer Note only when completed and already paid.
       // Otherwise, noon cron will send it once payment becomes Paid.
-      if (task.paymentStatus === 'Paid') {
+      if (
+        task.paymentStatus === 'Paid' ||
+        (task.paymentStatus === 'partial_Paid' &&
+          task.paidAmount?.status === 'Paid' &&
+          task.remainingAmount?.status === 'Paid')
+      ) {
         await sendWasteTransferNoteEmail(task._id);
       }
       res.status(200).json({

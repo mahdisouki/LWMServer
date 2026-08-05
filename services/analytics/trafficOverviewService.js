@@ -1,40 +1,63 @@
-const ClaritySnapshot = require('../../models/ClaritySnapshot');
 const Task = require('../../models/Task');
 const { resolvePeriod } = require('./dashboardService');
+const { getPeriodLabels, eachDayKeyInPeriod } = require('../../utils/analyticsDateRange');
+const { isGa4Enabled } = require('../../config/ga4Config');
+const { TRAFFIC_SOURCES } = require('../../utils/trafficSource');
 const {
-  extractOverviewTrafficSeries,
-  extractSnapshotSourceBreakdown,
-  getTopSourceLabel,
-  SOURCE_LABELS,
-} = require('../../utils/clarityMetricsParser');
+  fetchDailyTraffic,
+  fetchPeriodTraffic,
+} = require('./ga4Service');
+const { excludeMigratedOrdersFilter } = require('./taskFilters');
 
-const PAID_TASK_STATUSES = ['Paid', 'partial_Paid', 'partial_Refunded', 'refunded', 'On_Hold'];
+const ORDER_SOURCE_KEYS = [
+  TRAFFIC_SOURCES.GOOGLE_ADS,
+  TRAFFIC_SOURCES.MICROSOFT_ADS,
+  TRAFFIC_SOURCES.INSTAGRAM,
+  TRAFFIC_SOURCES.FACEBOOK,
+  TRAFFIC_SOURCES.ORGANIC,
+];
 
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
+function emptySourceStats() {
+  return { orders: 0, revenue: 0 };
 }
 
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
-
-function emptySourceBreakdown() {
+function emptyOrderSourceBreakdown() {
   return {
-    organic: 0,
-    direct: 0,
-    referral: 0,
-    social: 0,
-    paid: 0,
-    other: 0,
+    [TRAFFIC_SOURCES.GOOGLE_ADS]: emptySourceStats(),
+    [TRAFFIC_SOURCES.MICROSOFT_ADS]: emptySourceStats(),
+    [TRAFFIC_SOURCES.INSTAGRAM]: emptySourceStats(),
+    [TRAFFIC_SOURCES.FACEBOOK]: emptySourceStats(),
+    [TRAFFIC_SOURCES.ORGANIC]: emptySourceStats(),
   };
 }
 
-function sumSourceBreakdown(target, addition) {
-  for (const key of Object.keys(target)) {
-    target[key] += addition[key] || 0;
+function normalizeOrderSource(raw) {
+  const value = String(raw || '').trim();
+  if (ORDER_SOURCE_KEYS.includes(value)) {
+    return value;
   }
+  return TRAFFIC_SOURCES.ORGANIC;
+}
+
+function sumOrderSourceBreakdown(target, addition) {
+  for (const key of ORDER_SOURCE_KEYS) {
+    const row = addition[key] || emptySourceStats();
+    target[key].orders += row.orders || 0;
+    target[key].revenue += row.revenue || 0;
+  }
+}
+
+function getTopOrderSource(sources) {
+  let top = TRAFFIC_SOURCES.ORGANIC;
+  let maxOrders = -1;
+  for (const key of ORDER_SOURCE_KEYS) {
+    const orders = sources[key]?.orders || 0;
+    if (orders > maxOrders) {
+      maxOrders = orders;
+      top = key;
+    }
+  }
+  return maxOrders > 0 ? top : '—';
 }
 
 async function loadOrdersAndRevenueByDay(start, end) {
@@ -42,14 +65,18 @@ async function loadOrdersAndRevenueByDay(start, end) {
     {
       $match: {
         createdAt: { $gte: start, $lte: end },
-        paymentStatus: { $in: PAID_TASK_STATUSES },
-        taskStatus: { $ne: 'Cancelled' },
+        paymentStatus: { $ne: 'Failed' },
+        ...excludeMigratedOrdersFilter,
       },
     },
     {
       $group: {
         _id: {
-          $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'UTC' },
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$createdAt',
+            timezone: 'Europe/London',
+          },
         },
         orders: { $sum: 1 },
         revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
@@ -61,39 +88,81 @@ async function loadOrdersAndRevenueByDay(start, end) {
   return new Map(rows.map((row) => [row._id, { orders: row.orders, revenue: row.revenue }]));
 }
 
+/** Orders + revenue per London day, broken down by Task.trafficSource enum. */
+async function loadOrdersBySourceByDay(start, end) {
+  const rows = await Task.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: start, $lte: end },
+        paymentStatus: { $ne: 'Failed' },
+        ...excludeMigratedOrdersFilter,
+      },
+    },
+    {
+      $group: {
+        _id: {
+          date: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$createdAt',
+              timezone: 'Europe/London',
+            },
+          },
+          source: { $ifNull: ['$trafficSource', TRAFFIC_SOURCES.ORGANIC] },
+        },
+        orders: { $sum: 1 },
+        revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
+      },
+    },
+  ]);
+
+  const byDate = new Map();
+  for (const row of rows) {
+    const dateKey = row._id.date;
+    const source = normalizeOrderSource(row._id.source);
+    if (!byDate.has(dateKey)) {
+      byDate.set(dateKey, emptyOrderSourceBreakdown());
+    }
+    const bucket = byDate.get(dateKey)[source];
+    bucket.orders += row.orders;
+    bucket.revenue = Math.round((bucket.revenue + row.revenue) * 100) / 100;
+  }
+  return byDate;
+}
+
 async function getTrafficOverview({ preset, startDate, endDate } = {}) {
   const period = resolvePeriod({ preset, startDate, endDate });
 
-  const [overviewSnapshots, sourceSnapshots, ordersByDay] = await Promise.all([
-    ClaritySnapshot.find({
-      snapshotType: 'overview',
-      snapshotDate: { $gte: period.start, $lte: period.end },
-    }).sort({ snapshotDate: 1 }).lean(),
-    ClaritySnapshot.find({
-      snapshotType: 'traffic_sources',
-      snapshotDate: { $gte: period.start, $lte: period.end },
-    }).sort({ snapshotDate: 1 }).lean(),
+  if (!isGa4Enabled()) {
+    throw new Error('GA4 is not configured — Traffic Overview requires Google Analytics 4');
+  }
+
+  const [ordersByDay, ordersBySourceByDay, ga4Daily, ga4Period] = await Promise.all([
     loadOrdersAndRevenueByDay(period.start, period.end),
+    loadOrdersBySourceByDay(period.start, period.end),
+    fetchDailyTraffic({ startKey: period.startKey, endKey: period.endKey }),
+    fetchPeriodTraffic({ startKey: period.startKey, endKey: period.endKey }),
   ]);
 
-  const sourcesByDate = new Map(
-    sourceSnapshots.map((snapshot) => [
-      toDateString(snapshot.snapshotDate),
-      extractSnapshotSourceBreakdown(snapshot.data),
-    ]),
-  );
+  if (!ga4Daily?.available) {
+    throw new Error('Failed to load traffic overview from Google Analytics 4');
+  }
 
-  const daily = overviewSnapshots.map((snapshot) => {
-    const date = toDateString(snapshot.snapshotDate);
-    const traffic = extractOverviewTrafficSeries(snapshot.data);
-    const sources = sourcesByDate.get(date) || emptySourceBreakdown();
+  const chartDayKeys = eachDayKeyInPeriod(period.start, period.end, {
+    startKey: period.startKey,
+    endKey: period.endKey,
+  });
+
+  const daily = chartDayKeys.map((date) => {
+    const ga4 = ga4Daily.byDate?.get(date);
+    const sources = ordersBySourceByDay.get(date) || emptyOrderSourceBreakdown();
     const business = ordersByDay.get(date) || { orders: 0, revenue: 0 };
 
     return {
       date,
-      pageViews: traffic.pageViews,
-      visitors: traffic.visitors,
-      sessions: traffic.sessions,
+      pageViews: ga4?.pageViews || 0,
+      visitors: ga4?.users || 0,
+      sessions: ga4?.sessions || 0,
       orders: business.orders,
       revenue: Math.round(business.revenue * 100) / 100,
       sources,
@@ -106,7 +175,7 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
     sessions: 0,
     orders: 0,
     revenue: 0,
-    sources: emptySourceBreakdown(),
+    sources: emptyOrderSourceBreakdown(),
   };
 
   for (const day of daily) {
@@ -115,23 +184,30 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
     totals.sessions += day.sessions;
     totals.orders += day.orders;
     totals.revenue += day.revenue;
-    sumSourceBreakdown(totals.sources, day.sources);
+    sumOrderSourceBreakdown(totals.sources, day.sources);
+  }
+
+  if (ga4Period?.available) {
+    totals.pageViews = ga4Period.pageViews;
+    totals.sessions = ga4Period.sessions;
+    totals.visitors = ga4Period.users;
+  }
+
+  for (const key of ORDER_SOURCE_KEYS) {
+    totals.sources[key].revenue = Math.round(totals.sources[key].revenue * 100) / 100;
   }
 
   totals.revenue = Math.round(totals.revenue * 100) / 100;
-  totals.topSource = getTopSourceLabel(totals.sources);
+  totals.topSource = getTopOrderSource(totals.sources);
 
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
     snapshotCoverage: {
-      daysInPeriod: overviewSnapshots.length,
-      note: overviewSnapshots.length === 0
-        ? 'No Clarity snapshots for this period. Traffic and source data will appear as daily sync runs.'
-        : undefined,
+      daysInPeriod: chartDayKeys.length,
+      trafficSource: 'ga4',
     },
     daily,
     totals: {
@@ -143,13 +219,15 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       topSource: totals.topSource,
       sources: totals.sources,
     },
-    sourceLabels: SOURCE_LABELS,
+    sourceLabels: ORDER_SOURCE_KEYS,
     dataSources: {
-      pageViews: 'Clarity overview snapshots (PopularPages)',
-      visitors: 'Clarity overview snapshots (distinctUserCount)',
-      sources: 'Clarity traffic_sources snapshots (Channel + Source dimensions)',
-      orders: 'Task collection — paid bookings created per day',
-      revenue: 'Task collection — sum of totalPrice for paid bookings created per day',
+      pageViews: 'Google Analytics 4 — screenPageViews',
+      visitors: 'Google Analytics 4 — totalUsers (period unique; daily chart uses per-day users)',
+      sessions: 'Google Analytics 4 — sessions',
+      sources:
+        'Task.trafficSource enum (Google Ads, Microsoft Ads, Instagram, Facebook, Organic) — orders & revenue per source',
+      orders: 'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',
+      revenue: 'Task collection — sum of totalPrice for all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',
     },
   };
 }

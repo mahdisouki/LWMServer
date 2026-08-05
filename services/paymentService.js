@@ -10,6 +10,14 @@ const MINIMUM_PRICE = 45; // Minimum price including VAT (£37.5 + £7.5 VAT)
 const NGROK_URL = 'https://api.londonwastemanagement.uk';
 const CLIENT_URL = 'https://www.londonwastemanagement.com';
 
+/** PayPal requires a unique invoice_id per capture — reusing orderNumber causes DUPLICATE_INVOICE_ID on the 2nd payment. */
+function buildPayPalInvoiceId(orderNumber, paymentType, uniqueSuffix) {
+    if (!orderNumber) return undefined;
+    const typePart = String(paymentType || 'total').toLowerCase();
+    const suffix = uniqueSuffix != null ? `-${uniqueSuffix}` : '';
+    return `${orderNumber}-${typePart}${suffix}`.slice(0, 127);
+}
+
 // PayPal environment configuration
 const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox'; // 'sandbox' or 'live'
 
@@ -243,22 +251,29 @@ async function expireStripeCheckoutSessionIfOpen(sessionId) {
 }
 
 /**
- * Refund a completed Checkout Session when the order was already paid (duplicate tab/session).
+ * Collect Checkout Session / PaymentIntent / Charge IDs for PaymentHistory matching.
+ * PaymentHistory may store any of these as transactionId depending on webhook path.
  */
-async function refundStripeCheckoutSessionPayment(session) {
-    if (!session?.payment_intent) return { refunded: false, reason: 'no-payment-intent' };
+async function getStripeCheckoutPaymentIdentifiers(session) {
+    const ids = new Set();
+    if (session?.id) ids.add(String(session.id));
+
     const paymentIntentId =
-        typeof session.payment_intent === 'string'
+        typeof session?.payment_intent === 'string'
             ? session.payment_intent
-            : session.payment_intent.id;
-    try {
-        await stripe.refunds.create({ payment_intent: paymentIntentId });
-        console.log('[paymentService] Refunded duplicate Stripe checkout payment:', paymentIntentId);
-        return { refunded: true, paymentIntentId };
-    } catch (error) {
-        console.error('[paymentService] Failed to refund duplicate Stripe payment:', error.message);
-        return { refunded: false, reason: error.message, paymentIntentId };
+            : session?.payment_intent?.id || null;
+
+    if (paymentIntentId) {
+        ids.add(String(paymentIntentId));
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        const chargeId =
+            typeof paymentIntent.latest_charge === 'string'
+                ? paymentIntent.latest_charge
+                : paymentIntent.latest_charge?.id || null;
+        if (chargeId) ids.add(String(chargeId));
     }
+
+    return { paymentIntentId, ids: [...ids] };
 }
 
 const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentType = 'total', orderNumber = null, paymentLinkId = null) => {
@@ -301,7 +316,7 @@ const createPaypalPaymentLink = async (taskId, finalAmount, breakdown, paymentTy
         intent: "CAPTURE",
         purchase_units: [{
             custom_id: paymentLinkId ? `${taskId}|${paymentType}|${paymentLinkId}` : `${taskId}|${paymentType}`,
-            invoice_id: orderNumber || undefined,
+            invoice_id: buildPayPalInvoiceId(orderNumber, paymentType, paymentLinkId),
             description: `Payment for Task #${orderNumber || taskId}`,
             amount: {
                 currency_code: "GBP",
@@ -388,7 +403,7 @@ async function createPayPalOrder(amountInPence, taskId, fullBreakdown, task, pay
         purchase_units: [{
             // Include paymentAmountType in custom_id so webhook can detect partial payments
             custom_id: `${taskId}|${paymentAmountType}`,
-            invoice_id: task?.orderNumber || undefined,
+            invoice_id: buildPayPalInvoiceId(task?.orderNumber, paymentAmountType),
             amount: { currency_code: 'GBP', value: (amountInPence / 100).toFixed(2) }
         }],
         application_context: {
@@ -466,5 +481,5 @@ module.exports = {
     getReusablePayPalCheckoutUrl,
     resolveReusableProviderCheckoutUrl,
     expireStripeCheckoutSessionIfOpen,
-    refundStripeCheckoutSessionPayment,
+    getStripeCheckoutPaymentIdentifiers,
 };

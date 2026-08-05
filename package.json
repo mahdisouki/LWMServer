@@ -10,7 +10,7 @@
     "backfill:payroll:inconsistent": "node scripts/backfillPayrollInconsistentRows.js",
     "backfill:pcn-deduction-routing": "node scripts/backfillPcnDeductionRouting.js",
     "backfill:pcn-deduction-routing:dry": "node scripts/backfillPcnDeductionRouting.js --dry-run",
-    "clarity:sync": "node scripts/syncClaritySnapshots.js",
+    "ga4:authorize": "node scripts/authorizeGoogleAnalytics.js",
     "postinstall": "npx playwright install-deps chromium && npx playwright install chromium"
   },
   "author": "",
@@ -28,6 +28,7 @@
     "express-rate-limit": "^7.5.1",
     "firebase-admin": "^13.0.0",
     "form-data": "^4.0.2",
+    "geoip-lite": "^1.4.10",
     "google-auth-library": "^9.15.1",
     "googleapis": "^144.0.0",
     "handlebars": "^4.7.8",

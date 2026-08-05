@@ -1,12 +1,16 @@
 const InterestTracking = require('../models/InterestTracking');
 const dashboardService = require('../services/analytics/dashboardService');
+const { resolvePeriod } = dashboardService;
 const trafficOverviewService = require('../services/analytics/trafficOverviewService');
 const conversionFunnelService = require('../services/analytics/conversionFunnelService');
 const goalCompletionsService = require('../services/analytics/goalCompletionsService');
 const devicesService = require('../services/analytics/devicesService');
 const pagePerformanceService = require('../services/analytics/pagePerformanceService');
 const topPostcodesService = require('../services/analytics/topPostcodesService');
-const trafficSourcesService = require('../services/analytics/trafficSourcesService');
+const popularItemsService = require('../services/analytics/popularItemsService');
+const orderTrafficSourcesService = require('../services/analytics/orderTrafficSourcesService');
+const adminOrdersService = require('../services/analytics/adminOrdersService');
+const staffWorkingHoursService = require('../services/analytics/staffWorkingHoursService');
 const { getPageFilters } = require('../config/analyticsPageMap');
 
 const analyticsCtrl = {
@@ -69,6 +73,7 @@ const analyticsCtrl = {
    * Get aggregated analytics data
    * GET /api/analytics/interest-analytics
    * Query params:
+   * - preset: today | 7d | 30d | 90d (optional, filters createdAt like Website Analytics)
    * - date: single business date (optional)
    * - startDate, endDate: createdAt date range (optional)
    * - type: sundays | night_shift (optional, supports comma-separated values)
@@ -76,7 +81,7 @@ const analyticsCtrl = {
    */
   getInterestAnalytics: async (req, res) => {
     try {
-      const { date, startDate, endDate, type } = req.query;
+      const { date, startDate, endDate, type, preset } = req.query;
       const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
       const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 30, 1), 200);
       const skip = (page - 1) * limit;
@@ -128,7 +133,18 @@ const analyticsCtrl = {
         matchFilter.date = { $gte: dayStart, $lte: dayEnd };
       }
 
-      if (startDate || endDate) {
+      if (preset || (startDate && endDate)) {
+        let period;
+        try {
+          period = resolvePeriod({ preset, startDate, endDate });
+        } catch (error) {
+          return res.status(400).json({
+            message: 'Invalid period filter',
+            error: error.message,
+          });
+        }
+        matchFilter.createdAt = { $gte: period.start, $lte: period.end };
+      } else if (startDate || endDate) {
         matchFilter.createdAt = {};
         if (startDate) {
           const createdStart = new Date(startDate);
@@ -211,7 +227,13 @@ const analyticsCtrl = {
                 businessDate: '$_id.businessDate'
               }
             },
-            total: { $sum: '$count' }
+            total: { $sum: '$count' },
+            sundayClicks: {
+              $sum: { $cond: [{ $eq: ['$_id.type', 'sunday_click'] }, '$count', 0] },
+            },
+            nightSlotClicks: {
+              $sum: { $cond: [{ $eq: ['$_id.type', 'night_slot_click'] }, '$count', 0] },
+            },
           }
         },
         { $sort: { _id: -1 } }
@@ -232,7 +254,9 @@ const analyticsCtrl = {
               createdAtDate: '$_id',
               businessDates: 1,
               clicks: 1,
-              total: 1
+              total: 1,
+              sundayClicks: 1,
+              nightSlotClicks: 1,
             }
           }
         ])
@@ -325,6 +349,8 @@ const analyticsCtrl = {
         preset: req.query.preset,
         startDate: req.query.startDate,
         endDate: req.query.endDate,
+        includeChannels: req.query.includeChannels,
+        includeLeadDetails: req.query.includeLeadDetails,
       });
       res.status(200).json({
         message: 'Conversion funnel retrieved successfully',
@@ -402,9 +428,6 @@ const analyticsCtrl = {
   getTopPostcodes: async (req, res) => {
     try {
       const data = await topPostcodesService.getTopPostcodes({
-        preset: req.query.preset,
-        startDate: req.query.startDate,
-        endDate: req.query.endDate,
         limit: req.query.limit,
       });
       res.status(200).json({
@@ -412,7 +435,7 @@ const analyticsCtrl = {
         ...data,
       });
     } catch (error) {
-      const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
+      const status = error.message.includes('not ready') ? 503 : 500;
       res.status(status).json({
         message: 'Failed to load top postcodes',
         error: error.message,
@@ -420,22 +443,88 @@ const analyticsCtrl = {
     }
   },
 
-  getTrafficSources: async (req, res) => {
+  getPopularItems: async (req, res) => {
     try {
-      const data = await trafficSourcesService.getTrafficSources({
+      const data = await popularItemsService.getPopularItems({
+        limit: req.query.limit,
+      });
+      res.status(200).json({
+        message: 'Popular items retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid') ? 400 : 500;
+      res.status(status).json({
+        message: 'Failed to load popular items',
+        error: error.message,
+      });
+    }
+  },
+
+  getOrderTrafficSources: async (req, res) => {
+    try {
+      const data = await orderTrafficSourcesService.getOrderTrafficSources({
         preset: req.query.preset,
         startDate: req.query.startDate,
         endDate: req.query.endDate,
         limit: req.query.limit,
       });
       res.status(200).json({
-        message: 'Traffic sources retrieved successfully',
+        message: 'Order traffic sources retrieved successfully',
         ...data,
       });
     } catch (error) {
       const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
       res.status(status).json({
-        message: 'Failed to load traffic sources',
+        message: 'Failed to load order traffic sources',
+        error: error.message,
+      });
+    }
+  },
+
+  getAdminOrders: async (req, res) => {
+    try {
+      const data = await adminOrdersService.getAdminOrders({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Admin order analytics retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid')
+        || error.message.includes('preset')
+        || error.message.includes('startDate')
+        ? 400
+        : 500;
+      res.status(status).json({
+        message: 'Failed to load admin order analytics',
+        error: error.message,
+      });
+    }
+  },
+
+  getStaffWorkingHours: async (req, res) => {
+    try {
+      const data = await staffWorkingHoursService.getStaffWorkingHours({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Staff working hours analytics retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid')
+        || error.message.includes('preset')
+        || error.message.includes('startDate')
+        ? 400
+        : 500;
+      res.status(status).json({
+        message: 'Failed to load staff working hours analytics',
         error: error.message,
       });
     }

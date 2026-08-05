@@ -8,7 +8,13 @@ const PDFDocument = require('pdfkit');
 const Handlebars = require('handlebars');
 const Task = require('../models/Task');
 const StandardItem = require('../models/StandardItem');
-const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
+const { cancelScheduledPaymentLinkRetry } = require('./failedPaymentLinkService');
+const {
+  addStagingToSubject,
+  addStagingBanner,
+  isBankTransferPayment,
+  buildBankTransferDetailsHtml,
+} = require('../utils/emailHelpers');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -658,21 +664,10 @@ module.exports = {
     }
     template = template.replace('{{refundRow}}', refundRow);
 
-    // Build bank transfer details section if payment method is BankTransfer
+    // Build bank transfer details section when any payment leg uses BankTransfer
     let bankTransferDetails = '';
-    if (task.paymentMethod === 'BankTransfer') {
-      bankTransferDetails = `
-          <div class="bank-details-section">
-            <div class="bank-details-header">
-              <span>🏦 Bank Details:</span>
-            </div>
-            <div class="bank-details-content">
-              <div class="value"><strong>Business Account Name:</strong> London Waste Management</div>
-              <div class="value"><strong>Sort Code:</strong> 30-96-26</div>
-              <div class="value"><strong>Account Number:</strong> 55867268</div>
-              <div class="value"><strong>Reference:</strong> ${task.orderNumber}</div>
-            </div>
-          </div>`;
+    if (isBankTransferPayment(task)) {
+      bankTransferDetails = buildBankTransferDetailsHtml(task.orderNumber);
     }
     template = template.replace('{{bankTransferDetails}}', bankTransferDetails);
 
@@ -1278,6 +1273,10 @@ module.exports = {
       if (!task) {
         throw new Error(`Task not found with ID: ${orderId}`);
       }
+
+      cancelScheduledPaymentLinkRetry(task._id).catch((err) => {
+        console.error('[Payment Link Retry] Failed to cancel after payment:', err.message);
+      });
 
       // Generate invoice PDF
       const dirPath = path.join(__dirname, '../generated');

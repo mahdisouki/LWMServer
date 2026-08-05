@@ -836,6 +836,7 @@ const PayrollCtrl = {
       notes,
       vanReg,
       workingWith,
+      appliedHourPrice,
     } = req.body;
     const { payrollId } = req.params;
 
@@ -912,9 +913,15 @@ const PayrollCtrl = {
       // Update financial fields if provided
       if (totalExpenses !== undefined) payroll.totalExpenses = totalExpenses;
       if (totalCash !== undefined) payroll.totalCash = totalCash;
+      if (appliedHourPrice !== undefined) {
+        payroll.appliedHourPrice =
+          appliedHourPrice == null || appliedHourPrice === ''
+            ? undefined
+            : round2(Number(appliedHourPrice));
+      }
 
       // Day-rate covers regular hours; only extra hours add overtime pay
-      const regularSalary = user.hourPrice || 0;
+      const regularSalary = payroll.appliedHourPrice ?? user.hourPrice ?? 0;
       const extraSalary = (payroll.extraHours || 0) * user.extraHourPrice;
       payroll.totalSalary = round2(regularSalary + extraSalary);
 
@@ -974,7 +981,8 @@ const PayrollCtrl = {
       totalPcnDamages,
       totalCash,
       status,
-      notes
+      notes,
+      appliedHourPrice,
     } = req.body;
 
     try {
@@ -1025,7 +1033,10 @@ const PayrollCtrl = {
 
       // Calculate salary based on user's rates
       // Using the same logic as updatePayrollAdmin: hourly rate for regular hours + extra hour price for extra hours
-      const regularSalary = user.hourPrice;
+      const regularSalary =
+        appliedHourPrice != null && appliedHourPrice !== ''
+          ? round2(Number(appliedHourPrice))
+          : user.hourPrice;
       const extraSalary = finalExtraHours * user.extraHourPrice;
       const calculatedSalary = round2(regularSalary + extraSalary);
 
@@ -1079,6 +1090,9 @@ const PayrollCtrl = {
         totalHoursWorked: finalTotalHours,
         regularHours: finalRegularHours,
         extraHours: finalExtraHours,
+        ...(appliedHourPrice != null && appliedHourPrice !== ''
+          ? { appliedHourPrice: round2(Number(appliedHourPrice)) }
+          : {}),
         totalSalary: calculatedSalary,
         totalExpenses: calculatedTotalExpenses,
         totalPcnDamages: calculatedTotalPcnDamages,

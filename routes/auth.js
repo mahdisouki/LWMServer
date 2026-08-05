@@ -29,16 +29,19 @@ const router = express.Router();
 const {
     userSignIn,
     driverSignIn,
+    brokerSignIn,
     refresh,
     logout,
     forgotPassword,
     resetPassword,
   } = require("../controllers/authCtrl");
 const { verifyRefreshToken, isAuth } = require("../middlewares/auth");
+const { loginLimiter } = require("../middlewares/rateLimiter");
 
 
-router.post("/sign-in" , userSignIn);
-router.post("/driver-sign-in" , driverSignIn);
+router.post("/sign-in" , loginLimiter, userSignIn);
+router.post("/driver-sign-in" , loginLimiter, driverSignIn);
+router.post("/broker-sign-in" , loginLimiter, brokerSignIn);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
 router.post("/refresh" ,verifyRefreshToken, refresh);

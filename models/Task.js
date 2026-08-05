@@ -177,7 +177,7 @@ const taskSchema = new Schema(
     },
     createdByType: {
       type: String,
-      enum: ['Admin', 'public'],
+      enum: ['Admin', 'public', 'broker'],
       default: 'public',
     },
     paymentStatus: {
@@ -253,6 +253,8 @@ const taskSchema = new Schema(
     wasteTransferNoteSent: { type: Boolean, default: false },
     retargetingEmailSent: { type: Boolean, default: false }, // Track if retargeting email was sent
     retargetingEmailSentAt: { type: Date }, // When retargeting email was sent
+    paymentLinkRetryEmailSent: { type: Boolean, default: false },
+    paymentLinkRetryEmailSentAt: { type: Date },
     retargetingCoupon20Id: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to 20% coupon
     retargetingCoupon10Id: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to 10% coupon
     reasonForCancellation: { type: String },
@@ -292,13 +294,28 @@ const taskSchema = new Schema(
     gclid: { type: String, required: false },
     gbraid: { type: String, required: false },
     wbraid: { type: String, required: false },
+    msclkid: { type: String, required: false },
+    utm_source: { type: String, required: false },
     trafficSource: {
       type: String,
-      enum: ['Google Ads', 'Organic'],
+      enum: ['Google Ads', 'Microsoft Ads', 'Instagram', 'Facebook', 'Organic'],
       default: 'Organic',
     },
     googleAdsPurchaseConversionSentAt: { type: Date, required: false },
     googleAdsConversionError: { type: String, required: false },
+    microsoftAdsOfflineConversionExportedAt: { type: Date, required: false },
+    microsoftAdsConversionError: { type: String, required: false },
+    brokerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'BrokerOrg',
+      default: null,
+    },
+    brokerOrderId: {
+      type: Schema.Types.ObjectId,
+      ref: 'BrokerOrder',
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true }
 );
@@ -326,6 +343,8 @@ taskSchema.pre('save', function (next) {
     gclid: this.gclid,
     gbraid: this.gbraid,
     wbraid: this.wbraid,
+    msclkid: this.msclkid,
+    utm_source: this.utm_source,
   });
 
   // Validate items have proper pricing
@@ -357,11 +376,15 @@ taskSchema.pre('findOneAndUpdate', function (next) {
     $set.gclid !== undefined
     || $set.gbraid !== undefined
     || $set.wbraid !== undefined
+    || $set.msclkid !== undefined
+    || $set.utm_source !== undefined
   ) {
     const trafficSource = resolveTrafficSource({
       gclid: $set.gclid,
       gbraid: $set.gbraid,
       wbraid: $set.wbraid,
+      msclkid: $set.msclkid,
+      utm_source: $set.utm_source,
     });
     if (update.$set) {
       update.$set.trafficSource = trafficSource;
@@ -593,6 +616,9 @@ taskSchema.index({ taskStatus: 1, paymentStatus: 1, finishDate: 1 });
 taskSchema.index({ isBusinessEmail: 1, createdAt: -1 });
 
 taskSchema.index({ trafficSource: 1, createdAt: -1 });
+taskSchema.index({ createdByType: 1, createdAt: -1 });
+taskSchema.index({ createdByType: 1, paymentStatus: 1, createdAt: -1 });
+taskSchema.index({ createdByType: 1, paymentStatus: 1, createdAt: -1, trafficSource: 1 });
 
 const Task = mongoose.model("Task", taskSchema);
 module.exports = Task;

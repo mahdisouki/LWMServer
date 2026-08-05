@@ -3,7 +3,7 @@ const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 
 const VAT_RATE = 0.2; // 20% VAT
 
-const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink, totalPrice, breakdown, taskDetails, paymentType, amountToPay, totall }) => {
+const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink, totalPrice, breakdown, taskDetails, paymentType, amountToPay, totall, introText = '', emailTitle = '' }) => {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -355,10 +355,20 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     `;
   }
 
+  const introHtml = introText
+    ? `<tr>
+                  <td style="padding:0 16px 16px;">
+                    <p style="margin:0; font-size:14px; line-height:1.6; color:#374151;">${introText}</p>
+                  </td>
+                </tr>`
+    : '';
+  const headingTitle = emailTitle || `${getPaymentTypeDescription(paymentType)} Request`;
+  const subjectTitle = emailTitle || `${getPaymentTypeDescription(paymentType)} Request`;
+
   const mailOptions = {
     from: `"London Waste Management" <${process.env.EMAIL_USER}>`,
     to: customerEmail,
-    subject: addStagingToSubject(`${getPaymentTypeDescription(paymentType)} Request for Task #${taskDetails.orderNumber}`),
+    subject: addStagingToSubject(`${subjectTitle} for Task #${taskDetails.orderNumber}`),
     html: addStagingBanner(`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -395,7 +405,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
                 <tr>
                   <td align="center" style="padding:20px 16px 6px;">
                     <p style="margin:0; font-size:22px; font-weight:bold; color:#111827; text-transform:uppercase;">
-                      ${getPaymentTypeDescription(paymentType)} Request
+                      ${headingTitle}
                     </p>
                   </td>
                 </tr>
@@ -404,6 +414,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
                     <div style="width:85px; height:3px; background:#34C759;"></div>
                   </td>
                 </tr>
+                ${introHtml}
                 <tr>
                   <td style="padding:0 16px 20px;">
                     ${paymentSummaryTable}

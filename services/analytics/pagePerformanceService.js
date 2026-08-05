@@ -1,141 +1,79 @@
-const ClaritySnapshot = require('../../models/ClaritySnapshot');
-const { PAGE_FILTERS } = require('../../config/analyticsPageMap');
 const { resolvePeriod } = require('./dashboardService');
-const {
-  findMetric,
-  parseIntSafe,
-  parseFloatSafe,
-  normalizeUrl,
-  urlMatchesPageFilter,
-  formatDuration,
-} = require('../../utils/clarityMetricsParser');
-
-const TABLE_PAGES = PAGE_FILTERS.filter((page) => page.id !== 'all');
-
-function startOfUtcDay(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function toDateString(date) {
-  return startOfUtcDay(date).toISOString().slice(0, 10);
-}
+const { getPeriodLabels } = require('../../utils/analyticsDateRange');
+const { isGa4Enabled } = require('../../config/ga4Config');
+const { formatDuration } = require('../../utils/analyticsFormatters');
+const { fetchAllPagePerformance } = require('./ga4Service');
 
 function roundPercent(value) {
   return Math.round(value * 100) / 100;
 }
 
-function createAccumulator() {
-  return TABLE_PAGES.reduce((acc, page) => {
-    acc[page.id] = {
-      views: 0,
-      sessions: 0,
-      weightedActiveTime: 0,
-      weightedQuickExit: 0,
-    };
-    return acc;
-  }, {});
+function pathLabel(path) {
+  if (!path || path === '/') return 'Home';
+  const cleaned = path.replace(/\/+$/, '') || '/';
+  const segment = cleaned.split('/').filter(Boolean).pop() || cleaned;
+  return segment
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
-function accumulateTopPagesSnapshot(accumulator, data) {
-  const traffic = findMetric(data, 'Traffic');
-  const engagement = findMetric(data, 'EngagementTime');
-  const quickback = findMetric(data, 'QuickbackClick');
-
-  const engagementByUrl = new Map();
-  for (const row of engagement?.information || []) {
-    engagementByUrl.set(normalizeUrl(row.Url || row.url), row);
-  }
-
-  const quickbackByUrl = new Map();
-  for (const row of quickback?.information || []) {
-    quickbackByUrl.set(normalizeUrl(row.Url || row.url), row);
-  }
-
-  for (const row of traffic?.information || []) {
-    const url = normalizeUrl(row.Url || row.url);
-    if (!url) {
-      continue;
-    }
-
-    const sessions = parseIntSafe(row.totalSessionCount);
-    const views = Math.round(sessions * parseFloatSafe(row.pagesPerSessionPercentage || 1));
-    const engagementRow = engagementByUrl.get(url);
-    const quickbackRow = quickbackByUrl.get(url);
-
-    for (const pageFilter of TABLE_PAGES) {
-      if (!urlMatchesPageFilter(url, pageFilter)) {
-        continue;
-      }
-
-      const bucket = accumulator[pageFilter.id];
-      bucket.views += views;
-      bucket.sessions += sessions;
-      bucket.weightedActiveTime += parseIntSafe(engagementRow?.activeTime) * sessions;
-      bucket.weightedQuickExit += parseFloatSafe(quickbackRow?.sessionsWithMetricPercentage) * sessions;
-    }
-  }
-}
-
-function buildRows(accumulator) {
-  return TABLE_PAGES.map((pageFilter) => {
-    const bucket = accumulator[pageFilter.id];
-    const avgTimeSeconds = bucket.sessions > 0
-      ? Math.round(bucket.weightedActiveTime / bucket.sessions)
-      : 0;
-    const quickExitPercent = bucket.sessions > 0
-      ? roundPercent(bucket.weightedQuickExit / bucket.sessions)
-      : 0;
-
+function buildRows(pages) {
+  return pages.map((page) => {
+    const avgTimeSeconds = Math.round(page.avgEngagementSeconds || 0);
     return {
-      id: pageFilter.id,
-      label: pageFilter.label,
-      path: pageFilter.pathLabel || '/',
-      views: bucket.views,
+      id: page.path,
+      label: pathLabel(page.path),
+      path: page.path,
+      views: page.views || 0,
       avgTimeSeconds,
       avgTimeFormatted: formatDuration(avgTimeSeconds),
-      quickExitPercent,
+      quickExitPercent: roundPercent(page.bounceRate || 0),
     };
-  }).sort((a, b) => b.views - a.views);
+  });
 }
 
 async function getPagePerformance({ preset, startDate, endDate } = {}) {
   const period = resolvePeriod({ preset, startDate, endDate });
 
-  const snapshots = await ClaritySnapshot.find({
-    snapshotType: 'top_pages',
-    snapshotDate: { $gte: period.start, $lte: period.end },
-  }).sort({ snapshotDate: 1 }).lean();
-
-  const accumulator = createAccumulator();
-  for (const snapshot of snapshots) {
-    accumulateTopPagesSnapshot(accumulator, snapshot.data);
+  if (!isGa4Enabled()) {
+    throw new Error('GA4 is not configured — Page Performance requires Google Analytics 4');
   }
 
-  const rows = buildRows(accumulator);
+  const ga4Pages = await fetchAllPagePerformance({
+    startKey: period.startKey,
+    endKey: period.endKey,
+  });
+
+  if (!ga4Pages?.available) {
+    throw new Error('Failed to load page performance from Google Analytics 4');
+  }
+
+  const rows = buildRows(ga4Pages.pages || []);
 
   return {
     period: {
       preset: period.preset,
-      startDate: toDateString(period.start),
-      endDate: toDateString(period.end),
+      ...getPeriodLabels(period),
     },
     snapshotCoverage: {
-      daysInPeriod: snapshots.length,
-      note: snapshots.length === 0
-        ? 'No page snapshots for this period. Data appears as daily Clarity sync runs.'
-        : undefined,
+      daysInPeriod: null,
+      note: undefined,
+      trafficSource: 'ga4',
     },
     columns: ['page', 'views', 'avgTime', 'quickExitPercent'],
     rows,
+    totals: {
+      pages: rows.length,
+      views: ga4Pages.totalViews || 0,
+    },
     dataSources: {
-      views: 'Clarity top_pages snapshots — visits per URL grouped by site section',
-      avgTime: 'Clarity top_pages snapshots — active time per URL',
-      quickExitPercent: 'Clarity top_pages snapshots — quick-back % (proxy for bounce)',
+      views: 'Google Analytics 4 — screenPageViews for every pagePath',
+      avgTime: 'Google Analytics 4 — userEngagementDuration ÷ sessions by pagePath',
+      quickExitPercent: 'Google Analytics 4 — bounceRate by pagePath',
     },
     omittedColumns: {
-      quotes: 'Not available per page until landingPage is stored on quote submissions',
+      quotes: 'Not available per page — quote submissions are not attributed to individual URLs',
       conversionRate: 'Requires per-page quote attribution',
     },
   };

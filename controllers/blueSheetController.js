@@ -8,6 +8,7 @@ const DailySheet = require('../models/DailySheet');
 const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const PaymentHistory = require('../models/PaymentHistory');
+const { applyTruckStaffPopulate, populateHelperId } = require('../utils/truckHelpers');
 
 // Commission pool (fixed daily amount - usually £3,760)
 const COMMISSION_POOL = 3760;
@@ -44,7 +45,7 @@ const blueSheetController = {
       endOfDay.setUTCHours(23, 59, 59, 999);
 
       // Get all trucks
-      const trucks = await Truck.find().populate('vanId').populate('driverId helperId');
+      const trucks = await applyTruckStaffPopulate(Truck.find().populate('vanId'));
       const blueSheets = [];
       const truckRouteTotals = [];
 

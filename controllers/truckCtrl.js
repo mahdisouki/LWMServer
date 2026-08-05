@@ -7,7 +7,7 @@ const loggingService = require('../services/loggingService');
 const { logUnitAssignment, getAssignmentsForUnitOnDay, getAssignmentAtTime, getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const { User } = require('../models/User');
-const { findTruckByTruckName } = require('../utils/truckHelpers');
+const { findTruckByTruckName, applyTruckStaffPopulate, populateHelperId, assertValidHelperId } = require('../utils/truckHelpers');
 const {
   buildChatTrucksPayload,
 } = require('../utils/chatMessageHelpers');
@@ -68,6 +68,14 @@ const truckCtrl = {
   createTruck: async (req, res) => {
     try {
       const { name, vanId, driverId, helperId, extraDrivers, extraHelpers } = req.body;
+
+      if (helperId) {
+        try {
+          await assertValidHelperId(helperId);
+        } catch (e) {
+          return res.status(e.status || 400).json({ message: e.message });
+        }
+      }
      
       const newTruck = new Truck({
         name,
@@ -92,12 +100,9 @@ const truckCtrl = {
         userAgent: req.headers['user-agent'],
       });
 
-      const truck = await Truck.findById(newTruck._id)
-        .populate('vanId')
-        .populate('driverId')
-        .populate('helperId')
-        .populate('extraDrivers.driverId')
-        .populate('extraHelpers.helperId');
+      const truck = await applyTruckStaffPopulate(
+        Truck.findById(newTruck._id).populate('vanId'),
+      );
       res.status(201).json({ message: 'Truck created successfully', truck });
     } catch (error) {
       res.status(500).json({ message: 'Failed to create truck', error: error.message });
@@ -130,13 +135,9 @@ const truckCtrl = {
       if (filters) features.filtering();
       features.sorting();
 
-      const trucks = await features.query
-        .populate('vanId')
-        .populate('driverId')
-        .populate('helperId')
-        .populate('extraDrivers.driverId')
-        .populate('extraHelpers.helperId')
-        .exec();
+      const trucks = await applyTruckStaffPopulate(
+        features.query.populate('vanId'),
+      ).exec();
 
       let total;
       if (keyword) {
@@ -179,6 +180,14 @@ const truckCtrl = {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
+      if (helperId !== undefined && helperId !== null && helperId !== '') {
+        try {
+          await assertValidHelperId(helperId);
+        } catch (e) {
+          return res.status(e.status || 400).json({ message: e.message });
+        }
+      }
+
       const updateFields = {};
       if (name !== undefined) updateFields.name = name;
       if (vanId !== undefined) updateFields.vanId = vanId;
@@ -187,12 +196,9 @@ const truckCtrl = {
       if (extraDrivers !== undefined) updateFields.extraDrivers = extraDrivers;
       if (extraHelpers !== undefined) updateFields.extraHelpers = extraHelpers;
 
-      const updatedTruck = await Truck.findByIdAndUpdate(id, updateFields, { new: true })
-        .populate('vanId')
-        .populate('driverId')
-        .populate('helperId')
-        .populate('extraDrivers.driverId')
-        .populate('extraHelpers.helperId');
+      const updatedTruck = await applyTruckStaffPopulate(
+        Truck.findByIdAndUpdate(id, updateFields, { new: true }).populate('vanId'),
+      );
 
       const userId = req.user && req.user._id ? req.user._id.toString() : null;
       const oldVan = oldTruck.vanId && oldTruck.vanId.toString();
@@ -300,12 +306,10 @@ const truckCtrl = {
   getAllTrucksForChat: async (req, res) => {
     try {
       const userId = req.user._id || req.user.id;
-      const trucks = await Truck.find()
-        .populate('vanId')
-        .populate('driverId', 'username picture')
-        .populate('helperId', 'username picture')
-        .populate('extraDrivers.driverId', 'username picture')
-        .populate('extraHelpers.helperId', 'username picture');
+      const trucks = await applyTruckStaffPopulate(
+        Truck.find().populate('vanId'),
+        'username picture',
+      );
 
       const { trucks: trucksWithMeta, stats } = await buildChatTrucksPayload(trucks, userId);
 
@@ -382,7 +386,10 @@ const truckCtrl = {
         by: req.user && req.user._id,
         startAt: startAtDate,
       });
-      const populated = await Truck.findById(truck._id).populate('vanId').populate('driverId').populate('helperId');
+      const populated = await Truck.findById(truck._id)
+        .populate('vanId')
+        .populate('driverId')
+        .populate(populateHelperId());
       res.status(200).json({ message: 'Van assigned to truck successfully', truck: populated });
     } catch (error) {
       res.status(500).json({ message: 'Failed to assign van to truck', error: error.message });
@@ -417,7 +424,10 @@ const truckCtrl = {
         by: req.user && req.user._id,
         endAt: endAtDate,
       });
-      const populated = await Truck.findById(truck._id).populate('vanId').populate('driverId').populate('helperId');
+      const populated = await Truck.findById(truck._id)
+        .populate('vanId')
+        .populate('driverId')
+        .populate(populateHelperId());
       res.status(200).json({ message: 'Van deassigned from truck successfully', truck: populated });
     } catch (error) {
       res.status(500).json({ message: 'Failed to deassign van from truck', error: error.message });

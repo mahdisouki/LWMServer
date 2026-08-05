@@ -25,7 +25,8 @@ async function sendScheduledReviewEmails() {
             reviewRequestSent: { $ne: true },
             preventReviewEmail: { $ne: true }, // Don't send if prevented
             finishDate: { $exists: true, $lt: todayStart }, // Completed before today (i.e., yesterday or earlier)
-            email: { $exists: true, $ne: null, $ne: '' } // Must have email
+            email: { $exists: true, $ne: null, $ne: '' }, // Must have email
+            createdBy: { $ne: 'MigrationScript' }, // Exclude CSV-migrated orders
         }).sort({ finishDate: 1 }); // Sort by completion date, oldest first
 
         console.log(`[Send Review Emails] Found ${tasksToProcess.length} completed tasks to process`);

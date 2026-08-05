@@ -39,13 +39,13 @@ connectToDatabase()
     require('./cron/sendRetargetingFailedTasks');
     require('./cron/gmailWatchRenew');
     require('./cron/scheduledEmailSender');
+    require('./workers/paymentLinkRetryWorker');
     require('./cron/sendWasteTransferNotes');
     require('./cron/remindVanCapacityCheck');
     require('./cron/dayOffUnitReminders');
     require('./cron/cleanupTaskPhotoUploads');
     require('./cron/updatePopularityScores');
-    require('./cron/syncClaritySnapshots');
-  
+    require('./cron/updateTopPostcodesCache');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })
@@ -126,6 +126,7 @@ const corsOptions = {
     'https://localhost:5173',
     'http://localhost:5174',
     'http://localhost:3001',
+    'http://localhost:5176',
     'https://adminlondonwaste.netlify.app',
     'http://localhost:5173',
     'http://localhost:5175',
@@ -142,6 +143,7 @@ const corsOptions = {
     'http://192.168.1.73:5173',
     'http://192.168.1.13:5173',
     'http://192.168.1.73:5174',
+    'http://192.168.1.73:5176',
     'https://lwmclient.duckdns.org',
     'https://stagingadmin.londonwastemanagement.uk/',
     'https://stagingadmin.londonwastemanagement.uk',
@@ -218,7 +220,9 @@ const routeOptimizerRoutes = require('./routes/routeOptimizer');
 const vanRoutes = require('./routes/van');
 const tickRoutes = require('./routes/tick');
 const seoRoutes = require('./routes/seo');
-const clarityRoutes = require('./routes/clarity');
+const networkRouter = require('./routes/network');
+const brokerRoutes = require('./routes/broker');
+const brokerPortalRoutes = require('./routes/brokerPortal');
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app);
@@ -263,7 +267,9 @@ app.use('/api', vanRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/ticks', tickRoutes);
 app.use('/api/seo', seoRoutes);
-app.use('/api/clarity', clarityRoutes);
+app.use('/api', networkRouter);
+app.use('/api/brokers', brokerRoutes);
+app.use('/api/broker', brokerPortalRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;

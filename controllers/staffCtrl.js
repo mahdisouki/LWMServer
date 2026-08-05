@@ -3,7 +3,7 @@ const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const Admin = require('../models/Admin');
 const Truck = require('../models/Truck');
-const { findTruckByTruckName } = require('../utils/truckHelpers');
+const { findTruckByTruckName, isHelperUser } = require('../utils/truckHelpers');
 const bcrypt = require('bcrypt');
 const socket = require('../socket'); // Ensure you have the correct path to your socket module
 const APIfeatures = require('../utils/APIFeatures');
@@ -12,6 +12,7 @@ const loggingService = require('../services/loggingService');
 const dailySheetController = require('./dailySheetController');
 const { logUnitAssignment } = require('../services/unitAssignmentLogService');
 const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
+const { sanitizePermissions } = require('../config/permissionModules');
 
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
@@ -137,6 +138,7 @@ const staffManagement = {
       } else if (role === 'Admin') {
         const parsedPermissions =
           typeof permissions === 'string' ? JSON.parse(permissions) : permissions;
+        const sanitizedPermissions = sanitizePermissions(parsedPermissions);
         newUser = new Admin({
           username,
           email,
@@ -157,7 +159,7 @@ const staffManagement = {
           signedStarterForm: signedStarterFormUrl,
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
-          permissions: parsedPermissions || {},
+          permissions: sanitizedPermissions,
           isStillWorking,
           terminationReason,
         });
@@ -354,6 +356,10 @@ const staffManagement = {
         } catch (e) {
           return res.status(400).json({ message: 'Invalid permissions format. Must be JSON.' });
         }
+      }
+
+      if (oldUser.roleType === 'Admin' && updateData.permissions !== undefined) {
+        updateData.permissions = sanitizePermissions(updateData.permissions);
       }
 
       if (updateData.role && typeof updateData.role === 'string') {
@@ -559,6 +565,10 @@ const staffManagement = {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
+      if (!helper || !isHelperUser(helper)) {
+        return res.status(404).json({ message: 'Helper not found' });
+      }
+
       if (truck.helperId) {
         return res
           .status(400)
@@ -700,13 +710,13 @@ const staffManagement = {
 
     try {
       const truck = await findTruckByTruckName(truckName);
-      const helper = await Helper.findById(helperId);
+      const helper = await User.findById(helperId);
 
       if (!truck) {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
-      if (!helper) {
+      if (!helper || !isHelperUser(helper)) {
         return res.status(404).json({ message: 'Helper not found' });
       }
 
@@ -1259,6 +1269,9 @@ const staffManagement = {
       userToLogout.apnsToken = undefined;
 
       await userToLogout.save();
+
+      const sessionService = require('../services/sessionService');
+      await sessionService.revokeAllForUser(userId, { revokedBy: req.user._id });
 
       // Get socket instance and emit logout event before disconnecting
       const { getIo, disconnectUser } = require('../socket');

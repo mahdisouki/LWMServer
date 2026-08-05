@@ -53,10 +53,22 @@ const quotationRequestSchema = new Schema({
   gclid: { type: String, required: false },
   gbraid: { type: String, required: false },
   wbraid: { type: String, required: false },
+  msclkid: { type: String, required: false },
+  utm_source: { type: String, required: false },
   googleAdsQuoteConversionSentAt: { type: Date, required: false },
   googleAdsConversionError: { type: String, required: false },
   isAiGenerated: { type: Boolean, default: false },
   aiGeneratedAt: { type: Date, required: false },
+  createdByType: {
+    type: String,
+    enum: ['public', 'admin', 'broker'],
+    default: 'public',
+  },
+  brokerId: {
+    type: Schema.Types.ObjectId,
+    ref: 'BrokerOrg',
+    default: null,
+  },
   createdAt: { type: Date, default: Date.now }
 }, { timestamps: true }); // Enable timestamps to get updatedAt
 
