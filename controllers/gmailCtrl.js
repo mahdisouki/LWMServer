@@ -69,7 +69,7 @@ const {
 } = require('../services/mailSignatureService');
 const Admin = require('../models/Admin');
 const ScheduledEmail = require('../models/ScheduledEmail');
-const { emitToUser } = require('../socket');
+const { emitToAllOnlineAdmins } = require('../socket');
 
 const SCHEDULED_ATTACHMENTS_DIR = path.join(__dirname, '../temp/scheduled-attachments');
 
@@ -1267,12 +1267,18 @@ const gmailCtrl = {
 
       if (newMessages.length > 0) {
         for (const newMessage of newMessages) {
-          emitToUser(adminId, 'gmail:new', newMessage);
+          const sent = await emitToAllOnlineAdmins('gmail:new', newMessage);
+          console.log(
+            `[Gmail Webhook] Broadcast gmail:new (${newMessage.id}) to ${sent} online admin(s)`
+          );
         }
-        emitToUser(adminId, 'gmail:inbox-updated', {
+        const sent = await emitToAllOnlineAdmins('gmail:inbox-updated', {
           count: newMessages.length,
           messageIds: newMessages.map((m) => m.id),
         });
+        console.log(
+          `[Gmail Webhook] Broadcast gmail:inbox-updated (${newMessages.length} message(s)) to ${sent} online admin(s)`
+        );
       }
     } catch (error) {
       console.error('[Gmail Webhook] Processing error:', error);
