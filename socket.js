@@ -1899,6 +1899,27 @@ const emitToUser = (userId, eventName, payload) => {
   return true;
 };
 
+/** Broadcast to every online Admin (shared company inbox). */
+async function emitToAllOnlineAdmins(eventName, payload) {
+  if (!io) return 0;
+
+  const onlineIds = getOnlineUsers();
+  if (!onlineIds.length) return 0;
+
+  const admins = await User.find({
+    _id: { $in: onlineIds },
+    roleType: 'Admin',
+  })
+    .select('_id')
+    .lean();
+
+  let sent = 0;
+  for (const admin of admins) {
+    if (emitToUser(admin._id, eventName, payload)) sent += 1;
+  }
+  return sent;
+}
+
 async function publishUserRoomUnread(roomId, viewerUserId) {
   if (!io) return;
   const unreadCount = await getRoomUnreadCount(roomId, viewerUserId);
@@ -1940,6 +1961,7 @@ module.exports = {
   getIo,
   emitNotificationToUser,
   emitToUser,
+  emitToAllOnlineAdmins,
   getOnlineUsers,
   isUserOnline,
   getUsersPresence,

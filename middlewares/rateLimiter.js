@@ -2,12 +2,12 @@ const rateLimit = require('express-rate-limit');
 
 // Helper function to get real IP address (works behind proxy)
 const getRealIP = (req) => {
-  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
-         req.headers['x-real-ip'] || 
-         req.connection?.remoteAddress || 
-         req.socket?.remoteAddress ||
-         req.ip ||
-         'unknown';
+  return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+    req.headers['x-real-ip'] ||
+    req.connection?.remoteAddress ||
+    req.socket?.remoteAddress ||
+    req.ip ||
+    'unknown';
 };
 
 const sendRateLimitResponse = (req, res, message, retryAfterSeconds = null) => {
@@ -155,6 +155,27 @@ const loginLimiter = rateLimit({
   },
 });
 
+// Exit-intent coupon mint: prevent coupon farming
+const EXIT_INTENT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const exitIntentLimiter = rateLimit({
+  windowMs: EXIT_INTENT_WINDOW_MS,
+  max: 5, // Max 5 unique coupons per IP per hour
+  message: 'Too many discount requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getRealIP(req),
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  handler: (req, res) => {
+    return sendRateLimitResponse(
+      req,
+      res,
+      'Too many discount requests from this IP, please try again later.',
+      Math.ceil(EXIT_INTENT_WINDOW_MS / 1000),
+    );
+  },
+});
+
 module.exports = {
   apiLimiter,
   strictLimiter,
@@ -162,5 +183,6 @@ module.exports = {
   paymentLinkIpLimiter,
   paymentLinkTokenLimiter,
   loginLimiter,
+  exitIntentLimiter,
 };
 
