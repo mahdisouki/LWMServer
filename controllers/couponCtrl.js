@@ -775,7 +775,70 @@ const couponCtrl = {
         error: error.message
       });
     }
-  }
+  },
+
+  /**
+   * Mint a unique single-use exit-intent coupon (public, rate-limited).
+   * Fixed offer: 20% off, 24h expiry, maxUsage: 1.
+   */
+  createExitIntentCoupon: async (req, res) => {
+    const PERCENTAGE = 20;
+    const EXPIRATION_HOURS = 24;
+    const MAX_CODE_ATTEMPTS = 8;
+
+    try {
+      let code = null;
+      for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
+        const candidate = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const exists = await Coupon.exists({ code: candidate });
+        if (!exists) {
+          code = candidate;
+          break;
+        }
+      }
+
+      if (!code) {
+        return res.status(500).json({
+          message: 'Failed to generate a unique coupon code',
+        });
+      }
+
+      const expiresAt = new Date(Date.now() + EXPIRATION_HOURS * 60 * 60 * 1000);
+      const coupon = new Coupon({
+        type: 'random',
+        code,
+        percentage: PERCENTAGE,
+        expirationDuration: EXPIRATION_HOURS,
+        expiresAt,
+        description: 'Exit-intent popup coupon',
+        maxUsage: 1,
+        isActive: true,
+      });
+      await coupon.save();
+
+      return res.status(201).json({
+        valid: true,
+        message: 'Coupon created successfully',
+        discountType: 'percentage',
+        discountValue: PERCENTAGE,
+        percentage: PERCENTAGE,
+        coupon: {
+          id: coupon._id,
+          code: coupon.code,
+          type: coupon.type,
+          percentage: PERCENTAGE,
+          expiresAt: coupon.expiresAt,
+          maxUsage: 1,
+        },
+      });
+    } catch (error) {
+      console.error('Error creating exit-intent coupon:', error);
+      return res.status(500).json({
+        message: 'Failed to create exit-intent coupon',
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = couponCtrl;

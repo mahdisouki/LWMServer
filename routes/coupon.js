@@ -3,9 +3,13 @@ const router = express.Router();
 const couponCtrl = require('../controllers/couponCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
+const { exitIntentLimiter } = require('../middlewares/rateLimiter');
 
 // Public route: Validate coupon code
 router.post('/validate', couponCtrl.validateCoupon);
+
+// Public route: mint a unique single-use exit-intent coupon
+router.post('/exit-intent', exitIntentLimiter, couponCtrl.createExitIntentCoupon);
 
 // Admin routes
 router.post('/', couponCtrl.createCoupon);
