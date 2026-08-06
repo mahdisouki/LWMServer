@@ -29,4 +29,7 @@ router.delete('/competitors/:id', ...admin, seoCtrl.deleteCompetitor);
 router.get('/competitors/content-gaps', ...admin, seoCtrl.getContentGaps);
 router.post('/competitors/content-gaps/:id/create-page', ...admin, seoCtrl.createPageFromContentGap);
 
+router.get('/agent/status', ...admin, seoCtrl.getAgentStatus);
+router.post('/agent/enrich-audit', ...admin, seoCtrl.enrichAuditWithAgent);
+
 module.exports = router;

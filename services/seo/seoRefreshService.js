@@ -2,7 +2,7 @@ const SeoSiteSnapshot = require('../../models/SeoSiteSnapshot');
 const SeoAuditIssue = require('../../models/SeoAuditIssue');
 const SeoKeyword = require('../../models/SeoKeyword');
 const SeoRefreshJob = require('../../models/SeoRefreshJob');
-const { getSiteUrl } = require('../../config/seoConfig');
+const { getSiteUrl, isSeoAgentEnabled } = require('../../config/seoConfig');
 const { crawlSite } = require('./seoCrawlService');
 const { fetchCoreWebVitals } = require('./pageSpeedService');
 const { fetchTopQueries } = require('./gscService');
@@ -18,6 +18,7 @@ const {
   syncContentGapsFromKeywords,
   syncCompetitorMetricsFromProvider,
 } = require('./seoCompetitorService');
+const { enrichAuditIssues } = require('./seoAgentService');
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -342,7 +343,6 @@ async function executeRefresh(jobId, siteUrl) {
     const issueCounts = countBySeverity(issues);
     const seoScore = computeSeoScore(issues, technicalChecks);
     const scoreStatus = scoreStatusFromScore(seoScore);
-    const aiActionPlan = buildAiActionPlan(issues);
 
     const noindexCount = crawlResult.pages.filter((p) => p.hasNoindex).length;
     const indexedEstimate = crawlResult.pages.length - noindexCount;
@@ -354,6 +354,13 @@ async function executeRefresh(jobId, siteUrl) {
         refreshJobId: jobId,
         ...issue,
       })));
+    }
+
+    let aiActionPlan = buildAiActionPlan(issues);
+    if (isSeoAgentEnabled() && issues.length) {
+      await job.updateOne({ progress: { step: 'ai-enrich', percent: 72 } });
+      const agentResult = await enrichAuditIssues(siteUrl, issues);
+      aiActionPlan = agentResult.aiActionPlan;
     }
 
     await job.updateOne({ progress: { step: 'keywords', percent: 85 } });

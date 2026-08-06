@@ -50,4 +50,16 @@ module.exports = {
   getDataForSeoLanguageCode: () => process.env.SEO_DATAFORSEO_LANGUAGE_CODE || 'en',
   isOpenPageRankEnabled: () => Boolean(process.env.OPENPAGERANK_API_KEY),
   getOpenPageRankApiKey: () => process.env.OPENPAGERANK_API_KEY || '',
+
+  isSeoAgentEnabled: () => process.env.SEO_AGENT_ENABLED === 'true',
+  getAnthropicApiKey: () => process.env.ANTHROPIC_API_KEY || '',
+  getSeoAgentModel: () => process.env.SEO_AGENT_MODEL || 'claude-sonnet-4-5',
+  getSeoAgentTimeoutMs: () => {
+    const n = Number(process.env.SEO_AGENT_TIMEOUT_MS || 90000);
+    return Number.isFinite(n) && n > 0 ? n : 90000;
+  },
+  getSeoAgentMaxIssues: () => {
+    const n = Number(process.env.SEO_AGENT_MAX_ISSUES || 40);
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 40;
+  },
 };
