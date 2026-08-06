@@ -1,5 +1,8 @@
 const Coupon = require('../models/Coupon');
 const loggingService = require('../services/loggingService');
+const { getRealIP } = require('../middlewares/rateLimiter');
+
+const EXIT_INTENT_DESCRIPTION = 'Exit-intent popup coupon';
 
 const parseBooleanQuery = (value) => {
   if (value === undefined || value === null) return undefined;
@@ -778,15 +781,71 @@ const couponCtrl = {
   },
 
   /**
-   * Mint a unique single-use exit-intent coupon (public, rate-limited).
+   * Mint or reuse a unique single-use exit-intent coupon (public, rate-limited).
    * Fixed offer: 20% off, 24h expiry, maxUsage: 1.
+   * Hard rule: one exit-intent code per IP per 24 hours.
+   * - If unused + still valid → reuse the same code
+   * - If already used / invalid within 24h → reject (no second code)
+   * - New code only after 24h from the previous mint for that IP
    */
   createExitIntentCoupon: async (req, res) => {
     const PERCENTAGE = 20;
     const EXPIRATION_HOURS = 24;
+    const WINDOW_MS = EXPIRATION_HOURS * 60 * 60 * 1000;
     const MAX_CODE_ATTEMPTS = 8;
 
     try {
+      const ip = getRealIP(req);
+      if (!ip || ip === 'unknown') {
+        return res.status(400).json({
+          message: 'Unable to identify client for discount offer',
+        });
+      }
+
+      const latestForIp = await Coupon.findOne({
+        mintedForIp: ip,
+        description: EXIT_INTENT_DESCRIPTION,
+      }).sort({ createdAt: -1 });
+
+      if (latestForIp) {
+        const ageMs = Date.now() - new Date(latestForIp.createdAt).getTime();
+        const within24h = ageMs < WINDOW_MS;
+        const validation = latestForIp.validateCoupon(null, null);
+        const unused = (latestForIp.usageCount || 0) < 1;
+
+        if (validation.valid && unused) {
+          return res.status(200).json({
+            valid: true,
+            message: 'Existing exit-intent coupon reused',
+            reused: true,
+            discountType: 'percentage',
+            discountValue: PERCENTAGE,
+            percentage: PERCENTAGE,
+            coupon: {
+              id: latestForIp._id,
+              code: latestForIp.code,
+              type: latestForIp.type,
+              percentage: PERCENTAGE,
+              expiresAt: latestForIp.expiresAt,
+              maxUsage: 1,
+            },
+          });
+        }
+
+        if (within24h) {
+          const retryAfterSeconds = Math.max(
+            1,
+            Math.ceil((WINDOW_MS - ageMs) / 1000),
+          );
+          return res.status(429).json({
+            valid: false,
+            message:
+              "You've already claimed this exclusive 20% offer. Only one discount is available every 24 hours — please try again tomorrow.",
+            retryAfter: retryAfterSeconds,
+          });
+        }
+      }
+
       let code = null;
       for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
         const candidate = Math.random().toString(36).substring(2, 10).toUpperCase();
@@ -803,22 +862,61 @@ const couponCtrl = {
         });
       }
 
-      const expiresAt = new Date(Date.now() + EXPIRATION_HOURS * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + WINDOW_MS);
       const coupon = new Coupon({
         type: 'random',
         code,
         percentage: PERCENTAGE,
         expirationDuration: EXPIRATION_HOURS,
         expiresAt,
-        description: 'Exit-intent popup coupon',
+        description: EXIT_INTENT_DESCRIPTION,
         maxUsage: 1,
         isActive: true,
+        mintedForIp: ip,
       });
       await coupon.save();
+
+      // Race guard: if another exit-intent coupon was created for this IP in the same window, keep the oldest
+      const earlier = await Coupon.findOne({
+        mintedForIp: ip,
+        description: EXIT_INTENT_DESCRIPTION,
+        _id: { $ne: coupon._id },
+        createdAt: { $gte: new Date(Date.now() - WINDOW_MS) },
+      }).sort({ createdAt: 1 });
+
+      if (earlier) {
+        await Coupon.deleteOne({ _id: coupon._id });
+        const earlierValidation = earlier.validateCoupon(null, null);
+        const earlierUnused = (earlier.usageCount || 0) < 1;
+        if (earlierValidation.valid && earlierUnused) {
+          return res.status(200).json({
+            valid: true,
+            message: 'Existing exit-intent coupon reused',
+            reused: true,
+            discountType: 'percentage',
+            discountValue: PERCENTAGE,
+            percentage: PERCENTAGE,
+            coupon: {
+              id: earlier._id,
+              code: earlier.code,
+              type: earlier.type,
+              percentage: PERCENTAGE,
+              expiresAt: earlier.expiresAt,
+              maxUsage: 1,
+            },
+          });
+        }
+        return res.status(429).json({
+          valid: false,
+          message:
+            "You've already claimed this exclusive 20% offer. Only one discount is available every 24 hours — please try again tomorrow.",
+        });
+      }
 
       return res.status(201).json({
         valid: true,
         message: 'Coupon created successfully',
+        reused: false,
         discountType: 'percentage',
         discountValue: PERCENTAGE,
         percentage: PERCENTAGE,

@@ -155,11 +155,11 @@ const loginLimiter = rateLimit({
   },
 });
 
-// Exit-intent coupon mint: prevent coupon farming
-const EXIT_INTENT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+// Exit-intent coupon mint: prevent coupon farming (DB also enforces 1 code / IP / 24h)
+const EXIT_INTENT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 const exitIntentLimiter = rateLimit({
   windowMs: EXIT_INTENT_WINDOW_MS,
-  max: 5, // Max 5 unique coupons per IP per hour
+  max: 10, // Allow soft reuses/checks; creation is capped in controller to 1 per IP / 24h
   message: 'Too many discount requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -184,5 +184,6 @@ module.exports = {
   paymentLinkTokenLimiter,
   loginLimiter,
   exitIntentLimiter,
+  getRealIP,
 };
 

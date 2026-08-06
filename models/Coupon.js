@@ -87,6 +87,12 @@ const couponSchema = new Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+  /** Client IP that minted an exit-intent coupon — used to reuse one unused code per IP. */
+  mintedForIp: {
+    type: String,
+    default: null,
+    index: true
   }
 }, { timestamps: true });
 
