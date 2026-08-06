@@ -1,5 +1,6 @@
 const seoService = require('../services/seo/seoRefreshService');
 const competitorService = require('../services/seo/seoCompetitorService');
+const seoAgentService = require('../services/seo/seoAgentService');
 const { getTopSearchKeywords } = require('../services/topSearchKeywordsService');
 const { getSiteUrl } = require('../config/seoConfig');
 
@@ -235,13 +236,45 @@ const seoCtrl = {
       }
       const status = result.alreadyExists ? 200 : 201;
       res.status(status).json({
-        message: result.alreadyExists ? 'Draft page already exists' : 'Draft page created',
+        message: result.alreadyExists
+          ? 'Draft page already exists'
+          : result.aiGenerated
+            ? 'AI draft page created'
+            : 'Draft page created',
         blogId: result.blog._id.toString(),
         blog: result.blog,
         gapId: result.gap._id.toString(),
+        aiGenerated: Boolean(result.aiGenerated),
+        aiMeta: result.aiMeta || null,
       });
     } catch (error) {
-      res.status(500).json({ message: 'Failed to create page from content gap', error: error.message });
+      const status = error.statusCode || 500;
+      res.status(status).json({ message: 'Failed to create page from content gap', error: error.message });
+    }
+  },
+
+  getAgentStatus: async (req, res) => {
+    try {
+      const data = seoAgentService.getAgentStatus();
+      res.status(200).json(data);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to load SEO agent status', error: error.message });
+    }
+  },
+
+  enrichAuditWithAgent: async (req, res) => {
+    try {
+      const result = await seoAgentService.enrichAuditIssues(siteUrlFromReq(req));
+      res.status(200).json({
+        message: 'Audit issues enriched with Claude',
+        enriched: result.enriched,
+        usage: result.usage,
+        model: result.model,
+        aiActionPlan: result.aiActionPlan,
+      });
+    } catch (error) {
+      const status = error.statusCode || 500;
+      res.status(status).json({ message: 'Failed to enrich audit with agent', error: error.message });
     }
   },
 

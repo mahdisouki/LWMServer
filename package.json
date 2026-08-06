@@ -17,6 +17,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@paypal/checkout-server-sdk": "^1.0.3",
     "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
