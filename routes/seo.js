@@ -29,6 +29,9 @@ router.delete('/competitors/:id', ...admin, seoCtrl.deleteCompetitor);
 router.get('/competitors/content-gaps', ...admin, seoCtrl.getContentGaps);
 router.post('/competitors/content-gaps/:id/create-page', ...admin, seoCtrl.createPageFromContentGap);
 
+router.get('/indexation/summary', ...admin, seoCtrl.getIndexationSummary);
+router.get('/indexation/pages', ...admin, seoCtrl.getIndexationPages);
+
 router.get('/agent/status', ...admin, seoCtrl.getAgentStatus);
 router.post('/agent/enrich-audit', ...admin, seoCtrl.enrichAuditWithAgent);
 

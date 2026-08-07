@@ -92,7 +92,38 @@ async function fetchSiteSummary(days = 28) {
   };
 }
 
+async function fetchTopPages(days = 28, rowLimit = 5000) {
+  if (!isGscEnabled()) {
+    return [];
+  }
+
+  const siteUrl = getGscSiteUrl();
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - days);
+
+  const searchconsole = await getSearchConsoleClient();
+  const { data } = await searchconsole.searchanalytics.query({
+    siteUrl,
+    requestBody: {
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+      dimensions: ['page'],
+      rowLimit: Math.min(rowLimit, 25000),
+    },
+  });
+
+  return (data.rows || []).map((row) => ({
+    url: row.keys[0],
+    clicks: row.clicks,
+    impressions: row.impressions,
+    position: Math.round(row.position * 10) / 10,
+    ctr: Math.round(row.ctr * 10000) / 100,
+  }));
+}
+
 module.exports = {
   fetchTopQueries,
+  fetchTopPages,
   fetchSiteSummary,
 };

@@ -1,6 +1,7 @@
 const seoService = require('../services/seo/seoRefreshService');
 const competitorService = require('../services/seo/seoCompetitorService');
 const seoAgentService = require('../services/seo/seoAgentService');
+const indexationService = require('../services/seo/seoIndexationService');
 const { getTopSearchKeywords } = require('../services/topSearchKeywordsService');
 const { getSiteUrl } = require('../config/seoConfig');
 
@@ -259,6 +260,32 @@ const seoCtrl = {
       res.status(200).json(data);
     } catch (error) {
       res.status(500).json({ message: 'Failed to load SEO agent status', error: error.message });
+    }
+  },
+
+  getIndexationSummary: async (req, res) => {
+    try {
+      const data = await indexationService.getSummary(siteUrlFromReq(req));
+      res.status(200).json(data);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to load indexation summary', error: error.message });
+    }
+  },
+
+  getIndexationPages: async (req, res) => {
+    try {
+      const page = parseInt(req.query.page, 10) || 1;
+      const limit = parseInt(req.query.limit, 10) || 20;
+      const data = await indexationService.listPages(siteUrlFromReq(req), {
+        status: req.query.status || 'all',
+        gscSignal: req.query.gscSignal || 'all',
+        page,
+        limit,
+        search: req.query.search || '',
+      });
+      res.status(200).json(data);
+    } catch (error) {
+      res.status(500).json({ message: 'Failed to load indexation pages', error: error.message });
     }
   },
 
