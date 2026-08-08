@@ -389,8 +389,12 @@ async function executeRefresh(jobId, siteUrl) {
     let aiActionPlan = buildAiActionPlan(issues);
     if (isSeoAgentEnabled() && issues.length) {
       await job.updateOne({ progress: { step: 'ai-enrich', percent: 78 } });
-      const agentResult = await enrichAuditIssues(siteUrl, issues);
-      aiActionPlan = agentResult.aiActionPlan;
+      try {
+        const agentResult = await enrichAuditIssues(siteUrl, issues);
+        aiActionPlan = agentResult.aiActionPlan;
+      } catch (agentError) {
+        console.warn('[SEO Refresh] Agent enrich skipped, using rule-based plan:', agentError.message);
+      }
     }
 
     await job.updateOne({ progress: { step: 'keywords', percent: 85 } });
