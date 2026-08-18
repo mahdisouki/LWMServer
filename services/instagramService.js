@@ -174,12 +174,20 @@ async function fetchInstagramPosts(limit = 10, after = null) {
       posts.map(post => processPostMedia(post, token))
     );
 
+    // Never return Graph paging (paging.next embeds access_token).
+    // Optional opaque cursor for our own pagination later (not a Graph URL).
+    const afterCursor = data.paging?.cursors?.after || null;
+
     return {
       posts: processedPosts,
-      paging: data.paging || null
+      after: afterCursor,
     };
   } catch (error) {
-    console.error('Error fetching Instagram posts:', error);
+    // Avoid logging URLs that may contain access_token
+    const message = String(error.message || error)
+      .replace(/access_token=[^&\s"'\\]*/gi, 'access_token=[REDACTED]')
+      .replace(/https?:\/\/graph\.facebook\.com[^\s"'\\]*/gi, '[REDACTED_GRAPH_URL]');
+    console.error('Error fetching Instagram posts:', message);
     throw error;
   }
 }
@@ -232,12 +240,14 @@ async function refreshInstagramToken() {
     console.log(`   Token expires in: ${data.expires_in ? Math.floor(data.expires_in / 86400) : 'unknown'} days`);
 
     return {
-      access_token: data.access_token,
       expires_in: data.expires_in,
-      expiresAt: expiresAt
+      expiresAt: expiresAt,
     };
   } catch (error) {
-    console.error('❌ Failed to refresh Instagram token:', error.message);
+    const message = String(error.message || error)
+      .replace(/access_token=[^&\s"'\\]*/gi, 'access_token=[REDACTED]')
+      .replace(/https?:\/\/graph\.facebook\.com[^\s"'\\]*/gi, '[REDACTED_GRAPH_URL]');
+    console.error('❌ Failed to refresh Instagram token:', message);
     throw error;
   }
 }
