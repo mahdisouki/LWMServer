@@ -8,6 +8,7 @@ const {
 } = require('../../config/seoConfig');
 const { createJsonCompletion } = require('./seoClaudeClient');
 const { buildAiActionPlan } = require('./seoAuditService');
+const companyFacts = require('../../data/company-facts.json');
 
 function assertAgentReady() {
   if (!isSeoAgentEnabled()) {
@@ -42,6 +43,17 @@ function validateFixStepsArray(value) {
     .filter(Boolean)
     .slice(0, 8);
   return steps.length ? steps : null;
+}
+
+function validateNeedsReviewArray(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 20);
 }
 
 /**
@@ -159,7 +171,7 @@ async function enrichAuditIssues(siteUrl, issues = null) {
 /**
  * Generate blog draft fields from a content gap via Claude.
  * @param {object} gap
- * @returns {Promise<{ title: string, description: string, tags: string[], metaTitle?: string, metaDescription?: string, usage: object, model: string }>}
+ * @returns {Promise<{ title: string, description: string, tags: string[], metaTitle?: string, metaDescription?: string, needsReview: string[], usage: object, model: string }>}
  */
 async function generateBlogFromContentGap(gap) {
   assertAgentReady();
@@ -177,6 +189,9 @@ async function generateBlogFromContentGap(gap) {
       tags: ['string'],
       metaTitle: 'string under 60 chars',
       metaDescription: 'string 120-160 chars',
+      needsReview: [
+        'string — claims you could not verify against Context, flagged for human confirmation',
+      ],
     }),
     'Rules:',
     '- British English, practical UK skip-hire / waste tone.',
@@ -184,6 +199,13 @@ async function generateBlogFromContentGap(gap) {
     '- Include an FAQ section with 3 questions as h3 + p.',
     '- Mention London / local relevance where natural.',
     '- Do not invent fake company awards, licenses, or reviews.',
+    '- Use companyFacts in Context as the source of truth for pricing, accepted/rejected items, policies, hours, and access rules. Do not state any such fact unless it appears there or can be reasonably derived from it. Anything in companyFacts.unresolved must not be asserted as fact.',
+    '- For any item price, fee, or item-specific prep note, look up companyFacts.catalogue.byItemName (match by itemName). Do not invent prices for items not listed there.',
+    '- companyFacts.serviceModel.note flags an important distinction: do not attribute council/recycling-centre-specific rules to this company\'s own service, or vice versa, unless companyFacts says they\'re the same.',
+    '- Check the draft for internal contradictions before finalizing.',
+    '- Do not invent a causal reason for a practical/safety instruction unless that reason is given in Context.',
+    '- Keep terminology consistent for the same entity throughout.',
+    '- Any list that logically repeats elsewhere in the article must match exactly across mentions.',
     '',
     'Context:',
     JSON.stringify({
@@ -193,6 +215,7 @@ async function generateBlogFromContentGap(gap) {
       keywordDifficulty: gap.keywordDifficulty ?? null,
       competitorName: gap.competitorName || null,
       site: getSiteHostname(),
+      companyFacts,
     }),
   ].join('\n');
 
@@ -225,6 +248,7 @@ async function generateBlogFromContentGap(gap) {
     tags,
     metaTitle: typeof data.metaTitle === 'string' ? data.metaTitle.trim() : null,
     metaDescription: typeof data.metaDescription === 'string' ? data.metaDescription.trim() : null,
+    needsReview: validateNeedsReviewArray(data.needsReview),
     usage,
     model,
   };

@@ -286,6 +286,7 @@ async function createPageFromContentGap(siteUrl, gapId, { author = 'SEO Assistan
       usage: generated.usage,
       metaTitle: generated.metaTitle,
       metaDescription: generated.metaDescription,
+      needsReview: generated.needsReview || [],
     };
   } else {
     title = titleCaseKeyword(gap.keyword);
