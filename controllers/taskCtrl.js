@@ -76,6 +76,7 @@ const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentF
 const { sendRetargetingEmailForTask } = require('../services/retargetingService');
 const { schedulePaymentLinkRetry } = require('../services/failedPaymentLinkService');
 const { firePurchaseConversionUpload } = require('../services/googleAdsConversionService');
+const { fireMicrosoftAdsPurchaseUpload } = require('../services/microsoftAdsConversionService');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -5026,6 +5027,10 @@ const taskCtrl = {
             amount: task.totalPrice,
             conversionDateTime: new Date(),
           });
+          fireMicrosoftAdsPurchaseUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
         }
 
         // Envoyer l'email de confirmation
@@ -5286,6 +5291,10 @@ const taskCtrl = {
 
         if (task.paymentStatus === 'Paid') {
           firePurchaseConversionUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
+          fireMicrosoftAdsPurchaseUpload(task, {
             amount: task.totalPrice,
             conversionDateTime: new Date(),
           });
@@ -6119,6 +6128,10 @@ const taskCtrl = {
             amount: task.totalPrice,
             conversionDateTime: new Date(),
           });
+          fireMicrosoftAdsPurchaseUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
         }
 
         // Construire le breakdown complet pour l'email
@@ -6543,6 +6556,10 @@ const taskCtrl = {
               amount: task.totalPrice,
               conversionDateTime: new Date(cap.create_time),
             });
+            fireMicrosoftAdsPurchaseUpload(task, {
+              amount: task.totalPrice,
+              conversionDateTime: new Date(cap.create_time),
+            });
           }
 
           // fire-and-forget the email (don't block webhook)
@@ -6769,6 +6786,10 @@ const taskCtrl = {
 
           if (task.paymentStatus === 'Paid') {
             firePurchaseConversionUpload(task, {
+              amount: task.totalPrice,
+              conversionDateTime: paymentDate,
+            });
+            fireMicrosoftAdsPurchaseUpload(task, {
               amount: task.totalPrice,
               conversionDateTime: paymentDate,
             });
