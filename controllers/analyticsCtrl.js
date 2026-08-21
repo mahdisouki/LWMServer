@@ -9,6 +9,7 @@ const pagePerformanceService = require('../services/analytics/pagePerformanceSer
 const topPostcodesService = require('../services/analytics/topPostcodesService');
 const popularItemsService = require('../services/analytics/popularItemsService');
 const orderTrafficSourcesService = require('../services/analytics/orderTrafficSourcesService');
+const paidSearchTermsService = require('../services/analytics/paidSearchTermsService');
 const adminOrdersService = require('../services/analytics/adminOrdersService');
 const staffWorkingHoursService = require('../services/analytics/staffWorkingHoursService');
 const { getPageFilters } = require('../config/analyticsPageMap');
@@ -477,6 +478,31 @@ const analyticsCtrl = {
       const status = error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500;
       res.status(status).json({
         message: 'Failed to load order traffic sources',
+        error: error.message,
+      });
+    }
+  },
+
+  getPaidSearchTerms: async (req, res) => {
+    try {
+      const data = await paidSearchTermsService.getPaidSearchTerms({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        limit: req.query.limit,
+      });
+      res.status(200).json({
+        message: 'Paid search terms retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid')
+        || error.message.includes('preset')
+        || error.message.includes('not configured')
+        ? 400
+        : 500;
+      res.status(status).json({
+        message: 'Failed to load paid search terms',
         error: error.message,
       });
     }
