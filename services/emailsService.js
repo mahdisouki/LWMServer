@@ -327,13 +327,15 @@ module.exports = {
     }
 
     // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+    // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
     const isAvailableAnyTime = task.available === 'AnyTime';
     const isCreatedByPublic = task.createdByType === 'public';
     const hasItems = task.items && task.items.length > 0;
     const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+    const hasCouponOnTask = Boolean(task.couponCode);
 
     let automaticDiscount10Percent = 0;
-    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
       console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice PDF');
       automaticDiscount10Percent = subtotal * 0.1;
       subtotal *= 0.9;
@@ -1100,14 +1102,16 @@ module.exports = {
     });
 
     // Calculate discounts
+    // Outside/AnyTime 10% skipped when a coupon is present — do not stack
     const isAvailableAnyTime = task.available === 'AnyTime';
     const isCreatedByPublic = task.createdByType === 'public';
     const hasItems = task.items && task.items.length > 0;
     const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+    const hasCouponOnTask = Boolean(task.couponCode);
 
     let automaticDiscount10Percent = 0;
     let subtotal = subtotalBeforeDiscounts;
-    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
       automaticDiscount10Percent = subtotal * 0.1;
       subtotal *= 0.9;
     }
@@ -1330,14 +1334,16 @@ module.exports = {
       });
 
       // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
       const isAvailableAnyTime = task.available === 'AnyTime';
       const isCreatedByPublic = task.createdByType === 'public';
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+      const hasCouponOnTask = Boolean(task.couponCode);
 
       let automaticDiscount10Percent = 0;
       let subtotal = subtotalBeforeDiscounts;
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
         automaticDiscount10Percent = subtotal * 0.1;
         subtotal *= 0.9;
       }

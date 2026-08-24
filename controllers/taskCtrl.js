@@ -1328,23 +1328,27 @@ async function calculateTotalPrice({
   }
 
   // 4. Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+  // Skip when a coupon is applied — coupon and Outside/AnyTime 10% do not stack
   console.log('=== DISCOUNT CHECK DEBUG ===');
   console.log('available:', available, 'Type:', typeof available);
   console.log('createdByType:', createdByType, 'Type:', typeof createdByType);
   console.log('itemsToProcess.length:', itemsToProcess.length);
   console.log('All items Outside?', itemsToProcess.every((i) => i.Objectsposition === 'Outside'));
+  console.log('Coupon discount applied:', couponDiscount);
   console.log('Subtotal before discount:', subtotal);
 
   const isAvailableAnyTime = available === 'AnyTime';
   const isCreatedByPublic = createdByType === 'public';
   const hasItems = itemsToProcess.length > 0;
   const allItemsOutside = itemsToProcess.every((i) => i.Objectsposition === 'Outside');
+  const hasCoupon = couponDiscount > 0;
 
   if (
     isAvailableAnyTime &&
     isCreatedByPublic &&
     hasItems &&
-    allItemsOutside
+    allItemsOutside &&
+    !hasCoupon
   ) {
     console.log('✅ Applying 10% discount for Outside items with AnyTime and public type');
     subtotal *= 0.9;
@@ -1355,6 +1359,7 @@ async function calculateTotalPrice({
     console.log('- createdByType === "public":', isCreatedByPublic);
     console.log('- itemsToProcess.length > 0:', hasItems);
     console.log('- All items Outside:', allItemsOutside);
+    console.log('- No coupon applied:', !hasCoupon);
   }
 
   // 5. Enforce minimum price (before VAT) - if under £37.5, make it £37.5
@@ -4533,10 +4538,13 @@ const taskCtrl = {
         0,
       );
       let finalPrice = basePrice;
+      const hasCouponOnTask = Boolean(task.couponCode) || (calculatedCouponDiscount > 0);
+      // Outside/AnyTime 10% only when no coupon — do not stack with coupon discount
       if (
         task.available === 'AnyTime' &&
         task.createdByType === 'public' &&
-        task.items.every((i) => i.Objectsposition === 'Outside')
+        task.items.every((i) => i.Objectsposition === 'Outside') &&
+        !hasCouponOnTask
       ) {
         finalPrice *= 0.9;
       }
@@ -5505,12 +5513,14 @@ const taskCtrl = {
       }
 
       // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
       const isAvailableAnyTime = task.available === 'AnyTime';
       const isCreatedByPublic = task.createdByType === 'public';
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+      const hasCouponOnTask = Boolean(coupon) || Boolean(task.couponCode);
 
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
         subtotal *= 0.9;
       }
 
@@ -7064,13 +7074,15 @@ const taskCtrl = {
         : subtotal;
 
       // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
       const isAvailableAnyTime = task.available === 'AnyTime';
       const isCreatedByPublic = task.createdByType === 'public';
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+      const hasCouponOnTask = Boolean(task.couponCode);
 
       let automaticDiscount10Percent = 0;
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
         console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice email');
         automaticDiscount10Percent = subtotal * 0.1;
         subtotal *= 0.9;

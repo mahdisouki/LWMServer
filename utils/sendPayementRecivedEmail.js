@@ -241,12 +241,14 @@ module.exports = {
     }
 
     // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+    // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
     const isAvailableAnyTime = task.available === 'AnyTime';
     const isCreatedByPublic = task.createdByType === 'public';
     const hasItems = task.items && task.items.length > 0;
     const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+    const hasCouponOnTask = Boolean(task.couponCode);
 
-    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
       console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in payment received email invoice PDF');
       subtotal *= 0.9;
     }
