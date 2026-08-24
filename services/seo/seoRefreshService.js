@@ -22,6 +22,7 @@ const { enrichAuditIssues } = require('./seoAgentService');
 const {
   syncFromCrawl: syncIndexationFromCrawl,
   getSummary: getIndexationSummary,
+  inspectPriorityPages,
 } = require('./seoIndexationService');
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
@@ -382,6 +383,12 @@ async function executeRefresh(jobId, siteUrl) {
     try {
       const indexationResult = await syncIndexationFromCrawl(siteUrl, crawlResult, jobId);
       indexationSummary = indexationResult.summary;
+      try {
+        await inspectPriorityPages(siteUrl);
+        indexationSummary = await getIndexationSummary(siteUrl);
+      } catch (inspectError) {
+        console.warn('[SEO Refresh] URL Inspection skipped:', inspectError.message);
+      }
     } catch (indexationError) {
       console.warn('[SEO Refresh] Indexation sync skipped:', indexationError.message);
     }

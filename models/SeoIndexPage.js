@@ -36,11 +36,29 @@ const seoIndexPageSchema = new Schema({
     enum: ['unknown', 'likely_indexed', 'no_impressions'],
     default: 'unknown',
   },
+  /** Google URL Inspection (live index verdict). unknown = not inspected yet. */
+  googleStatus: {
+    type: String,
+    enum: ['unknown', 'indexed', 'not_indexed', 'inspect_error'],
+    default: 'unknown',
+    index: true,
+  },
+  googleVerdict: { type: String, default: null },
+  googleCoverageState: { type: String, default: null },
+  googleIndexingState: { type: String, default: null },
+  googleRobotsTxtState: { type: String, default: null },
+  googlePageFetchState: { type: String, default: null },
+  googleCanonical: { type: String, default: null },
+  googleLastCrawlTime: { type: Date, default: null },
+  inspectionResultLink: { type: String, default: null },
+  lastInspectedAt: { type: Date, default: null },
+  inspectError: { type: String, default: null },
   refreshJobId: { type: Schema.Types.ObjectId, ref: 'SeoRefreshJob', default: null },
   lastCrawledAt: { type: Date, default: null },
 }, { timestamps: true });
 
 seoIndexPageSchema.index({ siteUrl: 1, url: 1 }, { unique: true });
 seoIndexPageSchema.index({ siteUrl: 1, status: 1 });
+seoIndexPageSchema.index({ siteUrl: 1, googleStatus: 1 });
 
 module.exports = mongoose.model('SeoIndexPage', seoIndexPageSchema);

@@ -1,7 +1,10 @@
+const mongoose = require('mongoose');
 const SeoIndexPage = require('../../models/SeoIndexPage');
 const SeoSiteSnapshot = require('../../models/SeoSiteSnapshot');
-const { getSiteUrl } = require('../../config/seoConfig');
-const { fetchTopPages } = require('./gscService');
+const { getSiteUrl, getMaxInspectUrls, isGscEnabled } = require('../../config/seoConfig');
+const { fetchTopPages, inspectUrl } = require('./gscService');
+
+const INSPECT_DELAY_MS = 250;
 
 function normalizeUrl(url) {
   return String(url || '').trim().replace(/#.*$/, '');
@@ -15,6 +18,19 @@ function classifyPage(page) {
     return { status: 'indexable', reason: 'should_noindex_cart' };
   }
   return { status: 'indexable', reason: 'ok' };
+}
+
+function mapGoogleStatus(verdict) {
+  const value = String(verdict || '').toUpperCase();
+  if (value === 'PASS' || value === 'PARTIAL') {
+    return 'indexed';
+  }
+  if (value === 'FAIL' || value === 'NEUTRAL') {
+    return 'not_indexed';
+  }
+  const err = new Error(`URL Inspection returned unspecified verdict: ${verdict || 'missing'}`);
+  err.statusCode = 502;
+  throw err;
 }
 
 function mapPage(doc) {
@@ -33,9 +49,46 @@ function mapPage(doc) {
     gscImpressions: doc.gscImpressions,
     gscClicks: doc.gscClicks,
     gscSignal: doc.gscSignal || 'unknown',
+    googleStatus: doc.googleStatus || 'unknown',
+    googleVerdict: doc.googleVerdict || null,
+    googleCoverageState: doc.googleCoverageState || null,
+    googleIndexingState: doc.googleIndexingState || null,
+    googleCanonical: doc.googleCanonical || null,
+    googleLastCrawlTime: doc.googleLastCrawlTime || null,
+    inspectionResultLink: doc.inspectionResultLink || null,
+    lastInspectedAt: doc.lastInspectedAt || null,
+    inspectError: doc.inspectError || null,
     lastCrawledAt: doc.lastCrawledAt,
     updatedAt: doc.updatedAt,
   };
+}
+
+function inspectionFieldsFromResult(inspection) {
+  return {
+    googleStatus: mapGoogleStatus(inspection.verdict),
+    googleVerdict: inspection.verdict,
+    googleCoverageState: inspection.coverageState,
+    googleIndexingState: inspection.indexingState,
+    googleRobotsTxtState: inspection.robotsTxtState,
+    googlePageFetchState: inspection.pageFetchState,
+    googleCanonical: inspection.googleCanonical,
+    googleLastCrawlTime: inspection.lastCrawlTime ? new Date(inspection.lastCrawlTime) : null,
+    inspectionResultLink: inspection.inspectionResultLink,
+    lastInspectedAt: new Date(),
+    inspectError: null,
+  };
+}
+
+function inspectionErrorFields(message) {
+  return {
+    googleStatus: 'inspect_error',
+    lastInspectedAt: new Date(),
+    inspectError: message,
+  };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function buildGscPageMap() {
@@ -47,7 +100,6 @@ async function buildGscPageMap() {
       continue;
     }
     map.set(key, row);
-    // Also index without trailing slash variance
     const alt = key.endsWith('/') ? key.slice(0, -1) : `${key}/`;
     if (!map.has(alt)) {
       map.set(alt, row);
@@ -72,9 +124,27 @@ function applyGscSignal(url, gscMap) {
   };
 }
 
+function crawlFieldsFromDoc(doc) {
+  return {
+    status: doc.status,
+    reason: doc.reason,
+    inSitemap: doc.inSitemap,
+    hasNoindex: doc.hasNoindex,
+    robotsMeta: doc.robotsMeta,
+    title: doc.title,
+    canonical: doc.canonical,
+    isCartOrCheckout: doc.isCartOrCheckout,
+    errorMessage: doc.errorMessage,
+    gscImpressions: doc.gscImpressions,
+    gscClicks: doc.gscClicks,
+    gscSignal: doc.gscSignal,
+    refreshJobId: doc.refreshJobId,
+    lastCrawledAt: doc.lastCrawledAt,
+  };
+}
+
 /**
- * Replace indexation inventory from a crawl result.
- * @returns {{ summary: object, upserted: number }}
+ * Upsert crawl inventory without wiping existing Google inspection results.
  */
 async function syncFromCrawl(siteUrl, crawlResult, jobId = null) {
   const now = new Date();
@@ -136,9 +206,32 @@ async function syncFromCrawl(siteUrl, crawlResult, jobId = null) {
     });
   }
 
-  await SeoIndexPage.deleteMany({ siteUrl });
   if (docs.length) {
-    await SeoIndexPage.insertMany(docs);
+    await SeoIndexPage.bulkWrite(
+      docs.map((doc) => ({
+        updateOne: {
+          filter: { siteUrl, url: doc.url },
+          update: {
+            $set: crawlFieldsFromDoc(doc),
+            $setOnInsert: {
+              siteUrl,
+              url: doc.url,
+              googleStatus: 'unknown',
+            },
+          },
+          upsert: true,
+        },
+      })),
+    );
+  }
+
+  const keptUrls = docs.map((doc) => doc.url);
+  const canPrune = crawlResult.sitemapFetched !== false && keptUrls.length > 0;
+  if (canPrune) {
+    await SeoIndexPage.deleteMany({
+      siteUrl,
+      url: { $nin: keptUrls },
+    });
   }
 
   const summary = await getSummary(siteUrl);
@@ -147,8 +240,8 @@ async function syncFromCrawl(siteUrl, crawlResult, jobId = null) {
     {
       $set: {
         'siteHealth.indexCoverage': {
-          indexed: summary.indexable,
-          notIndexed: summary.errors,
+          indexed: summary.googleIndexed || summary.indexable,
+          notIndexed: summary.googleNotIndexed || summary.errors,
           blocked: summary.blocked,
         },
         'siteHealth.keyMetrics.sitemapPageCount': summary.sitemapCount,
@@ -162,12 +255,30 @@ async function syncFromCrawl(siteUrl, crawlResult, jobId = null) {
 }
 
 async function getSummary(siteUrl = getSiteUrl()) {
-  const [indexable, blocked, errors, total, likelyIndexed, snapshot] = await Promise.all([
+  const [
+    indexable,
+    blocked,
+    errors,
+    total,
+    likelyIndexed,
+    googleIndexed,
+    googleNotIndexed,
+    googleUnknown,
+    googleInspectError,
+    snapshot,
+  ] = await Promise.all([
     SeoIndexPage.countDocuments({ siteUrl, status: 'indexable' }),
     SeoIndexPage.countDocuments({ siteUrl, status: 'blocked' }),
     SeoIndexPage.countDocuments({ siteUrl, status: 'error' }),
     SeoIndexPage.countDocuments({ siteUrl }),
     SeoIndexPage.countDocuments({ siteUrl, gscSignal: 'likely_indexed' }),
+    SeoIndexPage.countDocuments({ siteUrl, googleStatus: 'indexed' }),
+    SeoIndexPage.countDocuments({ siteUrl, googleStatus: 'not_indexed' }),
+    SeoIndexPage.countDocuments({
+      siteUrl,
+      $or: [{ googleStatus: 'unknown' }, { googleStatus: { $exists: false } }],
+    }),
+    SeoIndexPage.countDocuments({ siteUrl, googleStatus: 'inspect_error' }),
     SeoSiteSnapshot.findOne({ siteUrl }).select('lastRefreshedAt siteHealth.keyMetrics').lean(),
   ]);
 
@@ -182,13 +293,19 @@ async function getSummary(siteUrl = getSiteUrl()) {
     sitemapCount,
     crawledCount,
     likelyIndexed,
-    /** Honest labels: crawl indexability is not Google's index. */
-    source: 'crawl',
+    googleIndexed,
+    googleNotIndexed,
+    googleUnknown,
+    googleInspectError,
+    inspectedCount: googleIndexed + googleNotIndexed + googleInspectError,
+    source: 'crawl+url_inspection',
     notes: {
       indexedFieldMeaning: 'indexable_by_crawl_no_noindex',
       notIndexedFieldMeaning: 'fetch_errors',
       blockedFieldMeaning: 'meta_noindex',
       likelyIndexedMeaning: 'gsc_impressions_in_lookback',
+      googleIndexedMeaning: 'url_inspection_verdict_pass_or_partial',
+      googleNotIndexedMeaning: 'url_inspection_verdict_fail_or_neutral',
     },
     lastSyncedAt: snapshot?.lastRefreshedAt || null,
   };
@@ -197,6 +314,7 @@ async function getSummary(siteUrl = getSiteUrl()) {
 async function listPages(siteUrl = getSiteUrl(), {
   status = 'all',
   gscSignal = 'all',
+  googleStatus = 'all',
   page = 1,
   limit = 20,
   search = '',
@@ -207,6 +325,13 @@ async function listPages(siteUrl = getSiteUrl(), {
   }
   if (gscSignal && gscSignal !== 'all') {
     filter.gscSignal = gscSignal;
+  }
+  if (googleStatus && googleStatus !== 'all') {
+    if (googleStatus === 'unknown') {
+      filter.$or = [{ googleStatus: 'unknown' }, { googleStatus: { $exists: false } }];
+    } else {
+      filter.googleStatus = googleStatus;
+    }
   }
   const q = String(search || '').trim();
   if (q) {
@@ -219,7 +344,7 @@ async function listPages(siteUrl = getSiteUrl(), {
 
   const [rows, total] = await Promise.all([
     SeoIndexPage.find(filter)
-      .sort({ status: 1, url: 1 })
+      .sort({ googleStatus: 1, status: 1, url: 1 })
       .skip(skip)
       .limit(safeLimit)
       .lean(),
@@ -237,8 +362,90 @@ async function listPages(siteUrl = getSiteUrl(), {
   };
 }
 
+async function inspectAndSave(doc) {
+  const inspection = await inspectUrl(doc.url);
+  const fields = inspectionFieldsFromResult(inspection);
+  Object.assign(doc, fields);
+  await doc.save();
+  return mapPage(doc);
+}
+
+async function inspectPageById(siteUrl, pageId) {
+  if (!mongoose.Types.ObjectId.isValid(pageId)) {
+    const err = new Error('Invalid indexation page id');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const page = await SeoIndexPage.findOne({ _id: pageId, siteUrl });
+  if (!page) {
+    return null;
+  }
+
+  try {
+    return await inspectAndSave(page);
+  } catch (error) {
+    Object.assign(page, inspectionErrorFields(error.message));
+    await page.save();
+    error.statusCode = error.statusCode || 502;
+    throw error;
+  }
+}
+
+function inspectPriorityScore(doc, homepageUrl) {
+  let score = 0;
+  const url = normalizeUrl(doc.url);
+  const home = normalizeUrl(homepageUrl);
+  if (url === home || url === `${home}/` || url === home.replace(/\/$/, '')) {
+    score += 100;
+  }
+  if (doc.status === 'error') score += 50;
+  if (doc.status === 'blocked') score += 40;
+  if (doc.gscSignal === 'no_impressions' || doc.gscSignal === 'unknown') score += 20;
+  if (!doc.lastInspectedAt || doc.googleStatus === 'unknown') score += 15;
+  if (doc.googleStatus === 'inspect_error') score += 10;
+  return score;
+}
+
+async function inspectPriorityPages(siteUrl = getSiteUrl(), limit = getMaxInspectUrls()) {
+  if (!isGscEnabled()) {
+    return { inspected: 0, failed: 0, skipped: true, reason: 'gsc_disabled' };
+  }
+
+  const pages = await SeoIndexPage.find({ siteUrl }).select('url status gscSignal googleStatus lastInspectedAt').lean();
+  const ranked = [...pages]
+    .sort((a, b) => inspectPriorityScore(b, siteUrl) - inspectPriorityScore(a, siteUrl))
+    .slice(0, Math.min(limit, pages.length));
+
+  let inspected = 0;
+  let failed = 0;
+
+  for (let i = 0; i < ranked.length; i += 1) {
+    const doc = await SeoIndexPage.findById(ranked[i]._id);
+    if (!doc) {
+      continue;
+    }
+    try {
+      await inspectAndSave(doc);
+      inspected += 1;
+    } catch (error) {
+      Object.assign(doc, inspectionErrorFields(error.message));
+      await doc.save();
+      failed += 1;
+      console.warn(`[SEO Indexation] Inspect failed for ${doc.url}:`, error.message);
+    }
+    if (i < ranked.length - 1) {
+      await sleep(INSPECT_DELAY_MS);
+    }
+  }
+
+  return { inspected, failed, skipped: false, total: ranked.length };
+}
+
 module.exports = {
   syncFromCrawl,
   getSummary,
   listPages,
+  inspectPageById,
+  inspectPriorityPages,
 };

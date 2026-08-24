@@ -62,4 +62,8 @@ module.exports = {
     const n = Number(process.env.SEO_AGENT_MAX_ISSUES || 40);
     return Number.isFinite(n) && n > 0 ? Math.min(n, 100) : 40;
   },
+  getMaxInspectUrls: () => {
+    const n = Number(process.env.SEO_INSPECT_MAX_URLS || 40);
+    return Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 40;
+  },
 };

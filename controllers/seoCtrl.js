@@ -279,6 +279,7 @@ const seoCtrl = {
       const data = await indexationService.listPages(siteUrlFromReq(req), {
         status: req.query.status || 'all',
         gscSignal: req.query.gscSignal || 'all',
+        googleStatus: req.query.googleStatus || 'all',
         page,
         limit,
         search: req.query.search || '',
@@ -286,6 +287,19 @@ const seoCtrl = {
       res.status(200).json(data);
     } catch (error) {
       res.status(500).json({ message: 'Failed to load indexation pages', error: error.message });
+    }
+  },
+
+  inspectIndexationPage: async (req, res) => {
+    try {
+      const page = await indexationService.inspectPageById(siteUrlFromReq(req), req.params.id);
+      if (!page) {
+        return res.status(404).json({ message: 'Indexation page not found' });
+      }
+      res.status(200).json({ message: 'URL inspected with Google Search Console', page });
+    } catch (error) {
+      const status = error.statusCode || 500;
+      res.status(status).json({ message: 'Failed to inspect URL', error: error.message });
     }
   },
 

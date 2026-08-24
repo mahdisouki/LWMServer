@@ -4,6 +4,10 @@ const { getSiteUrl, getMaxCrawlPages } = require('../../config/seoConfig');
 const FETCH_TIMEOUT_MS = 15000;
 const USER_AGENT = 'LWM-SEO-Crawler/1.0 (+https://www.londonwastemanagement.com)';
 
+function normalizeUrl(url) {
+  return String(url || '').trim().replace(/#.*$/, '').replace(/\/$/, '');
+}
+
 function resolveUrl(base, href) {
   try {
     return new URL(href, base).href;
@@ -71,6 +75,7 @@ async function discoverSitemapUrls(siteUrl) {
     `${siteUrl}/sitemap-index.xml`,
   ];
   const urls = new Set();
+  const fetchErrors = [];
 
   for (const sitemapUrl of candidates) {
     try {
@@ -78,23 +83,23 @@ async function discoverSitemapUrls(siteUrl) {
       const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/gi)].map((m) => m[1].trim());
       for (const loc of locs) {
         if (isSameSite(loc, siteUrl)) {
-          urls.add(loc.split('#')[0]);
+          urls.add(normalizeUrl(loc));
         }
       }
       if (urls.size > 0) {
-        break;
+        return [...urls].slice(0, getMaxCrawlPages());
       }
-    } catch {
-      // try next candidate
+      fetchErrors.push(`${sitemapUrl}: no same-site <loc> entries`);
+    } catch (error) {
+      fetchErrors.push(`${sitemapUrl}: ${error.message}`);
     }
   }
 
-  if (urls.size === 0) {
-    urls.add(siteUrl);
-    urls.add(`${siteUrl}/`);
-  }
-
-  return [...urls].slice(0, getMaxCrawlPages());
+  const err = new Error(
+    `Could not fetch sitemap.xml (${fetchErrors.join('; ') || 'no candidates'})`,
+  );
+  err.statusCode = 502;
+  throw err;
 }
 
 async function crawlSite(siteUrl = getSiteUrl()) {
@@ -117,6 +122,7 @@ async function crawlSite(siteUrl = getSiteUrl()) {
     pages,
     errors,
     sitemapPageCount: pageUrls.length,
+    sitemapFetched: true,
   };
 }
 

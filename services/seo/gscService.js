@@ -122,8 +122,45 @@ async function fetchTopPages(days = 28, rowLimit = 5000) {
   }));
 }
 
+async function inspectUrl(inspectionUrl) {
+  if (!isGscEnabled()) {
+    const err = new Error('Google Search Console is not enabled (set SEO_GSC_ENABLED=true)');
+    err.statusCode = 503;
+    throw err;
+  }
+
+  const searchconsole = await getSearchConsoleClient();
+  const { data } = await searchconsole.urlInspection.index.inspect({
+    requestBody: {
+      inspectionUrl,
+      siteUrl: getGscSiteUrl(),
+      languageCode: 'en-GB',
+    },
+  });
+
+  const indexStatus = data.inspectionResult?.indexStatusResult;
+  if (!indexStatus) {
+    const err = new Error('URL Inspection returned no indexStatusResult');
+    err.statusCode = 502;
+    throw err;
+  }
+
+  return {
+    verdict: indexStatus.verdict || null,
+    coverageState: indexStatus.coverageState || null,
+    indexingState: indexStatus.indexingState || null,
+    robotsTxtState: indexStatus.robotsTxtState || null,
+    pageFetchState: indexStatus.pageFetchState || null,
+    lastCrawlTime: indexStatus.lastCrawlTime || null,
+    googleCanonical: indexStatus.googleCanonical || null,
+    userCanonical: indexStatus.userCanonical || null,
+    inspectionResultLink: data.inspectionResult?.inspectionResultLink || null,
+  };
+}
+
 module.exports = {
   fetchTopQueries,
   fetchTopPages,
   fetchSiteSummary,
+  inspectUrl,
 };
