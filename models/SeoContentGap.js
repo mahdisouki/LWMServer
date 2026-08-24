@@ -11,6 +11,8 @@ const seoContentGapSchema = new Schema({
   competitorName: { type: String, default: null },
   status: { type: String, enum: ['open', 'draft_created', 'dismissed'], default: 'open', index: true },
   blogId: { type: Schema.Types.ObjectId, ref: 'Blog', default: null },
+  aiGenerated: { type: Boolean, default: false },
+  needsReview: { type: [String], default: [] },
   refreshJobId: { type: Schema.Types.ObjectId, ref: 'SeoRefreshJob', default: null },
 }, { timestamps: true });
 

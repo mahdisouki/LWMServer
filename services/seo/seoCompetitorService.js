@@ -247,6 +247,8 @@ async function listContentGaps(siteUrl = getSiteUrl(), { page = 1, limit = 20, s
       competitorName: gap.competitorName,
       status: gap.status,
       blogId: gap.blogId ? gap.blogId.toString() : null,
+      aiGenerated: Boolean(gap.aiGenerated),
+      needsReview: Array.isArray(gap.needsReview) ? gap.needsReview : [],
       updatedAt: gap.updatedAt,
     })),
     meta: {
@@ -267,7 +269,15 @@ async function createPageFromContentGap(siteUrl, gapId, { author = 'SEO Assistan
   if (gap.blogId) {
     const existing = await Blog.findById(gap.blogId).lean();
     if (existing) {
-      return { blog: existing, gap, alreadyExists: true, aiGenerated: false };
+      return {
+        blog: existing,
+        gap,
+        alreadyExists: true,
+        aiGenerated: Boolean(gap.aiGenerated),
+        aiMeta: {
+          needsReview: Array.isArray(gap.needsReview) ? gap.needsReview : [],
+        },
+      };
     }
   }
 
@@ -308,6 +318,8 @@ async function createPageFromContentGap(siteUrl, gapId, { author = 'SEO Assistan
 
   gap.blogId = blog._id;
   gap.status = 'draft_created';
+  gap.aiGenerated = Boolean(aiMeta);
+  gap.needsReview = aiMeta?.needsReview || [];
   await gap.save();
 
   return {

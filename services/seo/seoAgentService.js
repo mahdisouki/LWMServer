@@ -1,10 +1,12 @@
 const SeoAuditIssue = require('../../models/SeoAuditIssue');
 const SeoSiteSnapshot = require('../../models/SeoSiteSnapshot');
+const Blog = require('../../models/Blog');
 const {
   isSeoAgentEnabled,
   getAnthropicApiKey,
   getSeoAgentMaxIssues,
   getSiteHostname,
+  getDefaultBlogImage,
 } = require('../../config/seoConfig');
 const { createJsonCompletion } = require('./seoClaudeClient');
 const { buildAiActionPlan } = require('./seoAuditService');
@@ -254,9 +256,129 @@ async function generateBlogFromContentGap(gap) {
   };
 }
 
+/**
+ * Generate a blog draft from a free-form idea (not a content-gap keyword).
+ * @param {{ idea: string, title?: string }} input
+ */
+async function generateBlogFromIdea({ idea, title: titleHint } = {}) {
+  assertAgentReady();
+
+  const brief = String(idea || '').trim();
+  if (!brief) {
+    const err = new Error('Idea is required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const suggestedTitle = String(titleHint || '').trim();
+
+  const userPrompt = [
+    'Write an SEO blog draft for London Waste Management from this editorial idea (not a target keyword).',
+    suggestedTitle ? `Suggested title (use unless a clearer title fits the idea): "${suggestedTitle}".` : 'Invent a clear title from the idea.',
+    'Return JSON with this exact shape:',
+    JSON.stringify({
+      title: 'string',
+      description: 'HTML string with h2/h3/p/ul/li only',
+      tags: ['string'],
+      metaTitle: 'string under 60 chars',
+      metaDescription: 'string 120-160 chars',
+      needsReview: [
+        'string — claims you could not verify against Context, flagged for human confirmation',
+      ],
+    }),
+    'Rules:',
+    '- British English, practical UK skip-hire / waste tone.',
+    '- description must be HTML suitable for a CMS body (no html/body/script tags).',
+    '- Include an FAQ section with 3 questions as h3 + p.',
+    '- Mention London / local relevance where natural.',
+    '- Do not invent fake company awards, licenses, or reviews.',
+    '- Use companyFacts in Context as the source of truth for pricing, accepted/rejected items, policies, hours, and access rules. Do not state any such fact unless it appears there or can be reasonably derived from it. Anything in companyFacts.unresolved must not be asserted as fact.',
+    '- For any item price, fee, or item-specific prep note, look up companyFacts.catalogue.byItemName (match by itemName). Do not invent prices for items not listed there.',
+    '- companyFacts.serviceModel.note flags an important distinction: do not attribute council/recycling-centre-specific rules to this company\'s own service, or vice versa, unless companyFacts says they\'re the same.',
+    '- Check the draft for internal contradictions before finalizing.',
+    '- Do not invent a causal reason for a practical/safety instruction unless that reason is given in Context.',
+    '- Keep terminology consistent for the same entity throughout.',
+    '- Any list that logically repeats elsewhere in the article must match exactly across mentions.',
+    '',
+    'Context:',
+    JSON.stringify({
+      idea: brief,
+      suggestedTitle: suggestedTitle || null,
+      site: getSiteHostname(),
+      companyFacts,
+    }),
+  ].join('\n');
+
+  const { data, usage, model } = await createJsonCompletion({
+    userPrompt,
+    maxTokens: 5000,
+  });
+
+  const title = typeof data.title === 'string' ? data.title.trim() : '';
+  const description = typeof data.description === 'string' ? data.description.trim() : '';
+  if (!title || !description) {
+    throw new Error('Claude blog response missing title or description');
+  }
+
+  const tags = Array.isArray(data.tags)
+    ? data.tags
+      .filter((tag) => typeof tag === 'string')
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 8)
+    : [];
+
+  if (!tags.length) {
+    throw new Error('Claude blog response missing tags');
+  }
+
+  return {
+    title,
+    description,
+    tags,
+    metaTitle: typeof data.metaTitle === 'string' ? data.metaTitle.trim() : null,
+    metaDescription: typeof data.metaDescription === 'string' ? data.metaDescription.trim() : null,
+    needsReview: validateNeedsReviewArray(data.needsReview),
+    usage,
+    model,
+  };
+}
+
+async function createBlogDraftFromIdea({ idea, title, author }) {
+  const generated = await generateBlogFromIdea({ idea, title });
+  const image = getDefaultBlogImage();
+  if (!image) {
+    const err = new Error('SEO_DEFAULT_BLOG_IMAGE is not set');
+    err.statusCode = 500;
+    throw err;
+  }
+
+  const blog = await Blog.create({
+    title: generated.title,
+    author,
+    description: generated.description,
+    image,
+    tags: generated.tags,
+  });
+
+  return {
+    blog,
+    aiGenerated: true,
+    aiMeta: {
+      model: generated.model,
+      usage: generated.usage,
+      metaTitle: generated.metaTitle,
+      metaDescription: generated.metaDescription,
+      needsReview: generated.needsReview || [],
+    },
+  };
+}
+
 module.exports = {
   getAgentStatus,
   assertAgentReady,
   enrichAuditIssues,
   generateBlogFromContentGap,
+  generateBlogFromIdea,
+  createBlogDraftFromIdea,
 };

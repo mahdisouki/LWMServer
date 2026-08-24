@@ -263,6 +263,31 @@ const seoCtrl = {
     }
   },
 
+  createBlogDraftFromIdea: async (req, res) => {
+    try {
+      const idea = String(req.body?.idea || '').trim();
+      if (!idea) {
+        return res.status(400).json({ message: 'Idea is required' });
+      }
+      const author = req.user?.name || req.user?.email || 'SEO Assistant';
+      const result = await seoAgentService.createBlogDraftFromIdea({
+        idea,
+        title: req.body?.title,
+        author,
+      });
+      res.status(201).json({
+        message: 'AI draft page created',
+        blogId: result.blog._id.toString(),
+        blog: result.blog,
+        aiGenerated: true,
+        aiMeta: result.aiMeta,
+      });
+    } catch (error) {
+      const status = error.statusCode || 500;
+      res.status(status).json({ message: 'Failed to create draft from idea', error: error.message });
+    }
+  },
+
   getIndexationSummary: async (req, res) => {
     try {
       const data = await indexationService.getSummary(siteUrlFromReq(req));
