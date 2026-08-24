@@ -10,6 +10,31 @@ function normalizeUrl(url) {
   return String(url || '').trim().replace(/#.*$/, '');
 }
 
+function isSameHost(url, siteUrl) {
+  try {
+    return new URL(url).hostname === new URL(siteUrl).hostname;
+  } catch {
+    return false;
+  }
+}
+
+/** Inspect the canonical Google should index, not a slash-stripped crawl URL. */
+function inspectionUrlForPage(doc) {
+  const site = doc.siteUrl || getSiteUrl();
+  const base = site.endsWith('/') ? site : `${site}/`;
+  const raw = String(doc.canonical || '').trim() || doc.url;
+  let absolute = normalizeUrl(doc.url);
+  try {
+    absolute = normalizeUrl(new URL(raw, base).href);
+  } catch {
+    absolute = normalizeUrl(doc.url);
+  }
+  if (!absolute || !isSameHost(absolute, site)) {
+    return normalizeUrl(doc.url);
+  }
+  return absolute;
+}
+
 function classifyPage(page) {
   if (page.hasNoindex) {
     return { status: 'blocked', reason: 'noindex' };
@@ -363,7 +388,7 @@ async function listPages(siteUrl = getSiteUrl(), {
 }
 
 async function inspectAndSave(doc) {
-  const inspection = await inspectUrl(doc.url);
+  const inspection = await inspectUrl(inspectionUrlForPage(doc));
   const fields = inspectionFieldsFromResult(inspection);
   Object.assign(doc, fields);
   await doc.save();
@@ -403,6 +428,7 @@ function inspectPriorityScore(doc, homepageUrl) {
   if (doc.status === 'blocked') score += 40;
   if (doc.gscSignal === 'no_impressions' || doc.gscSignal === 'unknown') score += 20;
   if (!doc.lastInspectedAt || doc.googleStatus === 'unknown') score += 15;
+  if (doc.googleStatus === 'not_indexed') score += 12;
   if (doc.googleStatus === 'inspect_error') score += 10;
   return score;
 }

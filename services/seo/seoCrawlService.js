@@ -5,7 +5,7 @@ const FETCH_TIMEOUT_MS = 15000;
 const USER_AGENT = 'LWM-SEO-Crawler/1.0 (+https://www.londonwastemanagement.com)';
 
 function normalizeUrl(url) {
-  return String(url || '').trim().replace(/#.*$/, '').replace(/\/$/, '');
+  return String(url || '').trim().replace(/#.*$/, '');
 }
 
 function resolveUrl(base, href) {
