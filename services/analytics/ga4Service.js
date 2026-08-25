@@ -561,6 +561,73 @@ async function fetchTrafficByChannel({ startKey, endKey, limit = 8 } = {}) {
   }
 }
 
+/**
+ * Ecommerce purchases keyed by transaction_id (= Task.orderNumber) and
+ * sessionDefaultChannelGroup — used to stamp Direct onto Organic orders.
+ */
+async function fetchPurchasesByTransaction({ startKey, endKey } = {}) {
+  if (!isGa4Enabled()) {
+    return null;
+  }
+
+  try {
+    const propertyId = getGa4PropertyId();
+    const analyticsdata = await getAnalyticsDataClient();
+    const { data } = await analyticsdata.properties.runReport({
+      property: `properties/${propertyId}`,
+      requestBody: {
+        dateRanges: [{ startDate: startKey, endDate: endKey }],
+        dimensions: [
+          { name: 'transactionId' },
+          { name: 'sessionDefaultChannelGroup' },
+        ],
+        metrics: [
+          { name: 'ecommercePurchases' },
+          { name: 'purchaseRevenue' },
+        ],
+        orderBys: [
+          { metric: { metricName: 'ecommercePurchases' }, desc: true },
+        ],
+        limit: 100000,
+        keepEmptyRows: false,
+      },
+    });
+
+    const byTransactionId = new Map();
+
+    for (const row of data?.rows || []) {
+      const transactionId = String(row.dimensionValues?.[0]?.value || '').trim();
+      const channel = String(row.dimensionValues?.[1]?.value || '').trim() || 'Unassigned';
+      if (!transactionId || transactionId === '(not set)') {
+        continue;
+      }
+
+      const purchases = parseMetricInt(row.metricValues?.[0]?.value);
+      const revenue = parseMetricNumber(row.metricValues?.[1]?.value);
+      const existing = byTransactionId.get(transactionId);
+
+      // Prefer the row with the most purchases; ties keep the first seen.
+      if (!existing || purchases > existing.purchases) {
+        byTransactionId.set(transactionId, {
+          transactionId,
+          channel,
+          purchases,
+          revenue,
+        });
+      }
+    }
+
+    return {
+      available: true,
+      byTransactionId,
+      rows: Array.from(byTransactionId.values()),
+    };
+  } catch (error) {
+    console.error('[GA4] fetchPurchasesByTransaction failed:', error.message);
+    return null;
+  }
+}
+
 module.exports = {
   isGa4Enabled,
   fetchPeriodTraffic,
@@ -571,4 +638,5 @@ module.exports = {
   fetchAllPagePerformance,
   fetchSessionsByDeviceCategory,
   fetchTrafficByChannel,
+  fetchPurchasesByTransaction,
 };

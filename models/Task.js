@@ -298,9 +298,12 @@ const taskSchema = new Schema(
     utm_source: { type: String, required: false },
     trafficSource: {
       type: String,
-      enum: ['Google Ads', 'Microsoft Ads', 'Instagram', 'Facebook', 'Organic'],
+      enum: ['Google Ads', 'Microsoft Ads', 'Instagram', 'Facebook', 'Direct', 'Organic'],
       default: 'Organic',
     },
+    /** Raw GA4 sessionDefaultChannelGroup from purchase ↔ orderNumber match. */
+    ga4SessionChannel: { type: String, required: false },
+    ga4TrafficChannelSyncedAt: { type: Date, required: false },
     googleAdsPurchaseConversionSentAt: { type: Date, required: false },
     googleAdsConversionError: { type: String, required: false },
     microsoftAdsOfflineConversionExportedAt: { type: Date, required: false },
@@ -345,6 +348,7 @@ taskSchema.pre('save', function (next) {
     wbraid: this.wbraid,
     msclkid: this.msclkid,
     utm_source: this.utm_source,
+    existingTrafficSource: this.trafficSource,
   });
 
   // Validate items have proper pricing
@@ -385,6 +389,7 @@ taskSchema.pre('findOneAndUpdate', function (next) {
       wbraid: $set.wbraid,
       msclkid: $set.msclkid,
       utm_source: $set.utm_source,
+      existingTrafficSource: $set.trafficSource,
     });
     if (update.$set) {
       update.$set.trafficSource = trafficSource;

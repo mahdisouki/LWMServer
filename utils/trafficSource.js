@@ -3,8 +3,48 @@ const TRAFFIC_SOURCES = {
   MICROSOFT_ADS: 'Microsoft Ads',
   INSTAGRAM: 'Instagram',
   FACEBOOK: 'Facebook',
+  DIRECT: 'Direct',
   ORGANIC: 'Organic',
 };
+
+/** Sources set from click ids / utm — never overwritten by GA4 sync. */
+const HARD_ATTRIBUTION_SOURCES = new Set([
+  TRAFFIC_SOURCES.GOOGLE_ADS,
+  TRAFFIC_SOURCES.MICROSOFT_ADS,
+  TRAFFIC_SOURCES.INSTAGRAM,
+  TRAFFIC_SOURCES.FACEBOOK,
+]);
+
+/**
+ * Map GA4 sessionDefaultChannelGroup → Task.trafficSource.
+ * Returns null when the channel is ambiguous or should not overwrite Organic.
+ */
+function mapGa4ChannelToTrafficSource(channel) {
+  const value = String(channel || '').trim().toLowerCase();
+  if (!value || value === '(not set)' || value === 'unassigned') {
+    return null;
+  }
+  if (value === 'direct') {
+    return TRAFFIC_SOURCES.DIRECT;
+  }
+  if (value === 'organic search') {
+    return TRAFFIC_SOURCES.ORGANIC;
+  }
+  // Paid Search / Paid Social / Referral / etc. stay null —
+  // click ids and utm_source remain the source of truth for ads/social.
+  return null;
+}
+
+function canApplyGa4TrafficSource(currentTrafficSource, nextTrafficSource) {
+  if (!nextTrafficSource) return false;
+  if (HARD_ATTRIBUTION_SOURCES.has(currentTrafficSource)) return false;
+  // Only promote Organic (or missing) → Direct from GA4 for now.
+  if (nextTrafficSource !== TRAFFIC_SOURCES.DIRECT) return false;
+  return (
+    !currentTrafficSource
+    || currentTrafficSource === TRAFFIC_SOURCES.ORGANIC
+  );
+}
 
 function hasGoogleAdsClickId({ gclid, gbraid, wbraid } = {}) {
   return Boolean(
@@ -45,8 +85,16 @@ function resolveSocialTrafficSource(utm_source) {
 
 /**
  * Prefer Google, then Microsoft, then Instagram/Facebook from utm_source.
+ * Preserves GA4-synced Direct when there is no stronger click/utm signal.
  */
-function resolveTrafficSource({ gclid, gbraid, wbraid, msclkid, utm_source } = {}) {
+function resolveTrafficSource({
+  gclid,
+  gbraid,
+  wbraid,
+  msclkid,
+  utm_source,
+  existingTrafficSource,
+} = {}) {
   if (hasGoogleAdsClickId({ gclid, gbraid, wbraid })) {
     return TRAFFIC_SOURCES.GOOGLE_ADS;
   }
@@ -57,14 +105,20 @@ function resolveTrafficSource({ gclid, gbraid, wbraid, msclkid, utm_source } = {
   if (social) {
     return social;
   }
+  if (existingTrafficSource === TRAFFIC_SOURCES.DIRECT) {
+    return TRAFFIC_SOURCES.DIRECT;
+  }
   return TRAFFIC_SOURCES.ORGANIC;
 }
 
 module.exports = {
   TRAFFIC_SOURCES,
+  HARD_ATTRIBUTION_SOURCES,
   hasGoogleAdsClickId,
   hasMicrosoftAdsClickId,
   normalizeUtmSource,
   resolveSocialTrafficSource,
   resolveTrafficSource,
+  mapGa4ChannelToTrafficSource,
+  canApplyGa4TrafficSource,
 };

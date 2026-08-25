@@ -14,6 +14,7 @@ const ORDER_SOURCE_KEYS = [
   TRAFFIC_SOURCES.MICROSOFT_ADS,
   TRAFFIC_SOURCES.INSTAGRAM,
   TRAFFIC_SOURCES.FACEBOOK,
+  TRAFFIC_SOURCES.DIRECT,
   TRAFFIC_SOURCES.ORGANIC,
 ];
 
@@ -27,6 +28,7 @@ function emptyOrderSourceBreakdown() {
     [TRAFFIC_SOURCES.MICROSOFT_ADS]: emptySourceStats(),
     [TRAFFIC_SOURCES.INSTAGRAM]: emptySourceStats(),
     [TRAFFIC_SOURCES.FACEBOOK]: emptySourceStats(),
+    [TRAFFIC_SOURCES.DIRECT]: emptySourceStats(),
     [TRAFFIC_SOURCES.ORGANIC]: emptySourceStats(),
   };
 }
@@ -225,7 +227,7 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       visitors: 'Google Analytics 4 — totalUsers (period unique; daily chart uses per-day users)',
       sessions: 'Google Analytics 4 — sessions',
       sources:
-        'Task.trafficSource enum (Google Ads, Microsoft Ads, Instagram, Facebook, Organic) — orders & revenue per source',
+        'Task.trafficSource enum (Google Ads, Microsoft Ads, Instagram, Facebook, Direct, Organic) — orders & revenue per source',
       orders: 'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',
       revenue: 'Task collection — sum of totalPrice for all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',
     },

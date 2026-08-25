@@ -4,7 +4,7 @@ const { getPeriodLabels } = require('../../utils/analyticsDateRange');
 const { excludeMigratedOrdersFilter } = require('./taskFilters');
 const { TRAFFIC_SOURCES } = require('../../utils/trafficSource');
 
-const DEFAULT_LIMIT = 5;
+const DEFAULT_LIMIT = 6;
 const MAX_LIMIT = 50;
 
 const SOURCE_CONFIG = [
@@ -12,6 +12,7 @@ const SOURCE_CONFIG = [
   { source: TRAFFIC_SOURCES.MICROSOFT_ADS, color: 'blue' },
   { source: TRAFFIC_SOURCES.INSTAGRAM, color: 'purple' },
   { source: TRAFFIC_SOURCES.FACEBOOK, color: 'pink' },
+  { source: TRAFFIC_SOURCES.DIRECT, color: 'gray' },
   { source: TRAFFIC_SOURCES.ORGANIC, color: 'orange' },
 ];
 
@@ -105,7 +106,7 @@ async function getOrderTrafficSources({
     dataSources: {
       orders:
         'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by trafficSource for the selected period',
-      ranking: 'Fixed channel order (Google Ads, Microsoft Ads, Instagram, Facebook, Organic)',
+      ranking: 'Fixed channel order (Google Ads, Microsoft Ads, Instagram, Facebook, Direct, Organic)',
     },
   };
 }
