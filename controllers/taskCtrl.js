@@ -1628,6 +1628,7 @@ const taskCtrl = {
         gbraid,
         wbraid,
         msclkid,
+        fbclid,
         utm_source,
       } = req.body;
       const normalizedUtmSource = normalizeUtmSource(utm_source);
@@ -1945,6 +1946,7 @@ const taskCtrl = {
         ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
         ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
         ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
+        ...(fbclid ? { fbclid: String(fbclid).trim() } : {}),
         ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
       });
 

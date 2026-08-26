@@ -295,6 +295,7 @@ const taskSchema = new Schema(
     gbraid: { type: String, required: false },
     wbraid: { type: String, required: false },
     msclkid: { type: String, required: false },
+    fbclid: { type: String, required: false },
     utm_source: { type: String, required: false },
     trafficSource: {
       type: String,
@@ -347,6 +348,7 @@ taskSchema.pre('save', function (next) {
     gbraid: this.gbraid,
     wbraid: this.wbraid,
     msclkid: this.msclkid,
+    fbclid: this.fbclid,
     utm_source: this.utm_source,
     existingTrafficSource: this.trafficSource,
   });
@@ -381,6 +383,7 @@ taskSchema.pre('findOneAndUpdate', function (next) {
     || $set.gbraid !== undefined
     || $set.wbraid !== undefined
     || $set.msclkid !== undefined
+    || $set.fbclid !== undefined
     || $set.utm_source !== undefined
   ) {
     const trafficSource = resolveTrafficSource({
@@ -388,6 +391,7 @@ taskSchema.pre('findOneAndUpdate', function (next) {
       gbraid: $set.gbraid,
       wbraid: $set.wbraid,
       msclkid: $set.msclkid,
+      fbclid: $set.fbclid,
       utm_source: $set.utm_source,
       existingTrafficSource: $set.trafficSource,
     });

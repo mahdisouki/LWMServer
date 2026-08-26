@@ -54,6 +54,7 @@ const quotationRequestSchema = new Schema({
   gbraid: { type: String, required: false },
   wbraid: { type: String, required: false },
   msclkid: { type: String, required: false },
+  fbclid: { type: String, required: false },
   utm_source: { type: String, required: false },
   googleAdsQuoteConversionSentAt: { type: Date, required: false },
   googleAdsConversionError: { type: String, required: false },
