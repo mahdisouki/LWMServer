@@ -92,6 +92,10 @@ const cloudinary = require('../helper/cloudinaryConfig');
 const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } = require('../services/calendarService');
 const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
 const { syncRepeatCustomerForEmail } = require('../utils/repeatCustomerSync');
+const {
+  extractEmailDomain,
+  addFreeEmailDomain,
+} = require('../utils/businessEmail');
 const PaymentLink = require('../models/PaymentLink');
 
 const BUSINESS_CUSTOMER_FILTER_FIELDS = [
@@ -2316,7 +2320,9 @@ const taskCtrl = {
         return res.status(400).json({ message: 'Invalid task ID.' });
       }
 
-      const task = await Task.findById(taskId).select('isBusinessEmail');
+      const task = await Task.findById(taskId).select(
+        'isBusinessEmail email',
+      );
       if (!task) {
         return res.status(404).json({ message: 'Task not found.' });
       }
@@ -2326,6 +2332,15 @@ const taskCtrl = {
           message: 'Task is not in the business customer list.',
         });
       }
+
+      const domain = extractEmailDomain(task.email);
+      if (!domain) {
+        return res.status(400).json({
+          message: 'Task email has no domain to add to the free domain list.',
+        });
+      }
+
+      const domainResult = await addFreeEmailDomain(domain);
 
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
@@ -2338,9 +2353,27 @@ const taskCtrl = {
         { new: true },
       );
 
+      const domainRegex = new RegExp(
+        `@${domain.replace(/\./g, '\\.')}$`,
+        'i',
+      );
+      const domainUpdate = await Task.updateMany(
+        {
+          _id: { $ne: taskId },
+          email: domainRegex,
+          isBusinessEmail: true,
+        },
+        { $set: { isBusinessEmail: false } },
+      );
+
       res.status(200).json({
         message: 'Task removed from business customers.',
         task: updatedTask,
+        freeEmailDomain: {
+          domain: domainResult.domain,
+          added: domainResult.added,
+        },
+        matchingDomainTasksUpdated: domainUpdate.modifiedCount,
       });
     } catch (error) {
       res.status(500).json({
