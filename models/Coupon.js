@@ -88,11 +88,16 @@ const couponSchema = new Schema({
     type: Boolean,
     default: true
   },
-  /** Client IP that minted an exit-intent coupon — used to reuse one unused code per IP. */
+  /** Client IP that minted an exit-intent coupon — one mint per IP per 24h; reuse only while unused and unexpired. */
   mintedForIp: {
     type: String,
     default: null,
     index: true
+  },
+  /** Set when the user scratches/reveals the exit-intent code — 5-minute checkout window starts here. */
+  revealedAt: {
+    type: Date,
+    default: null
   }
 }, { timestamps: true });
 
@@ -110,6 +115,7 @@ couponSchema.pre('save', function (next) {
 couponSchema.virtual('isValid').get(function () {
   if (this.isExpired || !this.isActive) return false;
   if (this.maxUsage && this.usageCount >= this.maxUsage) return false;
+  if (this.mintedForIp && !this.revealedAt) return false;
   if (new Date() > this.expiresAt) return false;
   return true;
 });
@@ -129,6 +135,9 @@ couponSchema.methods.validateCoupon = function (customerEmail = null, cartTotal 
     }
     if (this.maxUsage && this.usageCount >= this.maxUsage) {
       return { valid: false, message: 'Coupon has reached maximum usage limit' };
+    }
+    if (this.mintedForIp && !this.revealedAt) {
+      return { valid: false, message: 'Coupon has not been unlocked yet' };
     }
     if (new Date() > this.expiresAt) {
       return { valid: false, message: 'Coupon has expired' };

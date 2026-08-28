@@ -155,11 +155,33 @@ const loginLimiter = rateLimit({
   },
 });
 
-// Exit-intent coupon mint: prevent coupon farming (DB also enforces 1 code / IP / 24h)
+// Exit-intent coupon mint: 1 request per IP per 24h (DB also enforces 1 code / IP / 24h)
 const EXIT_INTENT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+const EXIT_INTENT_ALREADY_CLAIMED_MESSAGE =
+  "You've already claimed this exclusive 20% offer. Please try again later.";
 const exitIntentLimiter = rateLimit({
   windowMs: EXIT_INTENT_WINDOW_MS,
-  max: 10, // Allow soft reuses/checks; creation is capped in controller to 1 per IP / 24h
+  max: 10, // Allow reuse/reveal retries; DB still enforces 1 code / IP / 24h
+  message: EXIT_INTENT_ALREADY_CLAIMED_MESSAGE,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getRealIP(req),
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  handler: (req, res) => {
+    return sendRateLimitResponse(
+      req,
+      res,
+      EXIT_INTENT_ALREADY_CLAIMED_MESSAGE,
+      Math.ceil(EXIT_INTENT_WINDOW_MS / 1000),
+    );
+  },
+});
+
+// Scratch/reveal starts the 5-minute clock — not the same as minting a new code
+const exitIntentRevealLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
   message: 'Too many discount requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -171,7 +193,7 @@ const exitIntentLimiter = rateLimit({
       req,
       res,
       'Too many discount requests from this IP, please try again later.',
-      Math.ceil(EXIT_INTENT_WINDOW_MS / 1000),
+      900,
     );
   },
 });
@@ -184,6 +206,7 @@ module.exports = {
   paymentLinkTokenLimiter,
   loginLimiter,
   exitIntentLimiter,
+  exitIntentRevealLimiter,
   getRealIP,
 };
 
