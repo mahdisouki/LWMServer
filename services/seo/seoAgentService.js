@@ -1,6 +1,8 @@
 const SeoAuditIssue = require('../../models/SeoAuditIssue');
 const SeoSiteSnapshot = require('../../models/SeoSiteSnapshot');
 const Blog = require('../../models/Blog');
+const StandardItem = require('../../models/StandardItem');
+const loggingService = require('../loggingService');
 const {
   isSeoAgentEnabled,
   getAnthropicApiKey,
@@ -56,6 +58,29 @@ function validateNeedsReviewArray(value) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 20);
+}
+
+function validateKeywordsInDescription(value, description) {
+  if (!Array.isArray(value) || !value.length) {
+    throw new Error('Claude item description response missing keywords');
+  }
+  const text = String(description || '').toLowerCase();
+  const seen = new Set();
+  const keywords = [];
+  value.forEach((entry) => {
+    if (typeof entry !== 'string') return;
+    const keyword = entry.trim();
+    if (!keyword) return;
+    const key = keyword.toLowerCase();
+    if (seen.has(key)) return;
+    if (!text.includes(key)) return;
+    seen.add(key);
+    keywords.push(keyword);
+  });
+  if (!keywords.length) {
+    throw new Error('Claude keywords were not present in the description');
+  }
+  return keywords.slice(0, 12);
 }
 
 /**
@@ -374,6 +399,159 @@ async function createBlogDraftFromIdea({ idea, title, author }) {
   };
 }
 
+function categoryNamesFromItem(item) {
+  if (!Array.isArray(item?.category)) return [];
+  return item.category
+    .map((entry) => {
+      if (!entry) return '';
+      if (typeof entry === 'string') return entry;
+      return typeof entry.name === 'string' ? entry.name : '';
+    })
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Generate a catalogue SEO description for one Standard Item. Does not save.
+ * @param {string} itemId
+ */
+async function generateItemSeoDescription(itemId) {
+  assertAgentReady();
+
+  const item = await StandardItem.findById(itemId).populate('category').exec();
+  if (!item) {
+    const err = new Error('Standard item not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const itemName = String(item.itemName || '').trim();
+  const catalogueFacts = companyFacts.catalogue?.byItemName?.[itemName] || null;
+
+  const userPrompt = [
+    'Write an SEO catalogue description for one London Waste Management collection item.',
+    'Return JSON with this exact shape:',
+    JSON.stringify({
+      description: 'plain text, 2-4 sentences, British English',
+      keywords: ['exact phrases copied from description'],
+      metaDescription: 'string 120-160 chars, optional helper only',
+      needsReview: [
+        'string — claims you could not verify against Context, flagged for human confirmation',
+      ],
+    }),
+    'Rules:',
+    '- description is plain text for the live catalogue field (no HTML, no markdown).',
+    '- 2–4 sentences, roughly 80–160 words. Lead with the item name and what the customer is booking.',
+    '- Naturally weave 4–8 SEO search phrases a London customer would type: the item name, collection/removal language, the category, and London. Do not stuff or list keywords.',
+    '- keywords must be exact substrings of description (same wording, including the item name). 4–8 items.',
+    '- British English, practical UK waste-collection tone. Do not mention SEO, keywords, or this prompt.',
+    '- Use Context.item and Context.catalogueFacts as the source of truth for prices, EWC, van space, and current copy.',
+    '- Do not invent prices, fees, weight limits, licences, awards, or recycling claims that are not in Context.',
+    '- Anything in companyFacts.unresolved must not be asserted as fact.',
+    '- companyFacts.serviceModel.note: do not attribute council/recycling-centre rules to this company unless Context says they are the same.',
+    '- If currentDescription already contains operational constraints (fees, wrapping, access), keep them only when they appear in Context.',
+    '- metaDescription is a suggested snippet only; it will not be saved unless a human copies it.',
+    '',
+    'Context:',
+    JSON.stringify({
+      item: {
+        id: item._id.toString(),
+        itemName,
+        categories: categoryNamesFromItem(item),
+        price: item.price ?? null,
+        insidePrice: item.insidePrice ?? null,
+        insideWithDismantlingPrice: item.insideWithDismantlingPrice ?? null,
+        ewcCode: item.ewcCode || null,
+        spaceOfVan: item.spaceOfVan ?? null,
+        isHidden: Boolean(item.isHidden),
+        currentDescription: item.description || '',
+      },
+      catalogueFacts,
+      site: getSiteHostname(),
+      companyFacts: {
+        company: companyFacts.company,
+        serviceModel: companyFacts.serviceModel,
+        generalFAQ: companyFacts.generalFAQ,
+        mattressSpecific: companyFacts.mattressSpecific,
+        unresolved: companyFacts.unresolved,
+      },
+    }),
+  ].join('\n');
+
+  const { data, usage, model } = await createJsonCompletion({
+    userPrompt,
+    maxTokens: 1500,
+  });
+
+  const description = typeof data.description === 'string' ? data.description.trim() : '';
+  if (!description) {
+    throw new Error('Claude item description response missing description');
+  }
+
+  return {
+    itemId: item._id.toString(),
+    itemName,
+    currentDescription: item.description || '',
+    description,
+    keywords: validateKeywordsInDescription(data.keywords, description),
+    metaDescription: typeof data.metaDescription === 'string' ? data.metaDescription.trim() : null,
+    needsReview: validateNeedsReviewArray(data.needsReview),
+    usage,
+    model,
+  };
+}
+
+/**
+ * Save a (reviewed) description onto StandardItem.description only.
+ * @param {{ itemId: string, description: string, user?: object, ipAddress?: string, userAgent?: string }} input
+ */
+async function applyItemSeoDescription({ itemId, description, user, ipAddress, userAgent } = {}) {
+  const text = String(description || '').trim();
+  if (!text) {
+    const err = new Error('Description is required');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const item = await StandardItem.findById(itemId);
+  if (!item) {
+    const err = new Error('Standard item not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const beforeDescription = item.description || '';
+  const updated = await StandardItem.findByIdAndUpdate(
+    itemId,
+    { $set: { description: text } },
+    { new: true, runValidators: true },
+  ).populate('category');
+
+  if (!updated) {
+    const err = new Error('Failed to save item description');
+    err.statusCode = 500;
+    throw err;
+  }
+
+  if (user) {
+    await loggingService.createLog({
+      userId: user._id,
+      username: user.username,
+      action: 'UPDATE',
+      entityType: 'STANDARD_ITEM',
+      entityId: itemId,
+      changes: {
+        before: { description: beforeDescription },
+        after: { description: updated.description },
+      },
+      ipAddress,
+      userAgent,
+    });
+  }
+
+  return { item: updated };
+}
+
 module.exports = {
   getAgentStatus,
   assertAgentReady,
@@ -381,4 +559,6 @@ module.exports = {
   generateBlogFromContentGap,
   generateBlogFromIdea,
   createBlogDraftFromIdea,
+  generateItemSeoDescription,
+  applyItemSeoDescription,
 };

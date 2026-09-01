@@ -35,6 +35,8 @@ router.post('/indexation/pages/:id/inspect', ...admin, seoCtrl.inspectIndexation
 
 router.get('/agent/status', ...admin, seoCtrl.getAgentStatus);
 router.post('/agent/drafts', ...admin, seoCtrl.createBlogDraftFromIdea);
+router.post('/agent/item-descriptions/:id', ...admin, seoCtrl.generateItemSeoDescription);
+router.post('/agent/item-descriptions/:id/apply', ...admin, seoCtrl.applyItemSeoDescription);
 router.post('/agent/enrich-audit', ...admin, seoCtrl.enrichAuditWithAgent);
 
 module.exports = router;

@@ -288,6 +288,51 @@ const seoCtrl = {
     }
   },
 
+  generateItemSeoDescription: async (req, res) => {
+    try {
+      if (!req.params.id || !/^[a-fA-F0-9]{24}$/.test(req.params.id)) {
+        return res.status(400).json({ message: 'Invalid item id' });
+      }
+      const result = await seoAgentService.generateItemSeoDescription(req.params.id);
+      res.status(200).json(result);
+    } catch (error) {
+      const status = error.statusCode || 500;
+      res.status(status).json({
+        message: 'Failed to generate item description',
+        error: error.message,
+      });
+    }
+  },
+
+  applyItemSeoDescription: async (req, res) => {
+    try {
+      if (!req.params.id || !/^[a-fA-F0-9]{24}$/.test(req.params.id)) {
+        return res.status(400).json({ message: 'Invalid item id' });
+      }
+      const description = String(req.body?.description || '').trim();
+      if (!description) {
+        return res.status(400).json({ message: 'Description is required' });
+      }
+      const result = await seoAgentService.applyItemSeoDescription({
+        itemId: req.params.id,
+        description,
+        user: req.user,
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      res.status(200).json({
+        message: 'Item description saved',
+        item: result.item,
+      });
+    } catch (error) {
+      const status = error.statusCode || 500;
+      res.status(status).json({
+        message: 'Failed to save item description',
+        error: error.message,
+      });
+    }
+  },
+
   getIndexationSummary: async (req, res) => {
     try {
       const data = await indexationService.getSummary(siteUrlFromReq(req));
