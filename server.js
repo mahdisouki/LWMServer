@@ -20,6 +20,10 @@ connectToDatabase()
   .then(async () => {
     console.log("✅ MongoDB Connected");
 
+    const { loadExtraFreeEmailDomains } = require('./utils/businessEmail');
+    const extraFreeDomainCount = await loadExtraFreeEmailDomains();
+    console.log(`Free email domains loaded (${extraFreeDomainCount} extra)`);
+
     const MailSignature = require('./models/MailSignature');
     await MailSignature.dropLegacyIndexes();
 

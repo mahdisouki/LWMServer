@@ -58,6 +58,10 @@ function hasMicrosoftAdsClickId({ msclkid } = {}) {
   return Boolean(msclkid && String(msclkid).trim());
 }
 
+function hasMetaAdsClickId({ fbclid } = {}) {
+  return Boolean(fbclid && String(fbclid).trim());
+}
+
 /**
  * Normalize utm_source from the client (URL param or body).
  * Accepts common aliases: ig, fb, meta.
@@ -84,7 +88,7 @@ function resolveSocialTrafficSource(utm_source) {
 }
 
 /**
- * Prefer Google, then Microsoft, then Instagram/Facebook from utm_source.
+ * Prefer Google, then Microsoft, then Meta (fbclid), then Instagram/Facebook from utm_source.
  * Preserves GA4-synced Direct when there is no stronger click/utm signal.
  */
 function resolveTrafficSource({
@@ -92,6 +96,7 @@ function resolveTrafficSource({
   gbraid,
   wbraid,
   msclkid,
+  fbclid,
   utm_source,
   existingTrafficSource,
 } = {}) {
@@ -100,6 +105,9 @@ function resolveTrafficSource({
   }
   if (hasMicrosoftAdsClickId({ msclkid })) {
     return TRAFFIC_SOURCES.MICROSOFT_ADS;
+  }
+  if (hasMetaAdsClickId({ fbclid })) {
+    return TRAFFIC_SOURCES.FACEBOOK;
   }
   const social = resolveSocialTrafficSource(utm_source);
   if (social) {
@@ -116,6 +124,7 @@ module.exports = {
   HARD_ATTRIBUTION_SOURCES,
   hasGoogleAdsClickId,
   hasMicrosoftAdsClickId,
+  hasMetaAdsClickId,
   normalizeUtmSource,
   resolveSocialTrafficSource,
   resolveTrafficSource,
