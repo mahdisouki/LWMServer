@@ -3111,7 +3111,11 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      const { couponCode } = req.body; // Extract couponCode from request
+      const { couponCode, removeCoupon } = req.body;
+      const wantsRemoveCoupon =
+        removeCoupon === true ||
+        removeCoupon === 'true' ||
+        (couponCode !== undefined && !String(couponCode || '').trim());
 
       console.log('=== UPDATE TASK START ===');
       console.log('Task ID:', taskId);
@@ -3149,7 +3153,26 @@ const taskCtrl = {
       // Validate coupon code if provided (similar to createTask)
       let coupon = null;
       let couponId = null;
-      if (couponCode !== undefined) { // Allow clearing coupon if couponCode is explicitly null/empty
+      if (wantsRemoveCoupon) {
+        if (oldTask.couponUsageIncremented === true && oldTask.couponId) {
+          try {
+            const couponDoc = await Coupon.findById(oldTask.couponId);
+            if (couponDoc) {
+              const usageBefore = couponDoc.usageCount;
+              await couponDoc.decrementUsage(oldTask.email || null);
+              console.log(
+                `✅ Coupon "${oldTask.couponCode}" usage decremented on remove: ${usageBefore} → ${couponDoc.usageCount}`,
+              );
+            }
+          } catch (error) {
+            console.error('Error decrementing coupon usage on remove:', error);
+          }
+        }
+        updates.couponCode = null;
+        updates.couponId = null;
+        updates.couponUsageIncremented = false;
+        console.log(`✅ Coupon removed from task ${taskId}`);
+      } else if (couponCode !== undefined) {
         if (couponCode) {
           try {
             const couponCodeStr = String(couponCode).trim();
@@ -3201,10 +3224,6 @@ const taskCtrl = {
               error: error.message
             });
           }
-        } else {
-          // Clear coupon if empty string or null
-          updates.couponCode = null;
-          updates.couponId = null;
         }
       }
 

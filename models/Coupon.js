@@ -202,5 +202,24 @@ couponSchema.methods.incrementUsage = async function (customerEmail = null) {
   await this.save();
 };
 
+// Method to decrement usage count when a coupon is removed from a task
+couponSchema.methods.decrementUsage = async function (customerEmail = null) {
+  if (this.usageCount > 0) {
+    this.usageCount -= 1;
+  }
+
+  if (this.type === 'custom' && customerEmail) {
+    const emailLower = customerEmail.toLowerCase();
+    const idx = this.usedBy
+      .map((email) => String(email).toLowerCase())
+      .lastIndexOf(emailLower);
+    if (idx !== -1) {
+      this.usedBy.splice(idx, 1);
+    }
+  }
+
+  await this.save();
+};
+
 const Coupon = mongoose.model('Coupon', couponSchema);
 module.exports = Coupon;
