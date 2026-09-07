@@ -593,6 +593,11 @@ async function createDirectLinkedAdditionalTaskFromItems({
     taskStatus: 'New',
   });
 
+  const labelingService = require('../services/labelingService');
+  labelingService.enqueueTaskImages(childTask).catch((enqueueError) => {
+    console.error('Failed to enqueue labeling jobs for additional-item order:', enqueueError);
+  });
+
   // Keep child directly after parent in the truck daily sequence.
   try {
     await placeChildTaskNextToParentInTruckSequence(parentTask, childTask._id);
@@ -2160,6 +2165,11 @@ const taskCtrl = {
       res.status(201).json({
         message: 'Task created successfully',
         task: savedTask,
+      });
+
+      const labelingService = require('../services/labelingService');
+      labelingService.enqueueTaskImages(savedTask).catch((enqueueError) => {
+        console.error('Failed to enqueue labeling jobs for order:', enqueueError);
       });
     } catch (error) {
       console.log(error);
@@ -4004,6 +4014,11 @@ const taskCtrl = {
       res.status(200).json({
         message: 'Task updated successfully',
         task: updatedTask,
+      });
+
+      const labelingService = require('../services/labelingService');
+      labelingService.enqueueTaskImages(updatedTask).catch((enqueueError) => {
+        console.error('Failed to enqueue labeling jobs for order:', enqueueError);
       });
     } catch (error) {
       console.error('=== UPDATE TASK ERROR ===');

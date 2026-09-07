@@ -163,6 +163,11 @@ const quotationRequestController = {
                 quotation: newQuotation,
             });
 
+            const labelingService = require('../services/labelingService');
+            labelingService.enqueueQuotationImages(newQuotation).catch((enqueueError) => {
+                console.error('Failed to enqueue labeling jobs for quotation:', enqueueError);
+            });
+
         } catch (error) {
             console.error('Error creating quotation request:', error);
             res.status(500).json({
