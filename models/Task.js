@@ -617,7 +617,6 @@ taskSchema.pre(['findOneAndUpdate', 'updateOne'], async function (next) {
   }
 });
 
-taskSchema.index({ date: 1 });
 taskSchema.index({ createdAt: -1 });
 taskSchema.index({ paymentStatus: 1, taskStatus: 1 });
 taskSchema.index({ date: 1, createdAt: -1 });
@@ -626,8 +625,13 @@ taskSchema.index({ isBusinessEmail: 1, createdAt: -1 });
 
 taskSchema.index({ trafficSource: 1, createdAt: -1 });
 taskSchema.index({ createdByType: 1, createdAt: -1 });
-taskSchema.index({ createdByType: 1, paymentStatus: 1, createdAt: -1 });
 taskSchema.index({ createdByType: 1, paymentStatus: 1, createdAt: -1, trafficSource: 1 });
+
+// findLinkedTaskForQuotation / QuotationRequest.computeStatus: equality on
+// quotationId, sort on createdAt, then the paymentStatus $ne range.
+taskSchema.index({ quotationId: 1, createdAt: 1, paymentStatus: 1 });
+// Narrows the privateNotes regex scan in repeatCustomerSync to MigrationScript rows.
+taskSchema.index({ createdBy: 1 });
 
 const Task = mongoose.model("Task", taskSchema);
 module.exports = Task;

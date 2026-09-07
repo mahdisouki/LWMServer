@@ -51,5 +51,9 @@ const notificationSchema = new mongoose.Schema({
   },
 });
 
+// Serves find({ userId, read }), updateMany({ userId, read }) and
+// find({ userId }).sort({ createdAt: -1 }) without an in-memory sort.
+notificationSchema.index({ userId: 1, read: 1, createdAt: -1 });
+
 const Notification = mongoose.model("Notification", notificationSchema);
 module.exports = Notification;
