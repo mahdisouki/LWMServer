@@ -19,18 +19,22 @@ function pathLabel(path) {
 }
 
 function buildRows(pages) {
-  return pages.map((page) => {
-    const avgTimeSeconds = Math.round(page.avgEngagementSeconds || 0);
-    return {
-      id: page.path,
-      label: pathLabel(page.path),
-      path: page.path,
-      views: page.views || 0,
-      avgTimeSeconds,
-      avgTimeFormatted: formatDuration(avgTimeSeconds),
-      quickExitPercent: roundPercent(page.bounceRate || 0),
-    };
-  });
+  // Drop GA4 rows with 0 screenPageViews — session/engagement metrics can
+  // still appear due to pagePath + session-scoped metric mismatch.
+  return pages
+    .filter((page) => (page.views || 0) > 0)
+    .map((page) => {
+      const avgTimeSeconds = Math.round(page.avgEngagementSeconds || 0);
+      return {
+        id: page.path,
+        label: pathLabel(page.path),
+        path: page.path,
+        views: page.views || 0,
+        avgTimeSeconds,
+        avgTimeFormatted: formatDuration(avgTimeSeconds),
+        quickExitPercent: roundPercent(page.bounceRate || 0),
+      };
+    });
 }
 
 async function getPagePerformance({ preset, startDate, endDate } = {}) {
@@ -50,6 +54,7 @@ async function getPagePerformance({ preset, startDate, endDate } = {}) {
   }
 
   const rows = buildRows(ga4Pages.pages || []);
+  const totalViews = rows.reduce((sum, row) => sum + (row.views || 0), 0);
 
   return {
     period: {
@@ -65,7 +70,7 @@ async function getPagePerformance({ preset, startDate, endDate } = {}) {
     rows,
     totals: {
       pages: rows.length,
-      views: ga4Pages.totalViews || 0,
+      views: totalViews,
     },
     dataSources: {
       views: 'Google Analytics 4 — screenPageViews for every pagePath',
