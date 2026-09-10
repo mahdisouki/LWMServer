@@ -3,12 +3,24 @@ const router = express.Router();
 const labelingCtrl = require('../controllers/labelingCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
-const { checkPermissions } = require('../middlewares/permissions');
+
+function checkLabelingPermission(action) {
+  return (req, res, next) => {
+    const userPermissions = req.user?.permissions?.Labeling || [];
+    if (!userPermissions.includes(action)) {
+      return res.status(403).json({
+        success: false,
+        message: `Forbidden: You do not have ${action} permission for Labeling`,
+      });
+    }
+    next();
+  };
+}
 
 const admin = [isAuth, checkRole('Admin')];
-const canView = [...admin, checkPermissions('Labeling', 'View')];
-const canEdit = [...admin, checkPermissions('Labeling', 'Edit')];
-const canDelete = [...admin, checkPermissions('Labeling', 'Delete')];
+const canView = [...admin, checkLabelingPermission('View')];
+const canEdit = [...admin, checkLabelingPermission('Edit')];
+const canDelete = [...admin, checkLabelingPermission('Delete')];
 
 router.get('/', ...canView, labelingCtrl.getJobs);
 router.get('/next', ...canView, labelingCtrl.getNextJob);
