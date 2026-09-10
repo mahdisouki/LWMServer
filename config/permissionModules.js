@@ -38,6 +38,7 @@ const MODULES = [
   'Network_Sessions',
   'Ticks',
   'Brokers',
+  'Labeling',
 ];
 
 function permissionField() {
