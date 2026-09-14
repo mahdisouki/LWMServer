@@ -167,22 +167,7 @@ async function paginateBusinessCustomerTasks(queryParams) {
   for (const field of BUSINESS_CUSTOMER_FILTER_FIELDS) {
     const value = queryParams[field];
     if (value !== undefined && value !== '') {
-      const parsedDate = new Date(value);
-      const isDate = !isNaN(parsedDate.getTime());
-
-      if (isDate) {
-        const dayStart = new Date(parsedDate);
-        dayStart.setUTCHours(0, 0, 0, 0);
-        const dayEnd = new Date(dayStart);
-        dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-        queryFilter[field] = {
-          $gte: dayStart,
-          $lt: dayEnd,
-        };
-      } else {
-        queryFilter[field] = value;
-      }
+      paginateQuery.applyDateAwareFilter(queryFilter, field, value);
     }
   }
 
