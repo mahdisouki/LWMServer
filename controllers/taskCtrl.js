@@ -21,6 +21,7 @@ const {
   DEFAULT_SUGGESTION_DAYS,
 } = require('../services/taskAvailabilityService');
 const { normalizeUtmSource } = require('../utils/trafficSource');
+const { resolveClickIdsForNewTask } = require('../services/tawkAttributionService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -1988,6 +1989,33 @@ const taskCtrl = {
         ...(fbclid ? { fbclid: String(fbclid).trim() } : {}),
         ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
       });
+
+      // Only Admin/phone jobs need Tawk backfill — public checkout already sends browser click IDs.
+      if (createdByType === 'Admin') {
+        try {
+          const attributionIds = await resolveClickIdsForNewTask({
+            email,
+            phoneNumber,
+            phoneNumber2,
+            firstName,
+            lastName,
+            gclid,
+            gbraid,
+            wbraid,
+            msclkid,
+            fbclid,
+            utm_source: normalizedUtmSource,
+          });
+          if (attributionIds.gclid) newTask.gclid = attributionIds.gclid;
+          if (attributionIds.gbraid) newTask.gbraid = attributionIds.gbraid;
+          if (attributionIds.wbraid) newTask.wbraid = attributionIds.wbraid;
+          if (attributionIds.msclkid) newTask.msclkid = attributionIds.msclkid;
+          if (attributionIds.fbclid) newTask.fbclid = attributionIds.fbclid;
+          if (attributionIds.utm_source) newTask.utm_source = attributionIds.utm_source;
+        } catch (err) {
+          console.error('[Tawk Attribution] Error resolving click IDs on createTask:', err);
+        }
+      }
 
       const savedTask = await newTask.save();
 

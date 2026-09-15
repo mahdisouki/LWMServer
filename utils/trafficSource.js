@@ -119,12 +119,51 @@ function resolveTrafficSource({
   return TRAFFIC_SOURCES.ORGANIC;
 }
 
+const CLICK_ID_FIELDS = ['gclid', 'gbraid', 'wbraid', 'msclkid', 'fbclid', 'utm_source'];
+
+function trimClickId(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+}
+
+function pickClickIds(source = {}) {
+  const ids = {};
+  for (const field of CLICK_ID_FIELDS) {
+    const value = trimClickId(source[field]);
+    if (value) ids[field] = value;
+  }
+  return ids;
+}
+
+function hasAnyClickId(source = {}) {
+  return CLICK_ID_FIELDS.some((field) => trimClickId(source[field]));
+}
+
+/** Copy missing click IDs / utm_source from source onto target. */
+function mergeClickIdFields(target, source) {
+  if (!target || !source) return { changed: false };
+  let changed = false;
+  for (const field of CLICK_ID_FIELDS) {
+    const next = trimClickId(source[field]);
+    if (!trimClickId(target[field]) && next) {
+      target[field] = next;
+      changed = true;
+    }
+  }
+  return { changed };
+}
+
 module.exports = {
   TRAFFIC_SOURCES,
   HARD_ATTRIBUTION_SOURCES,
+  CLICK_ID_FIELDS,
   hasGoogleAdsClickId,
   hasMicrosoftAdsClickId,
   hasMetaAdsClickId,
+  hasAnyClickId,
+  pickClickIds,
+  mergeClickIdFields,
   normalizeUtmSource,
   resolveSocialTrafficSource,
   resolveTrafficSource,
