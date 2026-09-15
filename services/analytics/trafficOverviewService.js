@@ -8,6 +8,13 @@ const {
   fetchPeriodTraffic,
 } = require('./ga4Service');
 const { excludeMigratedOrdersFilter } = require('./taskFilters');
+const {
+  getDailyAdsSpendByPlatform,
+  sumMap,
+  pickTopAdsSpend,
+  spendForDate,
+  roundMoney,
+} = require('./adsSpendPlatformsService');
 
 const ORDER_SOURCE_KEYS = [
   TRAFFIC_SOURCES.GOOGLE_ADS,
@@ -139,12 +146,19 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
     throw new Error('GA4 is not configured — Traffic Overview requires Google Analytics 4');
   }
 
-  const [ordersByDay, ordersBySourceByDay, ga4Daily, ga4Period] = await Promise.all([
-    loadOrdersAndRevenueByDay(period.start, period.end),
-    loadOrdersBySourceByDay(period.start, period.end),
-    fetchDailyTraffic({ startKey: period.startKey, endKey: period.endKey }),
-    fetchPeriodTraffic({ startKey: period.startKey, endKey: period.endKey }),
-  ]);
+  const periodLabels = getPeriodLabels(period);
+
+  const [ordersByDay, ordersBySourceByDay, ga4Daily, ga4Period, adsSpendMaps] =
+    await Promise.all([
+      loadOrdersAndRevenueByDay(period.start, period.end),
+      loadOrdersBySourceByDay(period.start, period.end),
+      fetchDailyTraffic({ startKey: period.startKey, endKey: period.endKey }),
+      fetchPeriodTraffic({ startKey: period.startKey, endKey: period.endKey }),
+      getDailyAdsSpendByPlatform({
+        startDate: periodLabels.startDate,
+        endDate: periodLabels.endDate,
+      }),
+    ]);
 
   if (!ga4Daily?.available) {
     throw new Error('Failed to load traffic overview from Google Analytics 4');
@@ -168,6 +182,7 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       orders: business.orders,
       revenue: Math.round(business.revenue * 100) / 100,
       sources,
+      adsSpend: spendForDate(adsSpendMaps, date),
     };
   });
 
@@ -202,10 +217,17 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
   totals.revenue = Math.round(totals.revenue * 100) / 100;
   totals.topSource = getTopOrderSource(totals.sources);
 
+  const adsSpendTotals = {
+    google: sumMap(adsSpendMaps.google),
+    microsoft: sumMap(adsSpendMaps.microsoft),
+    meta: sumMap(adsSpendMaps.meta),
+  };
+  const topAdsSpend = pickTopAdsSpend(adsSpendTotals);
+
   return {
     period: {
       preset: period.preset,
-      ...getPeriodLabels(period),
+      ...periodLabels,
     },
     snapshotCoverage: {
       daysInPeriod: chartDayKeys.length,
@@ -220,6 +242,11 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       revenue: totals.revenue,
       topSource: totals.topSource,
       sources: totals.sources,
+      adsSpend: adsSpendTotals,
+      topAdsSpend: {
+        platform: topAdsSpend.platform,
+        spend: roundMoney(topAdsSpend.spend),
+      },
     },
     sourceLabels: ORDER_SOURCE_KEYS,
     dataSources: {
@@ -228,6 +255,8 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       sessions: 'Google Analytics 4 — sessions',
       sources:
         'Task.trafficSource enum (Google Ads, Microsoft Ads, Instagram, Facebook, Direct, Organic) — orders & revenue per source',
+      adsSpend:
+        'Google Ads customer cost + Microsoft Ads AccountPerformanceReport + Meta Marketing API insights (Facebook & Instagram combined)',
       orders: 'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',
       revenue: 'Task collection — sum of totalPrice for all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',
     },
