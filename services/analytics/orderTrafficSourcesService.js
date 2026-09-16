@@ -70,6 +70,7 @@ async function getOrderTrafficSources({
 
   const adsSpendTotals = {
     google: sumMap(adsSpendMaps.google),
+    localServices: sumMap(adsSpendMaps.localServices),
     microsoft: sumMap(adsSpendMaps.microsoft),
     meta: sumMap(adsSpendMaps.meta),
   };
@@ -92,6 +93,10 @@ async function getOrderTrafficSources({
   const sources = SOURCE_CONFIG.slice(0, rowLimit).map(({ source, color, spendKey }, index) => {
     const stats = bySource.get(source) || { orderCount: 0, revenue: 0 };
     const spend = spendKey ? roundMoney(adsSpendTotals[spendKey] || 0) : 0;
+    const localServicesSpend =
+      source === TRAFFIC_SOURCES.GOOGLE_ADS
+        ? roundMoney(adsSpendTotals.localServices || 0)
+        : 0;
     return {
       rank: index + 1,
       trafficSource: source,
@@ -99,6 +104,7 @@ async function getOrderTrafficSources({
       orderCount: stats.orderCount,
       revenue: stats.revenue,
       spend,
+      ...(source === TRAFFIC_SOURCES.GOOGLE_ADS ? { localServicesSpend } : {}),
       sharePercent:
         totalOrderCount > 0
           ? roundPercent((stats.orderCount / totalOrderCount) * 100)
@@ -119,6 +125,7 @@ async function getOrderTrafficSources({
       spend: roundMoney(
         adsSpendTotals.google + adsSpendTotals.microsoft + adsSpendTotals.meta,
       ),
+      localServicesSpend: roundMoney(adsSpendTotals.localServices),
       uniqueSources: sources.filter((source) => source.orderCount > 0).length,
     },
     limit: rowLimit,
@@ -126,7 +133,7 @@ async function getOrderTrafficSources({
       orders:
         'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by trafficSource for the selected period',
       spend:
-        'Google Ads + Microsoft Ads + Meta Marketing API (Instagram & Facebook rows share combined Meta spend)',
+        'Google Ads Cost excluding Local Services (LSA shown in parentheses); Microsoft Ads; Meta Marketing API (Instagram & Facebook rows share combined Meta spend)',
       ranking: 'Fixed channel order (Google Ads, Microsoft Ads, Instagram, Facebook, Direct, Organic)',
     },
   };

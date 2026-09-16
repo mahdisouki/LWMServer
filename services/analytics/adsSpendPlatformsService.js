@@ -2,7 +2,8 @@
  * Daily ads spend by platform for Traffic Overview.
  *
  * Platforms:
- *   - Google Ads — GAQL customer cost_micros by day
+ *   - Google Ads — GAQL campaign cost_micros by day (excludes Local Services)
+ *   - Local Services Ads — same Google query, LOCAL_SERVICES channel only
  *   - Microsoft Ads — AccountPerformanceReport (Daily Spend)
  *   - Meta — Marketing API ad-account insights (Facebook + Instagram combined)
  *
@@ -186,20 +187,42 @@ function buildGoogleSearchHeaders(accessToken) {
   return headers;
 }
 
+function isLocalServicesCampaign(result) {
+  const campaign = result?.campaign || {};
+  const channelType = String(
+    campaign.advertisingChannelType
+      || campaign.advertising_channel_type
+      || '',
+  )
+    .toUpperCase()
+    .replace(/-/g, '_');
+  if (channelType === 'LOCAL_SERVICES') return true;
+  const name = String(campaign.name || '');
+  return /^LocalServicesCampaign/i.test(name);
+}
+
+/**
+ * Google Ads daily spend split:
+ *   - google: all campaigns except Local Services (matches Ads Overview Cost)
+ *   - localServices: Local Services Ads only (shown in parentheses in the UI)
+ */
 async function fetchGoogleDailySpend({ startDate, endDate }) {
   assertGoogleAdsConfig();
   const customerId = getGoogleCustomerId();
   const accessToken = await getGoogleAccessToken();
   const query = `
 SELECT
+  campaign.name,
+  campaign.advertising_channel_type,
   segments.date,
   metrics.cost_micros
-FROM customer
+FROM campaign
 WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
 `.trim();
 
   const url = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${customerId}/googleAds:search`;
-  const byDate = emptyDailyMap();
+  const google = emptyDailyMap();
+  const localServices = emptyDailyMap();
   let pageToken;
 
   do {
@@ -218,14 +241,16 @@ WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
       const metrics = result?.metrics || {};
       const costMicros = Number(metrics.costMicros ?? metrics.cost_micros ?? 0);
       if (!date) continue;
-      const prev = byDate.get(date) || 0;
-      byDate.set(date, roundMoney(prev + costMicros / 1e6));
+      const spend = roundMoney(costMicros / 1e6);
+      const target = isLocalServicesCampaign(result) ? localServices : google;
+      const prev = target.get(date) || 0;
+      target.set(date, roundMoney(prev + spend));
     }
 
     pageToken = data.nextPageToken || null;
   } while (pageToken);
 
-  return byDate;
+  return { google, localServices };
 }
 
 // ─── Microsoft Ads ──────────────────────────────────────────────────────────
@@ -455,18 +480,37 @@ async function safeFetch(label, fn) {
   }
 }
 
+async function safeFetchGoogle(fn) {
+  try {
+    return await fn();
+  } catch (error) {
+    console.warn('[adsSpendPlatforms] Google spend unavailable:', error.message);
+    return { google: emptyDailyMap(), localServices: emptyDailyMap() };
+  }
+}
+
 /**
  * @param {{ startDate: string, endDate: string }} periodLabels YYYY-MM-DD
- * @returns {Promise<{ google: Map<string, number>, microsoft: Map<string, number>, meta: Map<string, number> }>}
+ * @returns {Promise<{
+ *   google: Map<string, number>,
+ *   localServices: Map<string, number>,
+ *   microsoft: Map<string, number>,
+ *   meta: Map<string, number>,
+ * }>}
  */
 async function getDailyAdsSpendByPlatform({ startDate, endDate }) {
-  const [google, microsoft, meta] = await Promise.all([
-    safeFetch('Google', () => fetchGoogleDailySpend({ startDate, endDate })),
+  const [googleSplit, microsoft, meta] = await Promise.all([
+    safeFetchGoogle(() => fetchGoogleDailySpend({ startDate, endDate })),
     safeFetch('Microsoft', () => fetchMicrosoftDailySpend({ startDate, endDate })),
     safeFetch('Meta', () => fetchMetaDailySpend({ startDate, endDate })),
   ]);
 
-  return { google, microsoft, meta };
+  return {
+    google: googleSplit.google,
+    localServices: googleSplit.localServices,
+    microsoft,
+    meta,
+  };
 }
 
 function sumMap(map) {
@@ -477,11 +521,15 @@ function sumMap(map) {
   return roundMoney(total);
 }
 
-function pickTopAdsSpend({ google, microsoft, meta }) {
+function pickTopAdsSpend({ google, microsoft, meta, localServices = 0 }) {
   const ranked = [
-    { platform: PLATFORM_LABELS.google, spend: roundMoney(google) },
-    { platform: PLATFORM_LABELS.microsoft, spend: roundMoney(microsoft) },
-    { platform: PLATFORM_LABELS.meta, spend: roundMoney(meta) },
+    {
+      platform: PLATFORM_LABELS.google,
+      spend: roundMoney(google),
+      localServicesSpend: roundMoney(localServices),
+    },
+    { platform: PLATFORM_LABELS.microsoft, spend: roundMoney(microsoft), localServicesSpend: 0 },
+    { platform: PLATFORM_LABELS.meta, spend: roundMoney(meta), localServicesSpend: 0 },
   ];
 
   let top = ranked[0];
@@ -492,7 +540,7 @@ function pickTopAdsSpend({ google, microsoft, meta }) {
   }
 
   if (top.spend <= 0) {
-    return { platform: '—', spend: 0 };
+    return { platform: '—', spend: 0, localServicesSpend: 0 };
   }
   return top;
 }
@@ -500,6 +548,7 @@ function pickTopAdsSpend({ google, microsoft, meta }) {
 function spendForDate(maps, date) {
   return {
     google: roundMoney(maps.google.get(date) || 0),
+    localServices: roundMoney(maps.localServices?.get(date) || 0),
     microsoft: roundMoney(maps.microsoft.get(date) || 0),
     meta: roundMoney(maps.meta.get(date) || 0),
   };

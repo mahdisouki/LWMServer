@@ -219,6 +219,7 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
 
   const adsSpendTotals = {
     google: sumMap(adsSpendMaps.google),
+    localServices: sumMap(adsSpendMaps.localServices),
     microsoft: sumMap(adsSpendMaps.microsoft),
     meta: sumMap(adsSpendMaps.meta),
   };
@@ -246,6 +247,7 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       topAdsSpend: {
         platform: topAdsSpend.platform,
         spend: roundMoney(topAdsSpend.spend),
+        localServicesSpend: roundMoney(topAdsSpend.localServicesSpend || 0),
       },
     },
     sourceLabels: ORDER_SOURCE_KEYS,
@@ -256,7 +258,7 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       sources:
         'Task.trafficSource enum (Google Ads, Microsoft Ads, Instagram, Facebook, Direct, Organic) — orders & revenue per source',
       adsSpend:
-        'Google Ads customer cost + Microsoft Ads AccountPerformanceReport + Meta Marketing API insights (Facebook & Instagram combined)',
+        'Google Ads campaign Cost excluding Local Services; Local Services shown separately; Microsoft Ads AccountPerformanceReport; Meta Marketing API insights (Facebook & Instagram combined)',
       orders: 'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',
       revenue: 'Task collection — sum of totalPrice for all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',
     },
