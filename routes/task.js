@@ -277,6 +277,7 @@ router.get('/tasks/by-date', taskCtrl.getTasksByDateLite);
 router.get('/tasks/stats/top-items', taskCtrl.getTop10ItemsOrdered);
 router.get('/tasks/stats/top-postcodes', taskCtrl.getTop10PostcodesInOrders);
 router.get('/task/:taskId', taskCtrl.getTaskById);
+router.post('/task/:taskId/attribution', taskCtrl.applyMissingAttribution);
 router.get('/task/order-number/:orderNumber', taskCtrl.getTaskByOrderNumber);
 router.post('/task/change-job-state/:taskId', isAuth, taskCtrl.updateTaskStatus);
 router.post('/task/:taskId/mark-on-hold', isAuth, taskCtrl.markTaskOnHold);

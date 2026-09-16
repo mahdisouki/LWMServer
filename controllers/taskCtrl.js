@@ -20,7 +20,7 @@ const {
   ALL_TIME_SLOTS,
   DEFAULT_SUGGESTION_DAYS,
 } = require('../services/taskAvailabilityService');
-const { normalizeUtmSource } = require('../utils/trafficSource');
+const { normalizeUtmSource, pickClickIds, mergeClickIdFields, hasAnyClickId } = require('../utils/trafficSource');
 const { resolveClickIdsForNewTask } = require('../services/tawkAttributionService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -2215,6 +2215,61 @@ const taskCtrl = {
         .json({ message: 'Failed to retrieve task', error: error.message });
     }
   },
+
+  /**
+   * Public: fill missing click IDs from the payer's browser (payment success page).
+   * Never overwrites existing attribution fields. No ads conversion is fired here.
+   */
+  applyMissingAttribution: async (req, res) => {
+    const { taskId } = req.params;
+
+    try {
+      if (!mongoose.Types.ObjectId.isValid(taskId)) {
+        return res.status(400).json({ message: 'Invalid taskId', updated: false });
+      }
+
+      const incoming = pickClickIds({
+        ...req.body,
+        utm_source: normalizeUtmSource(req.body?.utm_source),
+      });
+
+      if (!hasAnyClickId(incoming)) {
+        return res.status(200).json({ updated: false, reason: 'no_click_ids' });
+      }
+
+      const task = await Task.findById(taskId).select(
+        'gclid gbraid wbraid msclkid fbclid utm_source trafficSource orderNumber',
+      );
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found', updated: false });
+      }
+
+      const { changed } = mergeClickIdFields(task, incoming);
+      if (!changed) {
+        return res.status(200).json({
+          updated: false,
+          reason: 'already_attributed',
+          trafficSource: task.trafficSource || null,
+        });
+      }
+
+      await task.save();
+
+      return res.status(200).json({
+        updated: true,
+        trafficSource: task.trafficSource || null,
+        orderNumber: task.orderNumber || null,
+      });
+    } catch (error) {
+      console.error('[Attribution] applyMissingAttribution failed:', error.message);
+      return res.status(500).json({
+        message: 'Failed to apply attribution',
+        updated: false,
+        error: error.message,
+      });
+    }
+  },
+
   getTaskByOrderNumber: async (req, res) => {
     const { orderNumber } = req.params;
 
