@@ -26,6 +26,7 @@ const notificationSchema = new mongoose.Schema({
       "Quotations",
       "Payment",
       "Payment-failed",
+      "Subscriptions",
     ],
     required: true,
   },

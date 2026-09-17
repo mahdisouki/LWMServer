@@ -34,6 +34,7 @@ const MODULES = [
   'Website_Analytics',
   'SEO',
   'Coupons',
+  'Subscriptions',
   'Blue_Sheets',
   'Network_Sessions',
   'Ticks',
