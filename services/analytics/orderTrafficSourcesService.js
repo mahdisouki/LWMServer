@@ -9,11 +9,12 @@ const {
   roundMoney,
 } = require('./adsSpendPlatformsService');
 
-const DEFAULT_LIMIT = 6;
+const DEFAULT_LIMIT = 7;
 const MAX_LIMIT = 50;
 
 const SOURCE_CONFIG = [
   { source: TRAFFIC_SOURCES.GOOGLE_ADS, color: 'green', spendKey: 'google' },
+  { source: TRAFFIC_SOURCES.LSA, color: 'yellow', spendKey: 'localServices' },
   { source: TRAFFIC_SOURCES.MICROSOFT_ADS, color: 'blue', spendKey: 'microsoft' },
   { source: TRAFFIC_SOURCES.INSTAGRAM, color: 'purple', spendKey: 'meta' },
   { source: TRAFFIC_SOURCES.FACEBOOK, color: 'pink', spendKey: 'meta' },
@@ -133,8 +134,8 @@ async function getOrderTrafficSources({
       orders:
         'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by trafficSource for the selected period',
       spend:
-        'Google Ads Cost excluding Local Services (LSA shown in parentheses); Microsoft Ads; Meta Marketing API (Instagram & Facebook rows share combined Meta spend)',
-      ranking: 'Fixed channel order (Google Ads, Microsoft Ads, Instagram, Facebook, Direct, Organic)',
+        'Google Ads Cost excluding Local Services (LSA shown in parentheses on Google Ads); LSA row uses Local Services Cost; Microsoft Ads; Meta Marketing API (Instagram & Facebook rows share combined Meta spend)',
+      ranking: 'Fixed channel order (Google Ads, LSA, Microsoft Ads, Instagram, Facebook, Direct, Organic)',
     },
   };
 }

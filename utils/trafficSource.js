@@ -1,5 +1,6 @@
 const TRAFFIC_SOURCES = {
   GOOGLE_ADS: 'Google Ads',
+  LSA: 'LSA',
   MICROSOFT_ADS: 'Microsoft Ads',
   INSTAGRAM: 'Instagram',
   FACEBOOK: 'Facebook',
@@ -7,9 +8,10 @@ const TRAFFIC_SOURCES = {
   ORGANIC: 'Organic',
 };
 
-/** Sources set from click ids / utm — never overwritten by GA4 sync. */
+/** Sources set from click ids / utm / manual match — never overwritten by GA4 sync. */
 const HARD_ATTRIBUTION_SOURCES = new Set([
   TRAFFIC_SOURCES.GOOGLE_ADS,
+  TRAFFIC_SOURCES.LSA,
   TRAFFIC_SOURCES.MICROSOFT_ADS,
   TRAFFIC_SOURCES.INSTAGRAM,
   TRAFFIC_SOURCES.FACEBOOK,
@@ -89,7 +91,7 @@ function resolveSocialTrafficSource(utm_source) {
 
 /**
  * Prefer Google, then Microsoft, then Meta (fbclid), then Instagram/Facebook from utm_source.
- * Preserves GA4-synced Direct when there is no stronger click/utm signal.
+ * Preserves manually matched LSA and GA4-synced Direct when there is no stronger click/utm signal.
  */
 function resolveTrafficSource({
   gclid,
@@ -100,6 +102,10 @@ function resolveTrafficSource({
   utm_source,
   existingTrafficSource,
 } = {}) {
+  // Manual LSA match — do not overwrite with Google Ads click ids.
+  if (existingTrafficSource === TRAFFIC_SOURCES.LSA) {
+    return TRAFFIC_SOURCES.LSA;
+  }
   if (hasGoogleAdsClickId({ gclid, gbraid, wbraid })) {
     return TRAFFIC_SOURCES.GOOGLE_ADS;
   }

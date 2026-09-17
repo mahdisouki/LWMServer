@@ -18,6 +18,7 @@ const {
 
 const ORDER_SOURCE_KEYS = [
   TRAFFIC_SOURCES.GOOGLE_ADS,
+  TRAFFIC_SOURCES.LSA,
   TRAFFIC_SOURCES.MICROSOFT_ADS,
   TRAFFIC_SOURCES.INSTAGRAM,
   TRAFFIC_SOURCES.FACEBOOK,
@@ -32,6 +33,7 @@ function emptySourceStats() {
 function emptyOrderSourceBreakdown() {
   return {
     [TRAFFIC_SOURCES.GOOGLE_ADS]: emptySourceStats(),
+    [TRAFFIC_SOURCES.LSA]: emptySourceStats(),
     [TRAFFIC_SOURCES.MICROSOFT_ADS]: emptySourceStats(),
     [TRAFFIC_SOURCES.INSTAGRAM]: emptySourceStats(),
     [TRAFFIC_SOURCES.FACEBOOK]: emptySourceStats(),
@@ -256,7 +258,7 @@ async function getTrafficOverview({ preset, startDate, endDate } = {}) {
       visitors: 'Google Analytics 4 — totalUsers (period unique; daily chart uses per-day users)',
       sessions: 'Google Analytics 4 — sessions',
       sources:
-        'Task.trafficSource enum (Google Ads, Microsoft Ads, Instagram, Facebook, Direct, Organic) — orders & revenue per source',
+        'Task.trafficSource enum (Google Ads, LSA, Microsoft Ads, Instagram, Facebook, Direct, Organic) — orders & revenue per source',
       adsSpend:
         'Google Ads campaign Cost excluding Local Services; Local Services shown separately; Microsoft Ads AccountPerformanceReport; Meta Marketing API insights (Facebook & Instagram combined)',
       orders: 'Task collection — all orders (public, Admin, broker) with paymentStatus not Failed, excluding createdBy MigrationScript, grouped by Europe/London day',

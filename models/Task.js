@@ -299,7 +299,7 @@ const taskSchema = new Schema(
     utm_source: { type: String, required: false },
     trafficSource: {
       type: String,
-      enum: ['Google Ads', 'Microsoft Ads', 'Instagram', 'Facebook', 'Direct', 'Organic'],
+      enum: ['Google Ads', 'LSA', 'Microsoft Ads', 'Instagram', 'Facebook', 'Direct', 'Organic'],
       default: 'Organic',
     },
     /** Raw GA4 sessionDefaultChannelGroup from purchase ↔ orderNumber match. */
