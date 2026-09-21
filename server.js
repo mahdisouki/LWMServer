@@ -180,8 +180,16 @@ app.post(
 );
 
 app.use(cors(corsOptions));
-// Apply JSON parsing for all other routes
-app.use(express.json());
+// Keep raw body for WhatsApp webhook signature verification
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      if (req.originalUrl && req.originalUrl.startsWith('/api/whatsapp/webhook')) {
+        req.rawBody = buf;
+      }
+    },
+  })
+);
 app.use(bodyParser.json());
 // Note: CSP is now handled by Helmet above, removed duplicate CSP header
 // Import routes
@@ -215,6 +223,7 @@ const notificationRoutes = require('./routes/notification');
 const incidentRoutes = require('./routes/incident');
 const expenseRoutes = require('./routes/expense');
 const subscriptionRoutes = require('./routes/subscription');
+const whatsappRoutes = require('./routes/whatsapp');
 const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
 const customerRoutes = require('./routes/customerRoutes');
@@ -275,6 +284,7 @@ app.use('/api', incidentRoutes);
 app.use('/api', vanRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/ticks', tickRoutes);
 app.use('/api/seo', seoRoutes);
 app.use('/api', networkRouter);

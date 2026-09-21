@@ -35,6 +35,7 @@ const MODULES = [
   'SEO',
   'Coupons',
   'Subscriptions',
+  'WhatsApp',
   'Blue_Sheets',
   'Network_Sessions',
   'Ticks',
