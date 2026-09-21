@@ -20,7 +20,9 @@ const {
   ALL_TIME_SLOTS,
   DEFAULT_SUGGESTION_DAYS,
 } = require('../services/taskAvailabilityService');
-const { normalizeUtmSource } = require('../utils/trafficSource');
+const { normalizeUtmSource, pickClickIds, mergeClickIdFields, hasAnyClickId } = require('../utils/trafficSource');
+const { resolveClickIdsForNewTask } = require('../services/tawkAttributionService');
+const { applyContactClickIdsToTask } = require('../services/contactAttributionService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -76,6 +78,7 @@ const { sendBookingConfirmationEmail, sendPaymentConfirmationEmail, sendPaymentF
 const { sendRetargetingEmailForTask } = require('../services/retargetingService');
 const { schedulePaymentLinkRetry } = require('../services/failedPaymentLinkService');
 const { firePurchaseConversionUpload } = require('../services/googleAdsConversionService');
+const { fireMicrosoftAdsPurchaseUpload } = require('../services/microsoftAdsConversionService');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -91,6 +94,10 @@ const cloudinary = require('../helper/cloudinaryConfig');
 const { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } = require('../services/calendarService');
 const { addStagingToSubject, addStagingBanner } = require('../utils/emailHelpers');
 const { syncRepeatCustomerForEmail } = require('../utils/repeatCustomerSync');
+const {
+  extractEmailDomain,
+  addFreeEmailDomain,
+} = require('../utils/businessEmail');
 const PaymentLink = require('../models/PaymentLink');
 
 const BUSINESS_CUSTOMER_FILTER_FIELDS = [
@@ -162,22 +169,7 @@ async function paginateBusinessCustomerTasks(queryParams) {
   for (const field of BUSINESS_CUSTOMER_FILTER_FIELDS) {
     const value = queryParams[field];
     if (value !== undefined && value !== '') {
-      const parsedDate = new Date(value);
-      const isDate = !isNaN(parsedDate.getTime());
-
-      if (isDate) {
-        const dayStart = new Date(parsedDate);
-        dayStart.setUTCHours(0, 0, 0, 0);
-        const dayEnd = new Date(dayStart);
-        dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-        queryFilter[field] = {
-          $gte: dayStart,
-          $lt: dayEnd,
-        };
-      } else {
-        queryFilter[field] = value;
-      }
+      paginateQuery.applyDateAwareFilter(queryFilter, field, value);
     }
   }
 
@@ -586,6 +578,11 @@ async function createDirectLinkedAdditionalTaskFromItems({
     totalPrice: calculatedTotalPrice,
     items: normalizedItems,
     taskStatus: 'New',
+  });
+
+  const labelingService = require('../services/labelingService');
+  labelingService.enqueueTaskImages(childTask).catch((enqueueError) => {
+    console.error('Failed to enqueue labeling jobs for additional-item order:', enqueueError);
   });
 
   // Keep child directly after parent in the truck daily sequence.
@@ -1149,6 +1146,55 @@ function normalizeTaskPriority(value) {
   return s;
 }
 // Fonction auxiliaire pour traiter les événements de commande approuvés
+function getCouponDiscountFields(coupon) {
+  if (!coupon) return null;
+  if (coupon.type === 'custom') {
+    const discountType = coupon.discountType;
+    const discountValue = Number(coupon.discountValue) || 0;
+    return {
+      discountType,
+      discountValue,
+      percentage: discountType === 'percentage' ? discountValue : 0,
+    };
+  }
+  const percentage = Number(coupon.percentage) || 0;
+  return {
+    discountType: 'percentage',
+    discountValue: percentage,
+    percentage,
+  };
+}
+
+function applyCouponFieldsToSubtotal(subtotal, fields) {
+  if (!fields || !(Number(fields.discountValue) > 0)) {
+    return {
+      subtotal,
+      couponDiscount: 0,
+      couponPercentage: 0,
+      couponDiscountType: null,
+      couponDiscountValue: null,
+    };
+  }
+
+  let couponDiscount = 0;
+  let couponPercentage = 0;
+  if (fields.discountType === 'percentage') {
+    couponPercentage = fields.discountValue;
+    couponDiscount = (subtotal * couponPercentage) / 100;
+  } else if (fields.discountType === 'amount') {
+    couponDiscount = fields.discountValue;
+    couponPercentage = 0;
+  }
+
+  return {
+    subtotal: Number((subtotal - couponDiscount).toFixed(2)),
+    couponDiscount,
+    couponPercentage,
+    couponDiscountType: fields.discountType,
+    couponDiscountValue: fields.discountValue,
+  };
+}
+
 async function calculateTotalPrice({
   standardItems = [],
   items = [], // Add items parameter for backward compatibility
@@ -1163,6 +1209,7 @@ async function calculateTotalPrice({
   taskDate = null, // Date of the task (for Sunday fee)
   couponCode = null, // Coupon code to apply
   customerEmail = null, // Customer email for custom coupon validation
+  skipCouponValidation = false, // Existing task: keep discount even if usage/expiry would fail
 }) {
   console.log('🚀 CALCULATE TOTAL PRICE FUNCTION CALLED');
   console.log('Items received:', items);
@@ -1282,27 +1329,22 @@ async function calculateTotalPrice({
       if (couponCodeStr) {
         const coupon = await Coupon.findOne({ code: couponCodeStr.toUpperCase() });
         if (coupon) {
-          // For custom coupons, pass customerEmail and originalSubtotal (before discounts) for validation
-          // This ensures minimumOrderAmount is checked against the original cart total
-          const validation = coupon.validateCoupon(customerEmail, originalSubtotal);
+          const fields = getCouponDiscountFields(coupon);
+          const validation = skipCouponValidation
+            ? { valid: Boolean(fields && fields.discountValue > 0), ...fields }
+            : coupon.validateCoupon(customerEmail, originalSubtotal);
+
           if (validation.valid) {
-            couponDiscountType = validation.discountType;
-            couponDiscountValue = validation.discountValue;
-
+            const applied = applyCouponFieldsToSubtotal(subtotal, {
+              discountType: validation.discountType,
+              discountValue: validation.discountValue,
+            });
+            couponDiscountType = applied.couponDiscountType;
+            couponDiscountValue = applied.couponDiscountValue;
+            couponPercentage = applied.couponPercentage;
+            couponDiscount = applied.couponDiscount;
             const subtotalBeforeCoupon = subtotal;
-
-            // Calculate discount based on type
-            if (validation.discountType === 'percentage') {
-              couponPercentage = validation.discountValue;
-              couponDiscount = (subtotal * couponPercentage) / 100;
-            } else if (validation.discountType === 'amount') {
-              couponDiscount = validation.discountValue;
-              // For amount discounts, we still track percentage as 0 for backward compatibility
-              couponPercentage = 0;
-            }
-
-            // Explicitly subtract the discount - ensure it's a subtraction
-            subtotal = Number((subtotal - couponDiscount).toFixed(2));
+            subtotal = applied.subtotal;
             console.log(`=== COUPON DISCOUNT DEBUG ===`);
             console.log(`Coupon Code: "${couponCodeStr}"`);
             console.log(`Coupon Type: ${coupon.type}`);
@@ -1327,23 +1369,27 @@ async function calculateTotalPrice({
   }
 
   // 4. Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+  // Skip when a coupon is applied — coupon and Outside/AnyTime 10% do not stack
   console.log('=== DISCOUNT CHECK DEBUG ===');
   console.log('available:', available, 'Type:', typeof available);
   console.log('createdByType:', createdByType, 'Type:', typeof createdByType);
   console.log('itemsToProcess.length:', itemsToProcess.length);
   console.log('All items Outside?', itemsToProcess.every((i) => i.Objectsposition === 'Outside'));
+  console.log('Coupon discount applied:', couponDiscount);
   console.log('Subtotal before discount:', subtotal);
 
   const isAvailableAnyTime = available === 'AnyTime';
   const isCreatedByPublic = createdByType === 'public';
   const hasItems = itemsToProcess.length > 0;
   const allItemsOutside = itemsToProcess.every((i) => i.Objectsposition === 'Outside');
+  const hasCoupon = couponDiscount > 0;
 
   if (
     isAvailableAnyTime &&
     isCreatedByPublic &&
     hasItems &&
-    allItemsOutside
+    allItemsOutside &&
+    !hasCoupon
   ) {
     console.log('✅ Applying 10% discount for Outside items with AnyTime and public type');
     subtotal *= 0.9;
@@ -1354,6 +1400,7 @@ async function calculateTotalPrice({
     console.log('- createdByType === "public":', isCreatedByPublic);
     console.log('- itemsToProcess.length > 0:', hasItems);
     console.log('- All items Outside:', allItemsOutside);
+    console.log('- No coupon applied:', !hasCoupon);
   }
 
   // 5. Enforce minimum price (before VAT) - if under £37.5, make it £37.5
@@ -1622,6 +1669,7 @@ const taskCtrl = {
         gbraid,
         wbraid,
         msclkid,
+        fbclid,
         utm_source,
       } = req.body;
       const normalizedUtmSource = normalizeUtmSource(utm_source);
@@ -1939,8 +1987,43 @@ const taskCtrl = {
         ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
         ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
         ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
+        ...(fbclid ? { fbclid: String(fbclid).trim() } : {}),
         ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
       });
+
+      // Only Admin/phone jobs need Tawk backfill — public checkout already sends browser click IDs.
+      if (createdByType === 'Admin') {
+        try {
+          const attributionIds = await resolveClickIdsForNewTask({
+            email,
+            phoneNumber,
+            phoneNumber2,
+            firstName,
+            lastName,
+            gclid,
+            gbraid,
+            wbraid,
+            msclkid,
+            fbclid,
+            utm_source: normalizedUtmSource,
+          });
+          if (attributionIds.gclid) newTask.gclid = attributionIds.gclid;
+          if (attributionIds.gbraid) newTask.gbraid = attributionIds.gbraid;
+          if (attributionIds.wbraid) newTask.wbraid = attributionIds.wbraid;
+          if (attributionIds.msclkid) newTask.msclkid = attributionIds.msclkid;
+          if (attributionIds.fbclid) newTask.fbclid = attributionIds.fbclid;
+          if (attributionIds.utm_source) newTask.utm_source = attributionIds.utm_source;
+        } catch (err) {
+          console.error('[Tawk Attribution] Error resolving click IDs on createTask:', err);
+        }
+
+        // Contact form: fill any still-missing click IDs (email / phone / name match).
+        try {
+          await applyContactClickIdsToTask(newTask);
+        } catch (contactErr) {
+          console.error('[Contact Attribution] Error matching contact on createTask:', contactErr);
+        }
+      }
 
       const savedTask = await newTask.save();
 
@@ -2104,6 +2187,11 @@ const taskCtrl = {
         message: 'Task created successfully',
         task: savedTask,
       });
+
+      const labelingService = require('../services/labelingService');
+      labelingService.enqueueTaskImages(savedTask).catch((enqueueError) => {
+        console.error('Failed to enqueue labeling jobs for order:', enqueueError);
+      });
     } catch (error) {
       console.log(error);
       res
@@ -2135,6 +2223,61 @@ const taskCtrl = {
         .json({ message: 'Failed to retrieve task', error: error.message });
     }
   },
+
+  /**
+   * Public: fill missing click IDs from the payer's browser (payment success page).
+   * Never overwrites existing attribution fields. No ads conversion is fired here.
+   */
+  applyMissingAttribution: async (req, res) => {
+    const { taskId } = req.params;
+
+    try {
+      if (!mongoose.Types.ObjectId.isValid(taskId)) {
+        return res.status(400).json({ message: 'Invalid taskId', updated: false });
+      }
+
+      const incoming = pickClickIds({
+        ...req.body,
+        utm_source: normalizeUtmSource(req.body?.utm_source),
+      });
+
+      if (!hasAnyClickId(incoming)) {
+        return res.status(200).json({ updated: false, reason: 'no_click_ids' });
+      }
+
+      const task = await Task.findById(taskId).select(
+        'gclid gbraid wbraid msclkid fbclid utm_source trafficSource orderNumber',
+      );
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found', updated: false });
+      }
+
+      const { changed } = mergeClickIdFields(task, incoming);
+      if (!changed) {
+        return res.status(200).json({
+          updated: false,
+          reason: 'already_attributed',
+          trafficSource: task.trafficSource || null,
+        });
+      }
+
+      await task.save();
+
+      return res.status(200).json({
+        updated: true,
+        trafficSource: task.trafficSource || null,
+        orderNumber: task.orderNumber || null,
+      });
+    } catch (error) {
+      console.error('[Attribution] applyMissingAttribution failed:', error.message);
+      return res.status(500).json({
+        message: 'Failed to apply attribution',
+        updated: false,
+        error: error.message,
+      });
+    }
+  },
+
   getTaskByOrderNumber: async (req, res) => {
     const { orderNumber } = req.params;
 
@@ -2308,7 +2451,9 @@ const taskCtrl = {
         return res.status(400).json({ message: 'Invalid task ID.' });
       }
 
-      const task = await Task.findById(taskId).select('isBusinessEmail');
+      const task = await Task.findById(taskId).select(
+        'isBusinessEmail email',
+      );
       if (!task) {
         return res.status(404).json({ message: 'Task not found.' });
       }
@@ -2318,6 +2463,15 @@ const taskCtrl = {
           message: 'Task is not in the business customer list.',
         });
       }
+
+      const domain = extractEmailDomain(task.email);
+      if (!domain) {
+        return res.status(400).json({
+          message: 'Task email has no domain to add to the free domain list.',
+        });
+      }
+
+      const domainResult = await addFreeEmailDomain(domain);
 
       const updatedTask = await Task.findByIdAndUpdate(
         taskId,
@@ -2330,9 +2484,27 @@ const taskCtrl = {
         { new: true },
       );
 
+      const domainRegex = new RegExp(
+        `@${domain.replace(/\./g, '\\.')}$`,
+        'i',
+      );
+      const domainUpdate = await Task.updateMany(
+        {
+          _id: { $ne: taskId },
+          email: domainRegex,
+          isBusinessEmail: true,
+        },
+        { $set: { isBusinessEmail: false } },
+      );
+
       res.status(200).json({
         message: 'Task removed from business customers.',
         task: updatedTask,
+        freeEmailDomain: {
+          domain: domainResult.domain,
+          added: domainResult.added,
+        },
+        matchingDomainTasksUpdated: domainUpdate.modifiedCount,
       });
     } catch (error) {
       res.status(500).json({
@@ -3070,7 +3242,11 @@ const taskCtrl = {
     try {
       const taskId = req.params.taskId;
       const updates = req.body;
-      const { couponCode } = req.body; // Extract couponCode from request
+      const { couponCode, removeCoupon } = req.body;
+      const wantsRemoveCoupon =
+        removeCoupon === true ||
+        removeCoupon === 'true' ||
+        (couponCode !== undefined && !String(couponCode || '').trim());
 
       console.log('=== UPDATE TASK START ===');
       console.log('Task ID:', taskId);
@@ -3108,7 +3284,26 @@ const taskCtrl = {
       // Validate coupon code if provided (similar to createTask)
       let coupon = null;
       let couponId = null;
-      if (couponCode !== undefined) { // Allow clearing coupon if couponCode is explicitly null/empty
+      if (wantsRemoveCoupon) {
+        if (oldTask.couponUsageIncremented === true && oldTask.couponId) {
+          try {
+            const couponDoc = await Coupon.findById(oldTask.couponId);
+            if (couponDoc) {
+              const usageBefore = couponDoc.usageCount;
+              await couponDoc.decrementUsage(oldTask.email || null);
+              console.log(
+                `✅ Coupon "${oldTask.couponCode}" usage decremented on remove: ${usageBefore} → ${couponDoc.usageCount}`,
+              );
+            }
+          } catch (error) {
+            console.error('Error decrementing coupon usage on remove:', error);
+          }
+        }
+        updates.couponCode = null;
+        updates.couponId = null;
+        updates.couponUsageIncremented = false;
+        console.log(`✅ Coupon removed from task ${taskId}`);
+      } else if (couponCode !== undefined) {
         if (couponCode) {
           try {
             const couponCodeStr = String(couponCode).trim();
@@ -3160,10 +3355,6 @@ const taskCtrl = {
               error: error.message
             });
           }
-        } else {
-          // Clear coupon if empty string or null
-          updates.couponCode = null;
-          updates.couponId = null;
         }
       }
 
@@ -3596,116 +3787,37 @@ const taskCtrl = {
             }
 
             if (couponToApply) {
-              // Only validate NEW coupons that haven't been validated yet in this request
-              // If coupon was already validated at the top (coupon variable exists), skip validation
-              const needsValidation = isNewCoupon && !coupon;
+              const alreadyOnThisTask =
+                String(populatedTask.couponCode || '').trim().toUpperCase() === couponCodeStr;
+              const fields = getCouponDiscountFields(couponToApply);
 
-              if (needsValidation) {
-                // Validate with customer email and originalSubtotalBeforeDiscounts for custom coupons
-                // This ensures minimumOrderAmount is checked against the original cart total
-                const validation = couponToApply.validateCoupon(populatedTask.email || null, originalSubtotalBeforeDiscounts);
-                console.log('Coupon validation result (NEW coupon, first validation):', validation);
-
-                if (validation.valid) {
-                  const subtotalBeforeCoupon = subtotal;
-
-                  // Calculate discount based on type
-                  if (validation.discountType === 'percentage') {
-                    couponDiscount = (subtotal * validation.discountValue) / 100;
-                  } else if (validation.discountType === 'amount') {
-                    couponDiscount = validation.discountValue;
-                  }
-
-                  subtotal = Number((subtotal - couponDiscount).toFixed(2));
-                  console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
-                  console.log(`Coupon Code: "${couponCodeStr}"`);
-                  console.log(`Coupon Source: New/Updated (validated in price calc)`);
-                  console.log(`Discount Type: ${validation.discountType}`);
-                  console.log(`Discount Value: ${validation.discountValue}`);
-                  console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
-                  console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
-                  console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
-                  console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
-                  const discountInfo = validation.discountType === 'percentage'
-                    ? `${validation.discountValue}% discount`
-                    : `£${validation.discountValue.toFixed(2)} discount`;
-                  console.log(`✅ Coupon applied in updateTask: ${discountInfo} = £${couponDiscount.toFixed(2)}`);
-                } else {
-                  console.log(`⚠️ Coupon "${couponCodeStr}" is invalid in updateTask: ${validation.message}`);
-                  console.log('⚠️ Coupon validation failed, discount NOT applied');
+              if (isNewCoupon && !alreadyOnThisTask) {
+                const validation = couponToApply.validateCoupon(
+                  populatedTask.email || null,
+                  originalSubtotalBeforeDiscounts,
+                );
+                if (!validation.valid) {
+                  return res.status(400).json({
+                    message: `Invalid coupon code: ${validation.message}`,
+                    error: 'COUPON_INVALID',
+                  });
                 }
-              } else if (coupon) {
-                // Coupon was already validated at the top section - re-validate with original subtotal
-                // This ensures minimumOrderAmount is checked against the original cart total
-                const validation = coupon.validateCoupon(populatedTask.email || null, originalSubtotalBeforeDiscounts);
-                if (validation.valid) {
-                  const subtotalBeforeCoupon = subtotal;
-
-                  // Calculate discount based on type
-                  if (validation.discountType === 'percentage') {
-                    couponDiscount = (subtotal * validation.discountValue) / 100;
-                  } else if (validation.discountType === 'amount') {
-                    couponDiscount = validation.discountValue;
-                  }
-
-                  subtotal = Number((subtotal - couponDiscount).toFixed(2));
-                  console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
-                  console.log(`Coupon Code: "${couponCodeStr}"`);
-                  console.log(`Coupon Source: New/Updated (already validated at top)`);
-                  console.log(`Discount Type: ${validation.discountType}`);
-                  console.log(`Discount Value: ${validation.discountValue}`);
-                  console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
-                  console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
-                  console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
-                  console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
-                  const discountInfo = validation.discountType === 'percentage'
-                    ? `${validation.discountValue}% discount`
-                    : `£${validation.discountValue.toFixed(2)} discount`;
-                  console.log(`✅ Coupon applied (already validated): ${discountInfo} = £${couponDiscount.toFixed(2)}`);
-                } else {
-                  console.log(`⚠️ Coupon validation failed: ${validation.message}`);
-                }
+                const applied = applyCouponFieldsToSubtotal(subtotal, {
+                  discountType: validation.discountType,
+                  discountValue: validation.discountValue,
+                });
+                couponDiscount = applied.couponDiscount;
+                subtotal = applied.subtotal;
+                console.log(`✅ New coupon applied in updateTask: ${validation.discountType} ${validation.discountValue}`);
+              } else if (fields && fields.discountValue > 0) {
+                const applied = applyCouponFieldsToSubtotal(subtotal, fields);
+                couponDiscount = applied.couponDiscount;
+                subtotal = applied.subtotal;
+                console.log(
+                  `✅ Existing coupon "${couponCodeStr}" kept on update (skipped re-validation)`,
+                );
               } else {
-                // Existing coupon: validate first to check minimumOrderAmount
-                const discountType = couponToApply.type === 'custom' ? couponToApply.discountType : 'percentage';
-                const discountValue = couponToApply.type === 'custom' ? couponToApply.discountValue : (couponToApply.percentage || 0);
-
-                if (discountValue > 0) {
-                  // Validate existing coupon with original subtotal before discounts
-                  // This ensures minimumOrderAmount is checked against the original cart total
-                  const validation = couponToApply.validateCoupon(populatedTask.email || null, originalSubtotalBeforeDiscounts);
-
-                  if (!validation.valid) {
-                    console.log(`⚠️ Existing coupon "${couponCodeStr}" validation failed: ${validation.message}`);
-                    console.log(`⚠️ Discount NOT applied - validation failed`);
-                  } else {
-                    const subtotalBeforeCoupon = subtotal;
-
-                    // Calculate discount based on type
-                    if (discountType === 'percentage') {
-                      couponDiscount = (subtotal * discountValue) / 100;
-                    } else if (discountType === 'amount') {
-                      couponDiscount = discountValue;
-                    }
-
-                    subtotal = Number((subtotal - couponDiscount).toFixed(2));
-                    console.log('=== COUPON DISCOUNT APPLIED (updateTask) ===');
-                    console.log(`Coupon Code: "${couponCodeStr}"`);
-                    console.log(`Coupon Source: Existing (validated)`);
-                    console.log(`Discount Type: ${discountType}`);
-                    console.log(`Discount Value: ${discountValue}`);
-                    console.log(`Subtotal before coupon: £${subtotalBeforeCoupon.toFixed(2)}`);
-                    console.log(`Coupon discount amount: £${couponDiscount.toFixed(2)}`);
-                    console.log(`Calculation: £${subtotalBeforeCoupon.toFixed(2)} - £${couponDiscount.toFixed(2)} = £${subtotal.toFixed(2)}`);
-                    console.log(`Subtotal after coupon: £${subtotal.toFixed(2)}`);
-                    const discountInfo = discountType === 'percentage'
-                      ? `${discountValue}% discount`
-                      : `£${discountValue.toFixed(2)} discount`;
-                    console.log(`✅ Existing coupon applied (validated): ${discountInfo} = £${couponDiscount.toFixed(2)}`);
-                  }
-                } else {
-                  console.log(`⚠️ Existing coupon has invalid discount value: ${discountValue}`);
-                }
+                console.log(`⚠️ Coupon "${couponCodeStr}" has no discount value`);
               }
             } else {
               console.error(`❌ Coupon "${couponCodeStr}" not found in database!`);
@@ -3978,6 +4090,11 @@ const taskCtrl = {
       res.status(200).json({
         message: 'Task updated successfully',
         task: updatedTask,
+      });
+
+      const labelingService = require('../services/labelingService');
+      labelingService.enqueueTaskImages(updatedTask).catch((enqueueError) => {
+        console.error('Failed to enqueue labeling jobs for order:', enqueueError);
       });
     } catch (error) {
       console.error('=== UPDATE TASK ERROR ===');
@@ -4420,35 +4537,8 @@ const taskCtrl = {
             task.couponCode = null;
             task.couponId = null;
             await task.save();
-          } else {
-            // Calculate preliminary subtotal for validation
-            let preliminarySubtotal = 0;
-            for (const item of task.items) {
-              let itemPrice = 0;
-              let positionFee = 0;
-              const quantity = Number(item.quantity) || 1;
-
-              if (item.standardItemId) {
-                itemPrice = Number(item.standardItemId.price);
-                if (item.Objectsposition === 'InsideWithDismantling') {
-                  positionFee = Number(item.standardItemId.insideWithDismantlingPrice);
-                } else if (item.Objectsposition === 'Inside') {
-                  positionFee = Number(item.standardItemId.insidePrice);
-                }
-                preliminarySubtotal += (itemPrice * quantity) + (positionFee * quantity);
-              } else if (item.object && item.price) {
-                preliminarySubtotal += Number(item.price) * quantity;
-              }
-            }
-            // For custom coupons, pass customerEmail and preliminarySubtotal for validation
-            const validation = coupon.validateCoupon(task.email || null, preliminarySubtotal);
-            if (!validation.valid) {
-              // Coupon invalid or expired, remove from task
-              task.couponCode = null;
-              task.couponId = null;
-              await task.save();
-            }
           }
+          // Coupon already stored on this task — do not re-validate usage/expiry
         } catch (error) {
           console.error('Error validating coupon:', error);
           // Continue without coupon if validation fails
@@ -4524,7 +4614,8 @@ const taskCtrl = {
         available: task.available,
         applyMinFee: task.applyMinFee,
         couponCode: task.couponCode,
-        customerEmail: task.email || null
+        customerEmail: task.email || null,
+        skipCouponValidation: true,
       });
 
       let basePrice = breakdown.reduce(
@@ -4532,10 +4623,13 @@ const taskCtrl = {
         0,
       );
       let finalPrice = basePrice;
+      const hasCouponOnTask = Boolean(task.couponCode) || (calculatedCouponDiscount > 0);
+      // Outside/AnyTime 10% only when no coupon — do not stack with coupon discount
       if (
         task.available === 'AnyTime' &&
         task.createdByType === 'public' &&
-        task.items.every((i) => i.Objectsposition === 'Outside')
+        task.items.every((i) => i.Objectsposition === 'Outside') &&
+        !hasCouponOnTask
       ) {
         finalPrice *= 0.9;
       }
@@ -4811,16 +4905,8 @@ const taskCtrl = {
               task.couponCode = null;
               task.couponId = null;
               await task.save();
-            } else {
-              // For custom coupons, pass customerEmail and preliminarySubtotal for validation
-              const validation = coupon.validateCoupon(task.email || null, preliminarySubtotal);
-              if (!validation.valid) {
-                // Coupon invalid or expired, remove from task
-                task.couponCode = null;
-                task.couponId = null;
-                await task.save();
-              }
             }
+            // Coupon already stored on this task — do not re-validate usage/expiry
           } catch (error) {
             console.error('Error validating coupon in payment confirmation:', error);
             // Continue without coupon if validation fails
@@ -4857,7 +4943,8 @@ const taskCtrl = {
           available: task.available,
           applyMinFee: task.applyMinFee,
           couponCode: task.couponCode,
-          customerEmail: task.email || null
+          customerEmail: task.email || null,
+          skipCouponValidation: true,
         });
 
         // Recalculer le prix final pour le remainingAmount - ONLY standard items with position fees
@@ -5026,6 +5113,10 @@ const taskCtrl = {
             amount: task.totalPrice,
             conversionDateTime: new Date(),
           });
+          fireMicrosoftAdsPurchaseUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
         }
 
         // Envoyer l'email de confirmation
@@ -5130,16 +5221,8 @@ const taskCtrl = {
             task.couponCode = null;
             task.couponId = null;
             await task.save();
-          } else {
-            // For custom coupons, pass customerEmail and preliminarySubtotal for validation
-            const validation = coupon.validateCoupon(task.email || null, preliminarySubtotal);
-            if (!validation.valid) {
-              // Coupon invalid or expired, remove from task
-              task.couponCode = null;
-              task.couponId = null;
-              await task.save();
-            }
           }
+          // Coupon already stored on this task — do not re-validate usage/expiry
         } catch (error) {
           console.error('Error validating coupon in PayPal payment capture:', error);
           // Continue without coupon if validation fails
@@ -5182,7 +5265,8 @@ const taskCtrl = {
           createdByType: task.createdByType,
           available: task.available,
           applyMinFee: task.applyMinFee,
-          couponCode: task.couponCode
+          couponCode: task.couponCode,
+          skipCouponValidation: true,
         });
 
         // Use calculated price which includes coupon discount
@@ -5289,6 +5373,10 @@ const taskCtrl = {
             amount: task.totalPrice,
             conversionDateTime: new Date(),
           });
+          fireMicrosoftAdsPurchaseUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
         }
 
         // Envoyer l'email de confirmation
@@ -5389,19 +5477,11 @@ const taskCtrl = {
             task.couponCode = null;
             task.couponId = null;
             await task.save();
-          } else {
-            const validation = coupon.validateCoupon(); // Checks expiration, usage, active status
-            if (!validation.valid) {
-              // Coupon expired or invalid, remove from task
-              task.couponCode = null;
-              task.couponId = null;
-              await task.save();
-            } else {
-              // Coupon is valid, ensure couponId is set
-              task.couponId = coupon._id;
-              await task.save();
-            }
+          } else if (!task.couponId) {
+            task.couponId = coupon._id;
+            await task.save();
           }
+          // Coupon already stored on this task — do not re-validate usage/expiry
         } catch (error) {
           console.error('Error validating coupon:', error);
           // Continue without coupon if validation fails
@@ -5496,12 +5576,14 @@ const taskCtrl = {
       }
 
       // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
       const isAvailableAnyTime = task.available === 'AnyTime';
       const isCreatedByPublic = task.createdByType === 'public';
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+      const hasCouponOnTask = Boolean(coupon) || Boolean(task.couponCode);
 
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
         subtotal *= 0.9;
       }
 
@@ -5535,7 +5617,8 @@ const taskCtrl = {
           available: task.available,
           applyMinFee: task.applyMinFee,
           couponCode: task.couponCode,
-          customerEmail: task.email || null
+          customerEmail: task.email || null,
+          skipCouponValidation: true,
         });
 
         couponDiscount = calculatedCouponDiscount;
@@ -6119,6 +6202,10 @@ const taskCtrl = {
             amount: task.totalPrice,
             conversionDateTime: new Date(),
           });
+          fireMicrosoftAdsPurchaseUpload(task, {
+            amount: task.totalPrice,
+            conversionDateTime: new Date(),
+          });
         }
 
         // Construire le breakdown complet pour l'email
@@ -6416,7 +6503,8 @@ const taskCtrl = {
             available: task.available,
             applyMinFee: task.applyMinFee,
             couponCode: task.couponCode,
-            customerEmail: task.email || null
+            customerEmail: task.email || null,
+            skipCouponValidation: true,
           });
 
           const cap = capRes.result.purchase_units[0].payments.captures[0];
@@ -6543,6 +6631,10 @@ const taskCtrl = {
               amount: task.totalPrice,
               conversionDateTime: new Date(cap.create_time),
             });
+            fireMicrosoftAdsPurchaseUpload(task, {
+              amount: task.totalPrice,
+              conversionDateTime: new Date(cap.create_time),
+            });
           }
 
           // fire-and-forget the email (don't block webhook)
@@ -6626,7 +6718,8 @@ const taskCtrl = {
             available: task.available,
             applyMinFee: task.applyMinFee,
             couponCode: task.couponCode,
-            customerEmail: task.email || null
+            customerEmail: task.email || null,
+            skipCouponValidation: true,
           });
 
           const amountInGBP = Number(capture.amount.value);
@@ -6769,6 +6862,10 @@ const taskCtrl = {
 
           if (task.paymentStatus === 'Paid') {
             firePurchaseConversionUpload(task, {
+              amount: task.totalPrice,
+              conversionDateTime: paymentDate,
+            });
+            fireMicrosoftAdsPurchaseUpload(task, {
               amount: task.totalPrice,
               conversionDateTime: paymentDate,
             });
@@ -7043,13 +7140,15 @@ const taskCtrl = {
         : subtotal;
 
       // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+      // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
       const isAvailableAnyTime = task.available === 'AnyTime';
       const isCreatedByPublic = task.createdByType === 'public';
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
+      const hasCouponOnTask = Boolean(task.couponCode);
 
       let automaticDiscount10Percent = 0;
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
         console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice email');
         automaticDiscount10Percent = subtotal * 0.1;
         subtotal *= 0.9;

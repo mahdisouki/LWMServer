@@ -26,6 +26,27 @@ async function countTotalOrders(start, end) {
   });
 }
 
+function ordersInPeriodFilter(start, end) {
+  return {
+    createdAt: { $gte: start, $lte: end },
+    paymentStatus: { $ne: 'Failed' },
+    ...excludeMigratedOrdersFilter,
+  };
+}
+
+/** Repeat-customer share for orders in the same period/filter as countTotalOrders. */
+async function getRepeatCustomerStats(start, end, totalOrders) {
+  const repeatCustomerOrders = await Task.countDocuments({
+    ...ordersInPeriodFilter(start, end),
+    repeatCustomer: { $gt: 0 },
+  });
+
+  const repeatCustomerPercent =
+    totalOrders > 0 ? Math.round((repeatCustomerOrders / totalOrders) * 100) : 0;
+
+  return { totalOrders, repeatCustomerOrders, repeatCustomerPercent };
+}
+
 function buildMetricBlock(current, previous, { formatter = (v) => v, applicable = true, label } = {}) {
   if (!applicable) {
     const block = {
@@ -72,17 +93,23 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
     ]
     : [Promise.resolve(null), Promise.resolve(null)];
 
+  const currentOrdersPromise = countTotalOrders(period.start, period.end);
+
   const [
     currentQuotes,
     previousQuotes,
     currentOrders,
     previousOrders,
+    currentRepeatCustomerStats,
     currentGa4,
     previousGa4,
   ] = await Promise.all([
     ...quoteQueries,
-    countTotalOrders(period.start, period.end),
+    currentOrdersPromise,
     countTotalOrders(previousPeriod.start, previousPeriod.end),
+    currentOrdersPromise.then((total) =>
+      getRepeatCustomerStats(period.start, period.end, total),
+    ),
     fetchPeriodTrafficForPageFilter({
       startKey: period.startKey,
       endKey: period.endKey,
@@ -125,6 +152,7 @@ async function getDashboard({ preset, startDate, endDate, page = 'all' } = {}) {
         { formatter: formatDuration },
       ),
     },
+    repeatCustomerStats: currentRepeatCustomerStats,
   };
 }
 

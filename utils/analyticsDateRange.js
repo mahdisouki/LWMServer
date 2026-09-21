@@ -206,6 +206,7 @@ function eachDayKeyInPeriod(start, end, { startKey, endKey } = {}) {
 module.exports = {
   ANALYTICS_TIMEZONE,
   dayKeyInTimeZone,
+  addDaysToDayKey,
   startOfLabeledDay,
   endOfLabeledDay,
   startOfTimeZoneDay,

@@ -9,10 +9,12 @@ const {
   getMaxCompetitors,
   getDefaultBlogImage,
   isGscEnabled,
+  isSeoAgentEnabled,
 } = require('../../config/seoConfig');
 const { fetchDomainMetrics, isDataForSeoEnabled } = require('./dataForSeoService');
 const { syncFreeMetrics, resolveMetricsProvider } = require('./seoFreeMetricsService');
 const { fetchPageRank, isOpenPageRankEnabled } = require('./openPageRankService');
+const { generateBlogFromContentGap } = require('./seoAgentService');
 
 function normalizeCompetitorUrl(raw) {
   let value = String(raw || '').trim();
@@ -245,6 +247,8 @@ async function listContentGaps(siteUrl = getSiteUrl(), { page = 1, limit = 20, s
       competitorName: gap.competitorName,
       status: gap.status,
       blogId: gap.blogId ? gap.blogId.toString() : null,
+      aiGenerated: Boolean(gap.aiGenerated),
+      needsReview: Array.isArray(gap.needsReview) ? gap.needsReview : [],
       updatedAt: gap.updatedAt,
     })),
     meta: {
@@ -265,30 +269,66 @@ async function createPageFromContentGap(siteUrl, gapId, { author = 'SEO Assistan
   if (gap.blogId) {
     const existing = await Blog.findById(gap.blogId).lean();
     if (existing) {
-      return { blog: existing, gap, alreadyExists: true };
+      return {
+        blog: existing,
+        gap,
+        alreadyExists: true,
+        aiGenerated: Boolean(gap.aiGenerated),
+        aiMeta: {
+          needsReview: Array.isArray(gap.needsReview) ? gap.needsReview : [],
+        },
+      };
     }
   }
 
-  const title = titleCaseKeyword(gap.keyword);
-  const description = [
-    `<h2>${title}</h2>`,
-    `<p>${gap.insight}</p>`,
-    '<p>This draft was generated from an SEO content gap. Expand with service details, FAQs, and local proof points before publishing.</p>',
-  ].join('\n');
+  let title;
+  let description;
+  let tags;
+  let aiMeta = null;
+
+  if (isSeoAgentEnabled()) {
+    const generated = await generateBlogFromContentGap(gap);
+    title = generated.title;
+    description = generated.description;
+    tags = generated.tags;
+    aiMeta = {
+      model: generated.model,
+      usage: generated.usage,
+      metaTitle: generated.metaTitle,
+      metaDescription: generated.metaDescription,
+      needsReview: generated.needsReview || [],
+    };
+  } else {
+    title = titleCaseKeyword(gap.keyword);
+    description = [
+      `<h2>${title}</h2>`,
+      `<p>${gap.insight}</p>`,
+      '<p>This draft was generated from an SEO content gap. Expand with service details, FAQs, and local proof points before publishing.</p>',
+    ].join('\n');
+    tags = gap.keyword.split(/\s+/).filter(Boolean).slice(0, 5);
+  }
 
   const blog = await Blog.create({
     title,
     author,
     description,
     image: getDefaultBlogImage(),
-    tags: gap.keyword.split(/\s+/).filter(Boolean).slice(0, 5),
+    tags,
   });
 
   gap.blogId = blog._id;
   gap.status = 'draft_created';
+  gap.aiGenerated = Boolean(aiMeta);
+  gap.needsReview = aiMeta?.needsReview || [];
   await gap.save();
 
-  return { blog, gap, alreadyExists: false };
+  return {
+    blog,
+    gap,
+    alreadyExists: false,
+    aiGenerated: Boolean(aiMeta),
+    aiMeta,
+  };
 }
 
 async function syncContentGapsFromKeywords(siteUrl, jobId = null) {

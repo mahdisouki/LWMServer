@@ -9,11 +9,17 @@
  *   node scripts/exportMicrosoftOfflineConversions.js --include-exported
  *   node scripts/exportMicrosoftOfflineConversions.js --mark-exported
  *   node scripts/exportMicrosoftOfflineConversions.js --out ./exports/ms-offline.csv
+ *   node scripts/exportMicrosoftOfflineConversions.js --timezone +0000
  *
  * Env (optional):
  *   MICROSOFT_ADS_OFFLINE_CONVERSION_NAME=quote-to-purchase
+ *   MICROSOFT_ADS_CSV_TIMEZONE=+0000
  *
  * Upload the CSV in Microsoft Advertising → Conversions → Upload conversions.
+ *
+ * Note: This CSV format is for the Microsoft Ads UI only. The automatic API upload
+ * (microsoftAdsConversionService) uses ApplyOfflineConversions with ISO UTC times
+ * and is unaffected by this script.
  */
 require('dotenv').config();
 const fs = require('fs');
@@ -27,6 +33,8 @@ const CONVERSION_NAME =
   process.env.MICROSOFT_ADS_OFFLINE_CONVERSION_NAME || 'quote-to-purchase';
 const CURRENCY = 'GBP';
 const PAID_STATUSES = ['Paid'];
+const DEFAULT_TIMEZONE =
+  process.env.MICROSOFT_ADS_CSV_TIMEZONE || '+0000';
 
 async function connectDB() {
   const uri = process.env.MONGO_URI || process.env.MONGODB_URI;
@@ -42,11 +50,15 @@ function parseArgs(argv) {
     includeExported: argv.includes('--include-exported'),
     markExported: argv.includes('--mark-exported'),
     out: null,
+    timezone: DEFAULT_TIMEZONE,
   };
 
   for (let i = 2; i < argv.length; i += 1) {
     if (argv[i] === '--out' && argv[i + 1]) {
       args.out = argv[i + 1];
+      i += 1;
+    } else if (argv[i] === '--timezone' && argv[i + 1]) {
+      args.timezone = argv[i + 1];
       i += 1;
     }
   }
@@ -62,13 +74,22 @@ function csvEscape(value) {
   return str;
 }
 
-/** Microsoft UI / bulk uploads accept UTC timestamps; prefer ISO-8601. */
+/**
+ * Microsoft Ads UI CSV expects MM/DD/YYYY HH:MM:SS (not ISO-8601).
+ * Times are written in UTC; pair with TimeZone=+0000 in the parameters row.
+ */
 function formatConversionTime(date) {
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) {
     return '';
   }
-  return d.toISOString();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const yyyy = d.getUTCFullYear();
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const min = String(d.getUTCMinutes()).padStart(2, '0');
+  const ss = String(d.getUTCSeconds()).padStart(2, '0');
+  return `${mm}/${dd}/${yyyy} ${hh}:${min}:${ss}`;
 }
 
 async function resolveConversionTime(task) {
@@ -127,6 +148,7 @@ async function main() {
     .sort({ updatedAt: -1 });
 
   console.log(`Conversion name: ${CONVERSION_NAME}`);
+  console.log(`CSV TimeZone: ${args.timezone} (times are UTC wall-clock)`);
   console.log(`Paid quote-linked tasks scanned: ${tasks.length}`);
   console.log(`Mode: ${args.dryRun ? 'DRY RUN' : 'WRITE CSV'}${args.markExported ? ' + mark exported' : ''}\n`);
 
@@ -171,16 +193,19 @@ async function main() {
     }
   }
 
+  // Microsoft Ads UI template: parameters row + exact columns (no extras).
   const header = [
-    'Microsoft Click ID',
+    'Microsoft Click Id',
     'Conversion Name',
     'Conversion Time',
     'Conversion Value',
     'Conversion Currency',
-    'Client Id',
   ];
 
   const csvLines = [
+    '### PARAMETERS ###',
+    `TimeZone,${args.timezone}`,
+    '### DATA ###',
     header.join(','),
     ...rows.map((row) => [
       csvEscape(row.microsoftClickId),
@@ -188,11 +213,18 @@ async function main() {
       csvEscape(row.conversionTime),
       csvEscape(row.conversionValue),
       csvEscape(row.conversionCurrency),
-      csvEscape(row.orderNumber),
     ].join(',')),
   ];
 
   const csv = `${csvLines.join('\n')}\n`;
+
+  if (rows.length > 0) {
+    console.log('Orders in CSV (not a Microsoft column):');
+    rows.forEach((row) => {
+      console.log(`  ${row.orderNumber} @ ${row.conversionTime}`);
+    });
+    console.log('');
+  }
 
   if (!args.dryRun) {
     const outPath = path.resolve(
@@ -208,8 +240,8 @@ async function main() {
     fs.writeFileSync(outPath, csv, 'utf8');
     console.log(`Wrote ${rows.length} row(s) → ${outPath}`);
   } else {
-    console.log('--- DRY RUN preview (first 5) ---');
-    console.log(csvLines.slice(0, 6).join('\n'));
+    console.log('--- DRY RUN preview ---');
+    console.log(csvLines.slice(0, Math.min(csvLines.length, 8)).join('\n'));
   }
 
   if (args.markExported && !args.dryRun && rows.length > 0) {

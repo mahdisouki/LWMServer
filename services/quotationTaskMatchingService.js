@@ -225,6 +225,7 @@ function copyClickIdsFromQuotationToTask(task, quotation) {
     gbraid: task.gbraid || null,
     wbraid: task.wbraid || null,
     msclkid: task.msclkid || null,
+    fbclid: task.fbclid || null,
     utm_source: task.utm_source || null,
   };
 
@@ -232,6 +233,7 @@ function copyClickIdsFromQuotationToTask(task, quotation) {
   if (!task.gbraid && quotation.gbraid) task.gbraid = quotation.gbraid;
   if (!task.wbraid && quotation.wbraid) task.wbraid = quotation.wbraid;
   if (!task.msclkid && quotation.msclkid) task.msclkid = quotation.msclkid;
+  if (!task.fbclid && quotation.fbclid) task.fbclid = quotation.fbclid;
   if (!task.utm_source && quotation.utm_source) task.utm_source = quotation.utm_source;
 
   const after = {
@@ -239,6 +241,7 @@ function copyClickIdsFromQuotationToTask(task, quotation) {
     gbraid: task.gbraid || null,
     wbraid: task.wbraid || null,
     msclkid: task.msclkid || null,
+    fbclid: task.fbclid || null,
     utm_source: task.utm_source || null,
   };
 
@@ -246,6 +249,7 @@ function copyClickIdsFromQuotationToTask(task, quotation) {
     || before.gbraid !== after.gbraid
     || before.wbraid !== after.wbraid
     || before.msclkid !== after.msclkid
+    || before.fbclid !== after.fbclid
     || before.utm_source !== after.utm_source;
 
   return { changed, before, after };

@@ -20,6 +20,10 @@ connectToDatabase()
   .then(async () => {
     console.log("✅ MongoDB Connected");
 
+    const { loadExtraFreeEmailDomains } = require('./utils/businessEmail');
+    const extraFreeDomainCount = await loadExtraFreeEmailDomains();
+    console.log(`Free email domains loaded (${extraFreeDomainCount} extra)`);
+
     const MailSignature = require('./models/MailSignature');
     await MailSignature.dropLegacyIndexes();
 
@@ -43,9 +47,11 @@ connectToDatabase()
     require('./cron/sendWasteTransferNotes');
     require('./cron/remindVanCapacityCheck');
     require('./cron/dayOffUnitReminders');
+    require('./cron/subscriptionReminders');
     require('./cron/cleanupTaskPhotoUploads');
     require('./cron/updatePopularityScores');
     require('./cron/updateTopPostcodesCache');
+    require('./cron/syncLsaOrderTrafficSources');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })
@@ -144,6 +150,8 @@ const corsOptions = {
     'http://192.168.1.13:5173',
     'http://192.168.1.73:5174',
     'http://192.168.1.73:5176',
+    'http://192.168.1.68:5174',
+    'http://192.168.1.74:5173',
     'https://lwmclient.duckdns.org',
     'https://stagingadmin.londonwastemanagement.uk/',
     'https://stagingadmin.londonwastemanagement.uk',
@@ -174,8 +182,16 @@ app.post(
 );
 
 app.use(cors(corsOptions));
-// Apply JSON parsing for all other routes
-app.use(express.json());
+// Keep raw body for WhatsApp webhook signature verification
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      if (req.originalUrl && req.originalUrl.startsWith('/api/whatsapp/webhook')) {
+        req.rawBody = buf;
+      }
+    },
+  })
+);
 app.use(bodyParser.json());
 // Note: CSP is now handled by Helmet above, removed duplicate CSP header
 // Import routes
@@ -208,6 +224,8 @@ const serviceCategoryRoutes = require('./routes/serviceCategory');
 const notificationRoutes = require('./routes/notification');
 const incidentRoutes = require('./routes/incident');
 const expenseRoutes = require('./routes/expense');
+const subscriptionRoutes = require('./routes/subscription');
+const whatsappRoutes = require('./routes/whatsapp');
 const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
 const customerRoutes = require('./routes/customerRoutes');
@@ -223,6 +241,8 @@ const seoRoutes = require('./routes/seo');
 const networkRouter = require('./routes/network');
 const brokerRoutes = require('./routes/broker');
 const brokerPortalRoutes = require('./routes/brokerPortal');
+const labelingRoutes = require('./routes/labeling');
+const tawkAttributionRoutes = require('./routes/tawkAttribution');
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app);
@@ -265,11 +285,15 @@ app.use('/api/instagram', instagramRoutes);
 app.use('/api', incidentRoutes);
 app.use('/api', vanRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/ticks', tickRoutes);
 app.use('/api/seo', seoRoutes);
 app.use('/api', networkRouter);
 app.use('/api/brokers', brokerRoutes);
 app.use('/api/broker', brokerPortalRoutes);
+app.use('/api/labeling', labelingRoutes);
+app.use('/api', tawkAttributionRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;

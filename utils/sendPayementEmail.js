@@ -161,13 +161,15 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   }
 
   // Calculate 10% automatic discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
+  // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
   const isAvailableAnyTime = taskDetails.available === 'AnyTime';
   const isCreatedByPublic = taskDetails.createdByType === 'public';
   const hasItems = taskDetails.items && taskDetails.items.length > 0;
   const allItemsOutside = hasItems && taskDetails.items.every((i) => i.Objectsposition === 'Outside');
+  const hasCouponOnTask = Boolean(taskDetails.couponCode);
 
   let automaticDiscount10Percent = 0;
-  if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside) {
+  if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
     console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in payment email');
     automaticDiscount10Percent = subtotalBeforeDiscounts * 0.1;
   }

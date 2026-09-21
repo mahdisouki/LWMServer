@@ -92,7 +92,75 @@ async function fetchSiteSummary(days = 28) {
   };
 }
 
+async function fetchTopPages(days = 28, rowLimit = 5000) {
+  if (!isGscEnabled()) {
+    return [];
+  }
+
+  const siteUrl = getGscSiteUrl();
+  const end = new Date();
+  const start = new Date(end);
+  start.setDate(start.getDate() - days);
+
+  const searchconsole = await getSearchConsoleClient();
+  const { data } = await searchconsole.searchanalytics.query({
+    siteUrl,
+    requestBody: {
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+      dimensions: ['page'],
+      rowLimit: Math.min(rowLimit, 25000),
+    },
+  });
+
+  return (data.rows || []).map((row) => ({
+    url: row.keys[0],
+    clicks: row.clicks,
+    impressions: row.impressions,
+    position: Math.round(row.position * 10) / 10,
+    ctr: Math.round(row.ctr * 10000) / 100,
+  }));
+}
+
+async function inspectUrl(inspectionUrl) {
+  if (!isGscEnabled()) {
+    const err = new Error('Google Search Console is not enabled (set SEO_GSC_ENABLED=true)');
+    err.statusCode = 503;
+    throw err;
+  }
+
+  const searchconsole = await getSearchConsoleClient();
+  const { data } = await searchconsole.urlInspection.index.inspect({
+    requestBody: {
+      inspectionUrl,
+      siteUrl: getGscSiteUrl(),
+      languageCode: 'en-GB',
+    },
+  });
+
+  const indexStatus = data.inspectionResult?.indexStatusResult;
+  if (!indexStatus) {
+    const err = new Error('URL Inspection returned no indexStatusResult');
+    err.statusCode = 502;
+    throw err;
+  }
+
+  return {
+    verdict: indexStatus.verdict || null,
+    coverageState: indexStatus.coverageState || null,
+    indexingState: indexStatus.indexingState || null,
+    robotsTxtState: indexStatus.robotsTxtState || null,
+    pageFetchState: indexStatus.pageFetchState || null,
+    lastCrawlTime: indexStatus.lastCrawlTime || null,
+    googleCanonical: indexStatus.googleCanonical || null,
+    userCanonical: indexStatus.userCanonical || null,
+    inspectionResultLink: data.inspectionResult?.inspectionResultLink || null,
+  };
+}
+
 module.exports = {
   fetchTopQueries,
+  fetchTopPages,
   fetchSiteSummary,
+  inspectUrl,
 };

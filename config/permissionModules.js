@@ -34,10 +34,13 @@ const MODULES = [
   'Website_Analytics',
   'SEO',
   'Coupons',
+  'Subscriptions',
+  'WhatsApp',
   'Blue_Sheets',
   'Network_Sessions',
   'Ticks',
   'Brokers',
+  'Labeling',
 ];
 
 function permissionField() {

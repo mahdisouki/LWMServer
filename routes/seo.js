@@ -29,4 +29,14 @@ router.delete('/competitors/:id', ...admin, seoCtrl.deleteCompetitor);
 router.get('/competitors/content-gaps', ...admin, seoCtrl.getContentGaps);
 router.post('/competitors/content-gaps/:id/create-page', ...admin, seoCtrl.createPageFromContentGap);
 
+router.get('/indexation/summary', ...admin, seoCtrl.getIndexationSummary);
+router.get('/indexation/pages', ...admin, seoCtrl.getIndexationPages);
+router.post('/indexation/pages/:id/inspect', ...admin, seoCtrl.inspectIndexationPage);
+
+router.get('/agent/status', ...admin, seoCtrl.getAgentStatus);
+router.post('/agent/drafts', ...admin, seoCtrl.createBlogDraftFromIdea);
+router.post('/agent/item-descriptions/:id', ...admin, seoCtrl.generateItemSeoDescription);
+router.post('/agent/item-descriptions/:id/apply', ...admin, seoCtrl.applyItemSeoDescription);
+router.post('/agent/enrich-audit', ...admin, seoCtrl.enrichAuditWithAgent);
+
 module.exports = router;

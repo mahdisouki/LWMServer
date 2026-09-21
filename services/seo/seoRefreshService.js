@@ -2,7 +2,7 @@ const SeoSiteSnapshot = require('../../models/SeoSiteSnapshot');
 const SeoAuditIssue = require('../../models/SeoAuditIssue');
 const SeoKeyword = require('../../models/SeoKeyword');
 const SeoRefreshJob = require('../../models/SeoRefreshJob');
-const { getSiteUrl } = require('../../config/seoConfig');
+const { getSiteUrl, isSeoAgentEnabled } = require('../../config/seoConfig');
 const { crawlSite } = require('./seoCrawlService');
 const { fetchCoreWebVitals } = require('./pageSpeedService');
 const { fetchTopQueries } = require('./gscService');
@@ -18,6 +18,12 @@ const {
   syncContentGapsFromKeywords,
   syncCompetitorMetricsFromProvider,
 } = require('./seoCompetitorService');
+const { enrichAuditIssues } = require('./seoAgentService');
+const {
+  syncFromCrawl: syncIndexationFromCrawl,
+  getSummary: getIndexationSummary,
+  inspectPriorityPages,
+} = require('./seoIndexationService');
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
 
@@ -53,6 +59,21 @@ async function getSiteHealth(siteUrl = getSiteUrl()) {
   const snapshot = await getOrCreateSnapshot(siteUrl);
   const health = snapshot.siteHealth || {};
 
+  let indexCoverage = health.indexCoverage || { indexed: 0, notIndexed: 0, blocked: 0 };
+  let indexation = null;
+  try {
+    indexation = await getIndexationSummary(siteUrl);
+    if (indexation.total > 0) {
+      indexCoverage = {
+        indexed: indexation.indexable,
+        notIndexed: indexation.errors,
+        blocked: indexation.blocked,
+      };
+    }
+  } catch (err) {
+    console.warn('[SEO] Indexation summary unavailable:', err.message);
+  }
+
   return {
     overallScore: health.overallScore ?? snapshot.seoScore ?? 0,
     scoreStatus: health.scoreStatus || 'needs_work',
@@ -63,7 +84,8 @@ async function getSiteHealth(siteUrl = getSiteUrl()) {
       cls: { status: 'unknown', displayValue: '—' },
       ttfb: { status: 'unknown', displayValue: '—' },
     },
-    indexCoverage: health.indexCoverage || { indexed: 0, notIndexed: 0, blocked: 0 },
+    indexCoverage,
+    indexation,
     keyMetrics: {
       domainAuthority: snapshot.domainAuthority,
       organicTrafficMonthly: health.keyMetrics?.organicTrafficMonthly ?? null,
@@ -342,10 +364,6 @@ async function executeRefresh(jobId, siteUrl) {
     const issueCounts = countBySeverity(issues);
     const seoScore = computeSeoScore(issues, technicalChecks);
     const scoreStatus = scoreStatusFromScore(seoScore);
-    const aiActionPlan = buildAiActionPlan(issues);
-
-    const noindexCount = crawlResult.pages.filter((p) => p.hasNoindex).length;
-    const indexedEstimate = crawlResult.pages.length - noindexCount;
 
     await SeoAuditIssue.deleteMany({ siteUrl });
     if (issues.length) {
@@ -354,6 +372,36 @@ async function executeRefresh(jobId, siteUrl) {
         refreshJobId: jobId,
         ...issue,
       })));
+    }
+
+    await job.updateOne({ progress: { step: 'indexation', percent: 70 } });
+    let indexationSummary = {
+      indexable: crawlResult.pages.filter((p) => !p.hasNoindex).length,
+      blocked: crawlResult.pages.filter((p) => p.hasNoindex).length,
+      errors: (crawlResult.errors || []).length,
+    };
+    try {
+      const indexationResult = await syncIndexationFromCrawl(siteUrl, crawlResult, jobId);
+      indexationSummary = indexationResult.summary;
+      try {
+        await inspectPriorityPages(siteUrl);
+        indexationSummary = await getIndexationSummary(siteUrl);
+      } catch (inspectError) {
+        console.warn('[SEO Refresh] URL Inspection skipped:', inspectError.message);
+      }
+    } catch (indexationError) {
+      console.warn('[SEO Refresh] Indexation sync skipped:', indexationError.message);
+    }
+
+    let aiActionPlan = buildAiActionPlan(issues);
+    if (isSeoAgentEnabled() && issues.length) {
+      await job.updateOne({ progress: { step: 'ai-enrich', percent: 78 } });
+      try {
+        const agentResult = await enrichAuditIssues(siteUrl, issues);
+        aiActionPlan = agentResult.aiActionPlan;
+      } catch (agentError) {
+        console.warn('[SEO Refresh] Agent enrich skipped, using rule-based plan:', agentError.message);
+      }
     }
 
     await job.updateOne({ progress: { step: 'keywords', percent: 85 } });
@@ -409,9 +457,9 @@ async function executeRefresh(jobId, siteUrl) {
               ttfb: cwv.ttfb,
             },
             indexCoverage: {
-              indexed: indexedEstimate,
-              notIndexed: 0,
-              blocked: noindexCount,
+              indexed: indexationSummary.indexable ?? 0,
+              notIndexed: indexationSummary.errors ?? 0,
+              blocked: indexationSummary.blocked ?? 0,
             },
             keyMetrics: {
               ...preservedKeyMetrics,

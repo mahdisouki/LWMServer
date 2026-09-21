@@ -9,6 +9,12 @@ const contactRequestSchema = new Schema({
   phone: { type: String, required: true },
   subject: { type: String, required: true },
   message: { type: String, required: true },
+  gclid: { type: String, required: false },
+  gbraid: { type: String, required: false },
+  wbraid: { type: String, required: false },
+  msclkid: { type: String, required: false },
+  fbclid: { type: String, required: false },
+  utm_source: { type: String, required: false },
   createdAt: { type: Date, default: Date.now },
 });
 

@@ -295,12 +295,19 @@ const taskSchema = new Schema(
     gbraid: { type: String, required: false },
     wbraid: { type: String, required: false },
     msclkid: { type: String, required: false },
+    fbclid: { type: String, required: false },
     utm_source: { type: String, required: false },
     trafficSource: {
       type: String,
-      enum: ['Google Ads', 'Microsoft Ads', 'Instagram', 'Facebook', 'Organic'],
+      enum: ['Google Ads', 'LSA', 'Microsoft Ads', 'Instagram', 'Facebook', 'Direct', 'Organic'],
       default: 'Organic',
     },
+    /** Raw GA4 sessionDefaultChannelGroup from purchase ↔ orderNumber match. */
+    ga4SessionChannel: { type: String, required: false },
+    ga4TrafficChannelSyncedAt: { type: Date, required: false },
+    /** Google Ads Local Services lead id from weekly LSA → order match. */
+    lsaLeadId: { type: String, required: false },
+    lsaTrafficSyncedAt: { type: Date, required: false },
     googleAdsPurchaseConversionSentAt: { type: Date, required: false },
     googleAdsConversionError: { type: String, required: false },
     microsoftAdsOfflineConversionExportedAt: { type: Date, required: false },
@@ -344,7 +351,9 @@ taskSchema.pre('save', function (next) {
     gbraid: this.gbraid,
     wbraid: this.wbraid,
     msclkid: this.msclkid,
+    fbclid: this.fbclid,
     utm_source: this.utm_source,
+    existingTrafficSource: this.trafficSource,
   });
 
   // Validate items have proper pricing
@@ -377,6 +386,7 @@ taskSchema.pre('findOneAndUpdate', function (next) {
     || $set.gbraid !== undefined
     || $set.wbraid !== undefined
     || $set.msclkid !== undefined
+    || $set.fbclid !== undefined
     || $set.utm_source !== undefined
   ) {
     const trafficSource = resolveTrafficSource({
@@ -384,7 +394,9 @@ taskSchema.pre('findOneAndUpdate', function (next) {
       gbraid: $set.gbraid,
       wbraid: $set.wbraid,
       msclkid: $set.msclkid,
+      fbclid: $set.fbclid,
       utm_source: $set.utm_source,
+      existingTrafficSource: $set.trafficSource,
     });
     if (update.$set) {
       update.$set.trafficSource = trafficSource;
@@ -608,7 +620,6 @@ taskSchema.pre(['findOneAndUpdate', 'updateOne'], async function (next) {
   }
 });
 
-taskSchema.index({ date: 1 });
 taskSchema.index({ createdAt: -1 });
 taskSchema.index({ paymentStatus: 1, taskStatus: 1 });
 taskSchema.index({ date: 1, createdAt: -1 });
@@ -617,8 +628,13 @@ taskSchema.index({ isBusinessEmail: 1, createdAt: -1 });
 
 taskSchema.index({ trafficSource: 1, createdAt: -1 });
 taskSchema.index({ createdByType: 1, createdAt: -1 });
-taskSchema.index({ createdByType: 1, paymentStatus: 1, createdAt: -1 });
 taskSchema.index({ createdByType: 1, paymentStatus: 1, createdAt: -1, trafficSource: 1 });
+
+// findLinkedTaskForQuotation / QuotationRequest.computeStatus: equality on
+// quotationId, sort on createdAt, then the paymentStatus $ne range.
+taskSchema.index({ quotationId: 1, createdAt: 1, paymentStatus: 1 });
+// Narrows the privateNotes regex scan in repeatCustomerSync to MigrationScript rows.
+taskSchema.index({ createdBy: 1 });
 
 const Task = mongoose.model("Task", taskSchema);
 module.exports = Task;

@@ -11,12 +11,15 @@
     "backfill:pcn-deduction-routing": "node scripts/backfillPcnDeductionRouting.js",
     "backfill:pcn-deduction-routing:dry": "node scripts/backfillPcnDeductionRouting.js --dry-run",
     "ga4:authorize": "node scripts/authorizeGoogleAnalytics.js",
+    "msads:authorize": "node scripts/authorizeMicrosoftAds.js",
+    "msads:test-offline": "node scripts/testMicrosoftAdsOfflineConversion.js",
     "postinstall": "npx playwright install-deps chromium && npx playwright install chromium"
   },
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@paypal/checkout-server-sdk": "^1.0.3",
     "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
