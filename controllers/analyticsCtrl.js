@@ -31,7 +31,7 @@ const analyticsCtrl = {
       }
 
       // Validate type enum
-      const validTypes = ['sunday_click', 'night_slot_click'];
+      const validTypes = ['sunday_click', 'night_slot_click', 'today_unavailable_call_click'];
       if (!validTypes.includes(type)) {
         return res.status(400).json({
           message: `Type must be one of: ${validTypes.join(', ')}`
@@ -77,7 +77,7 @@ const analyticsCtrl = {
    * - preset: today | 7d | 30d | 90d (optional, filters createdAt like Website Analytics)
    * - date: single business date (optional)
    * - startDate, endDate: createdAt date range (optional)
-   * - type: sundays | night_shift (optional, supports comma-separated values)
+   * - type: sundays | night_shift | today_unavailable (optional, supports comma-separated values)
    * - page, limit: pagination for dailyBreakdown (optional)
    */
   getInterestAnalytics: async (req, res) => {
@@ -96,7 +96,10 @@ const analyticsCtrl = {
         sunday_click: 'sunday_click',
         night_shift: 'night_slot_click',
         'night shift': 'night_slot_click',
-        night_slot_click: 'night_slot_click'
+        night_slot_click: 'night_slot_click',
+        today_unavailable: 'today_unavailable_call_click',
+        today_unavailable_call: 'today_unavailable_call_click',
+        today_unavailable_call_click: 'today_unavailable_call_click'
       };
 
       if (type) {
@@ -110,7 +113,7 @@ const analyticsCtrl = {
 
         if (invalidTypes.length > 0) {
           return res.status(400).json({
-            message: 'Invalid type filter. Use: sundays, night_shift'
+            message: 'Invalid type filter. Use: sundays, night_shift, today_unavailable'
           });
         }
 
@@ -235,6 +238,9 @@ const analyticsCtrl = {
             nightSlotClicks: {
               $sum: { $cond: [{ $eq: ['$_id.type', 'night_slot_click'] }, '$count', 0] },
             },
+            todayUnavailableCallClicks: {
+              $sum: { $cond: [{ $eq: ['$_id.type', 'today_unavailable_call_click'] }, '$count', 0] },
+            },
           }
         },
         { $sort: { _id: -1 } }
@@ -258,6 +264,7 @@ const analyticsCtrl = {
               total: 1,
               sundayClicks: 1,
               nightSlotClicks: 1,
+              todayUnavailableCallClicks: 1,
             }
           }
         ])
