@@ -140,8 +140,143 @@ async function getOrderTrafficSources({
   };
 }
 
+const VALID_TRAFFIC_SOURCES = new Set(Object.values(TRAFFIC_SOURCES));
+const ORDERS_DEFAULT_LIMIT = 20;
+const ORDERS_MAX_LIMIT = 100;
+
+function clampOrdersLimit(limit) {
+  return Math.min(Math.max(parseInt(limit, 10) || ORDERS_DEFAULT_LIMIT, 1), ORDERS_MAX_LIMIT);
+}
+
+function clampOrdersPage(page) {
+  return Math.max(parseInt(page, 10) || 1, 1);
+}
+
+function buildSourceMatch(trafficSource) {
+  if (trafficSource === TRAFFIC_SOURCES.ORGANIC) {
+    return {
+      $or: [
+        { trafficSource: TRAFFIC_SOURCES.ORGANIC },
+        { trafficSource: { $exists: false } },
+        { trafficSource: null },
+        { trafficSource: '' },
+      ],
+    };
+  }
+  return { trafficSource };
+}
+
+/**
+ * Paginated orders for one traffic source within the selected analytics period.
+ * Uses the same match rules as the aggregate card (exclude Failed + MigrationScript).
+ */
+async function getOrderTrafficSourceOrders({
+  trafficSource,
+  preset,
+  startDate,
+  endDate,
+  page = 1,
+  limit = ORDERS_DEFAULT_LIMIT,
+} = {}) {
+  const source = String(trafficSource || '').trim();
+  if (!VALID_TRAFFIC_SOURCES.has(source)) {
+    const err = new Error(
+      `Invalid trafficSource. Must be one of: ${[...VALID_TRAFFIC_SOURCES].join(', ')}`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const period = resolvePeriod({ preset, startDate, endDate });
+  const periodLabels = getPeriodLabels(period);
+  const pageNum = clampOrdersPage(page);
+  const limitNum = clampOrdersLimit(limit);
+  const skip = (pageNum - 1) * limitNum;
+
+  const match = {
+    ...ORDER_MATCH(period.start, period.end),
+    ...buildSourceMatch(source),
+  };
+
+  const [total, orders] = await Promise.all([
+    Task.countDocuments(match),
+    Task.find(match)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum)
+      .select(
+        [
+          'orderNumber',
+          'firstName',
+          'lastName',
+          'email',
+          'phoneNumber',
+          'postcode',
+          'date',
+          'createdAt',
+          'totalPrice',
+          'price',
+          'paymentStatus',
+          'taskStatus',
+          'trafficSource',
+          'createdByType',
+          'createdBy',
+        ].join(' '),
+      )
+      .populate('createdBy', 'email username firstName lastName')
+      .lean(),
+  ]);
+
+  return {
+    period: {
+      preset: period.preset,
+      ...periodLabels,
+    },
+    trafficSource: source,
+    orders: orders.map((order) => {
+      const createdBy =
+        order.createdBy && typeof order.createdBy === 'object'
+          ? {
+              _id: String(order.createdBy._id),
+              email: order.createdBy.email || null,
+              username: order.createdBy.username || null,
+              firstName: order.createdBy.firstName || null,
+              lastName: order.createdBy.lastName || null,
+            }
+          : order.createdBy
+            ? { _id: String(order.createdBy), email: null, username: null, firstName: null, lastName: null }
+            : null;
+
+      return {
+        _id: String(order._id),
+        orderNumber: order.orderNumber || null,
+        firstName: order.firstName || '',
+        lastName: order.lastName || '',
+        email: order.email || '',
+        phoneNumber: order.phoneNumber || '',
+        postcode: order.postcode || '',
+        date: order.date || null,
+        createdAt: order.createdAt,
+        totalPrice: roundMoney(order.totalPrice ?? order.price ?? 0),
+        paymentStatus: order.paymentStatus || null,
+        taskStatus: order.taskStatus || null,
+        trafficSource: order.trafficSource || TRAFFIC_SOURCES.ORGANIC,
+        createdByType: order.createdByType || null,
+        createdBy,
+      };
+    }),
+    meta: {
+      currentPage: pageNum,
+      limit: limitNum,
+      total,
+      count: orders.length,
+    },
+  };
+}
+
 module.exports = {
   getOrderTrafficSources,
+  getOrderTrafficSourceOrders,
   DEFAULT_LIMIT,
   MAX_LIMIT,
 };

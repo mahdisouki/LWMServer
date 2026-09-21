@@ -490,6 +490,31 @@ const analyticsCtrl = {
     }
   },
 
+  getOrderTrafficSourceOrders: async (req, res) => {
+    try {
+      const data = await orderTrafficSourcesService.getOrderTrafficSourceOrders({
+        trafficSource: req.query.trafficSource || req.params.trafficSource,
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+        page: req.query.page,
+        limit: req.query.limit,
+      });
+      res.status(200).json({
+        message: 'Order traffic source orders retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status =
+        error.statusCode
+        || (error.message.includes('Invalid') || error.message.includes('preset') ? 400 : 500);
+      res.status(status).json({
+        message: 'Failed to load orders for traffic source',
+        error: error.message,
+      });
+    }
+  },
+
   getPaidSearchTerms: async (req, res) => {
     try {
       const data = await paidSearchTermsService.getPaidSearchTerms({
