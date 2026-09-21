@@ -305,6 +305,9 @@ const taskSchema = new Schema(
     /** Raw GA4 sessionDefaultChannelGroup from purchase ↔ orderNumber match. */
     ga4SessionChannel: { type: String, required: false },
     ga4TrafficChannelSyncedAt: { type: Date, required: false },
+    /** Google Ads Local Services lead id from weekly LSA → order match. */
+    lsaLeadId: { type: String, required: false },
+    lsaTrafficSyncedAt: { type: Date, required: false },
     googleAdsPurchaseConversionSentAt: { type: Date, required: false },
     googleAdsConversionError: { type: String, required: false },
     microsoftAdsOfflineConversionExportedAt: { type: Date, required: false },
