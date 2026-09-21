@@ -48,6 +48,20 @@ function canApplyGa4TrafficSource(currentTrafficSource, nextTrafficSource) {
   );
 }
 
+/**
+ * LSA lead match may stamp Organic / missing / Direct → LSA.
+ * Never overwrite another hard ads channel or an existing LSA tag.
+ */
+function canApplyLsaTrafficSource(currentTrafficSource) {
+  if (!currentTrafficSource || currentTrafficSource === TRAFFIC_SOURCES.ORGANIC) {
+    return true;
+  }
+  if (currentTrafficSource === TRAFFIC_SOURCES.DIRECT) {
+    return true;
+  }
+  return false;
+}
+
 function hasGoogleAdsClickId({ gclid, gbraid, wbraid } = {}) {
   return Boolean(
     (gclid && String(gclid).trim())
@@ -175,4 +189,5 @@ module.exports = {
   resolveTrafficSource,
   mapGa4ChannelToTrafficSource,
   canApplyGa4TrafficSource,
+  canApplyLsaTrafficSource,
 };
