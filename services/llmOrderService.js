@@ -11,31 +11,124 @@ const LLM_ORDER_URL =
 const LLM_ORDER_TIMEOUT_MS =
   Number(process.env.LLM_ORDER_TIMEOUT_MS) || 60000;
 
+function optionalTrimmedString(value) {
+  if (value == null) return undefined;
+  const s = String(value).trim();
+  return s ? s : undefined;
+}
+
+function optionalNumber(value) {
+  if (value == null || value === '') return undefined;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Map frontend / client items into the /order_llm items shape. */
+function normalizeItemsForPython(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items.map((item) => {
+    const itemName = optionalTrimmedString(item?.item_name);
+    const phrase =
+      optionalTrimmedString(item?.phrase) || itemName || '';
+    const quantity =
+      typeof item?.quantity === 'number'
+        ? item.quantity
+        : Number(item?.quantity) || 0;
+
+    const normalized = {
+      phrase,
+      quantity,
+    };
+
+    const type = optionalTrimmedString(item?.type);
+    if (type) normalized.type = type;
+
+    const itemId = optionalTrimmedString(item?.item_id);
+    if (itemId) normalized.item_id = itemId;
+
+    if (itemName) normalized.item_name = itemName;
+
+    const finalPrice =
+      optionalNumber(item?.final_price) ?? optionalNumber(item?.price);
+    if (finalPrice != null) normalized.final_price = finalPrice;
+
+    const position = optionalTrimmedString(item?.position);
+    if (position) normalized.position = position;
+
+    const inside = optionalNumber(item?.inside);
+    if (inside != null) normalized.inside = inside;
+
+    const insideWithDismantling = optionalNumber(
+      item?.inside_with_dismantling
+    );
+    if (insideWithDismantling != null) {
+      normalized.inside_with_dismantling = insideWithDismantling;
+    }
+
+    if (item?.status != null) normalized.status = item.status;
+
+    return normalized;
+  });
+}
+
+function normalizeLlmOrderItem(item) {
+  const itemName = optionalTrimmedString(item?.item_name);
+  const phrase =
+    optionalTrimmedString(item?.phrase) || itemName || '';
+  const quantity =
+    typeof item?.quantity === 'number'
+      ? item.quantity
+      : Number(item?.quantity) || 0;
+
+  const normalized = {
+    phrase,
+    quantity,
+    status: item?.status ?? null,
+  };
+
+  const itemId = optionalTrimmedString(item?.item_id);
+  if (itemId) normalized.item_id = itemId;
+
+  if (itemName) normalized.item_name = itemName;
+
+  const type = optionalTrimmedString(item?.type);
+  if (type) normalized.type = type;
+
+  const finalPrice =
+    optionalNumber(item?.final_price) ?? optionalNumber(item?.price);
+  if (finalPrice != null) {
+    normalized.final_price = finalPrice;
+    normalized.price = finalPrice;
+  }
+
+  const position = optionalTrimmedString(item?.position);
+  if (position) normalized.position = position;
+
+  const inside = optionalNumber(item?.inside);
+  if (inside != null) normalized.inside = inside;
+
+  const insideWithDismantling = optionalNumber(
+    item?.inside_with_dismantling
+  );
+  if (insideWithDismantling != null) {
+    normalized.inside_with_dismantling = insideWithDismantling;
+  }
+
+  return normalized;
+}
+
 function normalizeLlmOrderResponse(data, pythonPayload, ctx, attachments) {
   const customer =
     data?.customer && typeof data.customer === 'object' ? data.customer : {};
 
-  const items = Array.isArray(data?.items)
-    ? data.items.map((item) => {
-        const normalized = {
-          phrase: item?.phrase ?? '',
-          quantity:
-            typeof item?.quantity === 'number'
-              ? item.quantity
-              : Number(item?.quantity) || 0,
-          status: item?.status ?? null,
-        };
+  const rawItems = Array.isArray(data?.items)
+    ? data.items
+    : Array.isArray(pythonPayload?.items)
+      ? pythonPayload.items
+      : [];
 
-        if (item?.item_id != null && String(item.item_id).trim()) {
-          normalized.item_id = String(item.item_id).trim();
-        }
-        if (item?.item_name != null && String(item.item_name).trim()) {
-          normalized.item_name = String(item.item_name).trim();
-        }
-
-        return normalized;
-      })
-    : [];
+  const items = rawItems.map(normalizeLlmOrderItem);
 
   const order = {
     customer: {
@@ -54,9 +147,16 @@ function normalizeLlmOrderResponse(data, pythonPayload, ctx, attachments) {
     source: data?.source ?? null,
     llm_error: data?.llm_error ?? null,
     subject: data?.subject || pythonPayload.message?.subject || '',
-    threadId: data?.threadId || pythonPayload.message?.threadId || ctx.threadId,
+    threadId:
+      data?.threadId ||
+      pythonPayload.threadId ||
+      pythonPayload.message?.threadId ||
+      ctx.threadId,
     messageId:
-      data?.messageId || pythonPayload.message?.messageId || ctx.messageId,
+      data?.messageId ||
+      pythonPayload.messageId ||
+      pythonPayload.message?.messageId ||
+      ctx.messageId,
   };
 
   const warning =
@@ -70,9 +170,17 @@ function normalizeLlmOrderResponse(data, pythonPayload, ctx, attachments) {
   return order;
 }
 
-async function callPythonLlmOrder(pythonPayload, ctx, attachments) {
-  console.log('[LLM Order] Payload:', JSON.stringify(pythonPayload, null, 2));
+function buildPythonLlmOrderPayload(suggestPayload, ctx, items) {
+  return {
+    message: suggestPayload.message,
+    thread: suggestPayload.thread,
+    threadId: ctx.threadId,
+    messageId: ctx.messageId,
+    items: normalizeItemsForPython(items),
+  };
+}
 
+async function callPythonLlmOrder(pythonPayload, ctx, attachments) {
   const res = await axios.post(LLM_ORDER_URL, pythonPayload, {
     headers: { 'Content-Type': 'application/json' },
     timeout: LLM_ORDER_TIMEOUT_MS,
@@ -81,7 +189,7 @@ async function callPythonLlmOrder(pythonPayload, ctx, attachments) {
   return normalizeLlmOrderResponse(res.data, pythonPayload, ctx, attachments);
 }
 
-async function llmOrderForTargetMessage(adminId, threadId, messageId) {
+async function llmOrderForTargetMessage(adminId, threadId, messageId, items = []) {
   const { payload, ctx } = await buildSuggestReplyPythonPayloadForThread(
     adminId,
     threadId,
@@ -92,21 +200,24 @@ async function llmOrderForTargetMessage(adminId, threadId, messageId) {
     ctx.messagesThroughTarget || []
   );
 
+  const pythonPayload = buildPythonLlmOrderPayload(payload, ctx, items);
+
   console.log(
-    `[LLM Order] threadId=${ctx.threadId} targetMessageId=${ctx.messageId} threadCount=${ctx.threadHistory.length} attachments=${attachments.length}`
+    `[LLM Order] threadId=${ctx.threadId} targetMessageId=${ctx.messageId} threadCount=${ctx.threadHistory.length} items=${pythonPayload.items.length} attachments=${attachments.length}`
   );
 
-  return callPythonLlmOrder(payload, ctx, attachments);
+  return callPythonLlmOrder(pythonPayload, ctx, attachments);
 }
 
 /** Uses messageId when provided; otherwise newest message in thread. */
-async function llmOrderForThread(adminId, threadId, messageId) {
+async function llmOrderForThread(adminId, threadId, messageId, items = []) {
   const targetMessageId =
     messageId || (await getLatestMessageIdInThread(adminId, threadId));
-  return llmOrderForTargetMessage(adminId, threadId, targetMessageId);
+  return llmOrderForTargetMessage(adminId, threadId, targetMessageId, items);
 }
 
 module.exports = {
   llmOrderForThread,
   llmOrderForTargetMessage,
+  normalizeItemsForPython,
 };

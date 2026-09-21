@@ -49,7 +49,7 @@ const {
   listThreadReplyLogs,
   getReplyStats,
 } = require('../services/emailReplyLogService');
-const { pollNewMessagesWithClassification } = require('../services/gmailInboxSync');
+const { enqueueGmailInboxSync } = require('../services/gmailInboxSync');
 const {
   attachStoredAiCategories,
   attachThreadAiCategorySlug,
@@ -799,12 +799,15 @@ const gmailCtrl = {
         req.params.id,
         messageId
       );
-      res.json({
+      const body = {
         success: true,
         suggestion,
-        suggestReplyContext: suggestion.suggestReplyContext || null,
         inReplyToMessageId: suggestion.inReplyToMessageId || null,
-      });
+      };
+      if (suggestion.suggestReplyContext) {
+        body.suggestReplyContext = suggestion.suggestReplyContext;
+      }
+      res.json(body);
     } catch (error) {
       const status =
         error.status === 404 || error.response?.status === 404
@@ -842,12 +845,15 @@ const gmailCtrl = {
         req.params.id,
         messageId
       );
-      res.json({
+      const body = {
         success: true,
         suggestion,
-        suggestReplyContext: suggestion.suggestReplyContext || null,
         inReplyToMessageId: suggestion.inReplyToMessageId || null,
-      });
+      };
+      if (suggestion.suggestReplyContext) {
+        body.suggestReplyContext = suggestion.suggestReplyContext;
+      }
+      res.json(body);
     } catch (error) {
       const status =
         error.status === 400
@@ -869,6 +875,7 @@ const gmailCtrl = {
   /**
    * Extract order details from thread via Python /order_llm.
    * Pass body/query messageId for the clicked row; omit for latest in thread.
+   * Pass body.items from the frontend — LLM fills customer/booking/note only.
    */
   llmOrder: async (req, res) => {
     try {
@@ -877,10 +884,12 @@ const gmailCtrl = {
         req.query?.messageId ||
         req.body?.id ||
         req.body?.selectedMessageId;
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
       const order = await llmOrderForThread(
         req.user._id,
         req.params.id,
-        messageId
+        messageId,
+        items
       );
       res.json({
         success: true,
@@ -1263,23 +1272,29 @@ const gmailCtrl = {
         `[Gmail Webhook] Notification for ${emailAddress} (admin ${adminId}, historyId ${historyId})`
       );
 
-      const { newMessages } = await pollNewMessagesWithClassification(adminId);
+      enqueueGmailInboxSync(adminId, {
+        onBatch: async (batchMessages) => {
+          if (!batchMessages?.length) return;
 
-      if (newMessages.length > 0) {
-        for (const newMessage of newMessages) {
-          const sent = await emitToAllOnlineAdmins('gmail:new', newMessage);
+          for (const newMessage of batchMessages) {
+            const sent = await emitToAllOnlineAdmins('gmail:new', newMessage);
+            console.log(
+              `[Gmail Webhook] Broadcast gmail:new (${newMessage.id}) to ${sent} online admin(s)`
+            );
+          }
+
+          const sent = await emitToAllOnlineAdmins('gmail:inbox-updated', {
+            count: batchMessages.length,
+            messageIds: batchMessages.map((m) => m.id),
+          });
           console.log(
-            `[Gmail Webhook] Broadcast gmail:new (${newMessage.id}) to ${sent} online admin(s)`
+            `[Gmail Webhook] Broadcast gmail:inbox-updated (${batchMessages.length} message(s)) to ${sent} online admin(s)`
           );
-        }
-        const sent = await emitToAllOnlineAdmins('gmail:inbox-updated', {
-          count: newMessages.length,
-          messageIds: newMessages.map((m) => m.id),
-        });
-        console.log(
-          `[Gmail Webhook] Broadcast gmail:inbox-updated (${newMessages.length} message(s)) to ${sent} online admin(s)`
-        );
-      }
+        },
+        onError: async (error) => {
+          console.error('[Gmail Webhook] Processing error:', error);
+        },
+      });
     } catch (error) {
       console.error('[Gmail Webhook] Processing error:', error);
     }
