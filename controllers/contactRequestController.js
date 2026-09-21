@@ -1,13 +1,42 @@
 // controllers/contactRequestController.js
 const ContactRequest = require('../models/ContactRequest');
 const sendContact2Email = require('../utils/sendContact2Email');
+const { normalizeUtmSource } = require('../utils/trafficSource');
 
 const createContactRequest = async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, subject, message } = req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      subject,
+      message,
+      gclid,
+      gbraid,
+      wbraid,
+      msclkid,
+      fbclid,
+      utm_source,
+    } = req.body;
 
-    // Save the contact request to the database
-    const newContact = new ContactRequest({ firstName, lastName, email, phone, subject, message });
+    const normalizedUtmSource = normalizeUtmSource(utm_source);
+
+    // Save the contact request to the database (incl. ads click IDs from the client)
+    const newContact = new ContactRequest({
+      firstName,
+      lastName,
+      email,
+      phone,
+      subject,
+      message,
+      ...(gclid ? { gclid: String(gclid).trim() } : {}),
+      ...(gbraid ? { gbraid: String(gbraid).trim() } : {}),
+      ...(wbraid ? { wbraid: String(wbraid).trim() } : {}),
+      ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
+      ...(fbclid ? { fbclid: String(fbclid).trim() } : {}),
+      ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
+    });
     await newContact.save();
 
     // Send emails: to the responsible person and the user

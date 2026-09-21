@@ -22,6 +22,7 @@ const {
 } = require('../services/taskAvailabilityService');
 const { normalizeUtmSource, pickClickIds, mergeClickIdFields, hasAnyClickId } = require('../utils/trafficSource');
 const { resolveClickIdsForNewTask } = require('../services/tawkAttributionService');
+const { applyContactClickIdsToTask } = require('../services/contactAttributionService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -2014,6 +2015,13 @@ const taskCtrl = {
           if (attributionIds.utm_source) newTask.utm_source = attributionIds.utm_source;
         } catch (err) {
           console.error('[Tawk Attribution] Error resolving click IDs on createTask:', err);
+        }
+
+        // Contact form: fill any still-missing click IDs (email / phone / name match).
+        try {
+          await applyContactClickIdsToTask(newTask);
+        } catch (contactErr) {
+          console.error('[Contact Attribution] Error matching contact on createTask:', contactErr);
         }
       }
 
