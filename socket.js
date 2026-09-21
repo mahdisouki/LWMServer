@@ -1634,6 +1634,7 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
     'Payment': 'Payment Update',
     'Payment-failed': 'Payment Failed',
     'Subscriptions': 'Subscription Reminder',
+    'WhatsApp': 'WhatsApp Message',
   };
   const title = titleMap[type] || 'Notification';
 
