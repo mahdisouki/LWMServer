@@ -19,6 +19,7 @@ router.get('/page-performance', ...admin, analyticsCtrl.getPagePerformance);
 router.get('/top-postcodes', ...admin, analyticsCtrl.getTopPostcodes);
 router.get('/popular-items', ...admin, analyticsCtrl.getPopularItems);
 router.get('/order-traffic-sources', ...admin, analyticsCtrl.getOrderTrafficSources);
+router.get('/order-traffic-sources/orders', ...admin, analyticsCtrl.getOrderTrafficSourceOrders);
 router.get('/paid-search-terms', ...admin, analyticsCtrl.getPaidSearchTerms);
 router.get('/admin-orders', ...admin, analyticsCtrl.getAdminOrders);
 router.get('/staff-working-hours', ...admin, analyticsCtrl.getStaffWorkingHours);

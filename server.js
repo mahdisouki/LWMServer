@@ -244,6 +244,7 @@ const brokerRoutes = require('./routes/broker');
 const brokerPortalRoutes = require('./routes/brokerPortal');
 const labelingRoutes = require('./routes/labeling');
 const tawkAttributionRoutes = require('./routes/tawkAttribution');
+const mailtoAttributionRoutes = require('./routes/mailtoAttribution');
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app);
@@ -296,6 +297,7 @@ app.use('/api/brokers', brokerRoutes);
 app.use('/api/broker', brokerPortalRoutes);
 app.use('/api/labeling', labelingRoutes);
 app.use('/api', tawkAttributionRoutes);
+app.use('/api', mailtoAttributionRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;

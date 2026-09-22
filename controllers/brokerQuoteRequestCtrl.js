@@ -168,6 +168,8 @@ const brokerQuoteRequestCtrl = {
         return res.status(404).json({ success: false, message: 'Quote request not found' });
       }
 
+      const previousStatus = quote.status;
+
       const allowed = [
         'contactId',
         'companyName',
@@ -257,6 +259,27 @@ const brokerQuoteRequestCtrl = {
             console.error('syncBrokerQuoteToMainSystem error:', syncError);
           }
         }
+      }
+
+      // The back office has priced the job: tell the broker, since this is what
+      // unlocks negotiation for them in the portal.
+      if (quote.status === 'Quoted' && previousStatus !== 'Quoted') {
+        const companyLabel = quote.companyName || '';
+        const priceLabel = `£${Number(quote.quotedAmount || 0).toFixed(2)}`;
+        await notifyBrokerOrg(quote.brokerId, {
+          type: 'Quotations',
+          message: `Quote ${quote.referenceCode} priced at ${priceLabel} for ${companyLabel}`,
+          senderName: actorName,
+          metadata: {
+            type: 'Quotations',
+            brokerId: String(quote.brokerId),
+            leadId: String(quote.leadId),
+            quoteRequestId: String(quote._id),
+            quotedAmount: quote.quotedAmount ?? null,
+          },
+          emailSubject: `Quote priced: ${quote.referenceCode}`,
+          emailHtml: `<p>Hello,</p><p>London Waste Management has priced quote <strong>${quote.referenceCode}</strong> for <strong>${companyLabel}</strong> at <strong>${priceLabel}</strong>.</p><p>You can now open a negotiation with the customer from your broker portal.</p><p>Priced by: ${actorName}</p>`,
+        });
       }
 
       return res.json({ success: true, data: { ...quote.toObject(), id: quote._id } });

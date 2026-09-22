@@ -30,6 +30,10 @@ const LEAD_EXTRA_FIELDS = [
   'postalCode',
   'region',
   'country',
+  'industry',
+  'billingAddress',
+  'preferredCollectionDate',
+  'preferredCollectionTime',
   'leadTitle',
   'description',
   'customerNeed',
@@ -47,14 +51,35 @@ const LEAD_EXTRA_FIELDS = [
   'reminder',
 ];
 
-const LEAD_DATE_FIELDS = ['followUpAt', 'expectedDecisionDate', 'expectedDeliveryDate'];
+const LEAD_DATE_FIELDS = [
+  'followUpAt',
+  'expectedDecisionDate',
+  'expectedDeliveryDate',
+  'preferredCollectionDate',
+];
+
+/** Parse a calendar date safely. Empty/invalid → null (never "today"). */
+function parseLeadDate(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const dateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      return new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T12:00:00.000Z`);
+    }
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
 
 function pickLeadExtras(body) {
   const extras = {};
   for (const key of LEAD_EXTRA_FIELDS) {
     if (body[key] !== undefined) {
       if (LEAD_DATE_FIELDS.includes(key)) {
-        extras[key] = body[key] ? new Date(body[key]) : null;
+        extras[key] = parseLeadDate(body[key]);
       } else {
         extras[key] = body[key];
       }
@@ -158,7 +183,7 @@ const brokerLeadCtrl = {
         priority: priority || 'Medium',
         wasteType: wasteType || body.leadTitle || '',
         frequency: frequency || body.estimatedQuantity || '',
-        followUpAt: followUpAt ? new Date(followUpAt) : null,
+        followUpAt: parseLeadDate(followUpAt),
         pipelineValue: pipelineValue != null ? Number(pipelineValue) : 0,
         notes: notes || body.internalComments || '',
         ...pickLeadExtras(body),
@@ -209,7 +234,7 @@ const brokerLeadCtrl = {
             return res.status(400).json({ success: false, message: 'Invalid status' });
           }
           if (key === 'followUpAt' || LEAD_DATE_FIELDS.includes(key)) {
-            lead[key] = req.body[key] ? new Date(req.body[key]) : null;
+            lead[key] = parseLeadDate(req.body[key]);
           } else if (key === 'pipelineValue') {
             lead[key] = Number(req.body[key]);
           } else {
@@ -456,6 +481,7 @@ const brokerLeadCtrl = {
             leadId: l._id,
             leadCode: `LD-${String(l._id).slice(-6).toUpperCase()}`,
             companyName: l.companyName,
+            status: l.status,
             action: a.action,
             detail: a.detail,
             actorName: a.actorName,

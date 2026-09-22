@@ -23,6 +23,7 @@ const {
 const { normalizeUtmSource, pickClickIds, mergeClickIdFields, hasAnyClickId } = require('../utils/trafficSource');
 const { resolveClickIdsForNewTask } = require('../services/tawkAttributionService');
 const { applyContactClickIdsToTask } = require('../services/contactAttributionService');
+const { applyMailtoClickIdsToTask } = require('../services/mailtoAttributionService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -2022,6 +2023,13 @@ const taskCtrl = {
           await applyContactClickIdsToTask(newTask);
         } catch (contactErr) {
           console.error('[Contact Attribution] Error matching contact on createTask:', contactErr);
+        }
+
+        // Mailto click: fill remaining click IDs from the same sender email.
+        try {
+          await applyMailtoClickIdsToTask(newTask);
+        } catch (mailtoErr) {
+          console.error('[Mailto Attribution] Error matching mailto lead on createTask:', mailtoErr);
         }
       }
 
