@@ -6,9 +6,11 @@ const {
 } = require('./gmailService');
 const { detectItemsFromGmailMessage } = require('./detectionAiService');
 
-const SUGGEST_REPLY_URL =
-  process.env.SUGGEST_REPLY_URL ||
-  'http://localhost:8001/suggest_reply';
+const PYTHON_SERVER = (
+  process.env.PYTHON_SERVER || 'http://localhost:8001'
+).replace(/\/$/, '');
+
+const SUGGEST_REPLY_URL = `${PYTHON_SERVER}/suggest_reply`;
 
 const SUGGEST_REPLY_TIMEOUT_MS =
   Number(process.env.SUGGEST_REPLY_TIMEOUT_MS) || 60000;

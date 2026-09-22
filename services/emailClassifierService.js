@@ -10,9 +10,11 @@ const {
   getThreadMessageCount,
 } = require('./gmailService');
 
-const CLASSIFIER_URL =
-  process.env.EMAIL_CLASSIFIER_URL ||
-  'http://localhost:8001/tools/classify_email';
+const PYTHON_SERVER = (
+  process.env.PYTHON_SERVER || 'http://localhost:8001'
+).replace(/\/$/, '');
+
+const CLASSIFIER_URL = `${PYTHON_SERVER}/tools/classify_email`;
 
 const CLASSIFIER_TIMEOUT_MS = Number(process.env.EMAIL_CLASSIFIER_TIMEOUT_MS) || 30000;
 
