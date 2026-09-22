@@ -42,6 +42,7 @@ const MODULES = [
   'Brokers',
   'Labeling',
   'Refunds',
+  'Running_Costs',
 ];
 
 function permissionField() {

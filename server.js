@@ -288,6 +288,7 @@ app.use('/api', incidentRoutes);
 app.use('/api', vanRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/running-costs', require('./routes/runningCosts'));
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/webex', webexRoutes);
 app.use('/api/ticks', tickRoutes);
