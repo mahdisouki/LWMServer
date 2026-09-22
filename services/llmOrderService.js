@@ -5,8 +5,11 @@ const {
 } = require('./gmailService');
 const { buildSuggestReplyPythonPayloadForThread } = require('./suggestReplyService');
 
-const LLM_ORDER_URL =
-  process.env.LLM_ORDER_URL || 'http://localhost:8001/order_llm';
+const PYTHON_SERVER = (
+  process.env.PYTHON_SERVER || 'http://localhost:8001'
+).replace(/\/$/, '');
+
+const LLM_ORDER_URL = `${PYTHON_SERVER}/order_llm`;
 
 const LLM_ORDER_TIMEOUT_MS =
   Number(process.env.LLM_ORDER_TIMEOUT_MS) || 60000;
