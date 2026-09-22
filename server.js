@@ -226,6 +226,7 @@ const incidentRoutes = require('./routes/incident');
 const expenseRoutes = require('./routes/expense');
 const subscriptionRoutes = require('./routes/subscription');
 const whatsappRoutes = require('./routes/whatsapp');
+const webexRoutes = require('./routes/webex');
 const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
 const customerRoutes = require('./routes/customerRoutes');
@@ -243,6 +244,7 @@ const brokerRoutes = require('./routes/broker');
 const brokerPortalRoutes = require('./routes/brokerPortal');
 const labelingRoutes = require('./routes/labeling');
 const tawkAttributionRoutes = require('./routes/tawkAttribution');
+const mailtoAttributionRoutes = require('./routes/mailtoAttribution');
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app);
@@ -287,6 +289,7 @@ app.use('/api', vanRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/webex', webexRoutes);
 app.use('/api/ticks', tickRoutes);
 app.use('/api/seo', seoRoutes);
 app.use('/api', networkRouter);
@@ -294,6 +297,7 @@ app.use('/api/brokers', brokerRoutes);
 app.use('/api/broker', brokerPortalRoutes);
 app.use('/api/labeling', labelingRoutes);
 app.use('/api', tawkAttributionRoutes);
+app.use('/api', mailtoAttributionRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;

@@ -74,6 +74,25 @@ const notificationController = {
       });
     }
   },
+
+  markAllAsRead: async (req, res) => {
+    try {
+      const result = await Notification.updateMany(
+        { userId: req.user._id, read: false },
+        { $set: { read: true } },
+      );
+
+      res.status(200).json({
+        message: 'Notifications marked as read',
+        updated: result.modifiedCount || 0,
+      });
+    } catch (error) {
+      res.status(500).json({
+        message: 'Failed to mark notifications as read',
+        error: error.message,
+      });
+    }
+  },
 };
 
 module.exports = notificationController;
