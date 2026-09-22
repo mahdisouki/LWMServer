@@ -4,6 +4,7 @@ const {
   getSuggestReplyThreadContext,
   getLatestMessageIdInThread,
 } = require('./gmailService');
+const { detectItemsFromGmailMessage } = require('./detectionAiService');
 
 const SUGGEST_REPLY_URL =
   process.env.SUGGEST_REPLY_URL ||
@@ -15,6 +16,7 @@ const SUGGEST_REPLY_TIMEOUT_MS =
 function buildContentMainForSuggest(contentMain, photoCount) {
   const text = String(contentMain || '').trim();
   const count = Number(photoCount) || 0;
+
   const photoNote =
     count > 0
       ? count === 1
@@ -28,7 +30,7 @@ function buildContentMainForSuggest(contentMain, photoCount) {
 }
 
 async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageContext) {
-  console.log('[Suggest Reply] Payload:', JSON.stringify(pythonPayload, null, 2));
+
 
   const res = await axios.post(SUGGEST_REPLY_URL, pythonPayload, {
     headers: { 'Content-Type': 'application/json' },
@@ -36,12 +38,38 @@ async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageCo
   });
 
   const data = res.data || {};
+  const category = data.category ?? fallbackCategory;
+  const threadId = data.threadId || pythonPayload.message?.threadId;
+  const messageId = data.messageId || pythonPayload.message?.messageId;
+  const from = messageContext?.from || null;
+
+  // Quote items-only: return only pricing/item fields (no reply drafts).
+  if (category === 'quote') {
+    return {
+      category,
+      phase: data.phase ?? null,
+      reason: data.reason ?? null,
+      draft_source: data.draft_source ?? null,
+      items: Array.isArray(data.items) ? data.items : [],
+      collection_side: data.collection_side ?? null,
+      needs_dismantling: Boolean(data.needs_dismantling),
+      extraction_method: data.extraction_method ?? null,
+      unmatched_items: Array.isArray(data.unmatched_items)
+        ? data.unmatched_items
+        : [],
+      llm_error: data.llm_error ?? null,
+      threadId,
+      messageId,
+      from,
+    };
+  }
+
   const suggestedReplies = Array.isArray(data.suggested_replies)
     ? data.suggested_replies.filter((x) => typeof x === 'string' && x.trim())
     : [];
 
   return {
-    category: data.category ?? fallbackCategory,
+    category,
     phase: data.phase ?? null,
     missing_slots: Array.isArray(data.missing_slots) ? data.missing_slots : [],
     suggested_replies: suggestedReplies,
@@ -52,9 +80,18 @@ async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageCo
     price_type: data.price_type ?? null,
     reason: data.reason ?? null,
     draft_source: data.draft_source ?? null,
-    threadId: data.threadId || pythonPayload.message?.threadId,
-    messageId: data.messageId || pythonPayload.message?.messageId,
-    from: messageContext?.from || null,
+    customer_name: data.customer_name ?? null,
+    order_ref: data.order_ref ?? null,
+    is_service_failure:
+      typeof data.is_service_failure === 'boolean'
+        ? data.is_service_failure
+        : null,
+    is_follow_up:
+      typeof data.is_follow_up === 'boolean' ? data.is_follow_up : null,
+    language: data.language ?? null,
+    threadId,
+    messageId,
+    from,
   };
 }
 
@@ -95,21 +132,25 @@ function normalizeToForSuggest(toHeader) {
   return raw || null;
 }
 
-function buildThreadHistoryForPython(threadHistory) {
-  return threadHistory.map((row) => ({
-    direction: row.direction,
-    from: formatFromForSuggestReply(
-      row.fromHeader,
-      row.from_address,
-      row.direction
-    ),
-    subject: row.subject || '',
-    contentMain: buildContentMainForSuggest(
-      row.contentMain,
-      row.photoCount
-    ),
-    sent_at: row.internalDate || null,
-  }));
+function buildThreadHistoryForPython(threadHistory, targetPhotoCount = null) {
+  if (!Array.isArray(threadHistory) || !threadHistory.length) return [];
+
+  return threadHistory.map((row, index) => {
+    const isTarget = index === threadHistory.length - 1;
+    const photoCount =
+      isTarget && targetPhotoCount != null ? targetPhotoCount : row.photoCount;
+    return {
+      direction: row.direction,
+      from: formatFromForSuggestReply(
+        row.fromHeader,
+        row.from_address,
+        row.direction
+      ),
+      subject: row.subject || '',
+      contentMain: buildContentMainForSuggest(row.contentMain, photoCount),
+      sent_at: row.internalDate || null,
+    };
+  });
 }
 
 function buildPythonSuggestPayload({
@@ -119,6 +160,7 @@ function buildPythonSuggestPayload({
   threadHistory,
   category,
   businessEmail,
+  detectedItems = [],
 }) {
   const fromAddress = extractEmailAddressFromHeader(target.from);
   const direction = isOutboundFromAddress(fromAddress, businessEmail)
@@ -148,7 +190,8 @@ function buildPythonSuggestPayload({
       is_quotation_form: detectQuotationForm(target.subject, contentMain),
       aiCategory: category,
     },
-    thread: buildThreadHistoryForPython(threadHistory),
+    thread: buildThreadHistoryForPython(threadHistory, target.photoCount),
+    detectedItems,
   };
 }
 
@@ -175,22 +218,54 @@ async function buildSuggestReplyPythonPayloadForThread(
 ) {
   const ctx = await getSuggestReplyThreadContext(adminId, threadId, messageId);
   const category = await getCategoryForThread(adminId, ctx.threadId);
+
+  const targetGmailMessage = (ctx.messagesThroughTarget || []).find(
+    (m) => m.id === ctx.messageId
+  );
+
+  let detectedItems = [];
+  let detectionImageCount = Number(ctx.target?.photoCount) || 0;
+
+  if (targetGmailMessage) {
+    const detection = await detectItemsFromGmailMessage(
+      adminId,
+      targetGmailMessage
+    );
+    detectedItems = detection.items?.length
+      ? detection.items
+      : (detection.labels || []).map((name) => ({ name, count: 1 }));
+    detectionImageCount = Math.max(
+      detectionImageCount,
+      Number(detection.imageCount) || 0
+    );
+
+
+  }
+
   const payload = buildPythonSuggestPayload({
     ...ctx,
+    target: {
+      ...ctx.target,
+      photoCount: detectionImageCount,
+    },
     category,
     businessEmail: ctx.businessEmail,
+    detectedItems,
   });
 
-  return { payload, ctx, category };
+  return {
+    payload,
+    ctx,
+    category,
+    detectedItems,
+  };
 }
 
 async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
-  const { payload, ctx, category } =
+  const { payload, ctx, category, detectedItems } =
     await buildSuggestReplyPythonPayloadForThread(adminId, threadId, messageId);
 
-  console.log(
-    `[Suggest Reply] threadId=${ctx.threadId} targetMessageId=${ctx.messageId} threadCount=${ctx.threadHistory.length}`
-  );
+ 
 
   const suggestion = await callPythonSuggestReply(payload, category, {
     from: payload.message.from,
@@ -198,10 +273,21 @@ async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
     id: ctx.messageId,
   });
 
+  const resolvedCategory = suggestion.category || category;
+
+  // Quote items-only: do not attach reply-draft context / raw detections.
+  if (resolvedCategory === 'quote') {
+    return {
+      ...suggestion,
+      inReplyToMessageId: ctx.messageId,
+    };
+  }
+
   return {
     ...suggestion,
     inReplyToMessageId: ctx.messageId,
     suggestReplyContext: payload.thread,
+    detectedItems,
   };
 }
 
