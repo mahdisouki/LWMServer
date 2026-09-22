@@ -187,6 +187,13 @@ const brokerNegotiationCtrl = {
         }
       }
 
+      // Free-text progress note from the broker portal, kept as its own trail
+      // entry so the discussion history survives later field updates.
+      const updateNote = String(req.body.updateNote || '').trim();
+      if (updateNote) {
+        pushActivity(negotiation, 'Negotiation update', updateNote, actorName);
+      }
+
       if (changes.length) {
         pushActivity(negotiation, 'Negotiation updated', changes.join(', '), actorName);
       }
