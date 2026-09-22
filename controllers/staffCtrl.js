@@ -49,6 +49,7 @@ const staffManagement = {
         SortNumber,
         username,
         csvPermission,
+        isSuperAdmin,
         email,
         phoneNumber,
         gender,
@@ -101,6 +102,7 @@ const staffManagement = {
           SortNumber,
           username,
           csvPermission,
+          isSuperAdmin,
           email,
           phoneNumber,
           password: hashedPassword,
@@ -160,6 +162,8 @@ const staffManagement = {
           addressProof: addressProofUrl,
           NatInsurance: natInsuranceUrl,
           permissions: sanitizedPermissions,
+          csvPermission,
+          isSuperAdmin,
           isStillWorking,
           terminationReason,
         });
@@ -368,6 +372,10 @@ const staffManagement = {
 
       if (typeof updateData.csvPermission === 'string') {
         updateData.csvPermission = updateData.csvPermission === 'true';
+      }
+
+      if (typeof updateData.isSuperAdmin === 'string') {
+        updateData.isSuperAdmin = updateData.isSuperAdmin === 'true';
       }
 
       if (typeof updateData.isStillWorking === 'string') {

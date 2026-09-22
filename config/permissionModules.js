@@ -41,6 +41,7 @@ const MODULES = [
   'Ticks',
   'Brokers',
   'Labeling',
+  'Refunds',
 ];
 
 function permissionField() {
