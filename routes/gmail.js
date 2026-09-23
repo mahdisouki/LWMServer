@@ -297,4 +297,16 @@ router.post('/webhook', gmailCtrl.handleWebhook);
 router.post('/watch/start', isAuth, gmailCtrl.startWatch);
 router.post('/watch/stop', isAuth, gmailCtrl.stopWatch);
 
+// My inbox assignment (push / active pool)
+const gmailAssignmentCtrl = require('../controllers/gmailAssignmentCtrl');
+router.get('/assignments/presence', isAuth, gmailAssignmentCtrl.listAdminPresence);
+router.get('/assignments/status', isAuth, gmailAssignmentCtrl.getMyAssignmentStatus);
+router.put('/assignments/active', isAuth, gmailAssignmentCtrl.setMyAssignmentActive);
+router.post('/assignments/activity', isAuth, gmailAssignmentCtrl.recordActivity);
+router.post(
+  '/assignments/:threadId/reassign',
+  isAuth,
+  gmailAssignmentCtrl.reassign
+);
+
 module.exports = router;
