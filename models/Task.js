@@ -307,6 +307,12 @@ const taskSchema = new Schema(
       enum: ['Google Ads', 'LSA', 'Microsoft Ads', 'Instagram', 'Facebook', 'Direct', 'Organic'],
       default: 'Organic',
     },
+    /** How the job arrived. Independent of trafficSource (ads/organic) and createdByType. */
+    subsource: {
+      type: String,
+      enum: ['tawk', 'phone', 'email', 'website', null],
+      default: null,
+    },
     /** Raw GA4 sessionDefaultChannelGroup from purchase ↔ orderNumber match. */
     ga4SessionChannel: { type: String, required: false },
     ga4TrafficChannelSyncedAt: { type: Date, required: false },
@@ -632,6 +638,7 @@ taskSchema.index({ taskStatus: 1, paymentStatus: 1, finishDate: 1 });
 taskSchema.index({ isBusinessEmail: 1, createdAt: -1 });
 
 taskSchema.index({ trafficSource: 1, createdAt: -1 });
+taskSchema.index({ subsource: 1, createdAt: -1 });
 taskSchema.index({ createdByType: 1, createdAt: -1 });
 taskSchema.index({ createdByType: 1, paymentStatus: 1, createdAt: -1, trafficSource: 1 });
 

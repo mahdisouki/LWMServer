@@ -21,9 +21,9 @@ const {
   DEFAULT_SUGGESTION_DAYS,
 } = require('../services/taskAvailabilityService');
 const { normalizeUtmSource, pickClickIds, mergeClickIdFields, hasAnyClickId } = require('../utils/trafficSource');
-const { resolveClickIdsForNewTask } = require('../services/tawkAttributionService');
+const { resolveClickIdsForNewTask, findMatchingTawkLead } = require('../services/tawkAttributionService');
 const { applyContactClickIdsToTask } = require('../services/contactAttributionService');
-const { applyMailtoClickIdsToTask } = require('../services/mailtoAttributionService');
+const { applyMailtoClickIdsToTask, findMatchingMailtoLead } = require('../services/mailtoAttributionService');
 const { usesAdminPricing, usesPublicAutomaticPricing } = require('../utils/orderPricingMode');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -574,6 +574,7 @@ async function createDirectLinkedAdditionalTaskFromItems({
     date: parentTask.date,
     createdBy: createdByUser?.username || 'system',
     createdByType: 'Admin',
+    subsource: parentTask.subsource || null,
     paymentStatus: 'Unpaid',
     paymentMethod: childPaymentMethod,
     clientObjectPhotos: normalizedMedia,
@@ -631,6 +632,7 @@ async function createPersistentPaymentLink({
 }
 
 const TASK_PRIORITIES = ['low', 'medium', 'high'];
+const ORDER_SUBSOURCES = ['tawk', 'phone', 'email', 'website'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
@@ -1145,6 +1147,15 @@ function normalizeTaskPriority(value) {
   const s = String(value).trim().toLowerCase();
   if (s === '') return undefined;
   if (!TASK_PRIORITIES.includes(s)) return null;
+  return s;
+}
+
+/** undefined = empty, null = not in the allowed list, otherwise the stored value. */
+function normalizeOrderSubsource(value) {
+  if (value === undefined || value === null) return undefined;
+  const s = String(value).trim().toLowerCase();
+  if (s === '') return undefined;
+  if (!ORDER_SUBSOURCES.includes(s)) return null;
   return s;
 }
 // Fonction auxiliaire pour traiter les événements de commande approuvés
@@ -1675,8 +1686,21 @@ const taskCtrl = {
         msclkid,
         fbclid,
         utm_source,
+        subsource,
       } = req.body;
       const normalizedUtmSource = normalizeUtmSource(utm_source);
+      let subsourceToSet;
+      if (createdByType === 'public') {
+        subsourceToSet = 'website';
+      } else if (subsource !== undefined && subsource !== null && String(subsource).trim() !== '') {
+        subsourceToSet = normalizeOrderSubsource(subsource);
+        if (!subsourceToSet) {
+          return res.status(400).json({
+            message: 'Invalid subsource. Allowed values: tawk, phone, email, website.',
+            error: 'INVALID_SUBSOURCE',
+          });
+        }
+      }
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
       const orderItems = parseJsonArray(items);
@@ -1993,6 +2017,7 @@ const taskCtrl = {
         ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
         ...(fbclid ? { fbclid: String(fbclid).trim() } : {}),
         ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
+        ...(subsourceToSet ? { subsource: subsourceToSet } : {}),
       });
 
       // Only Admin/phone jobs need Tawk backfill — public checkout already sends browser click IDs.
@@ -2033,6 +2058,20 @@ const taskCtrl = {
           await applyMailtoClickIdsToTask(newTask);
         } catch (mailtoErr) {
           console.error('[Mailto Attribution] Error matching mailto lead on createTask:', mailtoErr);
+        }
+
+        if (!newTask.subsource) {
+          try {
+            const tawkLead = await findMatchingTawkLead(newTask);
+            if (tawkLead) {
+              newTask.subsource = 'tawk';
+            } else {
+              const mailtoLead = await findMatchingMailtoLead(newTask);
+              if (mailtoLead) newTask.subsource = 'email';
+            }
+          } catch (subsourceErr) {
+            console.error('[Subsource] Error matching intake source on createTask:', subsourceErr);
+          }
         }
       }
 
@@ -3940,6 +3979,22 @@ const taskCtrl = {
       // Sanitize ObjectId fields: empty string cannot be cast to ObjectId
       if (updates.cashReceivedBy === '' || (typeof updates.cashReceivedBy === 'string' && !updates.cashReceivedBy.trim())) {
         updates.cashReceivedBy = null;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(updates, 'subsource')) {
+        const rawSubsource = updates.subsource;
+        if (rawSubsource === '' || rawSubsource === null) {
+          updates.subsource = null;
+        } else {
+          const normalizedSubsource = normalizeOrderSubsource(rawSubsource);
+          if (!normalizedSubsource) {
+            return res.status(400).json({
+              message: 'Invalid subsource. Allowed values: tawk, phone, email, website.',
+              error: 'INVALID_SUBSOURCE',
+            });
+          }
+          updates.subsource = normalizedSubsource;
+        }
       }
 
       if (Object.prototype.hasOwnProperty.call(updates, 'priority')) {
