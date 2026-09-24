@@ -3,6 +3,7 @@ const StandardItem = require('../models/StandardItem');
 const Task = require('../models/Task');
 const Stripe = require('stripe');
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY); // Pass the API key here
+const { usesAdminPricing } = require('../utils/orderPricingMode');
 
 const VAT_RATE = 0.2; // VAT rate (20%)
 const MINIMUM_PRICE = 45; // Minimum price including VAT (£37.5 + £7.5 VAT)
@@ -85,7 +86,7 @@ async function calculateTotalPrice(taskId) {
     let finalPrice = basePrice + vat;
 
     // Apply minimum price if needed (check applyMinFee for Admin tasks)
-    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+    const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
     if (enforceMinimumPrice && finalPrice < MINIMUM_PRICE) {
         // Calculate the adjustment needed to reach £45 total
         const adjustment = MINIMUM_PRICE - finalPrice;
@@ -160,7 +161,7 @@ const calculateTotalPriceUpdate = async (taskId) => {
     let finalPrice = basePrice + vat;
 
     // Apply minimum price if needed (check applyMinFee for Admin tasks)
-    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+    const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
     if (enforceMinimumPrice && finalPrice < MINIMUM_PRICE) {
         finalPrice = MINIMUM_PRICE;
     }

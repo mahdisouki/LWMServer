@@ -180,6 +180,11 @@ const taskSchema = new Schema(
       enum: ['Admin', 'public', 'broker'],
       default: 'public',
     },
+    // Unlocks admin editing and pricing on a public order without changing its origin.
+    adminEditingEnabled: {
+      type: Boolean,
+      default: false,
+    },
     paymentStatus: {
       type: String,
       enum: ["partial_Paid", "Paid", "partial_Refunded", "refunded", "Unpaid", "Failed"],

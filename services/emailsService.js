@@ -9,6 +9,7 @@ const Handlebars = require('handlebars');
 const Task = require('../models/Task');
 const StandardItem = require('../models/StandardItem');
 const { cancelScheduledPaymentLinkRetry } = require('./failedPaymentLinkService');
+const { usesAdminPricing, usesPublicAutomaticPricing } = require('../utils/orderPricingMode');
 const {
   addStagingToSubject,
   addStagingBanner,
@@ -329,7 +330,7 @@ module.exports = {
     // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
     // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
     const isAvailableAnyTime = task.available === 'AnyTime';
-    const isCreatedByPublic = task.createdByType === 'public';
+    const isCreatedByPublic = usesPublicAutomaticPricing(task);
     const hasItems = task.items && task.items.length > 0;
     const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
     const hasCouponOnTask = Boolean(task.couponCode);
@@ -385,7 +386,7 @@ module.exports = {
 
     // Check createdByType condition for minimum price enforcement
     // Only skip minimum price if explicitly 'Admin' AND applyMinFee is false
-    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+    const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
     console.log('=== INVOICE PDF PRICE CALCULATION ===');
     console.log('task.createdByType:', task.createdByType, 'Type:', typeof task.createdByType);
     console.log('task.applyMinFee:', task.applyMinFee);
@@ -414,7 +415,7 @@ module.exports = {
       !isNaN(task.date.getTime()) &&
       typeof task.date.getDay === 'function' &&
       task.date.getDay() === 0;
-    if (isSunday && (task.createdByType === 'public' || task.applySundayFee === true)) {
+    if (isSunday && (usesPublicAutomaticPricing(task) || task.applySundayFee === true)) {
       sundayFeeAmount = 50;
       showSundayFeeRow = true;
       subtotal += 50;
@@ -1104,7 +1105,7 @@ module.exports = {
     // Calculate discounts
     // Outside/AnyTime 10% skipped when a coupon is present — do not stack
     const isAvailableAnyTime = task.available === 'AnyTime';
-    const isCreatedByPublic = task.createdByType === 'public';
+    const isCreatedByPublic = usesPublicAutomaticPricing(task);
     const hasItems = task.items && task.items.length > 0;
     const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
     const hasCouponOnTask = Boolean(task.couponCode);
@@ -1150,7 +1151,7 @@ module.exports = {
     const MIN_BASE_AMOUNT = 37.5;
     let callOutFee = 0;
     let showCallOutFeeRow = false;
-    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+    const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
     
     if (enforceMinimumPrice && subtotal < MIN_BASE_AMOUNT) {
       callOutFee = MIN_BASE_AMOUNT - subtotal;
@@ -1336,7 +1337,7 @@ module.exports = {
       // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
       // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
       const isAvailableAnyTime = task.available === 'AnyTime';
-      const isCreatedByPublic = task.createdByType === 'public';
+      const isCreatedByPublic = usesPublicAutomaticPricing(task);
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
       const hasCouponOnTask = Boolean(task.couponCode);
@@ -1402,7 +1403,7 @@ module.exports = {
       const MIN_BASE_AMOUNT = 37.5; // Minimum fee (before VAT)
       let callOutFee = 0;
       let showCallOutFeeRow = false;
-      const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+      const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
       
       if (enforceMinimumPrice && subtotal < MIN_BASE_AMOUNT) {
         callOutFee = MIN_BASE_AMOUNT - subtotal;
@@ -1417,7 +1418,7 @@ module.exports = {
         !isNaN(task.date.getTime()) &&
         typeof task.date.getDay === 'function' &&
         task.date.getDay() === 0;
-      if (isSunday && (task.createdByType === 'public' || task.applySundayFee === true)) {
+      if (isSunday && (usesPublicAutomaticPricing(task) || task.applySundayFee === true)) {
         showSundayFeeRow = true;
         subtotal += 50;
       }
