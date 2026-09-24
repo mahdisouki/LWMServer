@@ -222,10 +222,10 @@ const initSocket = (server) => {
         taskStatus: 'Completed',
         updatedAt: { $lte: thirtyMinutesAgo }
       });
-      console.log(unpaidTasks)
+      console.log(`Unpaid online tasks: ${unpaidTasks.length}`)
       // Get admin users
       const adminUsers = await User.find({ roleType: 'Admin' });
-      console.log(adminUsers)
+      console.log(`Admin users to notify: ${adminUsers.length}`)
       // Send notification to each admin
       for (const task of unpaidTasks) {
         const notificationMessage = `Task #${task.orderNumber} has been completed but payment is still pending`;
@@ -256,7 +256,6 @@ const initSocket = (server) => {
       }
 
       socket.user = decoded;
-      console.log(decoded);
       next();
     });
   });
@@ -266,7 +265,6 @@ const initSocket = (server) => {
     const userId = socket.user.userId;
     const justCameOnline = addUserSocket(userId, socket.id);
     console.log(`User connected: ${userId} with socket ID ${socket.id}`);
-    console.log(userSocketMap);
     sendOfflineNotifications(userId, socket);
 
     // Send current online users to the connecting client
@@ -1771,10 +1769,9 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
 // Function to send offline notifications to the user upon reconnecting
 const sendOfflineNotifications = async (userId, socket) => {
   //emit offline notifications to user
-  console.log(socket.id)
-  console.log(`Sending offline notifications to user: ${userId}`);
+  console.log(`Sending offline notifications to user: ${userId} (${socket.id})`);
   const offlineNotifications = await Notification.find({ userId, read: false });
-  console.log(offlineNotifications)
+  console.log(`Unread notifications for user ${userId}: ${offlineNotifications.length}`)
 
   // Title mapping for offline notifications
   const titleMap = {
