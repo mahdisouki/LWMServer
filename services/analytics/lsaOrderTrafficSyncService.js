@@ -2,9 +2,10 @@
  * Match Google Ads Local Services leads → Task orders and stamp trafficSource LSA.
  *
  * Rules:
- *  - Match phone first, then email (never name)
+ *  - Match email first, then phone (never name) — email is more reliable than phone
  *  - Lead must be before (or at) the order, within windowDays
- *  - Ambiguous matches (multiple orders) → skip
+ *  - Several orders on the same channel → pick the soonest order after the lead
+ *  - Several leads → same order → pick the latest lead still before the order
  *  - Overwrite Organic / null / Direct only
  *  - Scope: createdByType public + Admin
  */
@@ -74,27 +75,23 @@ function uniqueTasks(tasks) {
   return out;
 }
 
+/** Soonest order after the lead (same idea as Call CSV earliest-after-call). */
+function pickSoonestOrderAfterLead(hits) {
+  if (!hits.length) return null;
+  return [...hits].sort(
+    (a, b) =>
+      new Date(a.createdAt) - new Date(b.createdAt)
+      || String(a._id).localeCompare(String(b._id)),
+  )[0];
+}
+
 /**
- * Phone first; if phone present and yields 0 matches, fall through to email.
- * Multiple matches at the chosen channel → ambiguous (null + flag).
+ * Email first; if email missing or yields 0 matches, fall through to phone.
+ * Several hits → pick the soonest order after the lead (do not skip).
  */
 function findMatchingOrderForLead(lead, { byPhone, byEmail, windowDays }) {
   const leadPhone = normalizePhone(lead.phone);
   const leadEmail = normalizeEmail(lead.email);
-
-  if (leadPhone) {
-    const phoneHits = uniqueTasks(
-      (byPhone.get(leadPhone) || []).filter((task) =>
-        orderInLeadWindow(lead.createdAt, new Date(task.createdAt), windowDays),
-      ),
-    );
-    if (phoneHits.length === 1) {
-      return { task: phoneHits[0], matchBy: 'phone', ambiguous: false };
-    }
-    if (phoneHits.length > 1) {
-      return { task: null, matchBy: 'phone', ambiguous: true, candidates: phoneHits.length };
-    }
-  }
 
   if (leadEmail) {
     const emailHits = uniqueTasks(
@@ -102,15 +99,33 @@ function findMatchingOrderForLead(lead, { byPhone, byEmail, windowDays }) {
         orderInLeadWindow(lead.createdAt, new Date(task.createdAt), windowDays),
       ),
     );
-    if (emailHits.length === 1) {
-      return { task: emailHits[0], matchBy: 'email', ambiguous: false };
-    }
-    if (emailHits.length > 1) {
-      return { task: null, matchBy: 'email', ambiguous: true, candidates: emailHits.length };
+    if (emailHits.length >= 1) {
+      return {
+        task: pickSoonestOrderAfterLead(emailHits),
+        matchBy: 'email',
+        ambiguous: false,
+        candidates: emailHits.length,
+      };
     }
   }
 
-  return { task: null, matchBy: null, ambiguous: false };
+  if (leadPhone) {
+    const phoneHits = uniqueTasks(
+      (byPhone.get(leadPhone) || []).filter((task) =>
+        orderInLeadWindow(lead.createdAt, new Date(task.createdAt), windowDays),
+      ),
+    );
+    if (phoneHits.length >= 1) {
+      return {
+        task: pickSoonestOrderAfterLead(phoneHits),
+        matchBy: 'phone',
+        ambiguous: false,
+        candidates: phoneHits.length,
+      };
+    }
+  }
+
+  return { task: null, matchBy: null, ambiguous: false, candidates: 0 };
 }
 
 async function loadCandidateOrders({ earliestLeadAt, latestOrderAt }) {
@@ -185,25 +200,12 @@ async function syncLsaOrderTrafficSources({
   const byPhone = buildPhoneIndex(candidates);
   const byEmail = buildEmailIndex(candidates);
 
-  /** @type {Map<string, { lead: object, task: object, matchBy: string }>} */
-  const claimedByOrderId = new Map();
+  /** @type {Map<string, Array<{ lead: object, task: object, matchBy: string }>>} */
+  const claimsByOrderId = new Map();
   const syncedAt = new Date();
 
   for (const lead of leads) {
     const result = findMatchingOrderForLead(lead, { byPhone, byEmail, windowDays });
-
-    if (result.ambiguous) {
-      summary.ambiguous += 1;
-      if (summary.samples.length < 20) {
-        summary.samples.push({
-          leadId: lead.id,
-          status: 'ambiguous',
-          matchBy: result.matchBy,
-          candidates: result.candidates,
-        });
-      }
-      continue;
-    }
 
     if (!result.task) {
       summary.noMatch += 1;
@@ -217,29 +219,38 @@ async function syncLsaOrderTrafficSources({
     }
 
     const orderKey = String(task._id);
-    if (claimedByOrderId.has(orderKey)) {
-      // Two leads → same order: skip both (do not keep first claim).
-      const prior = claimedByOrderId.get(orderKey);
-      claimedByOrderId.delete(orderKey);
-      summary.alreadyClaimed += 1;
-      summary.matched = Math.max(0, summary.matched - 1);
-      if (summary.samples.length < 20) {
-        summary.samples.push({
-          leadId: lead.id,
-          priorLeadId: prior.lead.id,
-          orderNumber: task.orderNumber,
-          status: 'ambiguous_multi_lead',
-        });
-      }
-      summary.ambiguous += 1;
-      continue;
-    }
-
-    summary.matched += 1;
-    claimedByOrderId.set(orderKey, { lead, task, matchBy: result.matchBy });
+    if (!claimsByOrderId.has(orderKey)) claimsByOrderId.set(orderKey, []);
+    claimsByOrderId.get(orderKey).push({ lead, task, matchBy: result.matchBy });
   }
 
-  for (const { lead, task, matchBy } of claimedByOrderId.values()) {
+  /** @type {Array<{ lead: object, task: object, matchBy: string }>} */
+  const winners = [];
+  for (const claims of claimsByOrderId.values()) {
+    const sorted = [...claims].sort((a, b) => {
+      const aMs = new Date(a.lead.createdAt).getTime();
+      const bMs = new Date(b.lead.createdAt).getTime();
+      if (bMs !== aMs) return bMs - aMs; // latest lead before the order wins
+      return String(b.lead.id).localeCompare(String(a.lead.id));
+    });
+    const winner = sorted[0];
+    winners.push(winner);
+    summary.matched += 1;
+
+    if (sorted.length > 1) {
+      summary.alreadyClaimed += sorted.length - 1;
+      if (summary.samples.length < 20) {
+        summary.samples.push({
+          leadId: winner.lead.id,
+          orderNumber: winner.task.orderNumber,
+          status: 'multi_lead_picked_latest',
+          losingLeadIds: sorted.slice(1).map((c) => c.lead.id),
+          matchBy: winner.matchBy,
+        });
+      }
+    }
+  }
+
+  for (const { lead, task, matchBy } of winners) {
     if (summary.samples.length < 20) {
       summary.samples.push({
         leadId: lead.id,
