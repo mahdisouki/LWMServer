@@ -357,15 +357,27 @@ taskSchema.pre('save', function (next) {
     return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
   });
 
-  this.trafficSource = resolveTrafficSource({
-    gclid: this.gclid,
-    gbraid: this.gbraid,
-    wbraid: this.wbraid,
-    msclkid: this.msclkid,
-    fbclid: this.fbclid,
-    utm_source: this.utm_source,
-    existingTrafficSource: this.trafficSource,
-  });
+  // Only derive from click ids on create / when those fields change.
+  // Leaves offline stamps (Call CSV, LSA) alone on unrelated saves.
+  if (
+    this.isNew
+    || this.isModified('gclid')
+    || this.isModified('gbraid')
+    || this.isModified('wbraid')
+    || this.isModified('msclkid')
+    || this.isModified('fbclid')
+    || this.isModified('utm_source')
+  ) {
+    this.trafficSource = resolveTrafficSource({
+      gclid: this.gclid,
+      gbraid: this.gbraid,
+      wbraid: this.wbraid,
+      msclkid: this.msclkid,
+      fbclid: this.fbclid,
+      utm_source: this.utm_source,
+      existingTrafficSource: this.trafficSource,
+    });
+  }
 
   // Validate items have proper pricing
   this.items.forEach((item, index) => {
