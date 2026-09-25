@@ -153,6 +153,7 @@ const corsOptions = {
     'http://192.168.1.68:5174',
     'http://192.168.1.74:5173',
     'https://lwmclient.duckdns.org',
+    'https://broker.londonwastemanagement.uk',
     'https://stagingadmin.londonwastemanagement.uk/',
     'https://stagingadmin.londonwastemanagement.uk',
     'https://londonwastemanagement.com',
