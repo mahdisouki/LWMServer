@@ -519,13 +519,9 @@ function shouldUploadPurchase(task) {
   if (task.paymentStatus !== 'Paid') {
     return false;
   }
-  if (task.quotationId) {
-    return true;
-  }
-  if (task.createdByType && task.createdByType !== 'public') {
-    return false;
-  }
-  return true;
+  // Website checkout is recorded by the Google tag on the same conversion action.
+  // Server uploads are only for quote-to-purchase (offline conversion action).
+  return Boolean(task.quotationId);
 }
 
 function shouldValidatePurchase(task) {
@@ -535,13 +531,7 @@ function shouldValidatePurchase(task) {
   if (task.paymentStatus !== 'Paid') {
     return false;
   }
-  if (task.quotationId) {
-    return true;
-  }
-  if (task.createdByType && task.createdByType !== 'public') {
-    return false;
-  }
-  return true;
+  return Boolean(task.quotationId);
 }
 
 async function buildPurchaseConversionRow(taskDoc, options = {}) {
