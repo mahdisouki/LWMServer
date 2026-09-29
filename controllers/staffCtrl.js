@@ -14,6 +14,20 @@ const { logUnitAssignment } = require('../services/unitAssignmentLogService');
 const UnitAssignmentLogRange = require('../models/UnitAssignmentLogRange');
 const { sanitizePermissions } = require('../config/permissionModules');
 
+const SUPER_ADMIN_PERMISSION_MESSAGE = 'Only a super admin can manage permissions';
+const SUPER_ADMIN_SELF_EDIT_MESSAGE = 'A super admin account can only be edited by that account';
+const SUPER_ADMIN_VISIBILITY_MESSAGE = 'A super admin account is only visible to that account';
+
+const isSuperAdminUser = (user) => user?.isSuperAdmin === true;
+
+const isSameUser = (req, userId) => req.user?._id?.toString() === userId?.toString();
+
+const rejectUnlessSuperAdmin = (req, res, message = SUPER_ADMIN_PERMISSION_MESSAGE) => {
+  if (isSuperAdminUser(req.user)) return false;
+  res.status(403).json({ message });
+  return true;
+};
+
 const isWithinDistance = (coord1, coord2, maxDistance) => {
   const [lon1, lat1] = coord1;
   const [lon2, lat2] = coord2;
@@ -83,6 +97,13 @@ const staffManagement = {
         return res.status(400).json({
           message: 'Missing required fields: username, email, password, phoneNumber, and role are required.',
         });
+      }
+
+      if (
+        (permissions !== undefined || isSuperAdmin !== undefined || csvPermission !== undefined) &&
+        rejectUnlessSuperAdmin(req, res)
+      ) {
+        return;
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -222,21 +243,32 @@ const staffManagement = {
     try {
       const { page = 1, limit = 9, showAll = 'true', pagination = 'true' } = req.query;
       console.log(req.query)
-      // Base filter
-      let filter = {};
+      // Base filter. Other super admins stay out of this list.
+      const clauses = [
+        {
+          $or: [
+            { isSuperAdmin: { $ne: true } },
+            { _id: req.user._id },
+          ],
+        },
+      ];
       if (!showAll) {
-        filter.role = { $in: ['Driver', 'Helper'], $nin: ['Admin'] };
+        clauses.push({ role: { $in: ['Driver', 'Helper'], $nin: ['Admin'] } });
       }
 
       // Keyword search
       if (req.query.keyword) {
         const keyword = req.query.keyword.trim();
-        filter.$or = [
-          { username: { $regex: keyword, $options: 'i' } },
-          { email: { $regex: keyword, $options: 'i' } },
-          { phoneNumber: { $regex: keyword, $options: 'i' } },
-        ];
+        clauses.push({
+          $or: [
+            { username: { $regex: keyword, $options: 'i' } },
+            { email: { $regex: keyword, $options: 'i' } },
+            { phoneNumber: { $regex: keyword, $options: 'i' } },
+          ],
+        });
       }
+
+      const filter = { $and: clauses };
 
       // Count
       const total = await User.countDocuments(filter);
@@ -299,6 +331,9 @@ const staffManagement = {
       if (!user) {
         return res.status(404).json({ message: 'Staff not found' });
       }
+      if (isSuperAdminUser(user) && !isSameUser(req, user._id)) {
+        return res.status(403).json({ message: SUPER_ADMIN_VISIBILITY_MESSAGE });
+      }
       res.status(200).json({ message: 'Staff retrieved successfully', user });
     } catch (error) {
       res
@@ -350,6 +385,19 @@ const staffManagement = {
       const oldUser = await User.findById(id);
       if (!oldUser) {
         return res.status(404).json({ message: 'Staff not found' });
+      }
+
+      if (isSuperAdminUser(oldUser) && !isSameUser(req, oldUser._id)) {
+        return res.status(403).json({ message: SUPER_ADMIN_SELF_EDIT_MESSAGE });
+      }
+
+      if (
+        (updateData.permissions !== undefined ||
+          updateData.isSuperAdmin !== undefined ||
+          updateData.csvPermission !== undefined) &&
+        rejectUnlessSuperAdmin(req, res)
+      ) {
+        return;
       }
 
       // Normalize incoming types
@@ -1247,6 +1295,10 @@ const staffManagement = {
     const { userId } = req.params;
 
     try {
+      if (rejectUnlessSuperAdmin(req, res, 'Only a super admin can log a user out from all devices')) {
+        return;
+      }
+
       // Check if admin is trying to log out themselves
       if (req.user._id.toString() === userId) {
         return res.status(400).json({
