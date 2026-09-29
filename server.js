@@ -27,9 +27,6 @@ connectToDatabase()
     const MailSignature = require('./models/MailSignature');
     await MailSignature.dropLegacyIndexes();
 
-    // ✅ Now it's safe to initialize sockets
-    initSocket(server);
-
     // ✅ Load your routes, middleware, jobs, etc.
     require('./jobs/dailySheetCron');
     require('./jobs/blueSheetCron');
@@ -162,6 +159,7 @@ const corsOptions = {
     'lwmtest-clienttest-ptkvge-7b883a-191-101-81-116.traefik.me',
     'http://lwmtest-clienttest-ptkvge-7b883a-191-101-81-116.traefik.me'
   ],
+  credentials: true,
   optionsSuccessStatus: 200
 };
 
@@ -215,6 +213,7 @@ const standardItemsRoutes = require('./routes/standardItems')
 const uploadRouter = require('./routes/upload');
 const statsRoute = require("./routes/stats");
 const gmailRoutes = require('./routes/gmail')
+const webexRoutes = require('./routes/webex')
 const refundRoutes = require('./routes/refund')
 const paymentHistoRoutes = require('./routes/paymenthisto')
 const blogRoutes = require('./routes/blog')
@@ -272,6 +271,7 @@ app.use('/api/payment', paymentHistoRoutes)
 app.use('/api/upload', uploadRouter)
 app.use('/api', quotationRoutes);
 app.use('/api/gmail', gmailRoutes);
+app.use('/api/webex', webexRoutes);
 app.use('/api/blog', blogRoutes);
 app.use('/api', storageRoutes)
 app.use('/api', statsRoute)
@@ -338,6 +338,8 @@ app.use((req, res) => {
     message: 'Resource not found'
   });
 });
+
+initSocket(server);
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);
