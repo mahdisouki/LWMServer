@@ -267,18 +267,28 @@ async function assignIncomingMessages({
   return { assigned, queued, skipped };
 }
 
-/** Re-split open/queued among admins who have assignment active. */
+/**
+ * Re-split open/queued among admins who have assignment active.
+ * Drain newest queued first, then newest open — so recent mail hits active admins ASAP.
+ */
 async function rebalanceAssignmentsAmongActiveAdmins() {
   const activeAdminIds = await getActiveAdminIds();
   if (!activeAdminIds.length) {
     return { moved: 0, activeCount: 0, reason: 'no_active_admins' };
   }
 
-  const docs = await EmailThreadAssignment.find({
-    status: { $in: ['open', 'queued'] },
-  })
-    .sort({ createdAt: 1 })
-    .limit(500);
+  const newestFirst = { updatedAt: -1 };
+  const [queuedDocs, openDocs] = await Promise.all([
+    EmailThreadAssignment.find({ status: 'queued' })
+      .sort(newestFirst)
+      .limit(500),
+    EmailThreadAssignment.find({ status: 'open' })
+      .sort(newestFirst)
+      .limit(500),
+  ]);
+
+  // Queued first (unassigned → active pool), then open redistribution; newest within each.
+  const docs = [...queuedDocs, ...openDocs].slice(0, 500);
 
   if (!docs.length) {
     return { moved: 0, activeCount: activeAdminIds.length, reason: 'empty' };
@@ -310,8 +320,8 @@ async function rebalanceAssignmentsAmongActiveAdmins() {
     await doc.save();
 
     const plain = doc.toObject();
+    // Socket only — no bell notifications for rebalance/queue drain (can be hundreds).
     emitRebalanceMove(plain, previousAssignee, nextId);
-    if (wasQueued || !previousAssignee) await notifyAssigned(adminId, plain);
     moved += 1;
   }
 
