@@ -223,7 +223,7 @@ function decodeHtmlEntities(text) {
   return s;
 }
 
-/** HTML MIME → plain text (keeps line breaks for quote detection). */
+/** HTML MIME → plain text (keeps line breaks; list items become "- …"). */
 function htmlMimeToPlainText(html) {
   if (!html) return '';
   let s = sanitizeEmailHtml(String(html));
@@ -234,6 +234,7 @@ function htmlMimeToPlainText(html) {
   s = s.replace(/<\/p>/gi, '\n');
   s = s.replace(/<\/div>/gi, '\n');
   s = s.replace(/<\/tr>/gi, '\n');
+  s = s.replace(/<li[^>]*>/gi, '\n- ');
   s = s.replace(/<\/li>/gi, '\n');
   s = s.replace(/<[^>]+>/g, ' ');
   return decodeHtmlEntities(s);
@@ -291,6 +292,20 @@ function normalizeClassifierWhitespace(text) {
     .replace(/[\r\n\t\f\v]+/g, ' ')
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
     .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Suggest-reply: keep newlines and "-" bullets; tidy spaces within lines. */
+function normalizeSuggestReplyWhitespace(text) {
+  return String(text || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\t\f\v]+/g, ' ')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -843,6 +858,15 @@ function plainTextFromDisplayHtml(html) {
   return normalizeClassifierWhitespace(text);
 }
 
+/** Suggest-reply body: quotes stripped, newlines + "-" preserved. */
+function plainTextForSuggestReply(html) {
+  if (!html) return '';
+  let text = htmlMimeToPlainText(String(html));
+  text = stripQuotedRepliesForClassifier(text);
+  text = removeRemainingTagsAndCss(text);
+  return normalizeSuggestReplyWhitespace(text);
+}
+
 function extractEmailAddressFromHeader(fromHeader) {
   if (!fromHeader) return '';
   const m = String(fromHeader).match(/<([^>]+)>/);
@@ -904,7 +928,7 @@ function plainContextFromGmailMessage(msg) {
   const { contentMain: splitMain } = splitMainAndQuotedContent(contentRaw);
   const mainHtml =
     splitMain && splitMain.length > 0 ? splitMain : contentRaw;
-  const contentMain = plainTextFromDisplayHtml(mainHtml);
+  const contentMain = plainTextForSuggestReply(mainHtml);
   const photoCount = listPhotoAttachmentsFromGmailMessage(msg).length;
 
   return {
