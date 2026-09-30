@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
+const { usesAdminPricing, usesPublicAutomaticPricing } = require('./orderPricingMode');
 
 const VAT_RATE = 0.2; // 20% VAT
 
@@ -163,7 +164,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   // Calculate 10% automatic discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
   // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
   const isAvailableAnyTime = taskDetails.available === 'AnyTime';
-  const isCreatedByPublic = taskDetails.createdByType === 'public';
+  const isCreatedByPublic = usesPublicAutomaticPricing(taskDetails);
   const hasItems = taskDetails.items && taskDetails.items.length > 0;
   const allItemsOutside = hasItems && taskDetails.items.every((i) => i.Objectsposition === 'Outside');
   const hasCouponOnTask = Boolean(taskDetails.couponCode);
@@ -259,7 +260,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   const MIN_BASE_AMOUNT = 37.5; // Minimum fee (before VAT)
   let callOutFee = 0;
   let showCallOutFeeRow = false;
-  const enforceMinimumPrice = taskDetails.createdByType !== 'Admin' || taskDetails.applyMinFee === true;
+  const enforceMinimumPrice = !usesAdminPricing(taskDetails) || taskDetails.applyMinFee === true;
   
   if (enforceMinimumPrice && subtotalAfterAllDiscounts < MIN_BASE_AMOUNT) {
     callOutFee = MIN_BASE_AMOUNT - subtotalAfterAllDiscounts;
@@ -279,7 +280,7 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
     !isNaN(taskDetails.date.getTime()) &&
     typeof taskDetails.date.getDay === 'function' &&
     taskDetails.date.getDay() === 0;
-  if (isSunday && (taskDetails.createdByType === 'public' || taskDetails.applySundayFee === true)) {
+  if (isSunday && (usesPublicAutomaticPricing(taskDetails) || taskDetails.applySundayFee === true)) {
     sundayFeeRowHtml = `<p style="margin:0 0 8px; font-size:13px;">Sunday fee<span style="float:right; font-weight:bold;">£50.00</span></p>`;
   }
 

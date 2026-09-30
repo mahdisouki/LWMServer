@@ -28,6 +28,7 @@ const notificationSchema = new mongoose.Schema({
       "Payment-failed",
       "Subscriptions",
       "WhatsApp",
+      "Refunds",
     ],
     required: true,
   },

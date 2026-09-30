@@ -21,6 +21,14 @@ function normalizeAdminLabel(createdBy) {
   return label || 'Unknown';
 }
 
+const KNOWN_SUBSOURCES = ['tawk', 'phone', 'email', 'website'];
+
+function normalizeSubsourceLabel(value) {
+  const key = String(value || '').trim().toLowerCase();
+  if (KNOWN_SUBSOURCES.includes(key)) return key;
+  return 'unset';
+}
+
 const ADMIN_ORDER_MATCH = (start, end) => ({
   createdAt: { $gte: start, $lte: end },
   createdByType: 'Admin',
@@ -72,6 +80,51 @@ async function aggregateAdminOrderStats(start, end) {
           },
           { $sort: { orderCount: -1, totalValue: -1, _id: 1 } },
         ],
+        byAdminAndSubsource: [
+          {
+            $group: {
+              _id: {
+                admin: '$createdBy',
+                subsource: {
+                  $cond: [
+                    {
+                      $in: [
+                        { $toLower: { $ifNull: ['$subsource', ''] } },
+                        KNOWN_SUBSOURCES,
+                      ],
+                    },
+                    { $toLower: '$subsource' },
+                    'unset',
+                  ],
+                },
+              },
+              orderCount: { $sum: 1 },
+              totalValue: { $sum: { $ifNull: ['$totalPrice', 0] } },
+            },
+          },
+          { $sort: { orderCount: -1, totalValue: -1, '_id.subsource': 1 } },
+        ],
+        bySubsource: [
+          {
+            $group: {
+              _id: {
+                $cond: [
+                  {
+                    $in: [
+                      { $toLower: { $ifNull: ['$subsource', ''] } },
+                      KNOWN_SUBSOURCES,
+                    ],
+                  },
+                  { $toLower: '$subsource' },
+                  'unset',
+                ],
+              },
+              orderCount: { $sum: 1 },
+              totalValue: { $sum: { $ifNull: ['$totalPrice', 0] } },
+            },
+          },
+          { $sort: { orderCount: -1, totalValue: -1, _id: 1 } },
+        ],
         byDayAndAdmin: [
           {
             $group: {
@@ -91,11 +144,52 @@ async function aggregateAdminOrderStats(start, end) {
 
   return {
     adminRows: result?.byAdmin || [],
+    adminSubsourceRows: result?.byAdminAndSubsource || [],
+    subsourceRows: result?.bySubsource || [],
     dailyRows: result?.byDayAndAdmin || [],
   };
 }
 
-function buildAdminSegments(rows) {
+function buildSubsourceSegments(rows, orderTotal, valueTotal) {
+  const sorted = [...rows].sort((a, b) => {
+    if (b.orderCount !== a.orderCount) return b.orderCount - a.orderCount;
+    if (b.totalValue !== a.totalValue) return b.totalValue - a.totalValue;
+    return String(a.subsource).localeCompare(String(b.subsource));
+  });
+
+  return sorted.map((row) => {
+    const totalValue = roundMoney(row.totalValue);
+    return {
+      subsource: normalizeSubsourceLabel(row.subsource),
+      orderCount: row.orderCount,
+      totalValue,
+      orderSharePercent: orderTotal > 0
+        ? roundPercent((row.orderCount / orderTotal) * 100)
+        : 0,
+      valueSharePercent: valueTotal > 0
+        ? roundPercent((row.totalValue / valueTotal) * 100)
+        : 0,
+    };
+  });
+}
+
+function buildAdminSubsourceMap(rows) {
+  const byAdmin = new Map();
+
+  for (const row of rows) {
+    const admin = normalizeAdminLabel(row._id?.admin);
+    if (!byAdmin.has(admin)) byAdmin.set(admin, []);
+    byAdmin.get(admin).push({
+      subsource: normalizeSubsourceLabel(row._id?.subsource),
+      orderCount: row.orderCount,
+      totalValue: roundMoney(row.totalValue),
+    });
+  }
+
+  return byAdmin;
+}
+
+function buildAdminSegments(rows, adminSubsourceRows = []) {
   const totals = rows.reduce(
     (acc, row) => ({
       orderCount: acc.orderCount + row.orderCount,
@@ -104,9 +198,16 @@ function buildAdminSegments(rows) {
     { orderCount: 0, totalValue: 0 },
   );
 
+  const subsourceByAdmin = buildAdminSubsourceMap(adminSubsourceRows);
+
   const segments = rows.map((row, index) => {
     const admin = normalizeAdminLabel(row._id);
     const totalValue = roundMoney(row.totalValue);
+    const subsources = buildSubsourceSegments(
+      subsourceByAdmin.get(admin) || [],
+      row.orderCount,
+      row.totalValue,
+    );
 
     return {
       rank: index + 1,
@@ -120,6 +221,7 @@ function buildAdminSegments(rows) {
         ? roundPercent((row.totalValue / totals.totalValue) * 100)
         : 0,
       color: ADMIN_COLORS[index % ADMIN_COLORS.length],
+      subsources,
     };
   });
 
@@ -130,6 +232,18 @@ function buildAdminSegments(rows) {
       totalValue: roundMoney(totals.totalValue),
       admins: segments.length,
     },
+  };
+}
+
+function buildOverallSubsourceBreakdown(rows, orderTotal, valueTotal) {
+  const normalized = rows.map((row) => ({
+    subsource: normalizeSubsourceLabel(row._id),
+    orderCount: row.orderCount,
+    totalValue: roundMoney(row.totalValue),
+  }));
+
+  return {
+    segments: buildSubsourceSegments(normalized, orderTotal, valueTotal),
   };
 }
 
@@ -179,13 +293,19 @@ async function getAdminOrders({
 } = {}) {
   const period = resolvePeriod({ preset, startDate, endDate });
 
-  const [{ adminRows, dailyRows }, publicOrders] = await Promise.all([
-    aggregateAdminOrderStats(period.start, period.end),
-    aggregatePublicOrderStats(period.start, period.end),
-  ]);
+  const [{ adminRows, adminSubsourceRows, subsourceRows, dailyRows }, publicOrders] =
+    await Promise.all([
+      aggregateAdminOrderStats(period.start, period.end),
+      aggregatePublicOrderStats(period.start, period.end),
+    ]);
 
-  const { segments, totals } = buildAdminSegments(adminRows);
+  const { segments, totals } = buildAdminSegments(adminRows, adminSubsourceRows);
   const dailyBreakdown = buildDailySeries(period, buildDailyMap(dailyRows));
+  const subsources = buildOverallSubsourceBreakdown(
+    subsourceRows,
+    totals.orderCount,
+    totals.totalValue,
+  );
 
   return {
     period: {
@@ -195,11 +315,14 @@ async function getAdminOrders({
     segments,
     totals,
     publicOrders,
+    subsources,
     dailyBreakdown,
     chartHints: {
       orderCountDonut: 'Use segments[].admin as label, segments[].orderCount as value, segments[].orderSharePercent as share',
       valueDonut: 'Use segments[].admin as label, segments[].totalValue as value, segments[].valueSharePercent as share',
       colors: 'Use segments[].color for consistent slice colors',
+      subsources:
+        'Use segments[].subsources for per-admin intake channel mix (tawk, phone, email, website, unset)',
     },
     dataSources: {
       orders:
@@ -207,6 +330,8 @@ async function getAdminOrders({
       publicOrders:
         'Task collection — public website orders (createdByType public), excluding Failed payments and createdBy MigrationScript',
       grouping: 'Admin breakdown grouped by createdBy (admin username)',
+      subsources:
+        'Admin orders also grouped by Task.subsource (tawk, phone, email, website; missing values as unset)',
       dateFilter: 'Filtered by order creation timestamp (Task.createdAt)',
       exclusions: 'createdBy MigrationScript is excluded from all analytics order totals and breakdowns',
     },

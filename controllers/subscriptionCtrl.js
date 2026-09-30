@@ -56,6 +56,10 @@ function buildPayload(body = {}, { partial = false } = {}) {
       ? freq
       : 'Monthly';
   }
+  if (!partial || body.costType !== undefined) {
+    const ct = String(body.costType || 'Fixed');
+    payload.costType = Subscription.COST_TYPES.includes(ct) ? ct : 'Fixed';
+  }
   if (!partial || body.status !== undefined) {
     const status = String(body.status || 'Active');
     payload.status = Subscription.STATUSES.includes(status) ? status : 'Active';

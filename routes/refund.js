@@ -1,11 +1,21 @@
 const express = require('express');
 const router = express.Router();
 const refundCtrl = require('../controllers/refundCtrl');
+const refundRequestCtrl = require('../controllers/refundRequestCtrl');
+const { isAuth } = require('../middlewares/auth');
+const { checkRole } = require('../middlewares/role');
 
-// Direct refund endpoint (admin triggers it manually) - for Stripe/PayPal
-router.post('/refund', refundCtrl.processRefund);
+const adminOnly = [isAuth, checkRole('Admin')];
 
-// Manual refund endpoint for Cash and Bank Transfer payments
-router.post('/refund/manual', refundCtrl.processManualRefund);
+// Direct refund (super admin only — enforced in controller)
+router.post('/refund', ...adminOnly, refundCtrl.processRefund);
+router.post('/refund/manual', ...adminOnly, refundCtrl.processManualRefund);
+
+// Refund approval workflow
+router.post('/requests', ...adminOnly, refundRequestCtrl.createRefundRequest);
+router.get('/requests', ...adminOnly, refundRequestCtrl.listRefundRequests);
+router.get('/requests/:id', ...adminOnly, refundRequestCtrl.getRefundRequest);
+router.post('/requests/:id/accept', ...adminOnly, refundRequestCtrl.acceptRefundRequest);
+router.post('/requests/:id/refuse', ...adminOnly, refundRequestCtrl.refuseRefundRequest);
 
 module.exports = router;

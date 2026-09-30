@@ -4,6 +4,17 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const paypal = require('@paypal/checkout-server-sdk');
 const { sendRefundEmail } = require('../services/emailsService');
 
+function requireSuperAdmin(req, res) {
+    if (!req.user?.isSuperAdmin) {
+        res.status(403).json({
+            message:
+                'Only super admins can process refunds directly. Create a refund request instead.',
+        });
+        return false;
+    }
+    return true;
+}
+
 // PayPal Client setup
 function PayPalClient() {
     const PAYPAL_MODE = process.env.PAYPAL_MODE || 'sandbox';
@@ -128,7 +139,7 @@ async function processSingleRefund(paymentHistory, amountToRefund) {
     return { verified, refundId, refundStatus, rawPayload, gateway };
 }
 
-exports.processRefund = async (req, res) => {
+exports.processRefundInternal = async (req, res) => {
     const { taskId, refundAmount } = req.body;
 
     console.log("Refund request:", taskId, refundAmount);
@@ -396,11 +407,38 @@ exports.processRefund = async (req, res) => {
     }
 };
 
+exports.processRefund = async (req, res) => {
+    if (!requireSuperAdmin(req, res)) return;
+    return exports.processRefundInternal(req, res);
+};
+
+/**
+ * Run refund logic and return { status, body } (for approval workflow).
+ */
+exports.runRefundForTask = async (taskId, refundAmount, user) => {
+    const result = { status: 500, body: null };
+    const mockRes = {
+        status(code) {
+            result.status = code;
+            return this;
+        },
+        json(body) {
+            result.body = body;
+            return result;
+        },
+    };
+    await exports.processRefundInternal(
+        { body: { taskId, refundAmount }, user },
+        mockRes,
+    );
+    return result;
+};
+
 /**
  * Process manual refund for Cash and Bank Transfer payments
  * Creates PaymentHistory if missing and tracks the refund
  */
-exports.processManualRefund = async (req, res) => {
+exports.processManualRefundInternal = async (req, res) => {
     const { taskId, refundAmount, bankReference, notes } = req.body;
 
     try {
@@ -554,4 +592,36 @@ exports.processManualRefund = async (req, res) => {
             error: error.message
         });
     }
+};
+
+exports.processManualRefund = async (req, res) => {
+    if (!requireSuperAdmin(req, res)) return;
+    return exports.processManualRefundInternal(req, res);
+};
+
+exports.runManualRefundForTask = async (taskId, refundAmount, user, extra = {}) => {
+    const result = { status: 500, body: null };
+    const mockRes = {
+        status(code) {
+            result.status = code;
+            return this;
+        },
+        json(body) {
+            result.body = body;
+            return result;
+        },
+    };
+    await exports.processManualRefundInternal(
+        {
+            body: {
+                taskId,
+                refundAmount,
+                bankReference: extra.bankReference,
+                notes: extra.notes,
+            },
+            user,
+        },
+        mockRes,
+    );
+    return result;
 };

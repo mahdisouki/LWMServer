@@ -38,6 +38,31 @@ const adminSchema = new mongoose.Schema({
         type: String,
         default: null,
       },
+    /** My inbox: admin opts in to receive assigned mail (not tied to socket online). */
+    inboxAssignmentActive: {
+        type: Boolean,
+        default: false,
+        index: true,
+      },
+    inboxAssignmentLastActivityAt: {
+        type: Date,
+        default: null,
+      },
+    webexTokens: {
+        access_token: String,
+        refresh_token: String,
+        expires_at: Number,
+        token_type: String,
+        scope: String,
+      },
+    webexEmail: {
+        type: String,
+        default: null,
+      },
+    webexDisplayName: {
+        type: String,
+        default: null,
+      },
     emailSignature: {
         type: String,
         default: `

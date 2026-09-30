@@ -5,6 +5,7 @@ const BILLING_FREQUENCIES = ['Monthly', 'Yearly', 'One-time', 'Free', 'Variable'
 const STATUSES = ['Active', 'Cancelled', 'Trial'];
 const CURRENCIES = ['USD', 'GBP'];
 const PRICE_NOTES = ['free', 'ask_ads_team', 'approx'];
+const COST_TYPES = ['Fixed', 'Variable'];
 
 const subscriptionSchema = new Schema(
   {
@@ -36,6 +37,12 @@ const subscriptionSchema = new Schema(
       enum: BILLING_FREQUENCIES,
       default: 'Monthly',
     },
+    costType: {
+      type: String,
+      enum: COST_TYPES,
+      default: 'Fixed',
+      index: true,
+    },
 
     status: { type: String, enum: STATUSES, default: 'Active', index: true },
     startDate: { type: Date, default: null },
@@ -65,6 +72,7 @@ subscriptionSchema.statics.BILLING_FREQUENCIES = BILLING_FREQUENCIES;
 subscriptionSchema.statics.STATUSES = STATUSES;
 subscriptionSchema.statics.CURRENCIES = CURRENCIES;
 subscriptionSchema.statics.PRICE_NOTES = PRICE_NOTES;
+subscriptionSchema.statics.COST_TYPES = COST_TYPES;
 
 const Subscription = mongoose.model('Subscription', subscriptionSchema);
 module.exports = Subscription;
