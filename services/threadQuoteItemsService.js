@@ -1,4 +1,4 @@
-const ThreadQuoteItems = require('../models/ThreadQuoteItems');
+const ThreadClassification = require('../models/ThreadClassification');
 
 function optionalTrimmedString(value) {
   if (value == null) return null;
@@ -64,9 +64,7 @@ function itemMatchKey(item) {
   return `name:${name}|type:${type}`;
 }
 
-/**
- * Keep existing rows; append only AI items that don't already match.
- */
+/** Keep existing rows; append only AI items that don't already match. */
 function mergeNewQuoteItems(existingItems, incomingItems) {
   const existing = normalizeQuoteItems(existingItems);
   const incoming = normalizeQuoteItems(incomingItems);
@@ -88,29 +86,36 @@ function mergeNewQuoteItems(existingItems, incomingItems) {
   return merged;
 }
 
-function formatDoc(doc) {
-  if (!doc) return null;
+function formatQuoteItemsResult(doc) {
+  if (!doc) {
+    return {
+      threadId: null,
+      quoteItems: [],
+      messageId: null,
+      updatedAt: null,
+    };
+  }
   const plain = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   return {
     threadId: plain.threadId,
+    quoteItems: Array.isArray(plain.quoteItems) ? plain.quoteItems : [],
     messageId: plain.messageId || null,
-    items: Array.isArray(plain.items) ? plain.items : [],
-    source: plain.source || 'suggest_reply',
     updatedAt: plain.updatedAt || null,
-    createdAt: plain.createdAt || null,
   };
 }
 
 async function getQuoteItemsForThread(threadId) {
   const tid = String(threadId || '').trim();
-  if (!tid) return null;
-  const doc = await ThreadQuoteItems.findOne({ threadId: tid }).lean();
-  return formatDoc(doc);
+  if (!tid) return formatQuoteItemsResult(null);
+  const doc = await ThreadClassification.findOne({ threadId: tid })
+    .select('threadId messageId quoteItems updatedAt')
+    .lean();
+  if (!doc) return { ...formatQuoteItemsResult(null), threadId: tid };
+  return formatQuoteItemsResult(doc);
 }
 
 /**
- * After suggest-reply: create if missing; else merge only new items.
- * Returns the saved document (merged list).
+ * After suggest-reply: upsert classification quoteItems; merge only new items.
  */
 async function mergeSuggestReplyItems(threadId, messageId, incomingItems) {
   const tid = String(threadId || '').trim();
@@ -121,27 +126,24 @@ async function mergeSuggestReplyItems(threadId, messageId, incomingItems) {
   }
 
   const incoming = normalizeQuoteItems(incomingItems);
-  const existing = await ThreadQuoteItems.findOne({ threadId: tid });
+  let doc = await ThreadClassification.findOne({ threadId: tid });
 
-  if (!existing) {
-    const created = await ThreadQuoteItems.create({
+  if (!doc) {
+    doc = await ThreadClassification.create({
       threadId: tid,
       messageId: messageId || null,
-      items: incoming,
-      source: 'suggest_reply',
+      quoteItems: incoming,
     });
-    return formatDoc(created);
+    return formatQuoteItemsResult(doc);
   }
 
-  const merged = mergeNewQuoteItems(existing.items, incoming);
-  existing.items = merged;
-  if (messageId) existing.messageId = messageId;
-  if (existing.source !== 'manual') existing.source = 'suggest_reply';
-  await existing.save();
-  return formatDoc(existing);
+  doc.quoteItems = mergeNewQuoteItems(doc.quoteItems, incoming);
+  if (messageId) doc.messageId = messageId;
+  await doc.save();
+  return formatQuoteItemsResult(doc);
 }
 
-/** Explicit UI save — replace full list. */
+/** Explicit UI save — replace quoteItems on the classification doc. */
 async function saveQuoteItemsForThread(threadId, messageId, items) {
   const tid = String(threadId || '').trim();
   if (!tid) {
@@ -151,18 +153,19 @@ async function saveQuoteItemsForThread(threadId, messageId, items) {
   }
 
   const normalized = normalizeQuoteItems(items);
-  const doc = await ThreadQuoteItems.findOneAndUpdate(
+  const update = { quoteItems: normalized };
+  if (messageId) update.messageId = messageId;
+
+  const doc = await ThreadClassification.findOneAndUpdate(
     { threadId: tid },
     {
-      threadId: tid,
-      messageId: messageId || null,
-      items: normalized,
-      source: 'manual',
+      $set: update,
+      $setOnInsert: { threadId: tid },
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
-  return formatDoc(doc);
+  return formatQuoteItemsResult(doc);
 }
 
 module.exports = {

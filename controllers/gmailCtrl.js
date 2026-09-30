@@ -1003,8 +1003,7 @@ const gmailCtrl = {
       res.json({
         success: true,
         threadId: req.params.id,
-        items: saved?.items || [],
-        source: saved?.source || null,
+        quoteItems: saved?.quoteItems || [],
         messageId: saved?.messageId || null,
         updatedAt: saved?.updatedAt || null,
       });
@@ -1020,10 +1019,11 @@ const gmailCtrl = {
   /** Replace saved quote items for a thread (UI save). */
   saveThreadQuoteItems: async (req, res) => {
     try {
-      if (!Array.isArray(req.body?.items)) {
+      const bodyItems = req.body?.quoteItems ?? req.body?.items;
+      if (!Array.isArray(bodyItems)) {
         return res.status(400).json({
           success: false,
-          message: 'items array is required',
+          message: 'quoteItems (or items) array is required',
         });
       }
       const messageId =
@@ -1034,13 +1034,12 @@ const gmailCtrl = {
       const saved = await saveQuoteItemsForThread(
         req.params.id,
         messageId,
-        req.body.items
+        bodyItems
       );
       res.json({
         success: true,
         threadId: saved.threadId,
-        items: saved.items,
-        source: saved.source,
+        quoteItems: saved.quoteItems,
         messageId: saved.messageId,
         updatedAt: saved.updatedAt,
       });

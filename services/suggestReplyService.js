@@ -314,7 +314,7 @@ async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
         ctx.messageId,
         items
       );
-      if (saved?.items) items = saved.items;
+      if (saved?.quoteItems) items = saved.quoteItems;
     } catch (err) {
       console.warn(
         `[Suggest Reply] Failed to persist quote items for thread ${ctx.threadId}:`,

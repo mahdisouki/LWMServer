@@ -1152,6 +1152,21 @@ async function getThreadFullForClient(adminId, threadId, options = {}) {
       buildThreadMessageForClient(adminId, msg, tid)
     );
 
+    let quoteItems = [];
+    try {
+      const ThreadClassification = require('../models/ThreadClassification');
+      const classification = await ThreadClassification.findOne({ threadId: tid })
+        .select('quoteItems')
+        .lean();
+      if (classification) {
+        quoteItems = Array.isArray(classification.quoteItems)
+          ? classification.quoteItems
+          : [];
+      }
+    } catch (_) {
+      // quote fields are optional on full thread
+    }
+
     return {
       id: tid,
       historyId: threadMeta.historyId,
@@ -1159,6 +1174,7 @@ async function getThreadFullForClient(adminId, threadId, options = {}) {
       totalMessageCount: total,
       hasMore,
       nextBefore,
+      quoteItems,
     };
   } catch (err) {
     const code = err.code || err.response?.status;
