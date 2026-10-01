@@ -154,7 +154,9 @@ async function syncBrokerOrderToMainSystem({ order, lead, broker, actorName }) {
       : [],
     clientObjectPhotos: [],
     date: order.scheduledAt || new Date(),
-    available: 'AnyTime',
+    available: ['AnyTime', '7am-12pm', '12pm-5pm'].includes(lead.preferredCollectionTime)
+      ? lead.preferredCollectionTime
+      : 'AnyTime',
     taskStatus: 'New',
     paymentStatus: 'Unpaid',
     paymentMethod: 'cash',

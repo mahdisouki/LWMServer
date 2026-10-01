@@ -51,6 +51,17 @@ const brokerSchema = new mongoose.Schema(
       min: 0,
       default: 10,
     },
+    commissionPaymentDays: {
+      type: Number,
+      min: 0,
+      default: 30,
+    },
+    accountManagerName: { type: String, trim: true, default: '' },
+    accountManagerEmail: { type: String, trim: true, lowercase: true, default: '' },
+    accountManagerPhone: { type: String, trim: true, default: '' },
+    bankAccountName: { type: String, trim: true, default: '' },
+    bankSortCode: { type: String, trim: true, default: '' },
+    bankAccountNumber: { type: String, trim: true, default: '' },
     notes: {
       type: String,
       trim: true,

@@ -34,6 +34,8 @@ const LEAD_EXTRA_FIELDS = [
   'billingAddress',
   'preferredCollectionDate',
   'preferredCollectionTime',
+  'preferredCollectionDays',
+  'binSize',
   'leadTitle',
   'description',
   'customerNeed',
@@ -166,7 +168,8 @@ const brokerLeadCtrl = {
         notes,
       } = body;
 
-      if (!companyName || !contactName) {
+      const isDraft = status === 'Draft';
+      if (!isDraft && (!companyName || !contactName)) {
         return res.status(400).json({
           success: false,
           message: 'companyName and contactName are required',
@@ -190,7 +193,7 @@ const brokerLeadCtrl = {
         activityLog: [
           {
             action: 'Lead created',
-            detail: companyName,
+            detail: companyName || contactName || 'Uploaded document',
             actorName: req.user?.username || req.user?.firstName || 'Admin',
             createdAt: new Date(),
           },
@@ -361,7 +364,12 @@ const brokerLeadCtrl = {
 
       const leadId = lead._id;
       const [contacts, quotes, negotiations, orders, tasks, documents] = await Promise.all([
-        BrokerContact.find({ brokerId, leadId }).sort({ updatedAt: -1 }).lean(),
+        BrokerContact.find({
+          brokerId,
+          $or: [{ leadId }, { companyName: lead.companyName }],
+        })
+          .sort({ updatedAt: -1 })
+          .lean(),
         BrokerQuoteRequest.find({ brokerId, leadId }).sort({ updatedAt: -1 }).lean(),
         BrokerNegotiation.find({ brokerId, leadId }).sort({ updatedAt: -1 }).lean(),
         BrokerOrder.find({ brokerId, leadId }).sort({ updatedAt: -1 }).lean(),
@@ -404,6 +412,30 @@ const brokerLeadCtrl = {
       });
     } catch (error) {
       console.error('getMyLeadById error:', error);
+      return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  },
+
+  updateMyProfile: async (req, res) => {
+    try {
+      const brokerId = await resolveBrokerIdForUser(req.user);
+      if (!brokerId) {
+        return res.status(404).json({ success: false, message: 'No broker profile linked to this user' });
+      }
+      const broker = await Broker.findById(brokerId);
+      if (!broker) {
+        return res.status(404).json({ success: false, message: 'Broker not found' });
+      }
+      const allowed = ['bankAccountName', 'bankSortCode', 'bankAccountNumber'];
+      for (const key of allowed) {
+        if (req.body[key] !== undefined) {
+          broker[key] = String(req.body[key] || '').trim();
+        }
+      }
+      await broker.save();
+      return res.json({ success: true, data: { ...broker.toObject(), id: broker._id } });
+    } catch (error) {
+      console.error('updateMyProfile error:', error);
       return res.status(500).json({ success: false, message: 'Internal server error' });
     }
   },

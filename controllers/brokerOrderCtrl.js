@@ -220,7 +220,7 @@ const brokerOrderCtrl = {
         },
         emailSubject: `New order: ${referenceCode}`,
         emailHtml: `<p>Hello,</p><p>Order <strong>${referenceCode}</strong> was created for <strong>${companyLabel}</strong>.</p><p>Created by: ${actorName}</p>`,
-      });
+      }, req.user?._id || req.user?.id);
 
       try {
         const ctx = await loadBrokerSyncContext(brokerId, resolvedLeadId);

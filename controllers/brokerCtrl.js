@@ -189,6 +189,10 @@ const brokerCtrl = {
         address,
         commissionType,
         commissionValue,
+        commissionPaymentDays,
+        accountManagerName,
+        accountManagerEmail,
+        accountManagerPhone,
         notes,
         status,
         createPortalUser,
@@ -212,6 +216,13 @@ const brokerCtrl = {
         address: address || '',
         commissionType: commissionType || 'Percentage',
         commissionValue: commissionValue != null ? Number(commissionValue) : 10,
+        commissionPaymentDays:
+          commissionPaymentDays != null && commissionPaymentDays !== ''
+            ? Number(commissionPaymentDays)
+            : 30,
+        accountManagerName: accountManagerName || '',
+        accountManagerEmail: accountManagerEmail || '',
+        accountManagerPhone: accountManagerPhone || '',
         notes: notes || '',
         status: status || 'Active',
       });
@@ -338,6 +349,10 @@ const brokerCtrl = {
         'address',
         'commissionType',
         'commissionValue',
+        'commissionPaymentDays',
+        'accountManagerName',
+        'accountManagerEmail',
+        'accountManagerPhone',
         'notes',
         'status',
       ];
@@ -352,6 +367,9 @@ const brokerCtrl = {
       }
       if (updates.commissionValue != null) {
         updates.commissionValue = Number(updates.commissionValue);
+      }
+      if (updates.commissionPaymentDays != null && updates.commissionPaymentDays !== '') {
+        updates.commissionPaymentDays = Number(updates.commissionPaymentDays);
       }
 
       const broker = await Broker.findByIdAndUpdate(req.params.id, updates, {
