@@ -165,9 +165,10 @@ const blueSheetController = {
 
           if (driverPayroll && driverPayroll.extraHours) {
             const driver = await Driver.findById(driverId);
-            if (driver && driver.extraHourPrice) {
-              driverOT = driverPayroll.extraHours * driver.extraHourPrice;
-            }
+            const extraRate = driverPayroll.appliedExtraHourPrice
+              ?? driver?.extraHourPrice
+              ?? 0;
+            driverOT = driverPayroll.extraHours * extraRate;
           }
         }
 
@@ -183,9 +184,10 @@ const blueSheetController = {
 
           if (helperPayroll && helperPayroll.extraHours) {
             const helper = await Helper.findById(helperId);
-            if (helper && helper.extraHourPrice) {
-              labourOT = helperPayroll.extraHours * helper.extraHourPrice;
-            }
+            const extraRate = helperPayroll.appliedExtraHourPrice
+              ?? helper?.extraHourPrice
+              ?? 0;
+            labourOT = helperPayroll.extraHours * extraRate;
           }
         }
 

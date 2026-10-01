@@ -30,6 +30,24 @@ const {
 
 const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
+function parseOptionalRate(value) {
+  if (value == null || value === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? round2(n) : undefined;
+}
+
+function payrollDayRate(payroll, user) {
+  return payroll.appliedHourPrice ?? user.hourPrice ?? 0;
+}
+
+function payrollExtraRate(payroll, user) {
+  return payroll.appliedExtraHourPrice ?? user.extraHourPrice ?? 0;
+}
+
+function computePayrollSalary(payroll, user) {
+  return round2(payrollDayRate(payroll, user) + (payroll.extraHours || 0) * payrollExtraRate(payroll, user));
+}
+
 /**
  * Persist payroll end + salary/cash/expense totals and bump user aggregates.
  * @param {import('mongoose').Document} payroll - mutable payroll doc
@@ -58,13 +76,13 @@ async function finalizePayrollEndOfShift(payroll, userId, end, dayBounds) {
   if (totalHoursWorked <= REGULAR_HOURS_LIMIT) {
     regularHours = round2(totalHoursWorked);
     overtimeHours = 0;
-    totalSalary = user.hourPrice;
+    totalSalary = payrollDayRate(payroll, user);
   } else {
     regularHours = round2(REGULAR_HOURS_LIMIT);
     overtimeHours = round2(totalHoursWorked - REGULAR_HOURS_LIMIT);
-    const dayPrice = user.hourPrice;
-    const overtimeSalary = round2(overtimeHours * user.extraHourPrice);
-    totalSalary = round2(dayPrice + overtimeSalary);
+    totalSalary = round2(
+      payrollDayRate(payroll, user) + overtimeHours * payrollExtraRate(payroll, user),
+    );
   }
 
   const { startOfDay, tomorrow } = dayBounds;
@@ -599,7 +617,7 @@ const PayrollCtrl = {
       payroll.totalHoursWorked = hoursWorked;
       payroll.regularHours = regularHours;
       payroll.extraHours = extraHours;
-      payroll.totalSalary = round2((user.hourPrice || 0) + (extraHours * (user.extraHourPrice || 0)));
+      payroll.totalSalary = computePayrollSalary(payroll, user);
 
       await payroll.save();
       await payroll.populate('pcnDamages');
@@ -837,6 +855,7 @@ const PayrollCtrl = {
       vanReg,
       workingWith,
       appliedHourPrice,
+      appliedExtraHourPrice,
     } = req.body;
     const { payrollId } = req.params;
 
@@ -914,16 +933,14 @@ const PayrollCtrl = {
       if (totalExpenses !== undefined) payroll.totalExpenses = totalExpenses;
       if (totalCash !== undefined) payroll.totalCash = totalCash;
       if (appliedHourPrice !== undefined) {
-        payroll.appliedHourPrice =
-          appliedHourPrice == null || appliedHourPrice === ''
-            ? undefined
-            : round2(Number(appliedHourPrice));
+        payroll.appliedHourPrice = parseOptionalRate(appliedHourPrice);
+      }
+      if (appliedExtraHourPrice !== undefined) {
+        payroll.appliedExtraHourPrice = parseOptionalRate(appliedExtraHourPrice);
       }
 
       // Day-rate covers regular hours; only extra hours add overtime pay
-      const regularSalary = payroll.appliedHourPrice ?? user.hourPrice ?? 0;
-      const extraSalary = (payroll.extraHours || 0) * user.extraHourPrice;
-      payroll.totalSalary = round2(regularSalary + extraSalary);
+      payroll.totalSalary = computePayrollSalary(payroll, user);
 
       // Update totalPcnDamages: use provided value if manually set, otherwise calculate from assigned PCNs
       if (totalPcnDamages !== undefined) {
@@ -983,6 +1000,7 @@ const PayrollCtrl = {
       status,
       notes,
       appliedHourPrice,
+      appliedExtraHourPrice,
     } = req.body;
 
     try {
@@ -1033,11 +1051,10 @@ const PayrollCtrl = {
 
       // Calculate salary based on user's rates
       // Using the same logic as updatePayrollAdmin: hourly rate for regular hours + extra hour price for extra hours
-      const regularSalary =
-        appliedHourPrice != null && appliedHourPrice !== ''
-          ? round2(Number(appliedHourPrice))
-          : user.hourPrice;
-      const extraSalary = finalExtraHours * user.extraHourPrice;
+      const regularSalary = payrollDayRate({ appliedHourPrice: parseOptionalRate(appliedHourPrice) }, user);
+      const extraSalary = finalExtraHours * payrollExtraRate({
+        appliedExtraHourPrice: parseOptionalRate(appliedExtraHourPrice),
+      }, user);
       const calculatedSalary = round2(regularSalary + extraSalary);
 
       // Optionally calculate totalCash, totalExpenses, and totalPcnDamages if date is provided
@@ -1092,6 +1109,9 @@ const PayrollCtrl = {
         extraHours: finalExtraHours,
         ...(appliedHourPrice != null && appliedHourPrice !== ''
           ? { appliedHourPrice: round2(Number(appliedHourPrice)) }
+          : {}),
+        ...(appliedExtraHourPrice != null && appliedExtraHourPrice !== ''
+          ? { appliedExtraHourPrice: round2(Number(appliedExtraHourPrice)) }
           : {}),
         totalSalary: calculatedSalary,
         totalExpenses: calculatedTotalExpenses,
@@ -1176,9 +1196,7 @@ const PayrollCtrl = {
           (1000 * 3600));
       const regularHoursLimit = user.regularHours || 8;
       const extraHours = round2(Math.max(totalHoursWorked - regularHoursLimit, 0));
-
-      // Calculate salary
-      const totalSalary = round2((user.hourPrice || 0) + (extraHours * (user.extraHourPrice || 0)));
+      const totalSalary = computePayrollSalary({ ...payroll.toObject(), extraHours }, user);
 
       // Deduct hours and salary from user's total
       user.totalHoursWorked = round2((user.totalHoursWorked || 0) - totalHoursWorked);
