@@ -44,6 +44,10 @@ const {
 const { suggestReplyForThread, suggestReplyForMessage } = require('../services/suggestReplyService');
 const { llmOrderForThread } = require('../services/llmOrderService');
 const {
+  getQuoteItemsForThread,
+  saveQuoteItemsForThread,
+} = require('../services/threadQuoteItemsService');
+const {
   createReplyLog,
   listReplyLogs,
   listThreadReplyLogs,
@@ -988,6 +992,63 @@ const gmailCtrl = {
             : 'Failed to extract order from thread',
         error: error.message,
         details: error.response?.data || undefined,
+      });
+    }
+  },
+
+  /** Saved quote items for a thread (from suggest-reply / manual edits). */
+  getThreadQuoteItems: async (req, res) => {
+    try {
+      const saved = await getQuoteItemsForThread(req.params.id);
+      res.json({
+        success: true,
+        threadId: req.params.id,
+        quoteItems: saved?.quoteItems || [],
+        messageId: saved?.messageId || null,
+        updatedAt: saved?.updatedAt || null,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to load quote items',
+        error: error.message,
+      });
+    }
+  },
+
+  /** Replace saved quote items for a thread (UI save). */
+  saveThreadQuoteItems: async (req, res) => {
+    try {
+      const bodyItems = req.body?.quoteItems ?? req.body?.items;
+      if (!Array.isArray(bodyItems)) {
+        return res.status(400).json({
+          success: false,
+          message: 'quoteItems (or items) array is required',
+        });
+      }
+      const messageId =
+        req.body?.messageId ||
+        req.query?.messageId ||
+        req.body?.id ||
+        null;
+      const saved = await saveQuoteItemsForThread(
+        req.params.id,
+        messageId,
+        bodyItems
+      );
+      res.json({
+        success: true,
+        threadId: saved.threadId,
+        quoteItems: saved.quoteItems,
+        messageId: saved.messageId,
+        updatedAt: saved.updatedAt,
+      });
+    } catch (error) {
+      const status = error.status === 400 ? 400 : 500;
+      res.status(status).json({
+        success: false,
+        message: error.message || 'Failed to save quote items',
+        error: error.message,
       });
     }
   },

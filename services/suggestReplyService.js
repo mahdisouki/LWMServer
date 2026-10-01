@@ -5,6 +5,7 @@ const {
   getLatestMessageIdInThread,
 } = require('./gmailService');
 const { detectItemsFromGmailMessage } = require('./detectionAiService');
+const { mergeSuggestReplyItems } = require('./threadQuoteItemsService');
 
 const PYTHON_SERVER = (
   process.env.PYTHON_SERVER || 'http://localhost:8001'
@@ -15,20 +16,47 @@ const SUGGEST_REPLY_URL = `${PYTHON_SERVER}/suggest_reply`;
 const SUGGEST_REPLY_TIMEOUT_MS =
   Number(process.env.SUGGEST_REPLY_TIMEOUT_MS) || 60000;
 
-function buildContentMainForSuggest(contentMain, photoCount) {
-  const text = String(contentMain || '').trim();
-  const count = Number(photoCount) || 0;
+/** Trailing vision note Node used to append — vision belongs in detectedItems. */
+const PHOTO_NOTE_RE = /\s*\d+\s+photos?\s+have\s+been\s+sent\.?\s*$/i;
 
-  const photoNote =
-    count > 0
-      ? count === 1
-        ? '1 photo has been sent.'
-        : `${count} photos have been sent.`
-      : '';
+/**
+ * Cut from email sign-off onward (name, title, LLP, formerly…).
+ * Prefer dedicated closings; bare Thanks/Cheers/Regards only as their own line.
+ */
+const SIGN_OFF_RE =
+  /(?:^|\n)[ \t]*(?:kind\s+regards|best\s+regards|warm\s+regards|kind\s+rgds|many\s+thanks|thanks\s+and\s+regards|yours\s+sincerely|yours\s+faithfully|regards|cheers|thanks)\s*[,.!]?\s*(?:\n|$)/i;
 
-  if (text && photoNote) return `${text} ${photoNote}`;
-  if (text) return text;
-  return photoNote;
+const LEGAL_FOOTER_RE =
+  /(?:^|\n)[ \t]*(?:this email and any attachments are confidential|unless otherwise expressly stated|the information contained in this (?:message|email)|please avoid printing me|confidential(?:ity)? notice|this message is intended only for)/i;
+
+const SEPARATOR_FOOTER_RE = /(?:^|\n)[ \t]*[–—\-_]{5,}[ \t]*(?:\n|$)/;
+
+function stripSuggestReplyNoise(contentMain) {
+  let text = String(contentMain || '');
+
+  text = text.replace(PHOTO_NOTE_RE, '');
+
+  const signOffAt = text.search(SIGN_OFF_RE);
+  if (signOffAt >= 0) {
+    text = text.slice(0, signOffAt);
+  }
+
+  const legalAt = text.search(LEGAL_FOOTER_RE);
+  if (legalAt >= 0) {
+    text = text.slice(0, legalAt);
+  }
+
+  const sepAt = text.search(SEPARATOR_FOOTER_RE);
+  if (sepAt >= 0) {
+    text = text.slice(0, sepAt);
+  }
+
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Body text for Python: main content only (no photo note / signature / legal). */
+function buildContentMainForSuggest(contentMain, _photoCount) {
+  return stripSuggestReplyNoise(contentMain);
 }
 
 async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageContext) {
@@ -277,10 +305,26 @@ async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
 
   const resolvedCategory = suggestion.category || category;
 
-  // Quote items-only: do not attach reply-draft context / raw detections.
+  // Quote items-only: persist/merge items for the thread, return saved list.
   if (resolvedCategory === 'quote') {
+    let items = Array.isArray(suggestion.items) ? suggestion.items : [];
+    try {
+      const saved = await mergeSuggestReplyItems(
+        ctx.threadId,
+        ctx.messageId,
+        items
+      );
+      if (saved?.quoteItems) items = saved.quoteItems;
+    } catch (err) {
+      console.warn(
+        `[Suggest Reply] Failed to persist quote items for thread ${ctx.threadId}:`,
+        err.message
+      );
+    }
+
     return {
       ...suggestion,
+      items,
       inReplyToMessageId: ctx.messageId,
     };
   }

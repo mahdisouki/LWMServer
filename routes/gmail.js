@@ -265,6 +265,8 @@ router.get(
 );
 router.post('/threads/:id/suggest-reply', isAuth, gmailCtrl.suggestReply);
 router.post('/threads/:id/llmorder', isAuth, gmailCtrl.llmOrder);
+router.get('/threads/:id/quote-items', isAuth, gmailCtrl.getThreadQuoteItems);
+router.put('/threads/:id/quote-items', isAuth, gmailCtrl.saveThreadQuoteItems);
 router.post(
   '/threads/:id/suggest-reply/test',
   isAuth,
