@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Admin = require('../models/Admin');
 const EmailThreadAssignment = require('../models/EmailThreadAssignment');
 const EmailContactOwner = require('../models/EmailContactOwner');
@@ -38,6 +39,65 @@ async function getOnlineAdminIds() {
   return getActiveAdminIds();
 }
 
+/**
+ * Open-thread counts for active admins (My inbox load).
+ * @param {string[]} adminIds
+ * @returns {Promise<Map<string, number>>}
+ */
+async function countOpenAssignmentsByAdmin(adminIds) {
+  const pool = (adminIds || []).map(String).filter(Boolean);
+  const loadByAdminId = new Map(pool.map((id) => [id, 0]));
+  if (!pool.length) return loadByAdminId;
+
+  const objectIds = pool
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  if (!objectIds.length) return loadByAdminId;
+
+  const rows = await EmailThreadAssignment.aggregate([
+    {
+      $match: {
+        status: 'open',
+        assignedTo: { $in: objectIds },
+      },
+    },
+    { $group: { _id: '$assignedTo', count: { $sum: 1 } } },
+  ]);
+
+  for (const row of rows) {
+    if (row?._id != null) {
+      loadByAdminId.set(String(row._id), Number(row.count) || 0);
+    }
+  }
+  return loadByAdminId;
+}
+
+/**
+ * Prefer the active admin with the fewest open threads.
+ * Ties are broken at random so the same ObjectId is not always favoured.
+ * @param {string[]} pool
+ * @param {Map<string, number>} loadByAdminId
+ * @returns {string|null}
+ */
+function pickLeastLoadedAdmin(pool, loadByAdminId) {
+  if (!pool?.length) return null;
+  let bestCount = Infinity;
+  const ties = [];
+  for (const rawId of pool) {
+    const id = String(rawId);
+    const count = loadByAdminId?.get(id) ?? 0;
+    if (count < bestCount) {
+      bestCount = count;
+      ties.length = 0;
+      ties.push(id);
+    } else if (count === bestCount) {
+      ties.push(id);
+    }
+  }
+  return pickRandom(ties);
+}
+
 async function upsertContactOwner({
   mailboxEmail,
   contactEmail,
@@ -65,7 +125,7 @@ async function resolveAssignee({
   contactEmail,
   activeAdminIds,
   onlineAdminIds,
-  roundRobinIndex = null,
+  loadByAdminId = null,
   preferSticky = true,
 }) {
   const pool = activeAdminIds || onlineAdminIds || [];
@@ -85,13 +145,12 @@ async function resolveAssignee({
     }
   }
 
-  if (roundRobinIndex != null) {
-    const idx =
-      ((roundRobinIndex % pool.length) + pool.length) % pool.length;
-    return { adminId: pool[idx], source: 'random' };
-  }
-
-  return { adminId: pickRandom(pool), source: 'random' };
+  const loads =
+    loadByAdminId instanceof Map
+      ? loadByAdminId
+      : await countOpenAssignmentsByAdmin(pool);
+  const adminId = pickLeastLoadedAdmin(pool, loads);
+  return { adminId, source: adminId ? 'least_load' : null };
 }
 
 async function notifyAssigned(adminId, plain) {
@@ -126,7 +185,7 @@ function emitRebalanceMove(plain, previousAssignee, nextAdminId) {
 
 /**
  * Assign new inbound mail to admins with inbox assignment active.
- * 0 active → queue; 1+ → sticky (if claimed) else random.
+ * 0 active → queue; 1+ → sticky (if claimed) else fewest open threads.
  * Sticky is NOT set here — only on reply/open/reassign/takeover.
  */
 async function assignIncomingMessages({
@@ -141,6 +200,9 @@ async function assignIncomingMessages({
   const normalizedMailbox = String(mailboxEmail).trim().toLowerCase();
   const activeAdminIds = await getActiveAdminIds();
   const canAssignLive = activeAdminIds.length >= 1;
+  const loadByAdminId = canAssignLive
+    ? await countOpenAssignmentsByAdmin(activeAdminIds)
+    : new Map();
   const assigned = [];
   const queued = [];
   const skipped = [];
@@ -185,6 +247,7 @@ async function assignIncomingMessages({
           mailboxEmail: normalizedMailbox,
           contactEmail: existing.contactEmail || contactEmail,
           activeAdminIds,
+          loadByAdminId,
         });
         if (adminId) {
           existing.assignedTo = adminId;
@@ -193,6 +256,10 @@ async function assignIncomingMessages({
           await existing.save();
           const plain = existing.toObject();
           assigned.push(plain);
+          loadByAdminId.set(
+            String(adminId),
+            (loadByAdminId.get(String(adminId)) || 0) + 1,
+          );
           await notifyAssigned(adminId, plain);
           continue;
         }
@@ -237,6 +304,7 @@ async function assignIncomingMessages({
       mailboxEmail: normalizedMailbox,
       contactEmail,
       activeAdminIds,
+      loadByAdminId,
     });
     if (!adminId) {
       skipped.push({ threadId, reason: 'no_assignee' });
@@ -261,6 +329,10 @@ async function assignIncomingMessages({
 
     const plain = doc.toObject();
     assigned.push(plain);
+    loadByAdminId.set(
+      String(adminId),
+      (loadByAdminId.get(String(adminId)) || 0) + 1,
+    );
     await notifyAssigned(adminId, plain);
   }
 
@@ -295,29 +367,52 @@ async function rebalanceAssignmentsAmongActiveAdmins() {
   }
 
   let moved = 0;
-  let rr = 0;
+  // Start from current open loads, then adjust as we move threads in this pass.
+  const loadByAdminId = await countOpenAssignmentsByAdmin(activeAdminIds);
 
   for (const doc of docs) {
     const contactEmail = doc.contactEmail || extractEmailAddress(doc.from);
+    const previousAssignee = doc.assignedTo ? String(doc.assignedTo) : null;
+    const wasQueued = doc.status === 'queued';
+
+    // Temporarily free this thread from the previous assignee so least-load
+    // sees the post-move world (avoids pinning everything to one person).
+    if (!wasQueued && previousAssignee && loadByAdminId.has(previousAssignee)) {
+      loadByAdminId.set(
+        previousAssignee,
+        Math.max(0, (loadByAdminId.get(previousAssignee) || 0) - 1),
+      );
+    }
+
     const { adminId, source } = await resolveAssignee({
       mailboxEmail: doc.mailboxEmail,
       contactEmail,
       activeAdminIds,
-      roundRobinIndex: rr,
+      loadByAdminId,
       preferSticky: true,
     });
-    if (!adminId) continue;
-    if (source !== 'sticky') rr += 1;
+    if (!adminId) {
+      if (!wasQueued && previousAssignee && loadByAdminId.has(previousAssignee)) {
+        loadByAdminId.set(
+          previousAssignee,
+          (loadByAdminId.get(previousAssignee) || 0) + 1,
+        );
+      }
+      continue;
+    }
 
-    const previousAssignee = doc.assignedTo ? String(doc.assignedTo) : null;
     const nextId = String(adminId);
-    const wasQueued = doc.status === 'queued';
-    if (!wasQueued && previousAssignee === nextId) continue;
+    if (!wasQueued && previousAssignee === nextId) {
+      loadByAdminId.set(nextId, (loadByAdminId.get(nextId) || 0) + 1);
+      continue;
+    }
 
     doc.assignedTo = adminId;
     doc.assignmentSource = source === 'sticky' ? 'sticky' : 'rebalance';
     doc.status = 'open';
     await doc.save();
+
+    loadByAdminId.set(nextId, (loadByAdminId.get(nextId) || 0) + 1);
 
     const plain = doc.toObject();
     // Socket only — no bell notifications for rebalance/queue drain (can be hundreds).

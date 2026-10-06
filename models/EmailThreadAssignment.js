@@ -33,6 +33,7 @@ const emailThreadAssignmentSchema = new mongoose.Schema(
       type: String,
       enum: [
         'random',
+        'least_load',
         'sticky',
         'reassign',
         'rebalance',
@@ -40,7 +41,7 @@ const emailThreadAssignmentSchema = new mongoose.Schema(
         'manual',
         'queued',
       ],
-      default: 'random',
+      default: 'least_load',
     },
     status: {
       type: String,
