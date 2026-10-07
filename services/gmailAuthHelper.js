@@ -1,5 +1,9 @@
 const { google } = require('googleapis');
 const Admin = require('../models/Admin');
+const {
+  encryptGmailTokens,
+  decryptGmailTokens,
+} = require('../utils/gmailTokenCrypto');
 
 function createOAuth2Client() {
   return new google.auth.OAuth2(
@@ -15,13 +19,13 @@ async function getGmailAuth(adminId) {
   const admin = await Admin.findById(id);
   if (!admin || !admin.gmailTokens) throw new Error('No Gmail tokens found');
 
+  const plainTokens = decryptGmailTokens(admin.gmailTokens);
   const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials(admin.gmailTokens);
+  oauth2Client.setCredentials(plainTokens);
   oauth2Client.on('tokens', async (tokens) => {
     try {
-      await Admin.findByIdAndUpdate(id, {
-        gmailTokens: { ...admin.gmailTokens, ...tokens },
-      });
+      const merged = encryptGmailTokens({ ...plainTokens, ...tokens });
+      await Admin.findByIdAndUpdate(id, { gmailTokens: merged });
     } catch (error) {
       console.error(`Failed to update tokens for admin ${id}:`, error.message);
     }
@@ -35,13 +39,13 @@ async function getPeopleAuth(adminId) {
   const admin = await Admin.findById(id);
   if (!admin || !admin.gmailTokens) throw new Error('No Google tokens found');
 
+  const plainTokens = decryptGmailTokens(admin.gmailTokens);
   const oauth2Client = createOAuth2Client();
-  oauth2Client.setCredentials(admin.gmailTokens);
+  oauth2Client.setCredentials(plainTokens);
   oauth2Client.on('tokens', async (tokens) => {
     try {
-      await Admin.findByIdAndUpdate(id, {
-        gmailTokens: { ...admin.gmailTokens, ...tokens },
-      });
+      const merged = encryptGmailTokens({ ...plainTokens, ...tokens });
+      await Admin.findByIdAndUpdate(id, { gmailTokens: merged });
     } catch (error) {
       console.error(`Failed to update tokens for admin ${id}:`, error.message);
     }

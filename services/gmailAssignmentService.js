@@ -185,8 +185,9 @@ function emitRebalanceMove(plain, previousAssignee, nextAdminId) {
 
 /**
  * Assign new inbound mail to admins with inbox assignment active.
- * 0 active → queue; 1+ → sticky (if claimed) else fewest open threads.
- * Sticky is NOT set here — only on reply/open/reassign/takeover.
+ * 0 active → queue; 1+ → sticky (if claimed & active) else fewest open threads.
+ * Existing thread whose assignee is inactive → reassign to an active admin on new mail.
+ * Sticky ownership is NOT set here — only on reply/open/reassign/takeover.
  */
 async function assignIncomingMessages({
   mailboxAdminId,
@@ -260,6 +261,42 @@ async function assignIncomingMessages({
             String(adminId),
             (loadByAdminId.get(String(adminId)) || 0) + 1,
           );
+          await notifyAssigned(adminId, plain);
+          continue;
+        }
+      }
+
+      // Assignee is off (not Active for My inbox) → hand new activity to an active admin
+      const currentAssignee = existing.assignedTo
+        ? String(existing.assignedTo)
+        : null;
+      const assigneeIsInactive =
+        currentAssignee &&
+        !activeAdminIds.includes(currentAssignee) &&
+        (existing.status === 'open' || existing.status === 'flagged');
+
+      if (assigneeIsInactive && canAssignLive) {
+        const { adminId, source } = await resolveAssignee({
+          mailboxEmail: normalizedMailbox,
+          contactEmail: existing.contactEmail || contactEmail,
+          activeAdminIds,
+          loadByAdminId,
+          preferSticky: true,
+        });
+        if (adminId && String(adminId) !== currentAssignee) {
+          const previousAssignee = currentAssignee;
+          existing.assignedTo = adminId;
+          existing.assignmentSource =
+            source === 'sticky' ? 'sticky' : 'rebalance';
+          existing.status = 'open';
+          await existing.save();
+
+          const nextId = String(adminId);
+          loadByAdminId.set(nextId, (loadByAdminId.get(nextId) || 0) + 1);
+
+          const plain = existing.toObject();
+          assigned.push(plain);
+          emitRebalanceMove(plain, previousAssignee, nextId);
           await notifyAssigned(adminId, plain);
           continue;
         }

@@ -1128,11 +1128,7 @@ const gmailCtrl = {
         limit,
         before,
       });
-      claimStickySafe({
-        adminId: req.user._id,
-        threadId: req.params.id,
-        claimSource: 'open',
-      });
+      // Sticky claim only on reply (not on open/preview)
       res.json({ success: true, thread });
     } catch (error) {
       const status =
@@ -1386,6 +1382,11 @@ const gmailCtrl = {
 
   // Pub/Sub push webhook. Must respond 2xx quickly.
   handleWebhook: async (req, res) => {
+    const expected = process.env.GMAIL_PUBSUB_WEBHOOK_SECRET;
+    if (!expected || req.params.secret !== expected) {
+      return res.status(401).send('Unauthorized');
+    }
+
     // Acknowledge immediately to avoid Pub/Sub retries while we process.
     res.status(200).send();
 

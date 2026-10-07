@@ -1,6 +1,10 @@
 const axios = require('axios');
 const Admin = require('../models/Admin');
 const googleConfig = require('../services/googleClient');
+const {
+  encryptGmailTokens,
+  decryptGmailTokens,
+} = require('../utils/gmailTokenCrypto');
 
 /**
  * Get a valid access token for the admin
@@ -20,7 +24,7 @@ async function getAccessToken(adminId) {
     throw new Error('CALENDAR_SCOPE_MISSING: Please re-authenticate your Google account to grant Calendar permissions. Visit /api/gmail/auth/google?adminId=' + adminId);
   }
 
-  const tokens = admin.gmailTokens;
+  const tokens = decryptGmailTokens(admin.gmailTokens);
   
   // Check if token is expired (with 5 minute buffer)
   const now = Date.now();
@@ -49,17 +53,17 @@ async function getAccessToken(adminId) {
       },
     });
     
-    const newTokens = {
+    const newTokens = encryptGmailTokens({
       ...tokens,
       access_token: response.data.access_token,
       expiry_date: Date.now() + (response.data.expires_in * 1000),
-    };
+    });
     
     // Update tokens in database
     await Admin.findByIdAndUpdate(adminId, { gmailTokens: newTokens });
     
     console.log(`✅ Tokens refreshed for admin ${adminId}`);
-    return newTokens.access_token;
+    return response.data.access_token;
   } catch (error) {
     console.error('Error refreshing token:', error.response?.data || error.message);
     throw new Error('INVALID_GRANT: Google tokens are invalid. Please re-authenticate.');
