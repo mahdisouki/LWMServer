@@ -25,6 +25,8 @@ const { resolveClickIdsForNewTask, findMatchingTawkLead } = require('../services
 const { applyContactClickIdsToTask } = require('../services/contactAttributionService');
 const { applyMailtoClickIdsToTask, findMatchingMailtoLead } = require('../services/mailtoAttributionService');
 const { usesAdminPricing, usesPublicAutomaticPricing } = require('../utils/orderPricingMode');
+const { getRealIP } = require('../middlewares/rateLimiter');
+const bookingOffer = require('../services/bookingOffer');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -1208,6 +1210,14 @@ function applyCouponFieldsToSubtotal(subtotal, fields) {
   };
 }
 
+function isBasketPercentageDiscount(hasDiscount, discountType, customDiscountPercent) {
+  return Boolean(
+    hasDiscount &&
+    discountType === 'percentage' &&
+    Number(customDiscountPercent) > 0,
+  );
+}
+
 async function calculateTotalPrice({
   standardItems = [],
   items = [], // Add items parameter for backward compatibility
@@ -1398,13 +1408,15 @@ async function calculateTotalPrice({
   const hasItems = itemsToProcess.length > 0;
   const allItemsOutside = itemsToProcess.every((i) => i.Objectsposition === 'Outside');
   const hasCoupon = couponDiscount > 0;
+  const hasBasketOffer = isBasketPercentageDiscount(hasDiscount, discountType, customDiscountPercent);
 
   if (
     isAvailableAnyTime &&
     isCreatedByPublic &&
     hasItems &&
     allItemsOutside &&
-    !hasCoupon
+    !hasCoupon &&
+    !hasBasketOffer
   ) {
     console.log('✅ Applying 10% discount for Outside items with AnyTime and public type');
     subtotal *= 0.9;
@@ -1820,6 +1832,7 @@ const taskCtrl = {
       // Validate coupon code if provided
       let coupon = null;
       let couponId = null;
+      let appliedCouponCode = couponCode ? String(couponCode).trim() : '';
       if (couponCode) {
         try {
           // Ensure couponCode is a string before calling toUpperCase
@@ -1862,26 +1875,72 @@ const taskCtrl = {
         }
       }
 
+      // Public checkout cannot set its own percentage. A booking hold is the only source.
+      let appliedDiscountPercent = customDiscountPercent;
+      let appliedDiscountType = discountType;
+      let appliedHasDiscount = hasDiscount;
+      let bookingHoldDoc = null;
+      let discountSource;
+
+      if (createdByType === 'public') {
+        appliedDiscountPercent = undefined;
+        if (appliedDiscountType === 'percentage') appliedDiscountType = undefined;
+        appliedHasDiscount = hasPerItemDiscount(orderItems) || hasPerItemDiscount(orderObjects);
+
+        const bookingHoldId = req.body.bookingHoldId
+          ? String(req.body.bookingHoldId).trim()
+          : '';
+        if (bookingHoldId) {
+          const resolved = await bookingOffer.resolveForOrder({
+            id: bookingHoldId,
+            ip: getRealIP(req),
+            subtotal: preliminarySubtotal,
+          });
+          if (!resolved.ok) {
+            return res.status(400).json({
+              message: resolved.message,
+              error: resolved.error,
+            });
+          }
+          bookingHoldDoc = resolved.hold;
+          const couponFields = getCouponDiscountFields(coupon);
+          const winner = bookingOffer.chooseBookingOrCoupon({
+            subtotal: preliminarySubtotal,
+            percent: resolved.percent,
+            coupon: couponFields,
+          });
+          if (winner === 'offer' && resolved.percent > 0) {
+            appliedDiscountPercent = resolved.percent;
+            appliedDiscountType = 'percentage';
+            appliedHasDiscount = true;
+            discountSource = 'booking-hold';
+            coupon = null;
+            couponId = null;
+            appliedCouponCode = '';
+          }
+        }
+      }
+
       // Calculate price using new logic
       console.log('=== PRICE CALCULATION DEBUG ===');
       console.log('Items being passed to calculateTotalPrice:', orderItems);
       console.log('Objects being passed to calculateTotalPrice:', orderObjects);
       console.log('available being passed:', available, 'Type:', typeof available);
       console.log('createdByType being passed:', createdByType, 'Type:', typeof createdByType);
-      console.log('couponCode being passed:', couponCode);
+      console.log('couponCode being passed:', appliedCouponCode);
 
       const { totalPrice, vat, couponDiscount, couponPercentage } = await calculateTotalPrice({
         items: orderItems,
         objects: orderObjects,
-        customDiscountPercent,
-        discountType,
-        hasDiscount,
+        customDiscountPercent: appliedDiscountPercent,
+        discountType: appliedDiscountType,
+        hasDiscount: appliedHasDiscount,
         available,
         createdByType, // Pass createdByType for discount calculation
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
         applySundayFee: applySundayFeeBoolean,
         taskDate,
-        couponCode: couponCode || null, // Pass coupon code
+        couponCode: appliedCouponCode || null, // Pass coupon code
         customerEmail: email || null, // Pass customer email for custom coupon validation
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
@@ -1990,11 +2049,12 @@ const taskCtrl = {
         items: allItems,
         taskStatus: 'New',
         postcode,
-        customDiscountPercent,
-        discountType,
-        hasDiscount,
+        customDiscountPercent: appliedDiscountPercent,
+        discountType: appliedDiscountType,
+        hasDiscount: appliedHasDiscount,
+        ...(discountSource ? { discountSource } : {}),
         orderNumber,
-        couponCode: couponCode ? String(couponCode).trim().toUpperCase() : null,
+        couponCode: appliedCouponCode ? String(appliedCouponCode).trim().toUpperCase() : null,
         couponId: couponId,
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
@@ -2075,7 +2135,30 @@ const taskCtrl = {
         }
       }
 
-      const savedTask = await newTask.save();
+      let claimedHoldId = null;
+      if (bookingHoldDoc && Number(appliedDiscountPercent) > 0) {
+        const claimed = await bookingOffer.claimHold(bookingHoldDoc._id);
+        if (!claimed) {
+          return res.status(400).json({
+            message: 'This offer has expired',
+            error: 'OFFER_EXPIRED',
+          });
+        }
+        claimedHoldId = claimed._id;
+      }
+
+      let savedTask;
+      try {
+        savedTask = await newTask.save();
+      } catch (saveError) {
+        if (claimedHoldId) {
+          await bookingOffer.releaseHold(claimedHoldId);
+        }
+        throw saveError;
+      }
+      if (claimedHoldId) {
+        await bookingOffer.attachTask(claimedHoldId, savedTask._id);
+      }
 
       try {
         const linkResult = await syncTaskQuotationLink(savedTask);
@@ -4712,12 +4795,25 @@ const taskCtrl = {
       );
       let finalPrice = basePrice;
       const hasCouponOnTask = Boolean(task.couponCode) || (calculatedCouponDiscount > 0);
-      // Outside/AnyTime 10% only when no coupon — do not stack with coupon discount
+      const basketPercent = isBasketPercentageDiscount(
+        task.hasDiscount,
+        task.discountType,
+        task.customDiscountPercent,
+      )
+        ? Number(task.customDiscountPercent)
+        : 0;
+      let basketDiscountAmount = 0;
+      if (basketPercent > 0) {
+        basketDiscountAmount = finalPrice * (basketPercent / 100);
+        finalPrice -= basketDiscountAmount;
+      }
+      // Outside/AnyTime 10% does not stack with a coupon or a basket percentage offer
       if (
         task.available === 'AnyTime' &&
         usesPublicAutomaticPricing(task) &&
         task.items.every((i) => i.Objectsposition === 'Outside') &&
-        !hasCouponOnTask
+        !hasCouponOnTask &&
+        basketPercent === 0
       ) {
         finalPrice *= 0.9;
       }
@@ -4768,6 +4864,15 @@ const taskCtrl = {
         fullBreakdown.push({
           description: couponLabel,
           amount: -couponDiscount.toFixed(2)
+        });
+      }
+
+      if (basketDiscountAmount > 0) {
+        fullBreakdown.push({
+          description: task.discountSource === 'booking-hold'
+            ? `Basket offer (${basketPercent}%)`
+            : `Discount (${basketPercent}%)`,
+          amount: (-basketDiscountAmount).toFixed(2),
         });
       }
 
@@ -5660,7 +5765,9 @@ const taskCtrl = {
           (subtotal * task.customDiscountPercent) / 100;
         subtotal -= percentageDiscount;
         breakdown.push({
-          description: `Discount (${task.customDiscountPercent}%)`,
+          description: task.discountSource === 'booking-hold'
+            ? `Basket offer (${task.customDiscountPercent}%)`
+            : `Discount (${task.customDiscountPercent}%)`,
           amount: -percentageDiscount,
         });
       }
@@ -5672,8 +5779,13 @@ const taskCtrl = {
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
       const hasCouponOnTask = Boolean(coupon) || Boolean(task.couponCode);
+      const hasBasketOffer = isBasketPercentageDiscount(
+        task.hasDiscount,
+        task.discountType,
+        task.customDiscountPercent,
+      );
 
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask && !hasBasketOffer) {
         subtotal *= 0.9;
       }
 
@@ -7239,9 +7351,14 @@ const taskCtrl = {
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
       const hasCouponOnTask = Boolean(task.couponCode);
+      const hasBasketOffer = isBasketPercentageDiscount(
+        task.hasDiscount,
+        task.discountType,
+        task.customDiscountPercent,
+      );
 
       let automaticDiscount10Percent = 0;
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask && !hasBasketOffer) {
         console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice email');
         automaticDiscount10Percent = subtotal * 0.1;
         subtotal *= 0.9;
