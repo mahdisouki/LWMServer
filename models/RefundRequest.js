@@ -9,13 +9,16 @@ const refundRequestSchema = new Schema(
     reason: { type: String, required: true, trim: true },
     status: {
       type: String,
-      enum: ["pending", "accepted", "refused"],
+      enum: ["pending", "processing", "accepted", "refused"],
       default: "pending",
       index: true,
     },
     reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     reviewNote: { type: String, default: "" },
     reviewedAt: { type: Date, default: null },
+    stripeRefundId: { type: String, default: null },
+    stripeRefundStatus: { type: String, default: null },
+    refundGateway: { type: String, enum: ['stripe', 'paypal'] },
   },
   { timestamps: true }
 );

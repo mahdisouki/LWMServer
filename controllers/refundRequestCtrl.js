@@ -105,14 +105,16 @@ exports.createRefundRequest = async (req, res) => {
       });
     }
 
-    const existingPending = await RefundRequest.findOne({
+    const existingOpen = await RefundRequest.findOne({
       taskId,
-      status: 'pending',
+      status: { $in: ['pending', 'processing'] },
     });
-    if (existingPending) {
+    if (existingOpen) {
       return res.status(400).json({
-        message: 'A pending refund request already exists for this task',
-        requestId: existingPending._id,
+        message: existingOpen.status === 'processing'
+          ? 'A refund request for this task is already being processed'
+          : 'A pending refund request already exists for this task',
+        requestId: existingOpen._id,
       });
     }
 
@@ -166,7 +168,7 @@ exports.listRefundRequests = async (req, res) => {
   try {
     const { status, page = 1, limit = 50 } = req.query;
     const filter = {};
-    if (status && ['pending', 'accepted', 'refused'].includes(String(status))) {
+    if (status && ['pending', 'processing', 'accepted', 'refused'].includes(String(status))) {
       filter.status = status;
     }
 
@@ -223,74 +225,172 @@ exports.getRefundRequest = async (req, res) => {
   }
 };
 
+function storedGatewayRefundId(body) {
+  if (body?.refundId) return body.refundId;
+  if (!Array.isArray(body?.refundDetails)) return null;
+  const stored = body.refundDetails.find((item) => item?.refundId);
+  return stored?.refundId || null;
+}
+
+async function markAcceptedAndNotify(req, claimed, payload) {
+  const accepted = await RefundRequest.findOneAndUpdate(
+    { _id: claimed._id, status: 'processing' },
+    { $set: { status: 'accepted' } },
+    { new: true, runValidators: true },
+  );
+  if (!accepted) {
+    const error = new Error('Refund id is stored but the request was no longer processing');
+    error.statusCode = 409;
+    error.refundId = payload.refundId || null;
+    throw error;
+  }
+
+  const taskId = claimed.taskId?._id || claimed.taskId;
+  const orderLabel = claimed.taskId?.orderNumber || String(taskId);
+  await notifyUsers(
+    [claimed.requestedBy],
+    `Your refund request of £${Number(claimed.amount).toFixed(2)} for order ${orderLabel} was accepted`,
+    senderDisplayName(req.user),
+    {
+      refundRequestId: claimed._id,
+      taskId,
+      status: 'accepted',
+      path: '/dashboard/refund-requests',
+    },
+  );
+
+  const populated = await RefundRequest.findById(accepted._id)
+    .populate('requestedBy', 'username firstName lastName email')
+    .populate('reviewedBy', 'username firstName lastName email')
+    .populate(
+      'taskId',
+      'orderNumber firstName lastName email phoneNumber totalPrice paymentStatus',
+    );
+
+  return {
+    message: payload.message,
+    pending: !!payload.pending,
+    alreadyExisted: !!payload.alreadyExisted,
+    refundId: payload.refundId || null,
+    stripeStatus: payload.stripeStatus || null,
+    request: populated,
+    refund: payload.refund,
+  };
+}
+
 exports.acceptRefundRequest = async (req, res) => {
   try {
     if (!req.user?.isSuperAdmin) {
       return res.status(403).json({ message: 'Only super admins can accept refund requests' });
     }
 
-    const request = await RefundRequest.findById(req.params.id).populate('taskId');
-    if (!request) return res.status(404).json({ message: 'Refund request not found' });
-    if (request.status !== 'pending') {
-      return res.status(400).json({ message: `Request is already ${request.status}` });
+    const reviewNote = String(req.body?.reviewNote || '').trim();
+    const claimed = await RefundRequest.findOneAndUpdate(
+      { _id: req.params.id, status: 'pending' },
+      {
+        $set: {
+          status: 'processing',
+          reviewedBy: req.user._id,
+          reviewedAt: new Date(),
+          reviewNote,
+        },
+      },
+      { new: true, runValidators: true },
+    ).populate('taskId');
+
+    if (!claimed) {
+      const current = await RefundRequest.findById(req.params.id).select('status stripeRefundId');
+      if (!current) return res.status(404).json({ message: 'Refund request not found' });
+      if (current.status === 'processing' && current.stripeRefundId) {
+        const held = await RefundRequest.findById(req.params.id).populate('taskId');
+        const existing = await refundCtrl.describeStoredGatewayRefund(held);
+        if (existing.stripeStatus !== held.stripeRefundStatus) {
+          held.stripeRefundStatus = existing.stripeStatus;
+          await held.save();
+        }
+        await refundCtrl.ensureRefundLedger(held.taskId?._id || held.taskId, held);
+        const body = await markAcceptedAndNotify(req, held, {
+          message: existing.message,
+          pending: existing.pending,
+          alreadyExisted: true,
+          refundId: existing.refundId,
+          stripeStatus: existing.stripeStatus,
+        });
+        return res.json(body);
+      }
+      return res.status(409).json({
+        message: `Request is already ${current.status}`,
+        status: current.status,
+      });
     }
 
-    const taskId = request.taskId?._id || request.taskId;
-    let result = await refundCtrl.runRefundForTask(taskId, request.amount, req.user);
+    if (claimed.stripeRefundId) {
+      const existing = await refundCtrl.describeStoredGatewayRefund(claimed);
+      if (existing.stripeStatus !== claimed.stripeRefundStatus) {
+        claimed.stripeRefundStatus = existing.stripeStatus;
+        await claimed.save();
+      }
+      await refundCtrl.ensureRefundLedger(claimed.taskId?._id || claimed.taskId, claimed);
+      const body = await markAcceptedAndNotify(req, claimed, {
+        message: existing.message,
+        pending: existing.pending,
+        alreadyExisted: true,
+        refundId: existing.refundId,
+        stripeStatus: existing.stripeStatus,
+      });
+      return res.json(body);
+    }
+
+    const taskId = claimed.taskId?._id || claimed.taskId;
+    let result = await refundCtrl.runRefundForTask(taskId, claimed.amount, req.user, {
+      refundRequestId: claimed._id,
+    });
 
     const needsManual =
       result.status === 400 &&
       String(result.body?.message || '').toLowerCase().includes('manual');
 
     if (needsManual) {
-      result = await refundCtrl.runManualRefundForTask(taskId, request.amount, req.user, {
-        notes: `Approved refund request ${request._id}: ${request.reason}`,
+      result = await refundCtrl.runManualRefundForTask(taskId, claimed.amount, req.user, {
+        notes: `Approved refund request ${claimed._id}: ${claimed.reason}`,
+        refundRequestId: claimed._id,
       });
     }
 
     if (result.status < 200 || result.status >= 300) {
-      return res.status(result.status || 500).json(
-        result.body || { message: 'Failed to process refund' },
-      );
+      return res.status(result.status || 500).json({
+        ...(result.body || { message: 'Failed to process refund' }),
+        status: 'processing',
+      });
     }
 
-    request.status = 'accepted';
-    request.reviewedBy = req.user._id;
-    request.reviewedAt = new Date();
-    request.reviewNote = String(req.body?.reviewNote || '').trim();
-    await request.save();
+    const storedRefundId = storedGatewayRefundId(result.body);
+    if (!storedRefundId) {
+      return res.status(500).json({
+        message: 'The refund finished without a stored gateway id. The request stays processing.',
+        status: 'processing',
+      });
+    }
 
-    const orderLabel = request.taskId?.orderNumber || String(taskId);
-    await notifyUsers(
-      [request.requestedBy],
-      `Your refund request of £${Number(request.amount).toFixed(2)} for order ${orderLabel} was accepted`,
-      senderDisplayName(req.user),
-      {
-        refundRequestId: request._id,
-        taskId,
-        status: 'accepted',
-        path: '/dashboard/refund-requests',
-      },
-    );
-
-    const populated = await RefundRequest.findById(request._id)
-      .populate('requestedBy', 'username firstName lastName email')
-      .populate('reviewedBy', 'username firstName lastName email')
-      .populate(
-        'taskId',
-        'orderNumber firstName lastName email phoneNumber totalPrice paymentStatus',
-      );
-
-    return res.json({
-      message: 'Refund request accepted and refund processed',
-      request: populated,
+    const body = await markAcceptedAndNotify(req, claimed, {
+      message: result.body?.pending
+        ? result.body.message
+        : 'Refund request accepted and refund processed',
+      pending: !!result.body?.pending,
+      alreadyExisted: !!result.body?.alreadyExisted,
+      refundId: storedRefundId,
+      stripeStatus: result.body?.stripeStatus || null,
       refund: result.body,
     });
+    return res.json(body);
   } catch (error) {
     console.error('acceptRefundRequest error:', error);
-    return res.status(500).json({
-      message: 'Failed to accept refund request',
+    return res.status(error.statusCode || 500).json({
+      message: error.statusCode === 409
+        ? error.message
+        : 'Failed to accept refund request',
       error: error.message,
+      refundId: error.refundId || null,
     });
   }
 };
