@@ -229,6 +229,8 @@ const taskSchema = new Schema(
     hasDiscount: { type: Boolean, default: false },
     discountType: { type: String, enum: ["perItem", "percentage"] },
     customDiscountPercent: { type: Number, default: 0 },
+    /** Set when the public basket offer (booking hold) wrote this percentage. */
+    discountSource: { type: String, enum: ['booking-hold'] },
     couponCode: { type: String, default: null }, // Coupon code applied to this task
     couponId: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to coupon used
     couponUsageIncremented: { type: Boolean, default: false }, // Prevent double increment of coupon usage (idempotency)

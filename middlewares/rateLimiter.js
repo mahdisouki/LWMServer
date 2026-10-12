@@ -198,6 +198,48 @@ const exitIntentRevealLimiter = rateLimit({
   },
 });
 
+// Booking-hold mint: 1 new offer per IP per 24h (DB enforces it; limiter allows reuse retries)
+const BOOKING_HOLD_WINDOW_MS = 24 * 60 * 60 * 1000;
+const BOOKING_HOLD_ALREADY_CLAIMED_MESSAGE =
+  "You've already claimed this offer. Please try again later.";
+const bookingHoldLimiter = rateLimit({
+  windowMs: BOOKING_HOLD_WINDOW_MS,
+  max: 10,
+  message: BOOKING_HOLD_ALREADY_CLAIMED_MESSAGE,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getRealIP(req),
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  handler: (req, res) => {
+    return sendRateLimitResponse(
+      req,
+      res,
+      BOOKING_HOLD_ALREADY_CLAIMED_MESSAGE,
+      Math.ceil(BOOKING_HOLD_WINDOW_MS / 1000),
+    );
+  },
+});
+
+const bookingHoldReadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Too many offer requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getRealIP(req),
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  handler: (req, res) => {
+    return sendRateLimitResponse(
+      req,
+      res,
+      'Too many offer requests from this IP, please try again later.',
+      900,
+    );
+  },
+});
+
 module.exports = {
   apiLimiter,
   strictLimiter,
@@ -207,6 +249,8 @@ module.exports = {
   loginLimiter,
   exitIntentLimiter,
   exitIntentRevealLimiter,
+  bookingHoldLimiter,
+  bookingHoldReadLimiter,
   getRealIP,
 };
 
