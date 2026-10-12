@@ -24,7 +24,7 @@ const { normalizeUtmSource, pickClickIds, mergeClickIdFields, hasAnyClickId } = 
 const { resolveClickIdsForNewTask, findMatchingTawkLead } = require('../services/tawkAttributionService');
 const { applyContactClickIdsToTask } = require('../services/contactAttributionService');
 const { applyMailtoClickIdsToTask, findMatchingMailtoLead } = require('../services/mailtoAttributionService');
-const { usesAdminPricing, usesPublicAutomaticPricing } = require('../utils/orderPricingMode');
+const { usesAdminPricing, usesPublicAutomaticPricing, isBasketPercentageDiscount } = require('../utils/orderPricingMode');
 const { getRealIP } = require('../middlewares/rateLimiter');
 const bookingOffer = require('../services/bookingOffer');
 
@@ -1210,14 +1210,6 @@ function applyCouponFieldsToSubtotal(subtotal, fields) {
   };
 }
 
-function isBasketPercentageDiscount(hasDiscount, discountType, customDiscountPercent) {
-  return Boolean(
-    hasDiscount &&
-    discountType === 'percentage' &&
-    Number(customDiscountPercent) > 0,
-  );
-}
-
 async function calculateTotalPrice({
   standardItems = [],
   items = [], // Add items parameter for backward compatibility
@@ -1393,7 +1385,7 @@ async function calculateTotalPrice({
   }
 
   // 4. Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
-  // Skip when a coupon is applied — coupon and Outside/AnyTime 10% do not stack
+  // Skip when a coupon or booking-hold basket % is applied — those do not stack with Outside/AnyTime 10%
   console.log('=== DISCOUNT CHECK DEBUG ===');
   console.log('available:', available, 'Type:', typeof available);
   console.log('createdByType:', createdByType, 'Type:', typeof createdByType);
@@ -5773,7 +5765,7 @@ const taskCtrl = {
       }
 
       // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
-      // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
+      // Skip when a coupon or booking-hold basket % is present — those do not stack with Outside/AnyTime 10%
       const isAvailableAnyTime = task.available === 'AnyTime';
       const isCreatedByPublic = usesPublicAutomaticPricing(task);
       const hasItems = task.items && task.items.length > 0;

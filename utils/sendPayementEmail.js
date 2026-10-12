@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
 const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
-const { usesAdminPricing, usesPublicAutomaticPricing } = require('./orderPricingMode');
+const { usesAdminPricing, usesPublicAutomaticPricing, isBasketPercentageDiscount } = require('./orderPricingMode');
 
 const VAT_RATE = 0.2; // 20% VAT
 
@@ -162,15 +162,20 @@ const sendPaymentEmail = async ({ customerEmail, taskId, stripeLink, paypalLink,
   }
 
   // Calculate 10% automatic discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
-  // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
+  // Skip when a coupon or booking-hold basket % is present — those do not stack with Outside/AnyTime 10%
   const isAvailableAnyTime = taskDetails.available === 'AnyTime';
   const isCreatedByPublic = usesPublicAutomaticPricing(taskDetails);
   const hasItems = taskDetails.items && taskDetails.items.length > 0;
   const allItemsOutside = hasItems && taskDetails.items.every((i) => i.Objectsposition === 'Outside');
   const hasCouponOnTask = Boolean(taskDetails.couponCode);
+  const hasBasketOffer = isBasketPercentageDiscount(
+    taskDetails.hasDiscount,
+    taskDetails.discountType,
+    taskDetails.customDiscountPercent,
+  );
 
   let automaticDiscount10Percent = 0;
-  if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
+  if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask && !hasBasketOffer) {
     console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in payment email');
     automaticDiscount10Percent = subtotalBeforeDiscounts * 0.1;
   }
