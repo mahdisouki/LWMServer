@@ -302,12 +302,13 @@ exports.acceptRefundRequest = async (req, res) => {
       const current = await RefundRequest.findById(req.params.id).select('status stripeRefundId');
       if (!current) return res.status(404).json({ message: 'Refund request not found' });
       if (current.status === 'processing' && current.stripeRefundId) {
-        const existing = await refundCtrl.describeExistingStripeRefund(current.stripeRefundId);
         const held = await RefundRequest.findById(req.params.id).populate('taskId');
+        const existing = await refundCtrl.describeStoredGatewayRefund(held);
         if (existing.stripeStatus !== held.stripeRefundStatus) {
           held.stripeRefundStatus = existing.stripeStatus;
           await held.save();
         }
+        await refundCtrl.ensureRefundLedger(held.taskId?._id || held.taskId, held);
         const body = await markAcceptedAndNotify(req, held, {
           message: existing.message,
           pending: existing.pending,
@@ -324,11 +325,12 @@ exports.acceptRefundRequest = async (req, res) => {
     }
 
     if (claimed.stripeRefundId) {
-      const existing = await refundCtrl.describeExistingStripeRefund(claimed.stripeRefundId);
+      const existing = await refundCtrl.describeStoredGatewayRefund(claimed);
       if (existing.stripeStatus !== claimed.stripeRefundStatus) {
         claimed.stripeRefundStatus = existing.stripeStatus;
         await claimed.save();
       }
+      await refundCtrl.ensureRefundLedger(claimed.taskId?._id || claimed.taskId, claimed);
       const body = await markAcceptedAndNotify(req, claimed, {
         message: existing.message,
         pending: existing.pending,

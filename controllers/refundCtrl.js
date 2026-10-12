@@ -49,6 +49,94 @@ function isStripePending(status) {
     return status === 'pending' || status === 'requires_action';
 }
 
+function gatewayRefundError(message, refundId, gateway) {
+    const error = new Error(message);
+    error.gatewayRefundId = refundId;
+    error.refundId = refundId;
+    if (gateway === 'stripe') error.stripeRefundId = refundId;
+    return error;
+}
+
+async function keepGatewayRefundId(refundRequestId, refundId, status, gateway) {
+    if (!refundRequestId || !refundId) return;
+
+    const current = await RefundRequest.findById(refundRequestId).select('stripeRefundId');
+    if (!current) {
+        throw gatewayRefundError(
+            `Refund ${refundId} was created but refund request ${refundRequestId} was not found`,
+            refundId,
+            gateway
+        );
+    }
+    if (current.stripeRefundId) return;
+
+    let write;
+    try {
+        write = await RefundRequest.updateOne(
+            {
+                _id: refundRequestId,
+                $or: [{ stripeRefundId: null }, { stripeRefundId: { $exists: false } }],
+            },
+            {
+                $set: {
+                    stripeRefundId: refundId,
+                    stripeRefundStatus: status || null,
+                    refundGateway: gateway,
+                },
+            }
+        );
+    } catch (error) {
+        throw gatewayRefundError(
+            `Refund ${refundId} was created but refund request ${refundRequestId} was not updated: ${error.message}`,
+            refundId,
+            gateway
+        );
+    }
+    if (write.matchedCount === 1) return;
+
+    const again = await RefundRequest.findById(refundRequestId).select('stripeRefundId');
+    if (again?.stripeRefundId) return;
+    throw gatewayRefundError(
+        `Refund ${refundId} was created but refund request ${refundRequestId} was not updated`,
+        refundId,
+        gateway
+    );
+}
+
+async function pushRefundLedger(paymentHistoryId, refundId, refundRecord, amountGBP, countTowardsTotal) {
+    const update = { $push: { refunds: refundRecord } };
+    if (countTowardsTotal) {
+        update.$inc = { refundedTotalGBP: Number(amountGBP) };
+    }
+
+    let write;
+    try {
+        write = await PaymentHistory.updateOne(
+            { _id: paymentHistoryId, 'refunds.refundId': { $ne: refundId } },
+            update
+        );
+    } catch (error) {
+        throw gatewayRefundError(
+            `Refund ${refundId} was created but saving it failed: ${error.message}`,
+            refundId,
+            refundRecord.gateway
+        );
+    }
+    if (write.matchedCount === 1) return;
+
+    const existing = await PaymentHistory.findOne({
+        _id: paymentHistoryId,
+        'refunds.refundId': refundId,
+    }).select('_id');
+    if (!existing) {
+        throw gatewayRefundError(
+            `Refund ${refundId} was created but payment history ${paymentHistoryId} was not updated`,
+            refundId,
+            refundRecord.gateway
+        );
+    }
+}
+
 async function recordStripeRefund(paymentHistory, refund, amountGBP, refundRequestId) {
     const held = STRIPE_HELD_STATUSES.has(refund.status);
     const refundRecord = {
@@ -63,50 +151,29 @@ async function recordStripeRefund(paymentHistory, refund, amountGBP, refundReque
             stripeStatus: refund.status,
         },
     };
-    const update = { $push: { refunds: refundRecord } };
+
     if (held) {
-        update.$inc = { refundedTotalGBP: Number(amountGBP) };
+        await keepGatewayRefundId(refundRequestId, refund.id, refund.status, 'stripe');
     }
-
-    let write;
-    try {
-        write = await PaymentHistory.updateOne({ _id: paymentHistory._id }, update);
-    } catch (error) {
-        error.message = `Stripe refund ${refund.id} was created but saving it failed: ${error.message}`;
-        error.stripeRefundId = refund.id;
-        throw error;
-    }
-    if (write.matchedCount !== 1) {
-        const error = new Error(
-            `Stripe refund ${refund.id} was created but payment history ${paymentHistory._id} was not updated`
-        );
-        error.stripeRefundId = refund.id;
-        throw error;
-    }
-
-    if (refundRequestId && held) {
-        const request = await RefundRequest.findById(refundRequestId).select('stripeRefundId stripeRefundStatus');
-        if (!request) {
-            const error = new Error(
-                `Stripe refund ${refund.id} was saved on the payment but refund request ${refundRequestId} was not found`
-            );
-            error.stripeRefundId = refund.id;
-            throw error;
-        }
-        if (!request.stripeRefundId || request.stripeRefundId === refund.id) {
-            request.stripeRefundId = refund.id;
-            request.stripeRefundStatus = refund.status;
-            try {
-                await request.save();
-            } catch (error) {
-                error.message = `Stripe refund ${refund.id} was saved on the payment but the refund request was not updated: ${error.message}`;
-                error.stripeRefundId = refund.id;
-                throw error;
-            }
-        }
-    }
-
+    await pushRefundLedger(paymentHistory._id, refund.id, refundRecord, amountGBP, held);
     return held;
+}
+
+async function recordPayPalRefund(paymentHistory, refundId, refundStatus, amountGBP, refundRequestId, rawPayload) {
+    const refundRecord = {
+        refundId,
+        gateway: 'paypal',
+        amountGBP: Number(amountGBP),
+        currency: 'GBP',
+        status: refundStatus,
+        createdAt: new Date(),
+        metadata: {
+            refundRequestId: refundRequestId ? String(refundRequestId) : null,
+            raw: rawPayload || null,
+        },
+    };
+    await keepGatewayRefundId(refundRequestId, refundId, refundStatus, 'paypal');
+    await pushRefundLedger(paymentHistory._id, refundId, refundRecord, amountGBP, true);
 }
 
 function stripeRefundResult(refund, { alreadyExisted = false } = {}) {
@@ -200,8 +267,34 @@ async function processSingleRefund(paymentHistory, amountToRefund, options = {})
         return stripeRefundResult(refund);
 
     } else if (paymentHistory.paymentType.toLowerCase() === 'paypal') {
+        const existingPayPal = (paymentHistory.refunds || []).find((entry) =>
+            entry.gateway === 'paypal' &&
+            refundRequestId &&
+            String(entry.metadata?.refundRequestId || '') === String(refundRequestId)
+        );
+        if (existingPayPal) {
+            return {
+                verified: true,
+                pending: false,
+                alreadyRecorded: true,
+                alreadyExisted: true,
+                refundId: existingPayPal.refundId,
+                refundStatus: existingPayPal.status,
+                rawPayload: null,
+                gateway: 'paypal',
+            };
+        }
+
+        let paypalError = null;
         try {
             const request = new paypal.payments.CapturesRefundRequest(paymentHistory.transactionId);
+            const priorCount = (paymentHistory.refunds || []).length;
+            const paypalRequestId = refundRequestId
+                ? `refund-request-${refundRequestId}-ph-${paymentHistory._id}`
+                : `ph-${paymentHistory._id}-n${priorCount}`;
+            if (request.headers && typeof request.headers === 'object') {
+                request.headers['PayPal-Request-Id'] = paypalRequestId;
+            }
             request.requestBody({
                 amount: {
                     value: amountToRefund.toFixed(2),
@@ -213,7 +306,6 @@ async function processSingleRefund(paymentHistory, amountToRefund, options = {})
             refundStatus = refund?.result?.status || null;
             rawPayload = refund?.result || null;
             verified = await verifyPayPalRefund(refund.result.id);
-
         } catch (error) {
             console.error("PayPal Refund Error:", JSON.stringify(error, null, 2));
             if (error.statusCode === 422 && error.message.includes("CAPTURE_FULLY_REFUNDED")) {
@@ -221,8 +313,25 @@ async function processSingleRefund(paymentHistory, amountToRefund, options = {})
                 refundStatus = refundStatus || 'COMPLETED';
                 verified = true;
             } else {
-                throw error;
+                paypalError = error;
             }
+        }
+
+        if (refundId && refundId !== 'already_fully_refunded') {
+            await recordPayPalRefund(
+                paymentHistory,
+                refundId,
+                refundStatus,
+                amountToRefund,
+                refundRequestId,
+                rawPayload
+            );
+            alreadyRecorded = true;
+        }
+        if (paypalError) {
+            paypalError.gatewayRefundId = paypalError.gatewayRefundId || refundId || null;
+            paypalError.refundId = paypalError.gatewayRefundId;
+            throw paypalError;
         }
     } else if (paymentHistory.paymentType === 'BankTransfer' || paymentHistory.paymentType === 'Cash') {
         // Manual refunds - no API call needed
@@ -251,7 +360,8 @@ function refundOutcomeMessage(amountLabel, result) {
         return 'This refund is already with Stripe and still pending';
     }
     if (result.alreadyExisted) {
-        return 'This refund is already with Stripe';
+        const gatewayName = result.gateway === 'paypal' ? 'PayPal' : 'Stripe';
+        return `This refund is already with ${gatewayName}`;
     }
     if (result.pending) {
         return `Refund of ${amountLabel} is with Stripe and still pending`;
@@ -510,9 +620,11 @@ exports.processRefundInternal = async (req, res) => {
 
             } catch (error) {
                 console.error(`Error processing refund for transaction ${item.paymentHistory.transactionId}:`, error);
-                // If one refund fails, we should rollback or at least report the issue
-                // For now, we'll throw to stop the process
-                throw new Error(`Failed to process refund: ${error.message}. Some refunds may have been processed.`);
+                const wrapped = new Error(`Failed to process refund: ${error.message}. Some refunds may have been processed.`);
+                wrapped.gatewayRefundId = error.gatewayRefundId || error.stripeRefundId || null;
+                wrapped.stripeRefundId = error.stripeRefundId || null;
+                wrapped.refundId = wrapped.gatewayRefundId;
+                throw wrapped;
             }
         }
 
@@ -573,7 +685,7 @@ exports.processRefundInternal = async (req, res) => {
         res.status(500).json({
             message: "Error processing refund",
             error: error.message,
-            refundId: error.stripeRefundId || null,
+            refundId: error.gatewayRefundId || error.stripeRefundId || null,
         });
     }
 };
@@ -624,6 +736,87 @@ exports.describeExistingStripeRefund = async (refundId) => {
         refundId: refund.id,
         stripeStatus: refund.status,
     };
+};
+
+function stripeObjectId(value) {
+    if (!value) return null;
+    return typeof value === 'string' ? value : value.id || null;
+}
+
+exports.describeStoredGatewayRefund = async (request) => {
+    if (request.refundGateway === 'paypal') {
+        return {
+            message: 'This refund is already with PayPal',
+            pending: false,
+            alreadyExisted: true,
+            refundId: request.stripeRefundId,
+            stripeStatus: request.stripeRefundStatus,
+        };
+    }
+    return exports.describeExistingStripeRefund(request.stripeRefundId);
+};
+
+exports.ensureRefundLedger = async (taskId, request) => {
+    const refundId = request?.stripeRefundId;
+    if (!refundId) return;
+
+    const already = await PaymentHistory.findOne({
+        taskId,
+        'refunds.refundId': refundId,
+    }).select('_id');
+    if (already) return;
+
+    if (request.refundGateway === 'paypal') {
+        const histories = await PaymentHistory.find({
+            taskId,
+            status: 'success',
+            paymentType: 'PayPal',
+        });
+        if (histories.length !== 1) {
+            throw gatewayRefundError(
+                `PayPal refund ${refundId} is stored but no single PayPal payment matches it`,
+                refundId,
+                'paypal'
+            );
+        }
+        await recordPayPalRefund(
+            histories[0],
+            refundId,
+            request.stripeRefundStatus,
+            request.amount,
+            request._id,
+            null
+        );
+        return;
+    }
+
+    const refund = await stripe.refunds.retrieve(refundId);
+    const histories = await PaymentHistory.find({
+        taskId,
+        status: 'success',
+        paymentType: 'Stripe',
+    });
+    const chargeId = stripeObjectId(refund.charge);
+    const paymentIntentId = stripeObjectId(refund.payment_intent);
+    const matched = histories.filter((history) =>
+        history.transactionId === chargeId || history.transactionId === paymentIntentId
+    );
+    const paymentHistory = matched.length === 1
+        ? matched[0]
+        : (histories.length === 1 ? histories[0] : null);
+    if (!paymentHistory) {
+        throw gatewayRefundError(
+            `Stripe refund ${refundId} is stored but no single Stripe payment matches it`,
+            refundId,
+            'stripe'
+        );
+    }
+    await recordStripeRefund(
+        paymentHistory,
+        refund,
+        Number(refund.amount) / 100,
+        request._id
+    );
 };
 
 /**

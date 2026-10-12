@@ -18,6 +18,7 @@ const refundRequestSchema = new Schema(
     reviewedAt: { type: Date, default: null },
     stripeRefundId: { type: String, default: null },
     stripeRefundStatus: { type: String, default: null },
+    refundGateway: { type: String, enum: ['stripe', 'paypal'] },
   },
   { timestamps: true }
 );
