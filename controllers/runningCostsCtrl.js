@@ -7,6 +7,7 @@ const ManualRunningCost = require('../models/ManualRunningCost');
 const {
   COST_CATEGORIES,
   COST_TYPES,
+  FEE_FREQUENCIES,
   CATEGORY_META,
 } = require('../config/runningCostCategories');
 
@@ -244,15 +245,105 @@ async function buildSyncedLines(from, to) {
   return lines;
 }
 
-function mapManual(doc) {
+function frequencyLabel(doc) {
+  if (doc.frequency === 'Custom') return `every ${doc.customDays} days`;
+  return doc.frequency;
+}
+
+function periodShare(doc, from, to) {
+  const stored = Number(doc.amount) || 0;
+  if (!doc.frequency) {
+    const date = new Date(doc.date);
+    if (date < from || date > to) return null;
+    return { amount: round2(stored), description: doc.note || '' };
+  }
+
+  const activeFrom = startOfDay(doc.startDate || doc.date);
+  const activeTo = doc.endDate ? endOfDay(doc.endDate) : to;
+  const overlapFrom = activeFrom > from ? activeFrom : from;
+  const overlapTo = activeTo < to ? activeTo : to;
+  if (overlapFrom > overlapTo) return null;
+
+  const days = daysInclusive(overlapFrom, overlapTo);
+  let share;
+  if (doc.frequency === 'Daily') share = stored * days;
+  else if (doc.frequency === 'Weekly') share = (stored / 7) * days;
+  else if (doc.frequency === 'Monthly') share = (stored / daysInMonth(overlapFrom)) * days;
+  else if (doc.frequency === 'Custom') {
+    const cycle = Number(doc.customDays);
+    if (!Number.isInteger(cycle) || cycle < 1) {
+      const error = new Error(
+        `Manual cost ${doc._id} has custom frequency without a day count`,
+      );
+      error.statusCode = 500;
+      throw error;
+    }
+    share = (stored / cycle) * days;
+  } else {
+    const error = new Error(
+      `Manual cost ${doc._id} has unknown frequency ${doc.frequency}`,
+    );
+    error.statusCode = 500;
+    throw error;
+  }
+
+  const note = doc.note ? `${doc.note} · ` : '';
+  return {
+    amount: round2(share),
+    description: `${note}${frequencyLabel(doc)} · period share`,
+  };
+}
+
+function readRecurrence(body, fallbackDate) {
+  const frequencyRaw = String(body.frequency || '').trim();
+  if (!frequencyRaw) {
+    return { frequency: null, customDays: null, startDate: null, endDate: null };
+  }
+  if (!FEE_FREQUENCIES.includes(frequencyRaw)) {
+    return { error: 'Invalid frequency' };
+  }
+
+  const startDate = body.startDate ? new Date(body.startDate) : new Date(fallbackDate);
+  if (Number.isNaN(startDate.getTime())) return { error: 'Invalid start date' };
+
+  let endDate = null;
+  if (body.endDate) {
+    endDate = new Date(body.endDate);
+    if (Number.isNaN(endDate.getTime())) return { error: 'Invalid end date' };
+    if (startOfDay(endDate) < startOfDay(startDate)) {
+      return { error: 'End date must be on or after the start date' };
+    }
+  }
+
+  let customDays = null;
+  if (frequencyRaw === 'Custom') {
+    customDays = Number(body.customDays);
+    if (!Number.isInteger(customDays) || customDays < 1) {
+      return { error: 'Custom frequency requires a whole number of days' };
+    }
+  }
+
+  return { frequency: frequencyRaw, customDays, startDate, endDate };
+}
+
+function mapManual(doc, range) {
   const category = doc.category;
+  const share = range
+    ? periodShare(doc, range.from, range.to)
+    : { amount: round2(doc.amount), description: doc.note || '' };
+  if (!share) return null;
   return {
     id: String(doc._id),
     source: 'manual',
     sourceId: String(doc._id),
     name: doc.name,
-    description: doc.note || '',
-    amount: round2(doc.amount),
+    description: share.description,
+    amount: share.amount,
+    cycleAmount: round2(doc.amount),
+    frequency: doc.frequency || null,
+    customDays: doc.customDays || null,
+    startDate: doc.startDate || null,
+    endDate: doc.endDate || null,
     category,
     costType: doc.costType,
     synced: false,
@@ -272,12 +363,26 @@ exports.getSummary = async (req, res) => {
     const { from, to } = parseRange(req.query);
     const synced = await buildSyncedLines(from, to);
     const manuals = await ManualRunningCost.find({
-      date: { $gte: from, $lte: to },
+      $or: [
+        {
+          frequency: { $in: FEE_FREQUENCIES },
+          $or: [
+            { startDate: { $lte: to } },
+            { startDate: null, date: { $lte: to } },
+          ],
+        },
+        {
+          frequency: null,
+          date: { $gte: from, $lte: to },
+        },
+      ],
     })
       .sort({ date: -1, createdAt: -1 })
       .lean();
 
-    const manualLines = manuals.map(mapManual);
+    const manualLines = manuals
+      .map((doc) => mapManual(doc, { from, to }))
+      .filter(Boolean);
     const syncedTotal = round2(synced.reduce((s, l) => s + l.amount, 0));
     const manualTotal = round2(manualLines.reduce((s, l) => s + l.amount, 0));
     const fixedTotal = round2(
@@ -296,6 +401,7 @@ exports.getSummary = async (req, res) => {
       to,
       categories: COST_CATEGORIES,
       costTypes: COST_TYPES,
+      frequencies: FEE_FREQUENCIES,
       categoryMeta: CATEGORY_META,
       synced,
       manual: manualLines,
@@ -342,6 +448,11 @@ exports.createManual = async (req, res) => {
       return res.status(400).json({ message: 'Invalid date' });
     }
 
+    const recurrence = readRecurrence(req.body, date);
+    if (recurrence.error) {
+      return res.status(400).json({ message: recurrence.error });
+    }
+
     const receiptUrl = req.file?.path || req.body.receiptUrl || null;
 
     const doc = await ManualRunningCost.create({
@@ -349,7 +460,11 @@ exports.createManual = async (req, res) => {
       amount,
       category,
       costType,
-      date,
+      date: recurrence.startDate || date,
+      frequency: recurrence.frequency,
+      customDays: recurrence.customDays,
+      startDate: recurrence.startDate,
+      endDate: recurrence.endDate,
       note,
       receiptUrl,
       createdBy: req.user?._id || null,
@@ -403,6 +518,30 @@ exports.updateManual = async (req, res) => {
       }
       doc.date = date;
     }
+    if (
+      req.body.frequency !== undefined ||
+      req.body.customDays !== undefined ||
+      req.body.startDate !== undefined ||
+      req.body.endDate !== undefined
+    ) {
+      const recurrence = readRecurrence(
+        {
+          frequency: req.body.frequency !== undefined ? req.body.frequency : doc.frequency,
+          customDays: req.body.customDays !== undefined ? req.body.customDays : doc.customDays,
+          startDate: req.body.startDate !== undefined ? req.body.startDate : doc.startDate,
+          endDate: req.body.endDate !== undefined ? req.body.endDate : doc.endDate,
+        },
+        doc.date,
+      );
+      if (recurrence.error) {
+        return res.status(400).json({ message: recurrence.error });
+      }
+      doc.frequency = recurrence.frequency;
+      doc.customDays = recurrence.customDays;
+      doc.startDate = recurrence.startDate;
+      doc.endDate = recurrence.endDate;
+      if (recurrence.startDate) doc.date = recurrence.startDate;
+    }
     if (req.file?.path) doc.receiptUrl = req.file.path;
     else if (req.body.receiptUrl !== undefined) {
       doc.receiptUrl = req.body.receiptUrl || null;
@@ -440,6 +579,7 @@ exports.getMeta = async (_req, res) => {
   return res.json({
     categories: COST_CATEGORIES,
     costTypes: COST_TYPES,
+    frequencies: FEE_FREQUENCIES,
     categoryMeta: CATEGORY_META,
   });
 };

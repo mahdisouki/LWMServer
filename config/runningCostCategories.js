@@ -10,6 +10,8 @@ const COST_CATEGORIES = [
 
 const COST_TYPES = ['Fixed', 'Variable'];
 
+const FEE_FREQUENCIES = ['Daily', 'Weekly', 'Monthly', 'Custom'];
+
 const CATEGORY_META = {
   'Direct Operational Expenses': { color: '#2563eb', icon: 'truck' },
   IT: { color: '#7c3aed', icon: 'computer' },
@@ -23,5 +25,6 @@ const CATEGORY_META = {
 module.exports = {
   COST_CATEGORIES,
   COST_TYPES,
+  FEE_FREQUENCIES,
   CATEGORY_META,
 };
