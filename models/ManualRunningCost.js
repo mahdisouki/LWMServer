@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
-const { COST_CATEGORIES, COST_TYPES } = require('../config/runningCostCategories');
+const {
+  COST_CATEGORIES,
+  COST_TYPES,
+  FEE_FREQUENCIES,
+} = require('../config/runningCostCategories');
 
 const manualRunningCostSchema = new Schema(
   {
@@ -20,6 +24,14 @@ const manualRunningCostSchema = new Schema(
       index: true,
     },
     date: { type: Date, required: true, index: true },
+    frequency: {
+      type: String,
+      enum: [...FEE_FREQUENCIES, null],
+      default: null,
+    },
+    customDays: { type: Number, default: null },
+    startDate: { type: Date, default: null },
+    endDate: { type: Date, default: null },
     note: { type: String, default: '', trim: true },
     receiptUrl: { type: String, default: null },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
