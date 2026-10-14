@@ -2,12 +2,13 @@ const express = require('express');
 const analyticsCtrl = require('../controllers/analyticsCtrl');
 const { isAuth } = require('../middlewares/auth');
 const { checkRole } = require('../middlewares/role');
+const { interestTrackingLimiter } = require('../middlewares/rateLimiter');
 
 const router = express.Router();
 const admin = [isAuth, checkRole('Admin')];
 
-router.post('/interest-tracking', analyticsCtrl.trackInterest);
-router.get('/interest-analytics', analyticsCtrl.getInterestAnalytics);
+router.post('/interest-tracking', interestTrackingLimiter, analyticsCtrl.trackInterest);
+router.get('/interest-analytics', ...admin, analyticsCtrl.getInterestAnalytics);
 
 router.get('/dashboard', ...admin, analyticsCtrl.getDashboard);
 router.get('/dashboard/pages', ...admin, analyticsCtrl.getDashboardPages);

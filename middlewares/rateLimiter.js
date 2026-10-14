@@ -240,6 +240,27 @@ const bookingHoldReadLimiter = rateLimit({
   },
 });
 
+// Public interest click tracking — a checkout can fire several slot clicks.
+const INTEREST_TRACKING_WINDOW_MS = 15 * 60 * 1000;
+const interestTrackingLimiter = rateLimit({
+  windowMs: INTEREST_TRACKING_WINDOW_MS,
+  max: 30,
+  message: 'Too many interest tracking requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getRealIP(req),
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  handler: (req, res) => {
+    return sendRateLimitResponse(
+      req,
+      res,
+      'Too many interest tracking requests from this IP, please try again later.',
+      Math.ceil(INTEREST_TRACKING_WINDOW_MS / 1000),
+    );
+  },
+});
+
 module.exports = {
   apiLimiter,
   strictLimiter,
@@ -251,6 +272,7 @@ module.exports = {
   exitIntentRevealLimiter,
   bookingHoldLimiter,
   bookingHoldReadLimiter,
+  interestTrackingLimiter,
   getRealIP,
 };
 
