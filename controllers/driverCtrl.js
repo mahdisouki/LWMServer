@@ -13,6 +13,7 @@ const taskPhotoUploadService = require('../services/taskPhotoUploadService');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const { applyTruckStaffPopulate } = require('../utils/truckHelpers');
 const { processDriverLocationUpdate } = require('../services/proximityAutoStartService');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const {
   findActivePayrollForDay,
   getTruckTeamForUser,
