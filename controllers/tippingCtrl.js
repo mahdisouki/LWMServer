@@ -802,7 +802,14 @@ const tippingController = {
           operatingHours: place.operatingHours,
           itemsAllowed: place.itemsAllowed,
           itemsNotAllowed: place.itemsNotAllowed,
-          daysClosed: place.daysClosed
+          daysClosed: place.daysClosed,
+          phoneNumber: place.phoneNumber,
+          email: place.email,
+          weeklySchedule: place.weeklySchedule,
+          pricesPerTonne: place.pricesPerTonne,
+          minimumTonnage: place.minimumTonnage,
+          paymentInstructions: place.paymentInstructions,
+          notes: place.notes
         })),
       };
 

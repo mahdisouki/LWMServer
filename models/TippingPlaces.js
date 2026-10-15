@@ -38,6 +38,44 @@ const TippingPlaceSchema = new Schema({
     additionalSofaCharge: {
         type: Number
     },
+    phoneNumber: {
+        type: String,
+        trim: true,
+    },
+    email: {
+        type: String,
+        trim: true,
+    },
+    weeklySchedule: [{
+        day: {
+            type: String,
+            enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+        },
+        closed: {
+            type: Boolean,
+            default: false,
+        },
+        openTime: {
+            type: String,
+        },
+        closeTime: {
+            type: String,
+        },
+    }],
+    pricesPerTonne: {
+        wood: { type: Number },
+        inertConstruction: { type: Number },
+        mixedGeneral: { type: Number },
+    },
+    minimumTonnage: {
+        type: Number,
+    },
+    paymentInstructions: {
+        type: String,
+    },
+    notes: {
+        type: String,
+    },
     location: {
         type: {
           type: String,
