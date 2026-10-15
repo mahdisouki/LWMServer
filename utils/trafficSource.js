@@ -1,5 +1,6 @@
 const TRAFFIC_SOURCES = {
   GOOGLE_ADS: 'Google Ads',
+  LSA: 'LSA',
   MICROSOFT_ADS: 'Microsoft Ads',
   INSTAGRAM: 'Instagram',
   FACEBOOK: 'Facebook',
@@ -7,9 +8,10 @@ const TRAFFIC_SOURCES = {
   ORGANIC: 'Organic',
 };
 
-/** Sources set from click ids / utm — never overwritten by GA4 sync. */
+/** Sources set from click ids / utm / manual match — never overwritten by GA4 sync. */
 const HARD_ATTRIBUTION_SOURCES = new Set([
   TRAFFIC_SOURCES.GOOGLE_ADS,
+  TRAFFIC_SOURCES.LSA,
   TRAFFIC_SOURCES.MICROSOFT_ADS,
   TRAFFIC_SOURCES.INSTAGRAM,
   TRAFFIC_SOURCES.FACEBOOK,
@@ -44,6 +46,20 @@ function canApplyGa4TrafficSource(currentTrafficSource, nextTrafficSource) {
     !currentTrafficSource
     || currentTrafficSource === TRAFFIC_SOURCES.ORGANIC
   );
+}
+
+/**
+ * LSA lead match may stamp Organic / missing / Direct → LSA.
+ * Never overwrite another hard ads channel or an existing LSA tag.
+ */
+function canApplyLsaTrafficSource(currentTrafficSource) {
+  if (!currentTrafficSource || currentTrafficSource === TRAFFIC_SOURCES.ORGANIC) {
+    return true;
+  }
+  if (currentTrafficSource === TRAFFIC_SOURCES.DIRECT) {
+    return true;
+  }
+  return false;
 }
 
 function hasGoogleAdsClickId({ gclid, gbraid, wbraid } = {}) {
@@ -89,7 +105,7 @@ function resolveSocialTrafficSource(utm_source) {
 
 /**
  * Prefer Google, then Microsoft, then Meta (fbclid), then Instagram/Facebook from utm_source.
- * Preserves GA4-synced Direct when there is no stronger click/utm signal.
+ * Preserves manually matched LSA and GA4-synced Direct when there is no stronger click/utm signal.
  */
 function resolveTrafficSource({
   gclid,
@@ -100,6 +116,10 @@ function resolveTrafficSource({
   utm_source,
   existingTrafficSource,
 } = {}) {
+  // Manual LSA match — do not overwrite with Google Ads click ids.
+  if (existingTrafficSource === TRAFFIC_SOURCES.LSA) {
+    return TRAFFIC_SOURCES.LSA;
+  }
   if (hasGoogleAdsClickId({ gclid, gbraid, wbraid })) {
     return TRAFFIC_SOURCES.GOOGLE_ADS;
   }
@@ -119,15 +139,55 @@ function resolveTrafficSource({
   return TRAFFIC_SOURCES.ORGANIC;
 }
 
+const CLICK_ID_FIELDS = ['gclid', 'gbraid', 'wbraid', 'msclkid', 'fbclid', 'utm_source'];
+
+function trimClickId(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed || null;
+}
+
+function pickClickIds(source = {}) {
+  const ids = {};
+  for (const field of CLICK_ID_FIELDS) {
+    const value = trimClickId(source[field]);
+    if (value) ids[field] = value;
+  }
+  return ids;
+}
+
+function hasAnyClickId(source = {}) {
+  return CLICK_ID_FIELDS.some((field) => trimClickId(source[field]));
+}
+
+/** Copy missing click IDs / utm_source from source onto target. */
+function mergeClickIdFields(target, source) {
+  if (!target || !source) return { changed: false };
+  let changed = false;
+  for (const field of CLICK_ID_FIELDS) {
+    const next = trimClickId(source[field]);
+    if (!trimClickId(target[field]) && next) {
+      target[field] = next;
+      changed = true;
+    }
+  }
+  return { changed };
+}
+
 module.exports = {
   TRAFFIC_SOURCES,
   HARD_ATTRIBUTION_SOURCES,
+  CLICK_ID_FIELDS,
   hasGoogleAdsClickId,
   hasMicrosoftAdsClickId,
   hasMetaAdsClickId,
+  hasAnyClickId,
+  pickClickIds,
+  mergeClickIdFields,
   normalizeUtmSource,
   resolveSocialTrafficSource,
   resolveTrafficSource,
   mapGa4ChannelToTrafficSource,
   canApplyGa4TrafficSource,
+  canApplyLsaTrafficSource,
 };

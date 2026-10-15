@@ -1,6 +1,7 @@
 const BrokerQuoteRequest = require('../models/BrokerQuoteRequest');
 const BrokerLead = require('../models/BrokerLead');
 const BrokerContact = require('../models/BrokerContact');
+const BrokerOrder = require('../models/BrokerOrder');
 const { QUOTE_REQUEST_STATUSES } = require('../models/BrokerQuoteRequest');
 const { resolveBrokerIdForUser } = require('../utils/brokerScope');
 const { notifyBrokerOrg } = require('../utils/brokerNotifications');
@@ -137,7 +138,7 @@ const brokerQuoteRequestCtrl = {
           },
           emailSubject: `New quote request: ${referenceCode}`,
           emailHtml: `<p>Hello,</p><p>A new quote request <strong>${referenceCode}</strong> was created for <strong>${companyLabel}</strong>.</p><p>Created by: ${actorName}</p>`,
-        });
+        }, req.user?._id || req.user?.id);
 
         try {
           const ctx = await loadBrokerSyncContext(brokerId, leadId);
@@ -167,6 +168,8 @@ const brokerQuoteRequestCtrl = {
       if (!quote) {
         return res.status(404).json({ success: false, message: 'Quote request not found' });
       }
+
+      const previousStatus = quote.status;
 
       const allowed = [
         'contactId',
@@ -213,16 +216,24 @@ const brokerQuoteRequestCtrl = {
 
       await quote.save();
 
-      if (quote.status === 'Submitted' || quote.status === 'Quoted') {
+      // Editing a submitted quote must not pull the lead back to an earlier step
+      // once negotiation or the back-office handoff has started.
+      if (quote.status !== previousStatus) {
         const lead = await BrokerLead.findById(quote.leadId);
-        if (lead) {
-          if (quote.status === 'Submitted' && lead.status !== 'QuotationSent') {
+        const activeOrder = lead
+          ? await BrokerOrder.findOne({
+              leadId: lead._id,
+              status: { $ne: 'Cancelled' },
+            }).select('_id')
+          : null;
+        if (lead && lead.status !== 'Converted' && lead.status !== 'Lost' && !activeOrder) {
+          if (quote.status === 'Submitted') {
             lead.status = 'QuotationSent';
-          }
-          if (quote.status === 'Quoted' && lead.status !== 'Negotiation') {
+            await lead.save();
+          } else if (quote.status === 'Quoted') {
             lead.status = 'Negotiation';
+            await lead.save();
           }
-          await lead.save();
         }
       }
 
@@ -240,7 +251,7 @@ const brokerQuoteRequestCtrl = {
           },
           emailSubject: `Quote submitted: ${quote.referenceCode}`,
           emailHtml: `<p>Hello,</p><p>Quote <strong>${quote.referenceCode}</strong> for <strong>${companyLabel}</strong> has been submitted.</p><p>Updated by: ${actorName}</p>`,
-        });
+        }, req.user?._id || req.user?.id);
 
         if (!quote.mainQuotationId) {
           try {
@@ -257,6 +268,27 @@ const brokerQuoteRequestCtrl = {
             console.error('syncBrokerQuoteToMainSystem error:', syncError);
           }
         }
+      }
+
+      // The back office has priced the job: tell the broker, since this is what
+      // unlocks negotiation for them in the portal.
+      if (quote.status === 'Quoted' && previousStatus !== 'Quoted') {
+        const companyLabel = quote.companyName || '';
+        const priceLabel = `£${Number(quote.quotedAmount || 0).toFixed(2)}`;
+        await notifyBrokerOrg(quote.brokerId, {
+          type: 'Quotations',
+          message: `Quote ${quote.referenceCode} priced at ${priceLabel} for ${companyLabel}`,
+          senderName: actorName,
+          metadata: {
+            type: 'Quotations',
+            brokerId: String(quote.brokerId),
+            leadId: String(quote.leadId),
+            quoteRequestId: String(quote._id),
+            quotedAmount: quote.quotedAmount ?? null,
+          },
+          emailSubject: `Quote priced: ${quote.referenceCode}`,
+          emailHtml: `<p>Hello,</p><p>London Waste Management has priced quote <strong>${quote.referenceCode}</strong> for <strong>${companyLabel}</strong> at <strong>${priceLabel}</strong>.</p><p>You can now open a negotiation with the customer from your broker portal.</p><p>Priced by: ${actorName}</p>`,
+        }, req.user?._id || req.user?.id);
       }
 
       return res.json({ success: true, data: { ...quote.toObject(), id: quote._id } });
@@ -303,6 +335,12 @@ const brokerQuoteRequestCtrl = {
       const quote = await BrokerQuoteRequest.findById(req.params.quoteRequestId);
       if (!quote || String(quote.brokerId) !== String(brokerId)) {
         return res.status(404).json({ success: false, message: 'Quote request not found' });
+      }
+      if (quote.status !== 'Draft') {
+        return res.status(400).json({
+          success: false,
+          message: 'A submitted quote cannot be updated',
+        });
       }
       return brokerQuoteRequestCtrl.update(req, res);
     } catch (error) {

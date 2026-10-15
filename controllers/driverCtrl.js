@@ -13,6 +13,7 @@ const taskPhotoUploadService = require('../services/taskPhotoUploadService');
 const { sendWasteTransferNoteEmail } = require('../services/emailsService');
 const { applyTruckStaffPopulate } = require('../utils/truckHelpers');
 const { processDriverLocationUpdate } = require('../services/proximityAutoStartService');
+const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const {
   findActivePayrollForDay,
   getTruckTeamForUser,
@@ -1971,6 +1972,7 @@ const driverManagement = {
   /**
    * Get current and next job addresses for a truck
    * GET /api/driver/truck/:truckId/job-addresses
+   * Optional query: ?date=YYYY-MM-DD (defaults to today)
    * Returns the address of the current job and the next one
    */
   getCurrentAndNextJobAddress: async (req, res) => {
@@ -1983,21 +1985,29 @@ const driverManagement = {
         return res.status(404).json({ message: 'Truck not found' });
       }
 
-      // Get today's date in YYYY-MM-DD format
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = String(today.getMonth() + 1).padStart(2, '0');
-      const day = String(today.getDate()).padStart(2, '0');
-      const formattedDate = `${year}-${month}-${day}`;
+      // Use ?date=YYYY-MM-DD when provided; otherwise fall back to server "today"
+      const dateParam = typeof req.query.date === 'string' ? req.query.date.trim() : '';
+      let formattedDate;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+        formattedDate = dateParam;
+      } else {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        formattedDate = `${year}-${month}-${day}`;
+      }
 
-      // Get tasks for today using the truck's method
+      // Get tasks for the requested date using the truck's method
       const tasksForDate = truck.getTasksForDate(formattedDate);
 
       if (!tasksForDate || tasksForDate.length === 0) {
         return res.status(200).json({
-          message: 'No jobs found for today',
+          message: `No jobs found for ${formattedDate}`,
           currentJob: null,
-          nextJob: null
+          nextJob: null,
+          totalJobsToday: 0,
+          completedJobsCount: 0,
         });
       }
 

@@ -13,6 +13,7 @@ const {
   isBankTransferPayment,
   buildBankTransferDetailsHtml,
 } = require('./emailHelpers');
+const { usesAdminPricing, usesPublicAutomaticPricing, isBasketPercentageDiscount } = require('./orderPricingMode');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -241,21 +242,26 @@ module.exports = {
     }
 
     // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
-    // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
+    // Skip when a coupon or booking-hold basket % is present — those do not stack with Outside/AnyTime 10%
     const isAvailableAnyTime = task.available === 'AnyTime';
-    const isCreatedByPublic = task.createdByType === 'public';
+    const isCreatedByPublic = usesPublicAutomaticPricing(task);
     const hasItems = task.items && task.items.length > 0;
     const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
     const hasCouponOnTask = Boolean(task.couponCode);
+    const hasBasketOffer = isBasketPercentageDiscount(
+      task.hasDiscount,
+      task.discountType,
+      task.customDiscountPercent,
+    );
 
-    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
+    if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask && !hasBasketOffer) {
       console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in payment received email invoice PDF');
       subtotal *= 0.9;
     }
 
     // Check createdByType condition for minimum price enforcement
     // Only skip minimum price if explicitly 'Admin' AND applyMinFee is false
-    const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+    const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
     console.log('=== INVOICE PDF PRICE CALCULATION (sendPayementRecivedEmail) ===');
     console.log('task.createdByType:', task.createdByType, 'Type:', typeof task.createdByType);
     console.log('task.applyMinFee:', task.applyMinFee);
@@ -284,7 +290,7 @@ module.exports = {
       !isNaN(task.date.getTime()) &&
       typeof task.date.getDay === 'function' &&
       task.date.getDay() === 0;
-    if (isSunday && (task.createdByType === 'public' || task.applySundayFee === true)) {
+    if (isSunday && (usesPublicAutomaticPricing(task) || task.applySundayFee === true)) {
       sundayFeeAmount = 50;
       showSundayFeeRow = true;
       subtotal += 50;

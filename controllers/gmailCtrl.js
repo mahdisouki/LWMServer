@@ -44,12 +44,16 @@ const {
 const { suggestReplyForThread, suggestReplyForMessage } = require('../services/suggestReplyService');
 const { llmOrderForThread } = require('../services/llmOrderService');
 const {
+  getQuoteItemsForThread,
+  saveQuoteItemsForThread,
+} = require('../services/threadQuoteItemsService');
+const {
   createReplyLog,
   listReplyLogs,
   listThreadReplyLogs,
   getReplyStats,
 } = require('../services/emailReplyLogService');
-const { pollNewMessagesWithClassification } = require('../services/gmailInboxSync');
+const { enqueueGmailInboxSync } = require('../services/gmailInboxSync');
 const {
   attachStoredAiCategories,
   attachThreadAiCategorySlug,
@@ -70,8 +74,43 @@ const {
 const Admin = require('../models/Admin');
 const ScheduledEmail = require('../models/ScheduledEmail');
 const { emitToAllOnlineAdmins } = require('../socket');
+const {
+  assignIncomingMessages,
+  listMyInboxMessages,
+  claimStickyOnEngagement,
+  removeAssignmentsForGmailRemoval,
+} = require('../services/gmailAssignmentService');
 
 const SCHEDULED_ATTACHMENTS_DIR = path.join(__dirname, '../temp/scheduled-attachments');
+
+function claimStickySafe(opts) {
+  setImmediate(() => {
+    claimStickyOnEngagement(opts).catch((err) => {
+      console.warn('[Gmail Assignment] sticky claim failed:', err.message);
+    });
+  });
+}
+
+async function clearMyInboxForGmailRemoval(opts) {
+  try {
+    return await removeAssignmentsForGmailRemoval(opts);
+  } catch (err) {
+    console.warn(
+      '[Gmail Assignment] clear after Gmail removal failed:',
+      err.message
+    );
+    return { removed: 0 };
+  }
+}
+
+function parseCsvParam(value) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (value == null || value === '') return undefined;
+  return String(value)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 function moveAttachmentsToScheduledDir(files = [], scheduledEmailId) {
   if (!files.length) return [];
@@ -193,14 +232,6 @@ function cleanupUploadedFiles(files = []) {
   });
 }
 
-function parseCsvParam(value) {
-  if (!value) return undefined;
-  return String(value)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 const gmailCtrl = {
   // ✅ Send email with optional attachments
   sendEmail: async (req, res) => {
@@ -254,6 +285,7 @@ const gmailCtrl = {
       const {
         labelIds,
         q,
+        name,
         maxResults,
         pageToken,
         includeSpamTrash,
@@ -261,6 +293,36 @@ const gmailCtrl = {
         ai_category,
       } = req.query;
       const categorySlug = aiCategory || ai_category;
+      const labels = parseCsvParam(labelIds) || [];
+      const isMyInbox =
+        labels.includes('MY_INBOX') ||
+        String(labelIds || '').trim().toUpperCase() === 'MY_INBOX';
+
+      // My inbox: assigned threads for this admin (optional AI category filter).
+      if (isMyInbox) {
+        // Prefer the shared mailbox owner for Gmail metadata (date / UNREAD).
+        let gmailAdminId = adminId;
+        try {
+          const owner = await Admin.findOne({
+            gmailEmailAddress: { $exists: true, $nin: [null, ''] },
+            'gmailTokens.refresh_token': { $exists: true, $ne: null },
+          })
+            .select('_id')
+            .lean();
+          if (owner?._id) gmailAdminId = owner._id;
+        } catch (_) {}
+
+        const result = await listMyInboxMessages({
+          assignedTo: adminId,
+          aiCategory: categorySlug || null,
+          maxResults,
+          pageToken,
+          gmailAdminId,
+          name: name || null,
+          q: q || null,
+        });
+        return res.json({ success: true, myInbox: true, ...result });
+      }
 
       if (categorySlug) {
         const result = await listMessagesByAiCategory({
@@ -481,6 +543,15 @@ const gmailCtrl = {
         }
       }
 
+      if (resolvedThreadId) {
+        claimStickySafe({
+          adminId,
+          threadId: resolvedThreadId,
+          contactEmail: sentTo,
+          claimSource: 'reply',
+        });
+      }
+
       res.json({
         success: true,
         message: 'Reply sent successfully',
@@ -569,7 +640,18 @@ const gmailCtrl = {
 
   trashEmail: async (req, res) => {
     try {
-      await moveToTrash(req.user._id, req.params.id);
+      const messageId = req.params.id;
+      let threadId = null;
+      try {
+        const email = await getEmailById(req.user._id, messageId);
+        threadId = email?.threadId || null;
+      } catch (_) {}
+      await moveToTrash(req.user._id, messageId);
+      await clearMyInboxForGmailRemoval({
+        threadIds: threadId ? [threadId] : [],
+        messageIds: [messageId],
+        reason: 'gmail_trashed',
+      });
       res.json({ success: true, message: 'Email moved to trash' });
     } catch (error) {
       res.status(500).json({ success: false, message: 'Failed to move email to trash', error: error.message });
@@ -799,12 +881,15 @@ const gmailCtrl = {
         req.params.id,
         messageId
       );
-      res.json({
+      const body = {
         success: true,
         suggestion,
-        suggestReplyContext: suggestion.suggestReplyContext || null,
         inReplyToMessageId: suggestion.inReplyToMessageId || null,
-      });
+      };
+      if (suggestion.suggestReplyContext) {
+        body.suggestReplyContext = suggestion.suggestReplyContext;
+      }
+      res.json(body);
     } catch (error) {
       const status =
         error.status === 404 || error.response?.status === 404
@@ -842,12 +927,15 @@ const gmailCtrl = {
         req.params.id,
         messageId
       );
-      res.json({
+      const body = {
         success: true,
         suggestion,
-        suggestReplyContext: suggestion.suggestReplyContext || null,
         inReplyToMessageId: suggestion.inReplyToMessageId || null,
-      });
+      };
+      if (suggestion.suggestReplyContext) {
+        body.suggestReplyContext = suggestion.suggestReplyContext;
+      }
+      res.json(body);
     } catch (error) {
       const status =
         error.status === 400
@@ -869,6 +957,7 @@ const gmailCtrl = {
   /**
    * Extract order details from thread via Python /order_llm.
    * Pass body/query messageId for the clicked row; omit for latest in thread.
+   * Pass body.items from the frontend — LLM fills customer/booking/note only.
    */
   llmOrder: async (req, res) => {
     try {
@@ -877,10 +966,12 @@ const gmailCtrl = {
         req.query?.messageId ||
         req.body?.id ||
         req.body?.selectedMessageId;
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
       const order = await llmOrderForThread(
         req.user._id,
         req.params.id,
-        messageId
+        messageId,
+        items
       );
       res.json({
         success: true,
@@ -901,6 +992,63 @@ const gmailCtrl = {
             : 'Failed to extract order from thread',
         error: error.message,
         details: error.response?.data || undefined,
+      });
+    }
+  },
+
+  /** Saved quote items for a thread (from suggest-reply / manual edits). */
+  getThreadQuoteItems: async (req, res) => {
+    try {
+      const saved = await getQuoteItemsForThread(req.params.id);
+      res.json({
+        success: true,
+        threadId: req.params.id,
+        quoteItems: saved?.quoteItems || [],
+        messageId: saved?.messageId || null,
+        updatedAt: saved?.updatedAt || null,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to load quote items',
+        error: error.message,
+      });
+    }
+  },
+
+  /** Replace saved quote items for a thread (UI save). */
+  saveThreadQuoteItems: async (req, res) => {
+    try {
+      const bodyItems = req.body?.quoteItems ?? req.body?.items;
+      if (!Array.isArray(bodyItems)) {
+        return res.status(400).json({
+          success: false,
+          message: 'quoteItems (or items) array is required',
+        });
+      }
+      const messageId =
+        req.body?.messageId ||
+        req.query?.messageId ||
+        req.body?.id ||
+        null;
+      const saved = await saveQuoteItemsForThread(
+        req.params.id,
+        messageId,
+        bodyItems
+      );
+      res.json({
+        success: true,
+        threadId: saved.threadId,
+        quoteItems: saved.quoteItems,
+        messageId: saved.messageId,
+        updatedAt: saved.updatedAt,
+      });
+    } catch (error) {
+      const status = error.status === 400 ? 400 : 500;
+      res.status(status).json({
+        success: false,
+        message: error.message || 'Failed to save quote items',
+        error: error.message,
       });
     }
   },
@@ -980,6 +1128,7 @@ const gmailCtrl = {
         limit,
         before,
       });
+      // Sticky claim only on reply (not on open/preview)
       res.json({ success: true, thread });
     } catch (error) {
       const status =
@@ -1008,6 +1157,10 @@ const gmailCtrl = {
   trashThread: async (req, res) => {
     try {
       const thread = await trashThread(req.user._id, req.params.id);
+      await clearMyInboxForGmailRemoval({
+        threadIds: [req.params.id],
+        reason: 'gmail_trashed',
+      });
       res.json({ success: true, thread });
     } catch (error) {
       res.status(500).json({ success: false, message: 'Failed to trash thread', error: error.message });
@@ -1026,6 +1179,10 @@ const gmailCtrl = {
   deleteThread: async (req, res) => {
     try {
       await deleteThread(req.user._id, req.params.id);
+      await clearMyInboxForGmailRemoval({
+        threadIds: [req.params.id],
+        reason: 'gmail_deleted',
+      });
       res.json({ success: true, message: 'Thread deleted successfully' });
     } catch (error) {
       res.status(500).json({ success: false, message: 'Failed to delete thread', error: error.message });
@@ -1225,6 +1382,11 @@ const gmailCtrl = {
 
   // Pub/Sub push webhook. Must respond 2xx quickly.
   handleWebhook: async (req, res) => {
+    const expected = process.env.GMAIL_PUBSUB_WEBHOOK_SECRET;
+    if (!expected || req.params.secret !== expected) {
+      return res.status(401).send('Unauthorized');
+    }
+
     // Acknowledge immediately to avoid Pub/Sub retries while we process.
     res.status(200).send();
 
@@ -1263,23 +1425,45 @@ const gmailCtrl = {
         `[Gmail Webhook] Notification for ${emailAddress} (admin ${adminId}, historyId ${historyId})`
       );
 
-      const { newMessages } = await pollNewMessagesWithClassification(adminId);
+      enqueueGmailInboxSync(adminId, {
+        onBatch: async (batchMessages) => {
+          if (!batchMessages?.length) return;
 
-      if (newMessages.length > 0) {
-        for (const newMessage of newMessages) {
-          const sent = await emitToAllOnlineAdmins('gmail:new', newMessage);
+          for (const newMessage of batchMessages) {
+            const sent = await emitToAllOnlineAdmins('gmail:new', newMessage);
+            console.log(
+              `[Gmail Webhook] Broadcast gmail:new (${newMessage.id}) to ${sent} online admin(s)`
+            );
+          }
+
+          const sent = await emitToAllOnlineAdmins('gmail:inbox-updated', {
+            count: batchMessages.length,
+            messageIds: batchMessages.map((m) => m.id),
+          });
           console.log(
-            `[Gmail Webhook] Broadcast gmail:new (${newMessage.id}) to ${sent} online admin(s)`
+            `[Gmail Webhook] Broadcast gmail:inbox-updated (${batchMessages.length} message(s)) to ${sent} online admin(s)`
           );
-        }
-        const sent = await emitToAllOnlineAdmins('gmail:inbox-updated', {
-          count: newMessages.length,
-          messageIds: newMessages.map((m) => m.id),
-        });
-        console.log(
-          `[Gmail Webhook] Broadcast gmail:inbox-updated (${newMessages.length} message(s)) to ${sent} online admin(s)`
-        );
-      }
+
+          try {
+            const assignResult = await assignIncomingMessages({
+              mailboxAdminId: adminId,
+              mailboxEmail: emailAddress,
+              messages: batchMessages,
+            });
+            console.log(
+              `[Gmail Webhook] Assignment: assigned=${assignResult.assigned.length} queued=${(assignResult.queued || []).length} skipped=${assignResult.skipped.length}`
+            );
+          } catch (assignError) {
+            console.error(
+              '[Gmail Webhook] Assignment layer error (main inbox unaffected):',
+              assignError.message
+            );
+          }
+        },
+        onError: async (error) => {
+          console.error('[Gmail Webhook] Processing error:', error);
+        },
+      });
     } catch (error) {
       console.error('[Gmail Webhook] Processing error:', error);
     }

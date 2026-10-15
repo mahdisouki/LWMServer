@@ -1,58 +1,55 @@
 const { google } = require('googleapis');
 const Admin = require('../models/Admin');
-const googleClient = require('../services/googleClient');
-const oauth2Client = googleClient.oauth2Client || googleClient;
+const {
+  encryptGmailTokens,
+  decryptGmailTokens,
+} = require('../utils/gmailTokenCrypto');
 
-// Increase max listeners to prevent warnings
-oauth2Client.setMaxListeners(20);
+function createOAuth2Client() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URL
+  );
+}
 
-// Keep track of registered admin IDs to avoid duplicate listeners
-const registeredAdmins = new Set();
-
+/** Per-request client — avoids credential races when multiple admins use Gmail. */
 async function getGmailAuth(adminId) {
-  const admin = await Admin.findById(adminId);
+  const id = String(adminId);
+  const admin = await Admin.findById(id);
   if (!admin || !admin.gmailTokens) throw new Error('No Gmail tokens found');
 
-  oauth2Client.setCredentials(admin.gmailTokens);
-
-  // Only add the event listener once per admin
-  if (!registeredAdmins.has(adminId)) {
-    oauth2Client.on('tokens', async (tokens) => {
-      try {
-        await Admin.findByIdAndUpdate(adminId, {
-          gmailTokens: { ...admin.gmailTokens, ...tokens },
-        });
-        console.log(`Tokens updated for admin ${adminId}`);
-      } catch (error) {
-        console.error(`Failed to update tokens for admin ${adminId}:`, error);
-      }
-    });
-    
-    registeredAdmins.add(adminId);
-    console.log(`Event listener registered for admin ${adminId}`);
-  }
+  const plainTokens = decryptGmailTokens(admin.gmailTokens);
+  const oauth2Client = createOAuth2Client();
+  oauth2Client.setCredentials(plainTokens);
+  oauth2Client.on('tokens', async (tokens) => {
+    try {
+      const merged = encryptGmailTokens({ ...plainTokens, ...tokens });
+      await Admin.findByIdAndUpdate(id, { gmailTokens: merged });
+    } catch (error) {
+      console.error(`Failed to update tokens for admin ${id}:`, error.message);
+    }
+  });
 
   return google.gmail({ version: 'v1', auth: oauth2Client });
 }
 
 async function getPeopleAuth(adminId) {
-  const admin = await Admin.findById(adminId);
+  const id = String(adminId);
+  const admin = await Admin.findById(id);
   if (!admin || !admin.gmailTokens) throw new Error('No Google tokens found');
 
-  oauth2Client.setCredentials(admin.gmailTokens);
-
-  if (!registeredAdmins.has(adminId)) {
-    oauth2Client.on('tokens', async (tokens) => {
-      try {
-        await Admin.findByIdAndUpdate(adminId, {
-          gmailTokens: { ...admin.gmailTokens, ...tokens },
-        });
-      } catch (error) {
-        console.error(`Failed to update tokens for admin ${adminId}:`, error);
-      }
-    });
-    registeredAdmins.add(adminId);
-  }
+  const plainTokens = decryptGmailTokens(admin.gmailTokens);
+  const oauth2Client = createOAuth2Client();
+  oauth2Client.setCredentials(plainTokens);
+  oauth2Client.on('tokens', async (tokens) => {
+    try {
+      const merged = encryptGmailTokens({ ...plainTokens, ...tokens });
+      await Admin.findByIdAndUpdate(id, { gmailTokens: merged });
+    } catch (error) {
+      console.error(`Failed to update tokens for admin ${id}:`, error.message);
+    }
+  });
 
   return google.people({ version: 'v1', auth: oauth2Client });
 }

@@ -11,6 +11,7 @@ const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService
 const { User } = require('../models/User');
 const { fireQuoteConversionUpload } = require('../services/googleAdsConversionService');
 const { normalizeUtmSource } = require('../utils/trafficSource');
+const { parseDateInput } = require('../utils/analyticsDateRange');
 const quotationRequestController = {
     createQuotationRequest: async (req, res) => {
         try {
@@ -163,6 +164,11 @@ const quotationRequestController = {
                 quotation: newQuotation,
             });
 
+            const labelingService = require('../services/labelingService');
+            labelingService.enqueueQuotationImages(newQuotation).catch((enqueueError) => {
+                console.error('Failed to enqueue labeling jobs for quotation:', enqueueError);
+            });
+
         } catch (error) {
             console.error('Error creating quotation request:', error);
             res.status(500).json({
@@ -205,14 +211,21 @@ const quotationRequestController = {
                 };
             }
 
-            // Add date range if provided (for quotation creation date)
+            // Creation-date range: same London-day semantics as Website Analytics quote counts
             if (startDate || endDate) {
                 query.createdAt = {};
-                if (startDate) {
-                    query.createdAt.$gte = new Date(startDate);
-                }
-                if (endDate) {
-                    query.createdAt.$lte = new Date(endDate);
+                try {
+                    if (startDate) {
+                        query.createdAt.$gte = parseDateInput(startDate, false);
+                    }
+                    if (endDate) {
+                        query.createdAt.$lte = parseDateInput(endDate, true);
+                    }
+                } catch (error) {
+                    return res.status(400).json({
+                        message: 'Invalid startDate or endDate',
+                        error: error.message,
+                    });
                 }
             }
 

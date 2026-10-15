@@ -23,13 +23,25 @@ const brokerLeadSchema = new mongoose.Schema(
     },
     companyName: {
       type: String,
-      required: [true, 'Company name is required'],
+      required: [
+        function companyNameRequired() {
+          return this.status !== 'Draft';
+        },
+        'Company name is required',
+      ],
       trim: true,
+      default: '',
     },
     contactName: {
       type: String,
-      required: [true, 'Contact name is required'],
+      required: [
+        function contactNameRequired() {
+          return this.status !== 'Draft';
+        },
+        'Contact name is required',
+      ],
       trim: true,
+      default: '',
     },
     phone: {
       type: String,
@@ -100,6 +112,12 @@ const brokerLeadSchema = new mongoose.Schema(
     postalCode: { type: String, trim: true, default: '' },
     region: { type: String, trim: true, default: '' },
     country: { type: String, trim: true, default: 'United Kingdom' },
+    industry: { type: String, trim: true, default: '' },
+    billingAddress: { type: String, trim: true, default: '' },
+    preferredCollectionDate: { type: Date, default: null },
+    preferredCollectionTime: { type: String, trim: true, default: '' },
+    preferredCollectionDays: { type: String, trim: true, default: '' },
+    binSize: { type: String, trim: true, default: '' },
     leadTitle: { type: String, trim: true, default: '' },
     description: { type: String, trim: true, default: '' },
     customerNeed: { type: String, trim: true, default: '' },

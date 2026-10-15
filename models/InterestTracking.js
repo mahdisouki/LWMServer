@@ -4,7 +4,7 @@ const { Schema } = mongoose;
 const interestTrackingSchema = new Schema({
   type: {
     type: String,
-    enum: ['sunday_click', 'night_slot_click'],
+    enum: ['sunday_click', 'night_slot_click', 'today_unavailable_call_click'],
     required: true,
     index: true
   },

@@ -30,6 +30,12 @@ const LEAD_EXTRA_FIELDS = [
   'postalCode',
   'region',
   'country',
+  'industry',
+  'billingAddress',
+  'preferredCollectionDate',
+  'preferredCollectionTime',
+  'preferredCollectionDays',
+  'binSize',
   'leadTitle',
   'description',
   'customerNeed',
@@ -47,14 +53,35 @@ const LEAD_EXTRA_FIELDS = [
   'reminder',
 ];
 
-const LEAD_DATE_FIELDS = ['followUpAt', 'expectedDecisionDate', 'expectedDeliveryDate'];
+const LEAD_DATE_FIELDS = [
+  'followUpAt',
+  'expectedDecisionDate',
+  'expectedDeliveryDate',
+  'preferredCollectionDate',
+];
+
+/** Parse a calendar date safely. Empty/invalid → null (never "today"). */
+function parseLeadDate(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const dateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnly) {
+      return new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T12:00:00.000Z`);
+    }
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
 
 function pickLeadExtras(body) {
   const extras = {};
   for (const key of LEAD_EXTRA_FIELDS) {
     if (body[key] !== undefined) {
       if (LEAD_DATE_FIELDS.includes(key)) {
-        extras[key] = body[key] ? new Date(body[key]) : null;
+        extras[key] = parseLeadDate(body[key]);
       } else {
         extras[key] = body[key];
       }
@@ -141,7 +168,8 @@ const brokerLeadCtrl = {
         notes,
       } = body;
 
-      if (!companyName || !contactName) {
+      const isDraft = status === 'Draft';
+      if (!isDraft && (!companyName || !contactName)) {
         return res.status(400).json({
           success: false,
           message: 'companyName and contactName are required',
@@ -158,14 +186,14 @@ const brokerLeadCtrl = {
         priority: priority || 'Medium',
         wasteType: wasteType || body.leadTitle || '',
         frequency: frequency || body.estimatedQuantity || '',
-        followUpAt: followUpAt ? new Date(followUpAt) : null,
+        followUpAt: parseLeadDate(followUpAt),
         pipelineValue: pipelineValue != null ? Number(pipelineValue) : 0,
         notes: notes || body.internalComments || '',
         ...pickLeadExtras(body),
         activityLog: [
           {
             action: 'Lead created',
-            detail: companyName,
+            detail: companyName || contactName || 'Uploaded document',
             actorName: req.user?.username || req.user?.firstName || 'Admin',
             createdAt: new Date(),
           },
@@ -209,7 +237,7 @@ const brokerLeadCtrl = {
             return res.status(400).json({ success: false, message: 'Invalid status' });
           }
           if (key === 'followUpAt' || LEAD_DATE_FIELDS.includes(key)) {
-            lead[key] = req.body[key] ? new Date(req.body[key]) : null;
+            lead[key] = parseLeadDate(req.body[key]);
           } else if (key === 'pipelineValue') {
             lead[key] = Number(req.body[key]);
           } else {
@@ -336,7 +364,12 @@ const brokerLeadCtrl = {
 
       const leadId = lead._id;
       const [contacts, quotes, negotiations, orders, tasks, documents] = await Promise.all([
-        BrokerContact.find({ brokerId, leadId }).sort({ updatedAt: -1 }).lean(),
+        BrokerContact.find({
+          brokerId,
+          $or: [{ leadId }, { companyName: lead.companyName }],
+        })
+          .sort({ updatedAt: -1 })
+          .lean(),
         BrokerQuoteRequest.find({ brokerId, leadId }).sort({ updatedAt: -1 }).lean(),
         BrokerNegotiation.find({ brokerId, leadId }).sort({ updatedAt: -1 }).lean(),
         BrokerOrder.find({ brokerId, leadId }).sort({ updatedAt: -1 }).lean(),
@@ -379,6 +412,30 @@ const brokerLeadCtrl = {
       });
     } catch (error) {
       console.error('getMyLeadById error:', error);
+      return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  },
+
+  updateMyProfile: async (req, res) => {
+    try {
+      const brokerId = await resolveBrokerIdForUser(req.user);
+      if (!brokerId) {
+        return res.status(404).json({ success: false, message: 'No broker profile linked to this user' });
+      }
+      const broker = await Broker.findById(brokerId);
+      if (!broker) {
+        return res.status(404).json({ success: false, message: 'Broker not found' });
+      }
+      const allowed = ['bankAccountName', 'bankSortCode', 'bankAccountNumber'];
+      for (const key of allowed) {
+        if (req.body[key] !== undefined) {
+          broker[key] = String(req.body[key] || '').trim();
+        }
+      }
+      await broker.save();
+      return res.json({ success: true, data: { ...broker.toObject(), id: broker._id } });
+    } catch (error) {
+      console.error('updateMyProfile error:', error);
       return res.status(500).json({ success: false, message: 'Internal server error' });
     }
   },
@@ -456,6 +513,7 @@ const brokerLeadCtrl = {
             leadId: l._id,
             leadCode: `LD-${String(l._id).slice(-6).toUpperCase()}`,
             companyName: l.companyName,
+            status: l.status,
             action: a.action,
             detail: a.detail,
             actorName: a.actorName,

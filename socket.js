@@ -1631,6 +1631,9 @@ const emitNotificationToUser = async (userId, type, notificationMessage, senderN
     'Quotations': 'Quotation Update',
     'Payment': 'Payment Update',
     'Payment-failed': 'Payment Failed',
+    'Subscriptions': 'Subscription Reminder',
+    'WhatsApp': 'WhatsApp Message',
+    'Refunds': 'Refund Request',
   };
   const title = titleMap[type] || 'Notification';
 
@@ -1789,6 +1792,7 @@ const sendOfflineNotifications = async (userId, socket) => {
     'Busy_Days': 'Busy Days Update',
     'Emails': 'Email Update',
     'Quotations': 'Quotation Update',
+    'Subscriptions': 'Subscription Reminder',
   };
 
   offlineNotifications?.forEach((notification) => {

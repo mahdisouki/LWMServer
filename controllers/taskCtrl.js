@@ -20,7 +20,13 @@ const {
   ALL_TIME_SLOTS,
   DEFAULT_SUGGESTION_DAYS,
 } = require('../services/taskAvailabilityService');
-const { normalizeUtmSource } = require('../utils/trafficSource');
+const { normalizeUtmSource, pickClickIds, mergeClickIdFields, hasAnyClickId } = require('../utils/trafficSource');
+const { resolveClickIdsForNewTask, findMatchingTawkLead } = require('../services/tawkAttributionService');
+const { applyContactClickIdsToTask } = require('../services/contactAttributionService');
+const { applyMailtoClickIdsToTask, findMatchingMailtoLead } = require('../services/mailtoAttributionService');
+const { usesAdminPricing, usesPublicAutomaticPricing, isBasketPercentageDiscount } = require('../utils/orderPricingMode');
+const { getRealIP } = require('../middlewares/rateLimiter');
+const bookingOffer = require('../services/bookingOffer');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -167,22 +173,7 @@ async function paginateBusinessCustomerTasks(queryParams) {
   for (const field of BUSINESS_CUSTOMER_FILTER_FIELDS) {
     const value = queryParams[field];
     if (value !== undefined && value !== '') {
-      const parsedDate = new Date(value);
-      const isDate = !isNaN(parsedDate.getTime());
-
-      if (isDate) {
-        const dayStart = new Date(parsedDate);
-        dayStart.setUTCHours(0, 0, 0, 0);
-        const dayEnd = new Date(dayStart);
-        dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-        queryFilter[field] = {
-          $gte: dayStart,
-          $lt: dayEnd,
-        };
-      } else {
-        queryFilter[field] = value;
-      }
+      paginateQuery.applyDateAwareFilter(queryFilter, field, value);
     }
   }
 
@@ -585,12 +576,18 @@ async function createDirectLinkedAdditionalTaskFromItems({
     date: parentTask.date,
     createdBy: createdByUser?.username || 'system',
     createdByType: 'Admin',
+    subsource: parentTask.subsource || null,
     paymentStatus: 'Unpaid',
     paymentMethod: childPaymentMethod,
     clientObjectPhotos: normalizedMedia,
     totalPrice: calculatedTotalPrice,
     items: normalizedItems,
     taskStatus: 'New',
+  });
+
+  const labelingService = require('../services/labelingService');
+  labelingService.enqueueTaskImages(childTask).catch((enqueueError) => {
+    console.error('Failed to enqueue labeling jobs for additional-item order:', enqueueError);
   });
 
   // Keep child directly after parent in the truck daily sequence.
@@ -637,6 +634,7 @@ async function createPersistentPaymentLink({
 }
 
 const TASK_PRIORITIES = ['low', 'medium', 'high'];
+const ORDER_SUBSOURCES = ['tawk', 'phone', 'email', 'website'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
@@ -1153,6 +1151,15 @@ function normalizeTaskPriority(value) {
   if (!TASK_PRIORITIES.includes(s)) return null;
   return s;
 }
+
+/** undefined = empty, null = not in the allowed list, otherwise the stored value. */
+function normalizeOrderSubsource(value) {
+  if (value === undefined || value === null) return undefined;
+  const s = String(value).trim().toLowerCase();
+  if (s === '') return undefined;
+  if (!ORDER_SUBSOURCES.includes(s)) return null;
+  return s;
+}
 // Fonction auxiliaire pour traiter les événements de commande approuvés
 function getCouponDiscountFields(coupon) {
   if (!coupon) return null;
@@ -1211,6 +1218,7 @@ async function calculateTotalPrice({
   discountType,
   hasDiscount,
   createdByType,
+  adminEditingEnabled = false,
   available, // Add available parameter for discount calculation
   applyMinFee = false, // Admin option to apply minimum fee
   applySundayFee = false, // Admin option to apply Sunday fee
@@ -1377,7 +1385,7 @@ async function calculateTotalPrice({
   }
 
   // 4. Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
-  // Skip when a coupon is applied — coupon and Outside/AnyTime 10% do not stack
+  // Skip when a coupon or booking-hold basket % is applied — those do not stack with Outside/AnyTime 10%
   console.log('=== DISCOUNT CHECK DEBUG ===');
   console.log('available:', available, 'Type:', typeof available);
   console.log('createdByType:', createdByType, 'Type:', typeof createdByType);
@@ -1386,18 +1394,21 @@ async function calculateTotalPrice({
   console.log('Coupon discount applied:', couponDiscount);
   console.log('Subtotal before discount:', subtotal);
 
+  const pricingSource = { createdByType, adminEditingEnabled };
   const isAvailableAnyTime = available === 'AnyTime';
-  const isCreatedByPublic = createdByType === 'public';
+  const isCreatedByPublic = usesPublicAutomaticPricing(pricingSource);
   const hasItems = itemsToProcess.length > 0;
   const allItemsOutside = itemsToProcess.every((i) => i.Objectsposition === 'Outside');
   const hasCoupon = couponDiscount > 0;
+  const hasBasketOffer = isBasketPercentageDiscount(hasDiscount, discountType, customDiscountPercent);
 
   if (
     isAvailableAnyTime &&
     isCreatedByPublic &&
     hasItems &&
     allItemsOutside &&
-    !hasCoupon
+    !hasCoupon &&
+    !hasBasketOffer
   ) {
     console.log('✅ Applying 10% discount for Outside items with AnyTime and public type');
     subtotal *= 0.9;
@@ -1414,7 +1425,7 @@ async function calculateTotalPrice({
   // 5. Enforce minimum price (before VAT) - if under £37.5, make it £37.5
   // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
   // Skip minimum price enforcement if created by Admin, UNLESS applyMinFee is true
-  if ((createdByType !== 'Admin' || applyMinFee === true) && subtotal < 37.5) {
+  if ((!usesAdminPricing(pricingSource) || applyMinFee === true) && subtotal < 37.5) {
     subtotal = 37.5;
   }
 
@@ -1424,7 +1435,7 @@ async function calculateTotalPrice({
   let sundayFee = 0;
   if (taskDate instanceof Date && !isNaN(taskDate.getTime())) {
     const isSunday = taskDate.getDay && taskDate.getDay() === 0;
-    if (isSunday && (createdByType === 'public' || applySundayFee === true)) {
+    if (isSunday && (usesPublicAutomaticPricing(pricingSource) || applySundayFee === true)) {
       sundayFee = 50;
       subtotal += sundayFee;
     }
@@ -1679,8 +1690,21 @@ const taskCtrl = {
         msclkid,
         fbclid,
         utm_source,
+        subsource,
       } = req.body;
       const normalizedUtmSource = normalizeUtmSource(utm_source);
+      let subsourceToSet;
+      if (createdByType === 'public') {
+        subsourceToSet = 'website';
+      } else if (subsource !== undefined && subsource !== null && String(subsource).trim() !== '') {
+        subsourceToSet = normalizeOrderSubsource(subsource);
+        if (!subsourceToSet) {
+          return res.status(400).json({
+            message: 'Invalid subsource. Allowed values: tawk, phone, email, website.',
+            error: 'INVALID_SUBSOURCE',
+          });
+        }
+      }
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
       const orderItems = parseJsonArray(items);
@@ -1800,6 +1824,7 @@ const taskCtrl = {
       // Validate coupon code if provided
       let coupon = null;
       let couponId = null;
+      let appliedCouponCode = couponCode ? String(couponCode).trim() : '';
       if (couponCode) {
         try {
           // Ensure couponCode is a string before calling toUpperCase
@@ -1842,26 +1867,72 @@ const taskCtrl = {
         }
       }
 
+      // Public checkout cannot set its own percentage. A booking hold is the only source.
+      let appliedDiscountPercent = customDiscountPercent;
+      let appliedDiscountType = discountType;
+      let appliedHasDiscount = hasDiscount;
+      let bookingHoldDoc = null;
+      let discountSource;
+
+      if (createdByType === 'public') {
+        appliedDiscountPercent = undefined;
+        if (appliedDiscountType === 'percentage') appliedDiscountType = undefined;
+        appliedHasDiscount = hasPerItemDiscount(orderItems) || hasPerItemDiscount(orderObjects);
+
+        const bookingHoldId = req.body.bookingHoldId
+          ? String(req.body.bookingHoldId).trim()
+          : '';
+        if (bookingHoldId) {
+          const resolved = await bookingOffer.resolveForOrder({
+            id: bookingHoldId,
+            ip: getRealIP(req),
+            subtotal: preliminarySubtotal,
+          });
+          if (!resolved.ok) {
+            return res.status(400).json({
+              message: resolved.message,
+              error: resolved.error,
+            });
+          }
+          bookingHoldDoc = resolved.hold;
+          const couponFields = getCouponDiscountFields(coupon);
+          const winner = bookingOffer.chooseBookingOrCoupon({
+            subtotal: preliminarySubtotal,
+            percent: resolved.percent,
+            coupon: couponFields,
+          });
+          if (winner === 'offer' && resolved.percent > 0) {
+            appliedDiscountPercent = resolved.percent;
+            appliedDiscountType = 'percentage';
+            appliedHasDiscount = true;
+            discountSource = 'booking-hold';
+            coupon = null;
+            couponId = null;
+            appliedCouponCode = '';
+          }
+        }
+      }
+
       // Calculate price using new logic
       console.log('=== PRICE CALCULATION DEBUG ===');
       console.log('Items being passed to calculateTotalPrice:', orderItems);
       console.log('Objects being passed to calculateTotalPrice:', orderObjects);
       console.log('available being passed:', available, 'Type:', typeof available);
       console.log('createdByType being passed:', createdByType, 'Type:', typeof createdByType);
-      console.log('couponCode being passed:', couponCode);
+      console.log('couponCode being passed:', appliedCouponCode);
 
       const { totalPrice, vat, couponDiscount, couponPercentage } = await calculateTotalPrice({
         items: orderItems,
         objects: orderObjects,
-        customDiscountPercent,
-        discountType,
-        hasDiscount,
+        customDiscountPercent: appliedDiscountPercent,
+        discountType: appliedDiscountType,
+        hasDiscount: appliedHasDiscount,
         available,
         createdByType, // Pass createdByType for discount calculation
         applyMinFee: applyMinFeeBoolean, // ✅ Use converted boolean
         applySundayFee: applySundayFeeBoolean,
         taskDate,
-        couponCode: couponCode || null, // Pass coupon code
+        couponCode: appliedCouponCode || null, // Pass coupon code
         customerEmail: email || null, // Pass customer email for custom coupon validation
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
@@ -1970,11 +2041,12 @@ const taskCtrl = {
         items: allItems,
         taskStatus: 'New',
         postcode,
-        customDiscountPercent,
-        discountType,
-        hasDiscount,
+        customDiscountPercent: appliedDiscountPercent,
+        discountType: appliedDiscountType,
+        hasDiscount: appliedHasDiscount,
+        ...(discountSource ? { discountSource } : {}),
         orderNumber,
-        couponCode: couponCode ? String(couponCode).trim().toUpperCase() : null,
+        couponCode: appliedCouponCode ? String(appliedCouponCode).trim().toUpperCase() : null,
         couponId: couponId,
         // customDiscountPercent !== undefined &&
         // !isNaN(customDiscountPercent) &&
@@ -1997,9 +2069,88 @@ const taskCtrl = {
         ...(msclkid ? { msclkid: String(msclkid).trim() } : {}),
         ...(fbclid ? { fbclid: String(fbclid).trim() } : {}),
         ...(normalizedUtmSource ? { utm_source: normalizedUtmSource } : {}),
+        ...(subsourceToSet ? { subsource: subsourceToSet } : {}),
       });
 
-      const savedTask = await newTask.save();
+      // Only Admin/phone jobs need Tawk backfill — public checkout already sends browser click IDs.
+      if (createdByType === 'Admin') {
+        try {
+          const attributionIds = await resolveClickIdsForNewTask({
+            email,
+            phoneNumber,
+            phoneNumber2,
+            firstName,
+            lastName,
+            gclid,
+            gbraid,
+            wbraid,
+            msclkid,
+            fbclid,
+            utm_source: normalizedUtmSource,
+          });
+          if (attributionIds.gclid) newTask.gclid = attributionIds.gclid;
+          if (attributionIds.gbraid) newTask.gbraid = attributionIds.gbraid;
+          if (attributionIds.wbraid) newTask.wbraid = attributionIds.wbraid;
+          if (attributionIds.msclkid) newTask.msclkid = attributionIds.msclkid;
+          if (attributionIds.fbclid) newTask.fbclid = attributionIds.fbclid;
+          if (attributionIds.utm_source) newTask.utm_source = attributionIds.utm_source;
+        } catch (err) {
+          console.error('[Tawk Attribution] Error resolving click IDs on createTask:', err);
+        }
+
+        // Contact form: fill any still-missing click IDs (email / phone / name match).
+        try {
+          await applyContactClickIdsToTask(newTask);
+        } catch (contactErr) {
+          console.error('[Contact Attribution] Error matching contact on createTask:', contactErr);
+        }
+
+        // Mailto click: fill remaining click IDs from the same sender email.
+        try {
+          await applyMailtoClickIdsToTask(newTask);
+        } catch (mailtoErr) {
+          console.error('[Mailto Attribution] Error matching mailto lead on createTask:', mailtoErr);
+        }
+
+        if (!newTask.subsource) {
+          try {
+            const tawkLead = await findMatchingTawkLead(newTask);
+            if (tawkLead) {
+              newTask.subsource = 'tawk';
+            } else {
+              const mailtoLead = await findMatchingMailtoLead(newTask);
+              if (mailtoLead) newTask.subsource = 'email';
+            }
+          } catch (subsourceErr) {
+            console.error('[Subsource] Error matching intake source on createTask:', subsourceErr);
+          }
+        }
+      }
+
+      let claimedHoldId = null;
+      if (bookingHoldDoc && Number(appliedDiscountPercent) > 0) {
+        const claimed = await bookingOffer.claimHold(bookingHoldDoc._id);
+        if (!claimed) {
+          return res.status(400).json({
+            message: 'This offer has expired',
+            error: 'OFFER_EXPIRED',
+          });
+        }
+        claimedHoldId = claimed._id;
+      }
+
+      let savedTask;
+      try {
+        savedTask = await newTask.save();
+      } catch (saveError) {
+        if (claimedHoldId) {
+          await bookingOffer.releaseHold(claimedHoldId);
+        }
+        throw saveError;
+      }
+      if (claimedHoldId) {
+        await bookingOffer.attachTask(claimedHoldId, savedTask._id);
+      }
 
       try {
         const linkResult = await syncTaskQuotationLink(savedTask);
@@ -2161,6 +2312,11 @@ const taskCtrl = {
         message: 'Task created successfully',
         task: savedTask,
       });
+
+      const labelingService = require('../services/labelingService');
+      labelingService.enqueueTaskImages(savedTask).catch((enqueueError) => {
+        console.error('Failed to enqueue labeling jobs for order:', enqueueError);
+      });
     } catch (error) {
       console.log(error);
       res
@@ -2192,6 +2348,61 @@ const taskCtrl = {
         .json({ message: 'Failed to retrieve task', error: error.message });
     }
   },
+
+  /**
+   * Public: fill missing click IDs from the payer's browser (payment success page).
+   * Never overwrites existing attribution fields. No ads conversion is fired here.
+   */
+  applyMissingAttribution: async (req, res) => {
+    const { taskId } = req.params;
+
+    try {
+      if (!mongoose.Types.ObjectId.isValid(taskId)) {
+        return res.status(400).json({ message: 'Invalid taskId', updated: false });
+      }
+
+      const incoming = pickClickIds({
+        ...req.body,
+        utm_source: normalizeUtmSource(req.body?.utm_source),
+      });
+
+      if (!hasAnyClickId(incoming)) {
+        return res.status(200).json({ updated: false, reason: 'no_click_ids' });
+      }
+
+      const task = await Task.findById(taskId).select(
+        'gclid gbraid wbraid msclkid fbclid utm_source trafficSource orderNumber',
+      );
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found', updated: false });
+      }
+
+      const { changed } = mergeClickIdFields(task, incoming);
+      if (!changed) {
+        return res.status(200).json({
+          updated: false,
+          reason: 'already_attributed',
+          trafficSource: task.trafficSource || null,
+        });
+      }
+
+      await task.save();
+
+      return res.status(200).json({
+        updated: true,
+        trafficSource: task.trafficSource || null,
+        orderNumber: task.orderNumber || null,
+      });
+    } catch (error) {
+      console.error('[Attribution] applyMissingAttribution failed:', error.message);
+      return res.status(500).json({
+        message: 'Failed to apply attribution',
+        updated: false,
+        error: error.message,
+      });
+    }
+  },
+
   getTaskByOrderNumber: async (req, res) => {
     const { orderNumber } = req.params;
 
@@ -3171,6 +3382,22 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
 
+      // Origin is fixed at creation. Unlocking a public order for admin editing
+      // sets adminEditingEnabled and must not rewrite createdBy / createdByType.
+      delete updates.createdBy;
+      delete updates.createdByType;
+      if (Object.prototype.hasOwnProperty.call(updates, 'adminEditingEnabled')) {
+        const roleType = req.user?.roleType;
+        const userRoles = Array.isArray(req.user?.role) ? req.user.role : [];
+        const isAdmin = roleType === 'Admin' || userRoles.includes('Admin');
+        if (!isAdmin || oldTask.createdByType !== 'public') {
+          delete updates.adminEditingEnabled;
+        } else {
+          updates.adminEditingEnabled =
+            updates.adminEditingEnabled === true || updates.adminEditingEnabled === 'true';
+        }
+      }
+
       // Calculate preliminary subtotal for coupon validation (before discounts)
       let preliminarySubtotal = 0;
       const populatedTask = await Task.findById(taskId).populate('items.standardItemId');
@@ -3546,9 +3773,14 @@ const taskCtrl = {
         const effectiveCustomDiscountPercent = updates.customDiscountPercent !== undefined
           ? Number(updates.customDiscountPercent)
           : Number(populatedTask.customDiscountPercent || 0);
-        const effectiveCreatedByType = updates.createdByType !== undefined
-          ? updates.createdByType
-          : populatedTask.createdByType;
+        const effectiveCreatedByType = populatedTask.createdByType;
+        const effectiveAdminEditingEnabled = updates.adminEditingEnabled !== undefined
+          ? (updates.adminEditingEnabled === true || updates.adminEditingEnabled === 'true')
+          : populatedTask.adminEditingEnabled === true;
+        const pricingSource = {
+          createdByType: effectiveCreatedByType,
+          adminEditingEnabled: effectiveAdminEditingEnabled,
+        };
         const effectiveAvailable = updates.available !== undefined
           ? updates.available
           : populatedTask.available;
@@ -3746,7 +3978,7 @@ const taskCtrl = {
         }
 
         // Apply minimum fee if needed (before Sunday fee / VAT)
-        const enforceMinimumPrice = effectiveCreatedByType !== 'Admin' || effectiveApplyMinFee === true;
+        const enforceMinimumPrice = !usesAdminPricing(pricingSource) || effectiveApplyMinFee === true;
         if (enforceMinimumPrice && subtotal < 37.5) {
           subtotal = 37.5;
           console.log('Applied minimum price adjustment in updateTask');
@@ -3759,7 +3991,7 @@ const taskCtrl = {
         const taskDateForUpdate = effectiveTaskDate;
         if (!isNaN(taskDateForUpdate.getTime())) {
           const isSunday = taskDateForUpdate.getDay && taskDateForUpdate.getDay() === 0;
-          if (isSunday && (effectiveCreatedByType === 'public' || effectiveApplySundayFee)) {
+          if (isSunday && (usesPublicAutomaticPricing(pricingSource) || effectiveApplySundayFee)) {
             sundayFee = 50;
             subtotal += sundayFee;
           }
@@ -3822,6 +4054,22 @@ const taskCtrl = {
       // Sanitize ObjectId fields: empty string cannot be cast to ObjectId
       if (updates.cashReceivedBy === '' || (typeof updates.cashReceivedBy === 'string' && !updates.cashReceivedBy.trim())) {
         updates.cashReceivedBy = null;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(updates, 'subsource')) {
+        const rawSubsource = updates.subsource;
+        if (rawSubsource === '' || rawSubsource === null) {
+          updates.subsource = null;
+        } else {
+          const normalizedSubsource = normalizeOrderSubsource(rawSubsource);
+          if (!normalizedSubsource) {
+            return res.status(400).json({
+              message: 'Invalid subsource. Allowed values: tawk, phone, email, website.',
+              error: 'INVALID_SUBSOURCE',
+            });
+          }
+          updates.subsource = normalizedSubsource;
+        }
       }
 
       if (Object.prototype.hasOwnProperty.call(updates, 'priority')) {
@@ -4004,6 +4252,11 @@ const taskCtrl = {
       res.status(200).json({
         message: 'Task updated successfully',
         task: updatedTask,
+      });
+
+      const labelingService = require('../services/labelingService');
+      labelingService.enqueueTaskImages(updatedTask).catch((enqueueError) => {
+        console.error('Failed to enqueue labeling jobs for order:', enqueueError);
       });
     } catch (error) {
       console.error('=== UPDATE TASK ERROR ===');
@@ -4520,6 +4773,7 @@ const taskCtrl = {
         discountType: task.discountType,
         hasDiscount: task.hasDiscount,
         createdByType: task.createdByType,
+        adminEditingEnabled: task.adminEditingEnabled === true,
         available: task.available,
         applyMinFee: task.applyMinFee,
         couponCode: task.couponCode,
@@ -4533,12 +4787,25 @@ const taskCtrl = {
       );
       let finalPrice = basePrice;
       const hasCouponOnTask = Boolean(task.couponCode) || (calculatedCouponDiscount > 0);
-      // Outside/AnyTime 10% only when no coupon — do not stack with coupon discount
+      const basketPercent = isBasketPercentageDiscount(
+        task.hasDiscount,
+        task.discountType,
+        task.customDiscountPercent,
+      )
+        ? Number(task.customDiscountPercent)
+        : 0;
+      let basketDiscountAmount = 0;
+      if (basketPercent > 0) {
+        basketDiscountAmount = finalPrice * (basketPercent / 100);
+        finalPrice -= basketDiscountAmount;
+      }
+      // Outside/AnyTime 10% does not stack with a coupon or a basket percentage offer
       if (
         task.available === 'AnyTime' &&
-        task.createdByType === 'public' &&
+        usesPublicAutomaticPricing(task) &&
         task.items.every((i) => i.Objectsposition === 'Outside') &&
-        !hasCouponOnTask
+        !hasCouponOnTask &&
+        basketPercent === 0
       ) {
         finalPrice *= 0.9;
       }
@@ -4551,7 +4818,7 @@ const taskCtrl = {
 
       // Apply minimum price (before VAT) - if under £37.5, make it £37.5
       // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
-      const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+      const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
       if (enforceMinimumPrice && finalPrice < 37.5) {
         finalPrice = 37.5;
       }
@@ -4564,7 +4831,7 @@ const taskCtrl = {
         !isNaN(task.date.getTime()) &&
         typeof task.date.getDay === 'function' &&
         task.date.getDay() === 0 &&
-        (task.createdByType === 'public' || task.applySundayFee === true)
+        (usesPublicAutomaticPricing(task) || task.applySundayFee === true)
       ) {
         finalPrice += 50;
       }
@@ -4589,6 +4856,15 @@ const taskCtrl = {
         fullBreakdown.push({
           description: couponLabel,
           amount: -couponDiscount.toFixed(2)
+        });
+      }
+
+      if (basketDiscountAmount > 0) {
+        fullBreakdown.push({
+          description: task.discountSource === 'booking-hold'
+            ? `Basket offer (${basketPercent}%)`
+            : `Discount (${basketPercent}%)`,
+          amount: (-basketDiscountAmount).toFixed(2),
         });
       }
 
@@ -4849,6 +5125,7 @@ const taskCtrl = {
           discountType: task.discountType,
           hasDiscount: task.hasDiscount,
           createdByType: task.createdByType,
+          adminEditingEnabled: task.adminEditingEnabled === true,
           available: task.available,
           applyMinFee: task.applyMinFee,
           couponCode: task.couponCode,
@@ -5172,6 +5449,7 @@ const taskCtrl = {
           discountType: task.discountType,
           hasDiscount: task.hasDiscount,
           createdByType: task.createdByType,
+          adminEditingEnabled: task.adminEditingEnabled === true,
           available: task.available,
           applyMinFee: task.applyMinFee,
           couponCode: task.couponCode,
@@ -5479,20 +5757,27 @@ const taskCtrl = {
           (subtotal * task.customDiscountPercent) / 100;
         subtotal -= percentageDiscount;
         breakdown.push({
-          description: `Discount (${task.customDiscountPercent}%)`,
+          description: task.discountSource === 'booking-hold'
+            ? `Basket offer (${task.customDiscountPercent}%)`
+            : `Discount (${task.customDiscountPercent}%)`,
           amount: -percentageDiscount,
         });
       }
 
       // Apply 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
-      // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
+      // Skip when a coupon or booking-hold basket % is present — those do not stack with Outside/AnyTime 10%
       const isAvailableAnyTime = task.available === 'AnyTime';
-      const isCreatedByPublic = task.createdByType === 'public';
+      const isCreatedByPublic = usesPublicAutomaticPricing(task);
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
       const hasCouponOnTask = Boolean(coupon) || Boolean(task.couponCode);
+      const hasBasketOffer = isBasketPercentageDiscount(
+        task.hasDiscount,
+        task.discountType,
+        task.customDiscountPercent,
+      );
 
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask && !hasBasketOffer) {
         subtotal *= 0.9;
       }
 
@@ -5523,6 +5808,7 @@ const taskCtrl = {
           discountType: task.discountType,
           hasDiscount: task.hasDiscount,
           createdByType: task.createdByType,
+          adminEditingEnabled: task.adminEditingEnabled === true,
           available: task.available,
           applyMinFee: task.applyMinFee,
           couponCode: task.couponCode,
@@ -5548,7 +5834,7 @@ const taskCtrl = {
       }
 
       // Enforce minimum price (before VAT) if needed
-      const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+      const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
       if (enforceMinimumPrice && subtotal < 37.5) {
         const adjustment = 37.5 - subtotal;
         subtotal = 37.5;
@@ -5566,7 +5852,7 @@ const taskCtrl = {
         !isNaN(task.date.getTime()) &&
         typeof task.date.getDay === 'function' &&
         task.date.getDay() === 0;
-      if (isSunday && (task.createdByType === 'public' || task.applySundayFee === true)) {
+      if (isSunday && (usesPublicAutomaticPricing(task) || task.applySundayFee === true)) {
         subtotal += 50;
         breakdown.push({
           description: 'Sunday fee',
@@ -6409,6 +6695,7 @@ const taskCtrl = {
             discountType: task.discountType,
             hasDiscount: task.hasDiscount,
             createdByType: task.createdByType,
+            adminEditingEnabled: task.adminEditingEnabled === true,
             available: task.available,
             applyMinFee: task.applyMinFee,
             couponCode: task.couponCode,
@@ -6624,6 +6911,7 @@ const taskCtrl = {
             discountType: task.discountType,
             hasDiscount: task.hasDiscount,
             createdByType: task.createdByType,
+            adminEditingEnabled: task.adminEditingEnabled === true,
             available: task.available,
             applyMinFee: task.applyMinFee,
             couponCode: task.couponCode,
@@ -7051,13 +7339,18 @@ const taskCtrl = {
       // Calculate 10% discount if task is created by public, all items are 'Outside', and available === 'AnyTime'
       // Skip when a coupon is present — coupon and Outside/AnyTime 10% do not stack
       const isAvailableAnyTime = task.available === 'AnyTime';
-      const isCreatedByPublic = task.createdByType === 'public';
+      const isCreatedByPublic = usesPublicAutomaticPricing(task);
       const hasItems = task.items && task.items.length > 0;
       const allItemsOutside = hasItems && task.items.every((i) => i.Objectsposition === 'Outside');
       const hasCouponOnTask = Boolean(task.couponCode);
+      const hasBasketOffer = isBasketPercentageDiscount(
+        task.hasDiscount,
+        task.discountType,
+        task.customDiscountPercent,
+      );
 
       let automaticDiscount10Percent = 0;
-      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask) {
+      if (isAvailableAnyTime && isCreatedByPublic && hasItems && allItemsOutside && !hasCouponOnTask && !hasBasketOffer) {
         console.log('✅ Applying 10% discount for Outside items with AnyTime and public type in invoice email');
         automaticDiscount10Percent = subtotal * 0.1;
         subtotal *= 0.9;
@@ -7119,7 +7412,7 @@ const taskCtrl = {
       // When total is under £37.5, the full payment becomes £45 (this is a complete payment, not partial)
       // Skip minimum price enforcement if created by Admin, UNLESS applyMinFee is true
       const MIN_BASE_AMOUNT = 37.5;
-      const enforceMinimumPrice = task.createdByType !== 'Admin' || task.applyMinFee === true;
+      const enforceMinimumPrice = !usesAdminPricing(task) || task.applyMinFee === true;
       let callOutFee = 0;
       let showCallOutFeeRow = false;
 
@@ -7141,7 +7434,7 @@ const taskCtrl = {
         !isNaN(task.date.getTime()) &&
         typeof task.date.getDay === 'function' &&
         task.date.getDay() === 0;
-      if (isSundayInvoice && (task.createdByType === 'public' || task.applySundayFee === true)) {
+      if (isSundayInvoice && (usesPublicAutomaticPricing(task) || task.applySundayFee === true)) {
         showSundayFeeRow = true;
         subtotal += 50;
       }

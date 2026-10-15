@@ -16,6 +16,7 @@ const { requireActiveBroker } = require('../middlewares/brokerStatus');
 router.use(isAuth, checkRole('Broker'), requireActiveBroker);
 
 router.get('/me/dashboard', brokerLeadCtrl.getMyDashboard);
+router.patch('/me/profile', brokerLeadCtrl.updateMyProfile);
 router.get('/me/leads', brokerLeadCtrl.getMyLeads);
 router.get('/me/leads/:leadId', brokerLeadCtrl.getMyLeadById);
 router.post('/me/leads', brokerLeadCtrl.createMyLead);

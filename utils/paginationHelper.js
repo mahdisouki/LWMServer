@@ -1,3 +1,38 @@
+const { startOfLabeledDay, endOfLabeledDay } = require('./analyticsDateRange');
+
+const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+/** Timestamp fields: a YYYY-MM-DD value means that calendar day in Europe/London. */
+const LONDON_DAY_FIELDS = new Set(['createdAt']);
+
+function utcDayRange(parsedDate) {
+    const dayStart = new Date(parsedDate);
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+    return { $gte: dayStart, $lt: dayEnd };
+}
+
+function applyDateAwareFilter(queryFilter, field, value) {
+    const parsedDate = new Date(value);
+    const isDate = !isNaN(parsedDate.getTime());
+
+    if (!isDate) {
+        queryFilter[field] = value;
+        return;
+    }
+
+    const dateLabel = String(value).trim();
+    if (LONDON_DAY_FIELDS.has(field) && ISO_DATE_ONLY.test(dateLabel)) {
+        queryFilter[field] = {
+            $gte: startOfLabeledDay(dateLabel),
+            $lte: endOfLabeledDay(dateLabel),
+        };
+        return;
+    }
+
+    queryFilter[field] = utcDayRange(parsedDate);
+}
+
 const paginateQuery = async (
     Model,
     queryParams,
@@ -60,22 +95,7 @@ const paginateQuery = async (
     for (const field of filterFields) {
         const value = queryParams[field];
         if (value !== undefined && value !== '') {
-            const parsedDate = new Date(value);
-            const isDate = !isNaN(parsedDate.getTime());
-
-            if (isDate) {
-                const dayStart = new Date(parsedDate);
-                dayStart.setUTCHours(0, 0, 0, 0);
-                const dayEnd = new Date(dayStart);
-                dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
-
-                queryFilter[field] = {
-                    $gte: dayStart,
-                    $lt: dayEnd,
-                };
-            } else {
-                queryFilter[field] = value;
-            }
+            applyDateAwareFilter(queryFilter, field, value);
         }
     }
 
@@ -94,5 +114,7 @@ const paginateQuery = async (
         },
     };
 };
+
+paginateQuery.applyDateAwareFilter = applyDateAwareFilter;
 
 module.exports = paginateQuery;

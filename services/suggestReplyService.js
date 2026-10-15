@@ -4,31 +4,63 @@ const {
   getSuggestReplyThreadContext,
   getLatestMessageIdInThread,
 } = require('./gmailService');
+const { detectItemsFromGmailMessage } = require('./detectionAiService');
+const { mergeSuggestReplyItems } = require('./threadQuoteItemsService');
 
-const SUGGEST_REPLY_URL =
-  process.env.SUGGEST_REPLY_URL ||
-  'http://localhost:8001/suggest_reply';
+const PYTHON_SERVER = (
+  process.env.PYTHON_SERVER || 'http://localhost:8001'
+).replace(/\/$/, '');
+
+const SUGGEST_REPLY_URL = `${PYTHON_SERVER}/suggest_reply`;
 
 const SUGGEST_REPLY_TIMEOUT_MS =
   Number(process.env.SUGGEST_REPLY_TIMEOUT_MS) || 60000;
 
-function buildContentMainForSuggest(contentMain, photoCount) {
-  const text = String(contentMain || '').trim();
-  const count = Number(photoCount) || 0;
-  const photoNote =
-    count > 0
-      ? count === 1
-        ? '1 photo has been sent.'
-        : `${count} photos have been sent.`
-      : '';
+/** Trailing vision note Node used to append — vision belongs in detectedItems. */
+const PHOTO_NOTE_RE = /\s*\d+\s+photos?\s+have\s+been\s+sent\.?\s*$/i;
 
-  if (text && photoNote) return `${text} ${photoNote}`;
-  if (text) return text;
-  return photoNote;
+/**
+ * Cut from email sign-off onward (name, title, LLP, formerly…).
+ * Prefer dedicated closings; bare Thanks/Cheers/Regards only as their own line.
+ */
+const SIGN_OFF_RE =
+  /(?:^|\n)[ \t]*(?:kind\s+regards|best\s+regards|warm\s+regards|kind\s+rgds|many\s+thanks|thanks\s+and\s+regards|yours\s+sincerely|yours\s+faithfully|regards|cheers|thanks)\s*[,.!]?\s*(?:\n|$)/i;
+
+const LEGAL_FOOTER_RE =
+  /(?:^|\n)[ \t]*(?:this email and any attachments are confidential|unless otherwise expressly stated|the information contained in this (?:message|email)|please avoid printing me|confidential(?:ity)? notice|this message is intended only for)/i;
+
+const SEPARATOR_FOOTER_RE = /(?:^|\n)[ \t]*[–—\-_]{5,}[ \t]*(?:\n|$)/;
+
+function stripSuggestReplyNoise(contentMain) {
+  let text = String(contentMain || '');
+
+  text = text.replace(PHOTO_NOTE_RE, '');
+
+  const signOffAt = text.search(SIGN_OFF_RE);
+  if (signOffAt >= 0) {
+    text = text.slice(0, signOffAt);
+  }
+
+  const legalAt = text.search(LEGAL_FOOTER_RE);
+  if (legalAt >= 0) {
+    text = text.slice(0, legalAt);
+  }
+
+  const sepAt = text.search(SEPARATOR_FOOTER_RE);
+  if (sepAt >= 0) {
+    text = text.slice(0, sepAt);
+  }
+
+  return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Body text for Python: main content only (no photo note / signature / legal). */
+function buildContentMainForSuggest(contentMain, _photoCount) {
+  return stripSuggestReplyNoise(contentMain);
 }
 
 async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageContext) {
-  console.log('[Suggest Reply] Payload:', JSON.stringify(pythonPayload, null, 2));
+
 
   const res = await axios.post(SUGGEST_REPLY_URL, pythonPayload, {
     headers: { 'Content-Type': 'application/json' },
@@ -36,12 +68,38 @@ async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageCo
   });
 
   const data = res.data || {};
+  const category = data.category ?? fallbackCategory;
+  const threadId = data.threadId || pythonPayload.message?.threadId;
+  const messageId = data.messageId || pythonPayload.message?.messageId;
+  const from = messageContext?.from || null;
+
+  // Quote items-only: return only pricing/item fields (no reply drafts).
+  if (category === 'quote') {
+    return {
+      category,
+      phase: data.phase ?? null,
+      reason: data.reason ?? null,
+      draft_source: data.draft_source ?? null,
+      items: Array.isArray(data.items) ? data.items : [],
+      collection_side: data.collection_side ?? null,
+      needs_dismantling: Boolean(data.needs_dismantling),
+      extraction_method: data.extraction_method ?? null,
+      unmatched_items: Array.isArray(data.unmatched_items)
+        ? data.unmatched_items
+        : [],
+      llm_error: data.llm_error ?? null,
+      threadId,
+      messageId,
+      from,
+    };
+  }
+
   const suggestedReplies = Array.isArray(data.suggested_replies)
     ? data.suggested_replies.filter((x) => typeof x === 'string' && x.trim())
     : [];
 
   return {
-    category: data.category ?? fallbackCategory,
+    category,
     phase: data.phase ?? null,
     missing_slots: Array.isArray(data.missing_slots) ? data.missing_slots : [],
     suggested_replies: suggestedReplies,
@@ -52,9 +110,18 @@ async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageCo
     price_type: data.price_type ?? null,
     reason: data.reason ?? null,
     draft_source: data.draft_source ?? null,
-    threadId: data.threadId || pythonPayload.message?.threadId,
-    messageId: data.messageId || pythonPayload.message?.messageId,
-    from: messageContext?.from || null,
+    customer_name: data.customer_name ?? null,
+    order_ref: data.order_ref ?? null,
+    is_service_failure:
+      typeof data.is_service_failure === 'boolean'
+        ? data.is_service_failure
+        : null,
+    is_follow_up:
+      typeof data.is_follow_up === 'boolean' ? data.is_follow_up : null,
+    language: data.language ?? null,
+    threadId,
+    messageId,
+    from,
   };
 }
 
@@ -95,21 +162,25 @@ function normalizeToForSuggest(toHeader) {
   return raw || null;
 }
 
-function buildThreadHistoryForPython(threadHistory) {
-  return threadHistory.map((row) => ({
-    direction: row.direction,
-    from: formatFromForSuggestReply(
-      row.fromHeader,
-      row.from_address,
-      row.direction
-    ),
-    subject: row.subject || '',
-    contentMain: buildContentMainForSuggest(
-      row.contentMain,
-      row.photoCount
-    ),
-    sent_at: row.internalDate || null,
-  }));
+function buildThreadHistoryForPython(threadHistory, targetPhotoCount = null) {
+  if (!Array.isArray(threadHistory) || !threadHistory.length) return [];
+
+  return threadHistory.map((row, index) => {
+    const isTarget = index === threadHistory.length - 1;
+    const photoCount =
+      isTarget && targetPhotoCount != null ? targetPhotoCount : row.photoCount;
+    return {
+      direction: row.direction,
+      from: formatFromForSuggestReply(
+        row.fromHeader,
+        row.from_address,
+        row.direction
+      ),
+      subject: row.subject || '',
+      contentMain: buildContentMainForSuggest(row.contentMain, photoCount),
+      sent_at: row.internalDate || null,
+    };
+  });
 }
 
 function buildPythonSuggestPayload({
@@ -119,6 +190,7 @@ function buildPythonSuggestPayload({
   threadHistory,
   category,
   businessEmail,
+  detectedItems = [],
 }) {
   const fromAddress = extractEmailAddressFromHeader(target.from);
   const direction = isOutboundFromAddress(fromAddress, businessEmail)
@@ -148,7 +220,8 @@ function buildPythonSuggestPayload({
       is_quotation_form: detectQuotationForm(target.subject, contentMain),
       aiCategory: category,
     },
-    thread: buildThreadHistoryForPython(threadHistory),
+    thread: buildThreadHistoryForPython(threadHistory, target.photoCount),
+    detectedItems,
   };
 }
 
@@ -175,22 +248,54 @@ async function buildSuggestReplyPythonPayloadForThread(
 ) {
   const ctx = await getSuggestReplyThreadContext(adminId, threadId, messageId);
   const category = await getCategoryForThread(adminId, ctx.threadId);
+
+  const targetGmailMessage = (ctx.messagesThroughTarget || []).find(
+    (m) => m.id === ctx.messageId
+  );
+
+  let detectedItems = [];
+  let detectionImageCount = Number(ctx.target?.photoCount) || 0;
+
+  if (targetGmailMessage) {
+    const detection = await detectItemsFromGmailMessage(
+      adminId,
+      targetGmailMessage
+    );
+    detectedItems = detection.items?.length
+      ? detection.items
+      : (detection.labels || []).map((name) => ({ name, count: 1 }));
+    detectionImageCount = Math.max(
+      detectionImageCount,
+      Number(detection.imageCount) || 0
+    );
+
+
+  }
+
   const payload = buildPythonSuggestPayload({
     ...ctx,
+    target: {
+      ...ctx.target,
+      photoCount: detectionImageCount,
+    },
     category,
     businessEmail: ctx.businessEmail,
+    detectedItems,
   });
 
-  return { payload, ctx, category };
+  return {
+    payload,
+    ctx,
+    category,
+    detectedItems,
+  };
 }
 
 async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
-  const { payload, ctx, category } =
+  const { payload, ctx, category, detectedItems } =
     await buildSuggestReplyPythonPayloadForThread(adminId, threadId, messageId);
 
-  console.log(
-    `[Suggest Reply] threadId=${ctx.threadId} targetMessageId=${ctx.messageId} threadCount=${ctx.threadHistory.length}`
-  );
+ 
 
   const suggestion = await callPythonSuggestReply(payload, category, {
     from: payload.message.from,
@@ -198,10 +303,37 @@ async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
     id: ctx.messageId,
   });
 
+  const resolvedCategory = suggestion.category || category;
+
+  // Quote items-only: persist/merge items for the thread, return saved list.
+  if (resolvedCategory === 'quote') {
+    let items = Array.isArray(suggestion.items) ? suggestion.items : [];
+    try {
+      const saved = await mergeSuggestReplyItems(
+        ctx.threadId,
+        ctx.messageId,
+        items
+      );
+      if (saved?.quoteItems) items = saved.quoteItems;
+    } catch (err) {
+      console.warn(
+        `[Suggest Reply] Failed to persist quote items for thread ${ctx.threadId}:`,
+        err.message
+      );
+    }
+
+    return {
+      ...suggestion,
+      items,
+      inReplyToMessageId: ctx.messageId,
+    };
+  }
+
   return {
     ...suggestion,
     inReplyToMessageId: ctx.messageId,
     suggestReplyContext: payload.thread,
+    detectedItems,
   };
 }
 

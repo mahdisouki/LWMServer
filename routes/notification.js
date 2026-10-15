@@ -5,6 +5,7 @@ const { isAuth } = require('../middlewares/auth');
 const User = require('../models/User').User;
 
 router.get('/notifications', isAuth, notificationCtrl.getUserNotifications);
+router.patch('/notifications/read-all', isAuth, notificationCtrl.markAllAsRead);
 
 // Register OneSignal web player ID
 router.post('/register-web-push', isAuth, async (req, res) => {

@@ -4,18 +4,27 @@ const { Schema } = mongoose;
 const refundRequestSchema = new Schema(
   {
     taskId: { type: Schema.Types.ObjectId, ref: "Task", required: true },
-    paymentHistoryId: { type: Schema.Types.ObjectId, ref: "PaymentHistory", required: true },
-    reason: { type: String, required: true },
+    requestedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    amount: { type: Number, required: true, min: 0.01 },
+    reason: { type: String, required: true, trim: true },
     status: {
       type: String,
-      enum: ["created", "declined", "refunded", "partially_refunded"],
-      default: "created"
+      enum: ["pending", "processing", "accepted", "refused"],
+      default: "pending",
+      index: true,
     },
-    refundedAmount: { type: Number, default: 0 }, // Tracks how much has been refunded
-    remainingAmount: { type: Number, required: true }, // Amount left to refund
+    reviewedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    reviewNote: { type: String, default: "" },
+    reviewedAt: { type: Date, default: null },
+    stripeRefundId: { type: String, default: null },
+    stripeRefundStatus: { type: String, default: null },
+    refundGateway: { type: String, enum: ['stripe', 'paypal'] },
   },
   { timestamps: true }
 );
+
+refundRequestSchema.index({ status: 1, createdAt: -1 });
+refundRequestSchema.index({ taskId: 1, createdAt: -1 });
 
 const RefundRequest = mongoose.model("RefundRequest", refundRequestSchema);
 module.exports = RefundRequest;

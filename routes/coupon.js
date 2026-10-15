@@ -9,11 +9,11 @@ const { exitIntentLimiter, exitIntentRevealLimiter } = require('../middlewares/r
 router.post('/validate', couponCtrl.validateCoupon);
 
 // Public route: mint a unique single-use exit-intent coupon
-router.post('/exit-intent', exitIntentLimiter, couponCtrl.createExitIntentCoupon);
+// router.post('/exit-intent', exitIntentLimiter, couponCtrl.createExitIntentCoupon);
 // Public route: can this IP still claim? Does not create a coupon.
 router.get('/exit-intent/status', exitIntentRevealLimiter, couponCtrl.getExitIntentStatus);
 // Public route: start the 5-minute window when the user scratches/reveals the code
-router.post('/exit-intent/reveal', exitIntentRevealLimiter, couponCtrl.revealExitIntentCoupon);
+// router.post('/exit-intent/reveal', exitIntentRevealLimiter, couponCtrl.revealExitIntentCoupon);
 
 // Admin routes
 router.post('/', couponCtrl.createCoupon);

@@ -21,6 +21,7 @@ const MODULES = [
   'Quotations',
   'Feedback',
   'Route_Management',
+  'Live_Tracker',
   'Incidents',
   'Fuel_Records',
   'PCN_Damages',
@@ -34,10 +35,16 @@ const MODULES = [
   'Website_Analytics',
   'SEO',
   'Coupons',
+  'Subscriptions',
+  'WhatsApp',
+  'Webex',
   'Blue_Sheets',
   'Network_Sessions',
   'Ticks',
   'Brokers',
+  'Labeling',
+  'Refunds',
+  'Running_Costs',
 ];
 
 function permissionField() {

@@ -27,9 +27,6 @@ connectToDatabase()
     const MailSignature = require('./models/MailSignature');
     await MailSignature.dropLegacyIndexes();
 
-    // ✅ Now it's safe to initialize sockets
-    initSocket(server);
-
     // ✅ Load your routes, middleware, jobs, etc.
     require('./jobs/dailySheetCron');
     require('./jobs/blueSheetCron');
@@ -47,9 +44,11 @@ connectToDatabase()
     require('./cron/sendWasteTransferNotes');
     require('./cron/remindVanCapacityCheck');
     require('./cron/dayOffUnitReminders');
+    require('./cron/subscriptionReminders');
     require('./cron/cleanupTaskPhotoUploads');
     require('./cron/updatePopularityScores');
     require('./cron/updateTopPostcodesCache');
+    require('./cron/syncLsaOrderTrafficSources');
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })
@@ -148,8 +147,11 @@ const corsOptions = {
     'http://192.168.1.13:5173',
     'http://192.168.1.73:5174',
     'http://192.168.1.73:5176',
+    'http://192.168.1.68:5174',
+    'http://192.168.1.74:5173',
     'https://lwmclient.duckdns.org',
-    'https://stagingadmin.londonwastemanagement.uk/',
+    'https://broker.londonwastemanagement.uk',
+    'https://stagingadmin.londonwastemanagement.uk',
     'https://stagingadmin.londonwastemanagement.uk',
     'https://londonwastemanagement.com',
     'https://www.londonwastemanagement.com',
@@ -157,6 +159,7 @@ const corsOptions = {
     'lwmtest-clienttest-ptkvge-7b883a-191-101-81-116.traefik.me',
     'http://lwmtest-clienttest-ptkvge-7b883a-191-101-81-116.traefik.me'
   ],
+  credentials: true,
   optionsSuccessStatus: 200
 };
 
@@ -178,8 +181,16 @@ app.post(
 );
 
 app.use(cors(corsOptions));
-// Apply JSON parsing for all other routes
-app.use(express.json());
+// Keep raw body for WhatsApp webhook signature verification
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+      if (req.originalUrl && req.originalUrl.startsWith('/api/whatsapp/webhook')) {
+        req.rawBody = buf;
+      }
+    },
+  })
+);
 app.use(bodyParser.json());
 // Note: CSP is now handled by Helmet above, removed duplicate CSP header
 // Import routes
@@ -202,6 +213,7 @@ const standardItemsRoutes = require('./routes/standardItems')
 const uploadRouter = require('./routes/upload');
 const statsRoute = require("./routes/stats");
 const gmailRoutes = require('./routes/gmail')
+const webexRoutes = require('./routes/webex')
 const refundRoutes = require('./routes/refund')
 const paymentHistoRoutes = require('./routes/paymenthisto')
 const blogRoutes = require('./routes/blog')
@@ -212,6 +224,8 @@ const serviceCategoryRoutes = require('./routes/serviceCategory');
 const notificationRoutes = require('./routes/notification');
 const incidentRoutes = require('./routes/incident');
 const expenseRoutes = require('./routes/expense');
+const subscriptionRoutes = require('./routes/subscription');
+const whatsappRoutes = require('./routes/whatsapp');
 const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
 const customerRoutes = require('./routes/customerRoutes');
@@ -219,6 +233,7 @@ const feedbackRoutes = require('./routes/feedback');
 const announcementRoutes = require('./routes/announcement');
 const analyticsRoutes = require('./routes/analytics');
 const couponRoutes = require('./routes/coupon');
+const bookingHoldRoutes = require('./routes/bookingHold');
 const instagramRoutes = require('./routes/instagram');
 const routeOptimizerRoutes = require('./routes/routeOptimizer');
 const vanRoutes = require('./routes/van');
@@ -227,6 +242,9 @@ const seoRoutes = require('./routes/seo');
 const networkRouter = require('./routes/network');
 const brokerRoutes = require('./routes/broker');
 const brokerPortalRoutes = require('./routes/brokerPortal');
+const labelingRoutes = require('./routes/labeling');
+const tawkAttributionRoutes = require('./routes/tawkAttribution');
+const mailtoAttributionRoutes = require('./routes/mailtoAttribution');
 const { optimizeRoute } = require("./helper/OpitomRoute");
 
 setupSwagger(app);
@@ -253,6 +271,7 @@ app.use('/api/payment', paymentHistoRoutes)
 app.use('/api/upload', uploadRouter)
 app.use('/api', quotationRoutes);
 app.use('/api/gmail', gmailRoutes);
+app.use('/api/webex', webexRoutes);
 app.use('/api/blog', blogRoutes);
 app.use('/api', storageRoutes)
 app.use('/api', statsRoute)
@@ -265,15 +284,22 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/offers', bookingHoldRoutes);
 app.use('/api/instagram', instagramRoutes);
 app.use('/api', incidentRoutes);
 app.use('/api', vanRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/running-costs', require('./routes/runningCosts'));
+app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/ticks', tickRoutes);
 app.use('/api/seo', seoRoutes);
 app.use('/api', networkRouter);
 app.use('/api/brokers', brokerRoutes);
 app.use('/api/broker', brokerPortalRoutes);
+app.use('/api/labeling', labelingRoutes);
+app.use('/api', tawkAttributionRoutes);
+app.use('/api', mailtoAttributionRoutes);
 app.post('/optimise/:truckId', async (req, res) => {
   try {
     const { truckId } = req.params;
@@ -312,6 +338,8 @@ app.use((req, res) => {
     message: 'Resource not found'
   });
 });
+
+initSocket(server);
 
 server.listen(process.env.port, () => {
   console.log(`LondonWaste app listening on port ${process.env.port}`);

@@ -180,6 +180,11 @@ const taskSchema = new Schema(
       enum: ['Admin', 'public', 'broker'],
       default: 'public',
     },
+    // Unlocks admin editing and pricing on a public order without changing its origin.
+    adminEditingEnabled: {
+      type: Boolean,
+      default: false,
+    },
     paymentStatus: {
       type: String,
       enum: ["partial_Paid", "Paid", "partial_Refunded", "refunded", "Unpaid", "Failed"],
@@ -224,6 +229,8 @@ const taskSchema = new Schema(
     hasDiscount: { type: Boolean, default: false },
     discountType: { type: String, enum: ["perItem", "percentage"] },
     customDiscountPercent: { type: Number, default: 0 },
+    /** Set when the public basket offer (booking hold) wrote this percentage. */
+    discountSource: { type: String, enum: ['booking-hold'] },
     couponCode: { type: String, default: null }, // Coupon code applied to this task
     couponId: { type: Schema.Types.ObjectId, ref: "Coupon", default: null }, // Reference to coupon used
     couponUsageIncremented: { type: Boolean, default: false }, // Prevent double increment of coupon usage (idempotency)
@@ -299,12 +306,21 @@ const taskSchema = new Schema(
     utm_source: { type: String, required: false },
     trafficSource: {
       type: String,
-      enum: ['Google Ads', 'Microsoft Ads', 'Instagram', 'Facebook', 'Direct', 'Organic'],
+      enum: ['Google Ads', 'LSA', 'Microsoft Ads', 'Instagram', 'Facebook', 'Direct', 'Organic'],
       default: 'Organic',
+    },
+    /** How the job arrived. Independent of trafficSource (ads/organic) and createdByType. */
+    subsource: {
+      type: String,
+      enum: ['tawk', 'phone', 'email', 'website', null],
+      default: null,
     },
     /** Raw GA4 sessionDefaultChannelGroup from purchase ↔ orderNumber match. */
     ga4SessionChannel: { type: String, required: false },
     ga4TrafficChannelSyncedAt: { type: Date, required: false },
+    /** Google Ads Local Services lead id from weekly LSA → order match. */
+    lsaLeadId: { type: String, required: false },
+    lsaTrafficSyncedAt: { type: Date, required: false },
     googleAdsPurchaseConversionSentAt: { type: Date, required: false },
     googleAdsConversionError: { type: String, required: false },
     microsoftAdsOfflineConversionExportedAt: { type: Date, required: false },
@@ -343,15 +359,27 @@ taskSchema.pre('save', function (next) {
     return !(item.standardItemId === null && (!item.object || item.object.trim() === ''));
   });
 
-  this.trafficSource = resolveTrafficSource({
-    gclid: this.gclid,
-    gbraid: this.gbraid,
-    wbraid: this.wbraid,
-    msclkid: this.msclkid,
-    fbclid: this.fbclid,
-    utm_source: this.utm_source,
-    existingTrafficSource: this.trafficSource,
-  });
+  // Only derive from click ids on create / when those fields change.
+  // Leaves offline stamps (Call CSV, LSA) alone on unrelated saves.
+  if (
+    this.isNew
+    || this.isModified('gclid')
+    || this.isModified('gbraid')
+    || this.isModified('wbraid')
+    || this.isModified('msclkid')
+    || this.isModified('fbclid')
+    || this.isModified('utm_source')
+  ) {
+    this.trafficSource = resolveTrafficSource({
+      gclid: this.gclid,
+      gbraid: this.gbraid,
+      wbraid: this.wbraid,
+      msclkid: this.msclkid,
+      fbclid: this.fbclid,
+      utm_source: this.utm_source,
+      existingTrafficSource: this.trafficSource,
+    });
+  }
 
   // Validate items have proper pricing
   this.items.forEach((item, index) => {
@@ -624,6 +652,7 @@ taskSchema.index({ taskStatus: 1, paymentStatus: 1, finishDate: 1 });
 taskSchema.index({ isBusinessEmail: 1, createdAt: -1 });
 
 taskSchema.index({ trafficSource: 1, createdAt: -1 });
+taskSchema.index({ subsource: 1, createdAt: -1 });
 taskSchema.index({ createdByType: 1, createdAt: -1 });
 taskSchema.index({ createdByType: 1, paymentStatus: 1, createdAt: -1, trafficSource: 1 });
 

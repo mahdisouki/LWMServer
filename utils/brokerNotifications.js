@@ -14,12 +14,16 @@ const transporter = nodemailer.createTransport({
 async function notifyBrokerOrg(
   brokerId,
   { type, message, senderName, metadata, emailSubject, emailHtml },
+  actorUserId,
 ) {
   try {
     const broker = await Broker.findById(brokerId)
       .select('userId email contactName companyName')
       .lean();
     if (!broker) return;
+    if (actorUserId && broker.userId && String(broker.userId) === String(actorUserId)) {
+      return;
+    }
 
     if (broker.userId) {
       await emitNotificationToUser(

@@ -11,6 +11,7 @@ const {
   loadBrokerSyncContext,
   handleBrokerOrderMainSystemVisibility,
   isOrderVisibleInMainSystem,
+  notifyAdmins,
 } = require('../services/brokerMainSystemSyncService');
 
 const { escapeRegex, pushActivity, nextReferenceCode } = require('../utils/brokerHelpers');
@@ -219,7 +220,7 @@ const brokerOrderCtrl = {
         },
         emailSubject: `New order: ${referenceCode}`,
         emailHtml: `<p>Hello,</p><p>Order <strong>${referenceCode}</strong> was created for <strong>${companyLabel}</strong>.</p><p>Created by: ${actorName}</p>`,
-      });
+      }, req.user?._id || req.user?.id);
 
       try {
         const ctx = await loadBrokerSyncContext(brokerId, resolvedLeadId);
@@ -229,6 +230,21 @@ const brokerOrderCtrl = {
             lead: ctx.lead,
             broker: ctx.broker,
             actorName,
+          });
+        } else if (req.broker) {
+          // A broker handing work over raises a Draft order, which never reaches
+          // the main system, so nothing else would tell the back office about it.
+          await notifyAdmins({
+            type: 'Orders',
+            message: `Broker order ${referenceCode} from ${broker?.companyName || 'a broker'} is awaiting confirmation for ${companyLabel}`,
+            senderName: actorName,
+            metadata: {
+              type: 'Orders',
+              brokerId: String(brokerId),
+              leadId: String(resolvedLeadId),
+              orderId: String(order._id),
+              orderStatus: order.status,
+            },
           });
         }
       } catch (syncError) {

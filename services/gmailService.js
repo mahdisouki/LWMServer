@@ -223,7 +223,7 @@ function decodeHtmlEntities(text) {
   return s;
 }
 
-/** HTML MIME → plain text (keeps line breaks for quote detection). */
+/** HTML MIME → plain text (keeps line breaks; list items become "- …"). */
 function htmlMimeToPlainText(html) {
   if (!html) return '';
   let s = sanitizeEmailHtml(String(html));
@@ -234,6 +234,7 @@ function htmlMimeToPlainText(html) {
   s = s.replace(/<\/p>/gi, '\n');
   s = s.replace(/<\/div>/gi, '\n');
   s = s.replace(/<\/tr>/gi, '\n');
+  s = s.replace(/<li[^>]*>/gi, '\n- ');
   s = s.replace(/<\/li>/gi, '\n');
   s = s.replace(/<[^>]+>/g, ' ');
   return decodeHtmlEntities(s);
@@ -291,6 +292,20 @@ function normalizeClassifierWhitespace(text) {
     .replace(/[\r\n\t\f\v]+/g, ' ')
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
     .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Suggest-reply: keep newlines and "-" bullets; tidy spaces within lines. */
+function normalizeSuggestReplyWhitespace(text) {
+  return String(text || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[\t\f\v]+/g, ' ')
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -843,6 +858,15 @@ function plainTextFromDisplayHtml(html) {
   return normalizeClassifierWhitespace(text);
 }
 
+/** Suggest-reply body: quotes stripped, newlines + "-" preserved. */
+function plainTextForSuggestReply(html) {
+  if (!html) return '';
+  let text = htmlMimeToPlainText(String(html));
+  text = stripQuotedRepliesForClassifier(text);
+  text = removeRemainingTagsAndCss(text);
+  return normalizeSuggestReplyWhitespace(text);
+}
+
 function extractEmailAddressFromHeader(fromHeader) {
   if (!fromHeader) return '';
   const m = String(fromHeader).match(/<([^>]+)>/);
@@ -865,24 +889,47 @@ function isOutboundFromAddress(fromAddress, businessEmail) {
 }
 
 /** Plain-text context from a Gmail API message object (no extra fetch). */
+function listPhotoAttachmentsFromGmailMessage(msg) {
+  const attachments = extractAttachmentMetaWithMessageId(
+    msg?.payload?.parts || [],
+    msg?.id
+  );
+  return attachments.filter((a) => {
+    if (!a?.attachmentId) return false;
+    const role = a.attachmentRole;
+    if (role !== 'file_attachment' && role !== 'html_inline') return false;
+    return String(a.mimeType || '')
+      .toLowerCase()
+      .startsWith('image/');
+  });
+}
+
+/** Main (non-quoted) HTML body for a Gmail message object. */
+function getMessageMainHtml(msg) {
+  const { content: contentRaw } = extractMessageBodyForDisplay(msg?.payload);
+  const { contentMain: splitMain } = splitMainAndQuotedContent(contentRaw);
+  return splitMain && splitMain.length > 0 ? splitMain : contentRaw || '';
+}
+
+async function downloadAttachmentBuffer(adminId, messageId, attachmentId) {
+  const att = await getAttachment(adminId, messageId, attachmentId);
+  const b64 = att?.data;
+  if (!b64) return null;
+
+  let normalized = String(b64).replace(/-/g, '+').replace(/_/g, '/');
+  const pad = normalized.length % 4;
+  if (pad) normalized += '='.repeat(4 - pad);
+  return Buffer.from(normalized, 'base64');
+}
+
 function plainContextFromGmailMessage(msg) {
   const headers = msg.payload?.headers || [];
   const { content: contentRaw } = extractMessageBodyForDisplay(msg.payload);
   const { contentMain: splitMain } = splitMainAndQuotedContent(contentRaw);
   const mainHtml =
     splitMain && splitMain.length > 0 ? splitMain : contentRaw;
-  const contentMain = plainTextFromDisplayHtml(mainHtml);
-  const attachments = extractAttachmentMetaWithMessageId(
-    msg.payload?.parts || [],
-    msg.id
-  );
-  const photoCount = attachments.filter((a) => {
-    const role = a.attachmentRole;
-    if (role !== 'file_attachment' && role !== 'html_inline') return false;
-    return String(a.mimeType || '')
-      .toLowerCase()
-      .startsWith('image/');
-  }).length;
+  const contentMain = plainTextForSuggestReply(mainHtml);
+  const photoCount = listPhotoAttachmentsFromGmailMessage(msg).length;
 
   return {
     id: msg.id,
@@ -1105,6 +1152,21 @@ async function getThreadFullForClient(adminId, threadId, options = {}) {
       buildThreadMessageForClient(adminId, msg, tid)
     );
 
+    let quoteItems = [];
+    try {
+      const ThreadClassification = require('../models/ThreadClassification');
+      const classification = await ThreadClassification.findOne({ threadId: tid })
+        .select('quoteItems')
+        .lean();
+      if (classification) {
+        quoteItems = Array.isArray(classification.quoteItems)
+          ? classification.quoteItems
+          : [];
+      }
+    } catch (_) {
+      // quote fields are optional on full thread
+    }
+
     return {
       id: tid,
       historyId: threadMeta.historyId,
@@ -1112,6 +1174,7 @@ async function getThreadFullForClient(adminId, threadId, options = {}) {
       totalMessageCount: total,
       hasMore,
       nextBefore,
+      quoteItems,
     };
   } catch (err) {
     const code = err.code || err.response?.status;
@@ -2294,7 +2357,40 @@ async function getProfile(adminId) {
   return response.data;
 }
 
-async function pollNewMessages(adminId) {
+function resolveGmailWebhookBatchSize(options = {}) {
+  const fromOptions = Number(options.batchSize);
+  if (Number.isFinite(fromOptions) && fromOptions > 0) {
+    return Math.floor(fromOptions);
+  }
+  const fromEnv = Number(process.env.GMAIL_WEBHOOK_BATCH_SIZE);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return Math.floor(fromEnv);
+  }
+  return 10;
+}
+
+function resolveGmailWebhookBatchDelayMs(options = {}) {
+  const fromOptions = Number(options.batchDelayMs);
+  if (Number.isFinite(fromOptions) && fromOptions >= 0) {
+    return Math.floor(fromOptions);
+  }
+  const fromEnv = Number(process.env.GMAIL_WEBHOOK_BATCH_DELAY_MS);
+  if (Number.isFinite(fromEnv) && fromEnv >= 0) {
+    return Math.floor(fromEnv);
+  }
+  return 250;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function pollNewMessages(adminId, options = {}) {
+  const batchSize = resolveGmailWebhookBatchSize(options);
+  const batchDelayMs = resolveGmailWebhookBatchDelayMs(options);
+  const onBatch =
+    typeof options.onBatch === 'function' ? options.onBatch : null;
+
   const admin = await Admin.findById(adminId);
   if (!admin || !admin.gmailTokens) {
     return { newMessages: [], historyId: null };
@@ -2310,55 +2406,110 @@ async function pollNewMessages(adminId) {
     return { newMessages: [], historyId: profile.data.historyId };
   }
 
-  let historyResponse;
-  try {
-    historyResponse = await gmail.users.history.list({
-      userId: 'me',
-      startHistoryId: admin.gmailHistoryId,
-      historyTypes: ['messageAdded'],
-      labelId: 'INBOX',
-    });
-  } catch (error) {
-    if (error.code === 404) {
-      const profile = await gmail.users.getProfile({ userId: 'me' });
-      await Admin.findByIdAndUpdate(adminId, {
-        gmailHistoryId: profile.data.historyId,
-      });
-      return { newMessages: [], historyId: profile.data.historyId };
-    }
-    throw error;
-  }
-
-  const histories = historyResponse.data.history || [];
+  const startHistoryId = admin.gmailHistoryId;
   const seenMessageIds = new Set();
-  const messageIds = [];
-
-  for (const entry of histories) {
-    const added = entry.messagesAdded || [];
-    for (const item of added) {
-      const id = item.message?.id;
-      if (id && !seenMessageIds.has(id)) {
-        seenMessageIds.add(id);
-        messageIds.push(id);
-      }
-    }
-  }
-
   const newMessages = [];
-  for (const id of messageIds) {
-    try {
-      const message = await getEmailById(adminId, id);
-      if ((message.labelIds || []).includes('INBOX')) {
-        newMessages.push(message);
-      }
-    } catch (error) {
-      console.warn(`Failed to load new message ${id}:`, error.message);
-    }
-  }
+  let pageToken;
+  let latestHistoryId = startHistoryId;
+  let pageIndex = 0;
 
-  const latestHistoryId = historyResponse.data.historyId || admin.gmailHistoryId;
-  if (latestHistoryId !== admin.gmailHistoryId) {
-    await Admin.findByIdAndUpdate(adminId, { gmailHistoryId: latestHistoryId });
+  do {
+    let historyResponse;
+    try {
+      historyResponse = await gmail.users.history.list({
+        userId: 'me',
+        startHistoryId,
+        historyTypes: ['messageAdded'],
+        labelId: 'INBOX',
+        maxResults: batchSize,
+        pageToken,
+      });
+    } catch (error) {
+      if (error.code === 404) {
+        const profile = await gmail.users.getProfile({ userId: 'me' });
+        await Admin.findByIdAndUpdate(adminId, {
+          gmailHistoryId: profile.data.historyId,
+        });
+        return { newMessages: [], historyId: profile.data.historyId };
+      }
+      throw error;
+    }
+
+    pageIndex += 1;
+    latestHistoryId =
+      historyResponse.data.historyId || latestHistoryId;
+    pageToken = historyResponse.data.nextPageToken || undefined;
+
+    const histories = historyResponse.data.history || [];
+    const pageMessageIds = [];
+
+    for (const entry of histories) {
+      const added = entry.messagesAdded || [];
+      for (const item of added) {
+        const id = item.message?.id;
+        if (id && !seenMessageIds.has(id)) {
+          seenMessageIds.add(id);
+          pageMessageIds.push(id);
+        }
+      }
+    }
+
+    const pageMessages = [];
+    for (let i = 0; i < pageMessageIds.length; i += batchSize) {
+      const chunkIds = pageMessageIds.slice(i, i + batchSize);
+      const chunkMessages = [];
+
+      for (const id of chunkIds) {
+        try {
+          const message = await getEmailById(adminId, id);
+          if ((message.labelIds || []).includes('INBOX')) {
+            chunkMessages.push(message);
+          }
+        } catch (error) {
+          console.warn(`Failed to load new message ${id}:`, error.message);
+        }
+      }
+
+      if (chunkMessages.length) {
+        pageMessages.push(...chunkMessages);
+        newMessages.push(...chunkMessages);
+        if (onBatch) {
+          await onBatch(chunkMessages, {
+            pageIndex,
+            batchSize,
+            historyId: latestHistoryId,
+          });
+        }
+      }
+
+      if (
+        batchDelayMs > 0 &&
+        (i + batchSize < pageMessageIds.length || pageToken)
+      ) {
+        await sleep(batchDelayMs);
+      }
+    }
+
+    console.log(
+      `[Gmail Sync] admin=${adminId} page=${pageIndex} historyRecords=${histories.length} messages=${pageMessages.length} batchSize=${batchSize}${pageToken ? ' (more pages)' : ''}`
+    );
+
+    // Checkpoint progress so a mid-backlog failure can resume without replaying
+    // already-processed history records.
+    if (histories.length) {
+      const lastRecordId = histories[histories.length - 1].id;
+      if (lastRecordId != null) {
+        await Admin.findByIdAndUpdate(adminId, {
+          gmailHistoryId: String(lastRecordId),
+        });
+      }
+    }
+  } while (pageToken);
+
+  if (String(latestHistoryId) !== String(startHistoryId)) {
+    await Admin.findByIdAndUpdate(adminId, {
+      gmailHistoryId: String(latestHistoryId),
+    });
   }
 
   return { newMessages, historyId: latestHistoryId };
@@ -2385,6 +2536,9 @@ module.exports = {
   batchModifyMessages,
   batchDeleteMessages,
   getAttachment,
+  listPhotoAttachmentsFromGmailMessage,
+  getMessageMainHtml,
+  downloadAttachmentBuffer,
   listLabels,
   getLabel,
   createLabel,

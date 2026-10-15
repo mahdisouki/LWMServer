@@ -34,6 +34,7 @@ const systemLogSchema = new mongoose.Schema({
       'TIPPING_PLACE',
       'BLOCKING_DAY',
       'COUPON',
+      'BROKER',
       'OTHER'
     ]
   },

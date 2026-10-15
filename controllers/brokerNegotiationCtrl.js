@@ -1,8 +1,12 @@
 const BrokerNegotiation = require('../models/BrokerNegotiation');
 const BrokerQuoteRequest = require('../models/BrokerQuoteRequest');
 const BrokerLead = require('../models/BrokerLead');
+const BrokerOrder = require('../models/BrokerOrder');
+const Broker = require('../models/Broker');
+const Task = require('../models/Task');
 const { NEGOTIATION_STATUSES } = require('../models/BrokerNegotiation');
 const { resolveBrokerIdForUser } = require('../utils/brokerScope');
+const { resolveCommissionAmount } = require('../utils/brokerCommission');
 
 const { escapeRegex, pushActivity, nextReferenceCode } = require('../utils/brokerHelpers');
 
@@ -20,6 +24,12 @@ function buildFilter(brokerId, query = {}) {
 
 async function syncLeadStatus(lead, negotiationStatus) {
   if (!lead) return;
+  if (lead.status === 'Converted' || lead.status === 'Lost') return;
+  const activeOrder = await BrokerOrder.findOne({
+    leadId: lead._id,
+    status: { $ne: 'Cancelled' },
+  }).select('_id');
+  if (activeOrder) return;
   if (negotiationStatus === 'Agreed' || negotiationStatus === 'InProgress' || negotiationStatus === 'AwaitingCustomer') {
     lead.status = 'Negotiation';
   } else if (negotiationStatus === 'Declined') {
@@ -187,6 +197,13 @@ const brokerNegotiationCtrl = {
         }
       }
 
+      // Free-text progress note from the broker portal, kept as its own trail
+      // entry so the discussion history survives later field updates.
+      const updateNote = String(req.body.updateNote || '').trim();
+      if (updateNote) {
+        pushActivity(negotiation, 'Negotiation update', updateNote, actorName);
+      }
+
       if (changes.length) {
         pushActivity(negotiation, 'Negotiation updated', changes.join(', '), actorName);
       }
@@ -198,10 +215,35 @@ const brokerNegotiationCtrl = {
         await syncLeadStatus(lead, negotiation.status);
       }
 
-      if (negotiation.status === 'Agreed' && negotiation.agreedAmount != null) {
-        if (lead) {
+      if (negotiation.agreedAmount != null && ['Agreed', 'Closed'].includes(negotiation.status)) {
+        if (lead && lead.status !== 'Lost') {
           lead.pipelineValue = negotiation.agreedAmount;
           await lead.save();
+        }
+        const order = await BrokerOrder.findOne({
+          negotiationId: negotiation._id,
+          status: { $ne: 'Cancelled' },
+        });
+        if (order) {
+          const amount = Number(negotiation.agreedAmount);
+          if (Number(order.orderAmount) !== amount) {
+            order.orderAmount = amount;
+            const broker = await Broker.findById(order.brokerId).select('commissionType commissionValue');
+            order.commissionAmount = resolveCommissionAmount(broker, order.orderAmount, null);
+            pushActivity(order, 'Order updated', 'agreed price', actorName);
+            await order.save();
+          }
+          if (order.mainTaskId) {
+            const task = await Task.findById(order.mainTaskId);
+            if (task && Number(task.totalPrice) !== amount) {
+              task.totalPrice = amount;
+              if (Array.isArray(task.items) && task.items.length === 1) {
+                task.items[0].price = amount;
+                task.markModified('items');
+              }
+              await task.save();
+            }
+          }
         }
       }
 
