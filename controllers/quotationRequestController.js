@@ -3,9 +3,9 @@ const MovingServiceRequest = require('../models/MovingServiceRequest');
 const Task = require('../models/Task');
 const sendQuotationEmail = require('../utils/sendQuotationEmail'); // Utility function to send email notifications
 const APIfeatures = require('../utils/APIFeatures');
-const FormData = require('form-data')
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
-const axios = require('axios');
+// const FormData = require('form-data')
+// const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+// const axios = require('axios');
 const { emitNotificationToUser } = require('../socket');
 const { sendQuoteRequestConfirmationEmail } = require('../services/emailsService');
 const { User } = require('../models/User');
@@ -35,62 +35,63 @@ const quotationRequestController = {
 
             // Handle optional file uploads
             const items = req.files ? req.files.map((file) => file.path) : [];
-            const predictions = [];
-            let estimatedPrices = [];
+            // AI predict disabled — old URL hangs and blocks quote submit
+            const estimatedPrices = [];
 
-            // Process files through AI prediction only if files are uploaded
-            if (req.files && req.files.length > 0) {
-                // Download the image from Cloudinary and send it to the Flask API
-                // Skip AI prediction for video files as they are too large for the API
-                for (const file of req.files) {
-                    // Skip video and audio files - AI prediction API only supports images
-                    if (file.mimetype && (file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/'))) {
-                        console.log(`Skipping AI prediction for ${file.mimetype} file: ${file.originalname}`);
-                        continue;
-                    }
-
-                    try {
-                        const response = await fetch(file.path); // Download the file from Cloudinary
-                        const arrayBuffer = await response.arrayBuffer(); // Convert to ArrayBuffer
-                        const buffer = Buffer.from(arrayBuffer); // Convert to Buffer for formData
-
-                        const formData = new FormData();
-                        formData.append('file', buffer, {
-                            filename: file.originalname,
-                            contentType: file.mimetype,
-                        });
-
-                        const aiResponse = await axios.post('http://147.93.85.229/predict', formData, {
-                            headers: {
-                                ...formData.getHeaders(),
-                            },
-                            maxBodyLength: Infinity,
-                            maxContentLength: Infinity,
-                        });
-
-                        if (aiResponse.data && aiResponse.data.predictions) {
-                            predictions.push(...aiResponse.data.predictions);
-                        }
-                    } catch (error) {
-                        // Handle 413 errors and other API errors gracefully
-                        if (error.response && error.response.status === 413) {
-                            console.warn(`File ${file.originalname} is too large for AI prediction API. Skipping...`);
-                            // Continue processing other files
-                            continue;
-                        } else {
-                            console.error(`Error processing file ${file.originalname} for AI prediction:`, error.message);
-                            // Continue processing other files even if one fails
-                            continue;
-                        }
-                    }
-                }
-
-                // Transform AI predictions into estimatedPrices format
-                estimatedPrices = predictions.map(pred => ({
-                    name: pred.classe,
-                    price: pred.price_inc_vat.toString(),
-                }));
-            }
+            // // Process files through AI prediction only if files are uploaded
+            // const predictions = [];
+            // if (req.files && req.files.length > 0) {
+            //     // Download the image from Cloudinary and send it to the Flask API
+            //     // Skip AI prediction for video files as they are too large for the API
+            //     for (const file of req.files) {
+            //         // Skip video and audio files - AI prediction API only supports images
+            //         if (file.mimetype && (file.mimetype.startsWith('video/') || file.mimetype.startsWith('audio/'))) {
+            //             console.log(`Skipping AI prediction for ${file.mimetype} file: ${file.originalname}`);
+            //             continue;
+            //         }
+            //
+            //         try {
+            //             const response = await fetch(file.path); // Download the file from Cloudinary
+            //             const arrayBuffer = await response.arrayBuffer(); // Convert to ArrayBuffer
+            //             const buffer = Buffer.from(arrayBuffer); // Convert to Buffer for formData
+            //
+            //             const formData = new FormData();
+            //             formData.append('file', buffer, {
+            //                 filename: file.originalname,
+            //                 contentType: file.mimetype,
+            //             });
+            //
+            //             const aiResponse = await axios.post('http://147.93.85.229/predict', formData, {
+            //                 headers: {
+            //                     ...formData.getHeaders(),
+            //                 },
+            //                 maxBodyLength: Infinity,
+            //                 maxContentLength: Infinity,
+            //             });
+            //
+            //             if (aiResponse.data && aiResponse.data.predictions) {
+            //                 predictions.push(...aiResponse.data.predictions);
+            //             }
+            //         } catch (error) {
+            //             // Handle 413 errors and other API errors gracefully
+            //             if (error.response && error.response.status === 413) {
+            //                 console.warn(`File ${file.originalname} is too large for AI prediction API. Skipping...`);
+            //                 // Continue processing other files
+            //                 continue;
+            //             } else {
+            //                 console.error(`Error processing file ${file.originalname} for AI prediction:`, error.message);
+            //                 // Continue processing other files even if one fails
+            //                 continue;
+            //             }
+            //         }
+            //     }
+            //
+            //     // Transform AI predictions into estimatedPrices format
+            //     estimatedPrices = predictions.map(pred => ({
+            //         name: pred.classe,
+            //         price: pred.price_inc_vat.toString(),
+            //     }));
+            // }
 
             const newQuotation = new QuotationRequest({
                 Name: `${firstName} ${lastName}`,
