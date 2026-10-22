@@ -634,7 +634,6 @@ async function createPersistentPaymentLink({
 }
 
 const TASK_PRIORITIES = ['low', 'medium', 'high'];
-const ORDER_SUBSOURCES = ['tawk', 'phone', 'email', 'website'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
@@ -1152,14 +1151,6 @@ function normalizeTaskPriority(value) {
   return s;
 }
 
-/** undefined = empty, null = not in the allowed list, otherwise the stored value. */
-function normalizeOrderSubsource(value) {
-  if (value === undefined || value === null) return undefined;
-  const s = String(value).trim().toLowerCase();
-  if (s === '') return undefined;
-  if (!ORDER_SUBSOURCES.includes(s)) return null;
-  return s;
-}
 // Fonction auxiliaire pour traiter les événements de commande approuvés
 function getCouponDiscountFields(coupon) {
   if (!coupon) return null;
@@ -1690,21 +1681,15 @@ const taskCtrl = {
         msclkid,
         fbclid,
         utm_source,
-        subsource,
       } = req.body;
       const normalizedUtmSource = normalizeUtmSource(utm_source);
-      let subsourceToSet;
-      if (createdByType === 'public') {
-        subsourceToSet = 'website';
-      } else if (subsource !== undefined && subsource !== null && String(subsource).trim() !== '') {
-        subsourceToSet = normalizeOrderSubsource(subsource);
-        if (!subsourceToSet) {
-          return res.status(400).json({
-            message: 'Invalid subsource. Allowed values: tawk, phone, email, website.',
-            error: 'INVALID_SUBSOURCE',
-          });
-        }
-      }
+      // A linked quotation wins. Otherwise public checkout is website; admin orders are matched later.
+      const hasQuotation = Boolean(quotationId && String(quotationId).trim());
+      const subsourceToSet = hasQuotation
+        ? 'quotation'
+        : createdByType === 'public'
+          ? 'website'
+          : undefined;
       // Sanitize ObjectId: empty string cannot be cast to ObjectId (createTask)
       const cashReceivedBySanitized = (cashReceivedBy && String(cashReceivedBy).trim()) ? cashReceivedBy : undefined;
       const orderItems = parseJsonArray(items);
@@ -2112,6 +2097,8 @@ const taskCtrl = {
           console.error('[Mailto Attribution] Error matching mailto lead on createTask:', mailtoErr);
         }
 
+        // Quotation, Tawk, and mailto are the only admin intakes. Anything else,
+        // including an organic phone call, stays unset.
         if (!newTask.subsource) {
           try {
             const tawkLead = await findMatchingTawkLead(newTask);
@@ -4056,21 +4043,8 @@ const taskCtrl = {
         updates.cashReceivedBy = null;
       }
 
-      if (Object.prototype.hasOwnProperty.call(updates, 'subsource')) {
-        const rawSubsource = updates.subsource;
-        if (rawSubsource === '' || rawSubsource === null) {
-          updates.subsource = null;
-        } else {
-          const normalizedSubsource = normalizeOrderSubsource(rawSubsource);
-          if (!normalizedSubsource) {
-            return res.status(400).json({
-              message: 'Invalid subsource. Allowed values: tawk, phone, email, website.',
-              error: 'INVALID_SUBSOURCE',
-            });
-          }
-          updates.subsource = normalizedSubsource;
-        }
-      }
+      // Intake channel is assigned automatically. Ignore any value sent by the dashboard.
+      delete updates.subsource;
 
       if (Object.prototype.hasOwnProperty.call(updates, 'priority')) {
         const rawPriority = updates.priority;

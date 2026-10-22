@@ -267,6 +267,7 @@ async function linkQuotationToTask(quotation, task) {
   await clearIneligibleTaskQuotationLinks(quotation._id);
 
   task.quotationId = quotation._id;
+  task.subsource = 'quotation';
 
   const { before: clickIdsBefore, after } = copyClickIdsFromQuotationToTask(task, quotation);
   await task.save();
@@ -393,18 +394,24 @@ async function syncTaskQuotationLink(task) {
 
   if (task.quotationId) {
     const quotation = await QuotationRequest.findById(task.quotationId);
+    if (task.subsource !== 'quotation') {
+      task.subsource = 'quotation';
+    }
     if (quotation) {
       await applyQuotationTaskCreatedReason(quotation);
       const { changed, before, after } = copyClickIdsFromQuotationToTask(task, quotation);
-      if (changed) {
+      if (changed || task.isModified?.('subsource')) {
         await task.save();
         console.log('[Quotation Link] syncTaskQuotationLink copied click IDs from quotation', {
           taskId,
           quotationId: task.quotationId.toString(),
           before,
           after,
+          subsource: task.subsource,
         });
       }
+    } else if (task.isModified?.('subsource')) {
+      await task.save();
     }
     console.log('[Quotation Link] syncTaskQuotationLink already_has_quotation', {
       taskId,

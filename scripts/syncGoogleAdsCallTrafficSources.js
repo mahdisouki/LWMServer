@@ -12,6 +12,8 @@
  *
  * The earliest order after the call (within the window) is the one stamped.
  * Organic, Direct, and empty sources only. An already attributed earliest order is skipped.
+ * A matched call sets subsource to phone when it is still empty. Quotation, Tawk,
+ * email, and website stay as they are.
  */
 require('dotenv').config();
 const fs = require('fs');
@@ -263,7 +265,7 @@ async function syncFromCsv({ filePath, windowDays, minDurationSeconds, dryRun })
     createdByType: { $in: ['public', 'Admin'] },
     ...excludeMigratedOrdersFilter,
   })
-    .select('_id orderNumber phoneNumber phoneNumber2 trafficSource createdAt')
+    .select('_id orderNumber phoneNumber phoneNumber2 trafficSource subsource createdAt')
     .lean();
 
   summary.candidates = orders.length;
@@ -308,6 +310,7 @@ async function syncFromCsv({ filePath, windowDays, minDurationSeconds, dryRun })
     claimed.add(orderId);
     summary.matched += 1;
 
+    const subsourceToSet = order.subsource ? null : 'phone';
     if (summary.samples.length < 20) {
       summary.samples.push({
         row: call.rowNumber,
@@ -315,6 +318,8 @@ async function syncFromCsv({ filePath, windowDays, minDurationSeconds, dryRun })
         orderNumber: order.orderNumber,
         from: order.trafficSource || null,
         to: 'Google Ads',
+        subsourceFrom: order.subsource || null,
+        subsourceTo: order.subsource || 'phone',
         callStartedAt: call.startedAt.toISOString(),
       });
     }
@@ -325,6 +330,8 @@ async function syncFromCsv({ filePath, windowDays, minDurationSeconds, dryRun })
     }
 
     try {
+      const $set = { trafficSource: 'Google Ads' };
+      if (subsourceToSet) $set.subsource = subsourceToSet;
       const result = await Task.updateOne(
         {
           _id: order._id,
@@ -336,7 +343,7 @@ async function syncFromCsv({ filePath, windowDays, minDurationSeconds, dryRun })
             { trafficSource: null },
           ],
         },
-        { $set: { trafficSource: 'Google Ads' } },
+        { $set },
       );
       if (result.modifiedCount > 0) summary.updated += 1;
       else summary.notApplicable += 1;

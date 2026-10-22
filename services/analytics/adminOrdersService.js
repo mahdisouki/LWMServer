@@ -21,7 +21,7 @@ function normalizeAdminLabel(createdBy) {
   return label || 'Unknown';
 }
 
-const KNOWN_SUBSOURCES = ['tawk', 'phone', 'email', 'website'];
+const KNOWN_SUBSOURCES = ['tawk', 'phone', 'email', 'website', 'quotation'];
 
 function normalizeSubsourceLabel(value) {
   const key = String(value || '').trim().toLowerCase();
@@ -322,7 +322,7 @@ async function getAdminOrders({
       valueDonut: 'Use segments[].admin as label, segments[].totalValue as value, segments[].valueSharePercent as share',
       colors: 'Use segments[].color for consistent slice colors',
       subsources:
-        'Use segments[].subsources for per-admin intake channel mix (tawk, phone, email, website, unset)',
+        'Use segments[].subsources for per-admin intake channel mix (tawk, phone, email, website, quotation, unset)',
     },
     dataSources: {
       orders:
@@ -331,7 +331,7 @@ async function getAdminOrders({
         'Task collection — public website orders (createdByType public), excluding Failed payments and createdBy MigrationScript',
       grouping: 'Admin breakdown grouped by createdBy (admin username)',
       subsources:
-        'Admin orders also grouped by Task.subsource (tawk, phone, email, website; missing values as unset)',
+        'Admin orders also grouped by Task.subsource (tawk, phone, email, website, quotation; missing values as unset)',
       dateFilter: 'Filtered by order creation timestamp (Task.createdAt)',
       exclusions: 'createdBy MigrationScript is excluded from all analytics order totals and breakdowns',
     },
