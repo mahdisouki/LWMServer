@@ -5,7 +5,11 @@ const {
   getLatestMessageIdInThread,
 } = require('./gmailService');
 const { detectItemsFromGmailMessage } = require('./detectionAiService');
-const { mergeSuggestReplyItems } = require('./threadQuoteItemsService');
+const {
+  mergeSuggestReplyItems,
+  normalizeQuoteItems,
+  enrichDetectionPricesFromCatalogue,
+} = require('./threadQuoteItemsService');
 
 const PYTHON_SERVER = (
   process.env.PYTHON_SERVER || 'http://localhost:8001'
@@ -66,6 +70,12 @@ async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageCo
     headers: { 'Content-Type': 'application/json' },
     timeout: SUGGEST_REPLY_TIMEOUT_MS,
   });
+
+  // Raw Python engine body — before any Node normalize / merge.
+  console.log(
+    '[Suggest Reply] Python engine raw response:',
+    JSON.stringify(res.data, null, 2)
+  );
 
   const data = res.data || {};
   const category = data.category ?? fallbackCategory;
@@ -254,6 +264,7 @@ async function buildSuggestReplyPythonPayloadForThread(
   );
 
   let detectedItems = [];
+  let visionItems = [];
   let detectionImageCount = Number(ctx.target?.photoCount) || 0;
 
   if (targetGmailMessage) {
@@ -261,15 +272,17 @@ async function buildSuggestReplyPythonPayloadForThread(
       adminId,
       targetGmailMessage
     );
+    // Slim shape for Python (name/count only).
     detectedItems = detection.items?.length
       ? detection.items
       : (detection.labels || []).map((name) => ({ name, count: 1 }));
+    visionItems = Array.isArray(detection.visionItems)
+      ? detection.visionItems
+      : [];
     detectionImageCount = Math.max(
       detectionImageCount,
       Number(detection.imageCount) || 0
     );
-
-
   }
 
   const payload = buildPythonSuggestPayload({
@@ -288,14 +301,48 @@ async function buildSuggestReplyPythonPayloadForThread(
     ctx,
     category,
     detectedItems,
+    visionItems,
   };
 }
 
-async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
-  const { payload, ctx, category, detectedItems } =
-    await buildSuggestReplyPythonPayloadForThread(adminId, threadId, messageId);
+function tagPythonItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item) => {
+    if (item?.source === 'detection_ai') {
+      return {
+        ...item,
+        source: 'detection_ai',
+        imageUrl: item.imageUrl || null,
+      };
+    }
+    const typeFromLegacySource =
+      item?.source === 'standard' || item?.source === 'custom'
+        ? item.source
+        : null;
+    return {
+      ...item,
+      type: item?.type || typeFromLegacySource || null,
+      source: 'python',
+      imageUrl: null,
+    };
+  });
+}
 
- 
+/**
+ * One deduped list for the front: python rows + detection_ai rows (with imageUrl).
+ * Persistence uses the same merged set.
+ */
+async function mergeItemsForClient(pythonItems, visionItems) {
+  const merged = normalizeQuoteItems([
+    ...tagPythonItems(pythonItems),
+    ...(Array.isArray(visionItems) ? visionItems : []),
+  ]);
+  return enrichDetectionPricesFromCatalogue(merged);
+}
+
+async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
+  const { payload, ctx, category, visionItems } =
+    await buildSuggestReplyPythonPayloadForThread(adminId, threadId, messageId);
 
   const suggestion = await callPythonSuggestReply(payload, category, {
     from: payload.message.from,
@@ -305,9 +352,10 @@ async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
 
   const resolvedCategory = suggestion.category || category;
 
-  // Quote items-only: persist/merge items for the thread, return saved list.
+  // Quote: merge python + detection (deduped), persist full set, return saved list.
   if (resolvedCategory === 'quote') {
-    let items = Array.isArray(suggestion.items) ? suggestion.items : [];
+    const pythonItems = Array.isArray(suggestion.items) ? suggestion.items : [];
+    let items = await mergeItemsForClient(pythonItems, visionItems);
     try {
       const saved = await mergeSuggestReplyItems(
         ctx.threadId,
@@ -333,7 +381,7 @@ async function suggestReplyForTargetMessage(adminId, threadId, messageId) {
     ...suggestion,
     inReplyToMessageId: ctx.messageId,
     suggestReplyContext: payload.thread,
-    detectedItems,
+    detectedItems: visionItems,
   };
 }
 

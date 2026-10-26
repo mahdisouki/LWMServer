@@ -703,14 +703,25 @@ const gmailCtrl = {
     }
   },
 
+  /**
+   * Sidebar: cheap labels.list only (no N× labels.get).
+   * Counts are often 0 here — use GET /labels/:id for unread/totals (cached ~10m).
+   */
   listLabels: async (req, res) => {
     try {
       const labels = await listLabels(req.user._id);
       const normalized = labels.map((label) => ({
         id: label.id,
         name: label.name,
-        threadsTotal: typeof label.threadsTotal === 'number' ? label.threadsTotal : 0,
-        threadsUnread: typeof label.threadsUnread === 'number' ? label.threadsUnread : 0,
+        type: label.type || null,
+        threadsTotal:
+          typeof label.threadsTotal === 'number' ? label.threadsTotal : null,
+        threadsUnread:
+          typeof label.threadsUnread === 'number' ? label.threadsUnread : null,
+        messagesTotal:
+          typeof label.messagesTotal === 'number' ? label.messagesTotal : null,
+        messagesUnread:
+          typeof label.messagesUnread === 'number' ? label.messagesUnread : null,
       }));
       res.json({ success: true, labels: normalized });
     } catch (error) {
@@ -718,12 +729,38 @@ const gmailCtrl = {
     }
   },
 
+  /** Label detail + unread counts; cached server-side to protect Gmail quota. */
   getLabel: async (req, res) => {
     try {
-      const label = await getLabel(req.user._id, req.params.id);
-      res.json({ success: true, label });
+      const forceRefresh =
+        req.query?.refresh === '1' || req.query?.refresh === 'true';
+      const label = await getLabel(req.user._id, req.params.id, {
+        forceRefresh,
+      });
+      res.json({
+        success: true,
+        label: {
+          id: label.id,
+          name: label.name,
+          type: label.type || null,
+          threadsTotal:
+            typeof label.threadsTotal === 'number' ? label.threadsTotal : 0,
+          threadsUnread:
+            typeof label.threadsUnread === 'number' ? label.threadsUnread : 0,
+          messagesTotal:
+            typeof label.messagesTotal === 'number' ? label.messagesTotal : 0,
+          messagesUnread:
+            typeof label.messagesUnread === 'number' ? label.messagesUnread : 0,
+        },
+      });
     } catch (error) {
-      res.status(500).json({ success: false, message: 'Failed to get label', error: error.message });
+      const status =
+        error.response?.status === 404 || error.code === 404 ? 404 : 500;
+      res.status(status).json({
+        success: false,
+        message: 'Failed to get label',
+        error: error.message,
+      });
     }
   },
 
