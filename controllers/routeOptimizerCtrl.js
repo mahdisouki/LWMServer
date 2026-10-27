@@ -1215,11 +1215,11 @@ async function calculateRoutesExternal(req, res) {
 
 /**
  * POST /api/route-optimizer/external/grouped-routes
- * Same flow as calculate-routes, but forwards to the external /api/v1/grouped-routes endpoint
- * which groups jobs by area before optimizing.
+ * Same flow as calculate-routes, but forwards to the external /api/v1/compare-grouped endpoint,
+ * which compares calculate-routes and grouped-routes and returns the winner.
  * Body: { date: string|Date, truckIds?: string[], selectedTruckIds?: string[],
  *   vanCurrentCapacities?: Record<string, number> }
- * Returns: { success, routes, api_calls_used } from external API.
+ * Returns: { success, winner, winner_reason, routes, api_calls_used } from external API.
  */
 async function calculateRoutesExternalArea(req, res) {
   try {
@@ -1314,7 +1314,7 @@ async function calculateRoutesExternalArea(req, res) {
     }
     console.log("payload", payload);
     const { data, status } = await axios.post(
-      `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/grouped-routes`,
+      `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/compare-grouped`,
       payload,
       {
         timeout: 120000,
@@ -1424,6 +1424,8 @@ async function calculateRoutesExternalArea(req, res) {
     const externalSummary = data.summary && typeof data.summary === 'object' ? data.summary : {};
     return res.status(200).json({
       success: data.success !== false,
+      winner: data.winner ?? null,
+      winner_reason: data.winner_reason ?? null,
       routes,
       api_calls_used: data.api_calls_used ?? 0,
       summary: {
