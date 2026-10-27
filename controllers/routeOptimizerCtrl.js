@@ -1218,7 +1218,7 @@ async function calculateRoutesExternal(req, res) {
  * Same flow as calculate-routes, but forwards to the external /api/v1/compare-grouped endpoint,
  * which compares calculate-routes and grouped-routes and returns the winner.
  * Body: { date: string|Date, truckIds?: string[], selectedTruckIds?: string[],
- *   vanCurrentCapacities?: Record<string, number> }
+ *   vanCurrentCapacities?: Record<string, number>, include_tipping?: boolean }
  * Returns: { success, winner, winner_reason, routes, api_calls_used } from external API.
  */
 async function calculateRoutesExternalArea(req, res) {
@@ -1297,9 +1297,12 @@ async function calculateRoutesExternalArea(req, res) {
     const rawVanCaps = req.body.vanCurrentCapacities ?? req.body.van_current_capacities;
     const vanCapsNormalized = normalizeVanCurrentCapacitiesMap(rawVanCaps);
     const vanCapsForOptimizer = filterVanCapacitiesToScope(vanCapsNormalized, vanIdsInScope);
+    const includeTippingRaw = req.body.include_tipping ?? req.body.includeTipping;
+    const includeTipping = includeTippingRaw === true || includeTippingRaw === 'true';
 
     const payload = {
       date: dateStr,
+      include_tipping: includeTipping,
       truck_contexts: trucksWithDrivers.map(
         ({ truck, assignedVanId, startLocation, endLocation }) => ({
           truck_id: truck._id.toString(),
