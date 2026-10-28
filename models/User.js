@@ -101,6 +101,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  notes: {
+    type: String,
+    default: ''
+  },
   truckId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Truck',

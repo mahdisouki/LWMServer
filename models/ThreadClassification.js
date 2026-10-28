@@ -10,9 +10,12 @@ const quoteItemSchema = new mongoose.Schema(
     inside: { type: Number, default: null },
     inside_with_dismantling: { type: Number, default: null },
     type: { type: String, default: null },
-    item_id: { type: String, default: null },
-    position: { type: String, default: null },
-    status: { type: String, default: null },
+    source: {
+      type: String,
+      enum: ['python', 'detection_ai'],
+      default: 'python',
+    },
+    imageUrl: { type: String, default: null },
   },
   { _id: false }
 );

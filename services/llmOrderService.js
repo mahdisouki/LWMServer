@@ -2,8 +2,12 @@ const axios = require('axios');
 const {
   getLatestMessageIdInThread,
   collectOrderAttachmentsFromMessages,
+  getMessageMainHtml,
 } = require('./gmailService');
 const { buildSuggestReplyPythonPayloadForThread } = require('./suggestReplyService');
+const {
+  extractUploadedItemImageUrlsFromHtml,
+} = require('./detectionAiService');
 
 const PYTHON_SERVER = (
   process.env.PYTHON_SERVER || 'http://localhost:8001'
@@ -13,6 +17,66 @@ const LLM_ORDER_URL = `${PYTHON_SERVER}/order_llm`;
 
 const LLM_ORDER_TIMEOUT_MS =
   Number(process.env.LLM_ORDER_TIMEOUT_MS) || 60000;
+
+function filenameFromImageUrl(url) {
+  try {
+    const path = new URL(url).pathname;
+    const last = path.split('/').filter(Boolean).pop() || 'image.jpg';
+    return decodeURIComponent(last);
+  } catch {
+    return 'image.jpg';
+  }
+}
+
+/**
+ * Quotation "Item N - View Image" Cloudinary (etc.) links from message HTML.
+ */
+function collectViewImageAttachmentsFromMessages(messages = []) {
+  const seen = new Set();
+  const attachments = [];
+
+  for (const msg of messages) {
+    const html = getMessageMainHtml(msg);
+    const urls = extractUploadedItemImageUrlsFromHtml(html);
+    for (const url of urls) {
+      const key = String(url).trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      attachments.push({
+        messageId: msg.id || null,
+        attachmentId: null,
+        filename: filenameFromImageUrl(url),
+        mimeType: 'image/jpeg',
+        size: null,
+        attachmentRole: 'view_image',
+        downloadUrl: url,
+        url,
+      });
+    }
+  }
+
+  return attachments;
+}
+
+/** Gmail MIME attachments + quotation View Image Cloudinary URLs (deduped). */
+function collectAllOrderAttachments(messages = []) {
+  const mime = collectOrderAttachmentsFromMessages(messages);
+  const viewImages = collectViewImageAttachmentsFromMessages(messages);
+
+  const seen = new Set();
+  const merged = [];
+
+  for (const att of [...mime, ...viewImages]) {
+    const key = String(att.downloadUrl || att.url || '')
+      .trim()
+      .toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(att);
+  }
+
+  return merged;
+}
 
 function optionalTrimmedString(value) {
   if (value == null) return undefined;
@@ -189,7 +253,24 @@ async function callPythonLlmOrder(pythonPayload, ctx, attachments) {
     timeout: LLM_ORDER_TIMEOUT_MS,
   });
 
-  return normalizeLlmOrderResponse(res.data, pythonPayload, ctx, attachments);
+  console.log(
+    '[LLM Order] Python engine raw response:',
+    JSON.stringify(res.data, null, 2)
+  );
+
+  const order = normalizeLlmOrderResponse(
+    res.data,
+    pythonPayload,
+    ctx,
+    attachments
+  );
+
+  console.log(
+    '[LLM Order] Create order response (normalized):',
+    JSON.stringify(order, null, 2)
+  );
+
+  return order;
 }
 
 async function llmOrderForTargetMessage(adminId, threadId, messageId, items = []) {
@@ -199,7 +280,7 @@ async function llmOrderForTargetMessage(adminId, threadId, messageId, items = []
     messageId
   );
 
-  const attachments = collectOrderAttachmentsFromMessages(
+  const attachments = collectAllOrderAttachments(
     ctx.messagesThroughTarget || []
   );
 

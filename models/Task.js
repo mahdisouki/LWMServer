@@ -312,7 +312,7 @@ const taskSchema = new Schema(
     /** How the job arrived. Independent of trafficSource (ads/organic) and createdByType. */
     subsource: {
       type: String,
-      enum: ['tawk', 'phone', 'email', 'website', null],
+      enum: ['tawk', 'phone', 'email', 'website', 'quotation', null],
       default: null,
     },
     /** Raw GA4 sessionDefaultChannelGroup from purchase ↔ orderNumber match. */

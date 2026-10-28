@@ -1159,9 +1159,13 @@ async function getThreadFullForClient(adminId, threadId, options = {}) {
         .select('quoteItems')
         .lean();
       if (classification) {
-        quoteItems = Array.isArray(classification.quoteItems)
-          ? classification.quoteItems
-          : [];
+        quoteItems = (
+          Array.isArray(classification.quoteItems)
+            ? classification.quoteItems
+            : []
+        ).map(
+          require('./threadQuoteItemsService').formatItemForClient
+        );
       }
     } catch (_) {
       // quote fields are optional on full thread
@@ -2070,18 +2074,29 @@ async function listMessages(adminId, options = {}) {
     getMessageListItemMetadata(gmail, stub.id)
   );
 
+  // Prefer Mongo snapshot counts — avoid N× threads.get (Gmail quota).
   const uniqueThreadIds = [
     ...new Set(detailed.map((m) => m.threadId).filter(Boolean)),
   ];
   const countByThreadId = new Map();
-  await mapWithConcurrency(uniqueThreadIds, 8, async (tid) => {
-    const count = await getThreadMessageCount(adminId, tid);
-    countByThreadId.set(tid, count);
-    return count;
-  });
+  if (uniqueThreadIds.length) {
+    const ThreadClassification = require('../models/ThreadClassification');
+    const docs = await ThreadClassification.find({
+      threadId: { $in: uniqueThreadIds },
+    })
+      .select('threadId threadMessageCount')
+      .lean();
+    for (const doc of docs) {
+      const n = Number(doc.threadMessageCount);
+      countByThreadId.set(doc.threadId, Number.isFinite(n) && n > 0 ? n : 1);
+    }
+  }
 
   const messages = detailed.map((meta) =>
-    formatInboxListMessage(meta, countByThreadId.get(meta.threadId))
+    formatInboxListMessage(
+      meta,
+      countByThreadId.get(meta.threadId) ?? 1
+    )
   );
 
   return {
@@ -2111,35 +2126,67 @@ async function batchDeleteMessages(adminId, ids = []) {
   });
 }
 
+/** In-memory cache for labels.get (unread / totals). Default 10 minutes. */
+const LABEL_DETAIL_CACHE_TTL_MS =
+  Number(process.env.GMAIL_LABEL_DETAIL_CACHE_TTL_MS) || 10 * 60 * 1000;
+const labelDetailCache = new Map();
+
+function labelDetailCacheKey(adminId, labelId) {
+  return `${String(adminId)}:${String(labelId)}`;
+}
+
+function getCachedLabelDetail(adminId, labelId) {
+  const key = labelDetailCacheKey(adminId, labelId);
+  const entry = labelDetailCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    labelDetailCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedLabelDetail(adminId, labelId, data) {
+  labelDetailCache.set(labelDetailCacheKey(adminId, labelId), {
+    data,
+    expiresAt: Date.now() + LABEL_DETAIL_CACHE_TTL_MS,
+  });
+}
+
+function invalidateLabelDetailCache(adminId, labelId = null) {
+  const prefix = `${String(adminId)}:`;
+  if (labelId != null) {
+    labelDetailCache.delete(labelDetailCacheKey(adminId, labelId));
+    return;
+  }
+  for (const key of labelDetailCache.keys()) {
+    if (key.startsWith(prefix)) labelDetailCache.delete(key);
+  }
+}
+
+/**
+ * Sidebar: labels.list only (no per-label labels.get — that blows Gmail quota).
+ * Counts may be missing; use GET /labels/:id for unread/totals (cached).
+ */
 async function listLabels(adminId) {
   const gmail = await getGmailAuth(adminId);
   const response = await gmail.users.labels.list({ userId: 'me' });
-  const labels = response.data.labels || [];
-
-  // labels.list can omit counters in some accounts/scopes, so load
-  // each label detail to consistently return messages/threads totals.
-  const detailedLabels = await Promise.all(
-    labels.map(async (label) => {
-      try {
-        const details = await gmail.users.labels.get({
-          userId: 'me',
-          id: label.id,
-        });
-        return details.data;
-      } catch (error) {
-        console.warn(`Failed to load details for label ${label.id}:`, error.message);
-        return label;
-      }
-    })
-  );
-
-  return detailedLabels;
+  return response.data.labels || [];
 }
 
-async function getLabel(adminId, labelId) {
+/** Single label with counters; cached to avoid repeated labels.get. */
+async function getLabel(adminId, labelId, options = {}) {
+  const forceRefresh = Boolean(options.forceRefresh);
+  if (!forceRefresh) {
+    const cached = getCachedLabelDetail(adminId, labelId);
+    if (cached) return cached;
+  }
+
   const gmail = await getGmailAuth(adminId);
   const response = await gmail.users.labels.get({ userId: 'me', id: labelId });
-  return response.data;
+  const data = response.data;
+  setCachedLabelDetail(adminId, labelId, data);
+  return data;
 }
 
 async function createLabel(adminId, labelBody) {
@@ -2148,6 +2195,7 @@ async function createLabel(adminId, labelBody) {
     userId: 'me',
     requestBody: labelBody,
   });
+  invalidateLabelDetailCache(adminId);
   return response.data;
 }
 
@@ -2158,12 +2206,18 @@ async function updateLabel(adminId, labelId, labelBody) {
     id: labelId,
     requestBody: labelBody,
   });
+  invalidateLabelDetailCache(adminId, labelId);
+  if (response.data) {
+    setCachedLabelDetail(adminId, labelId, response.data);
+  }
   return response.data;
 }
 
 async function deleteLabel(adminId, labelId) {
   const gmail = await getGmailAuth(adminId);
-  return gmail.users.labels.delete({ userId: 'me', id: labelId });
+  const result = await gmail.users.labels.delete({ userId: 'me', id: labelId });
+  invalidateLabelDetailCache(adminId, labelId);
+  return result;
 }
 
 async function listThreads(adminId, options = {}) {

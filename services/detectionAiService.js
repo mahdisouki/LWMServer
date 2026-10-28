@@ -10,10 +10,10 @@ const DETECTION_AI_URL =
   process.env.DETECTION_AI_URL || 'https://detectionai.duckdns.org/detect';
 
 const DETECTION_AI_TIMEOUT_MS =
-  Number(process.env.DETECTION_AI_TIMEOUT_MS) ;
+  Number(process.env.DETECTION_AI_TIMEOUT_MS);
 
 const DETECTION_AI_CONFIDENCE_THRESHOLD =
-  Number(process.env.DETECTION_AI_CONFIDENCE_THRESHOLD) ;
+  Number(process.env.DETECTION_AI_CONFIDENCE_THRESHOLD);
 
 const VIDEO_URL_RE =
   /\.(mp4|mov|avi|mkv|webm|flv|wmv)(?:$|\?)/i;
@@ -142,6 +142,51 @@ function countMapToItems(countMap) {
   return [...countMap.entries()].map(([name, count]) => ({ name, count }));
 }
 
+function attachmentDownloadUrl(messageId, attachmentId) {
+  return `/api/gmail/messages/${messageId}/attachments/${encodeURIComponent(attachmentId)}`;
+}
+
+/** One client row per accepted detection, with photo URL + source (no confidence). */
+function visionItemFromDetection(detection, imageMeta) {
+  const name = String(detection.label || '').trim();
+  if (!name) return null;
+  return {
+    item_name: name,
+    phrase: name,
+    quantity: 1,
+    source: 'detection_ai',
+    type: 'standard',
+    imageUrl: imageMeta.imageUrl || null,
+  };
+}
+
+/** Unique set by item name; sum quantities; keep first imageUrl. */
+function dedupeVisionItems(visionItems) {
+  if (!Array.isArray(visionItems) || !visionItems.length) return [];
+  const byName = new Map();
+  for (const row of visionItems) {
+    const name = String(row?.item_name || row?.phrase || '')
+      .trim()
+      .toLowerCase();
+    if (!name) continue;
+    const existing = byName.get(name);
+    if (!existing) {
+      byName.set(name, {
+        item_name: row.item_name || row.phrase,
+        phrase: row.phrase || row.item_name,
+        quantity: Number(row.quantity) || 1,
+        source: 'detection_ai',
+        type: 'standard',
+        imageUrl: row.imageUrl || null,
+      });
+      continue;
+    }
+    existing.quantity += Number(row.quantity) || 1;
+    if (!existing.imageUrl && row.imageUrl) existing.imageUrl = row.imageUrl;
+  }
+  return [...byName.values()];
+}
+
 async function detectItemsInImageBuffer(buffer, filename, mimeType) {
   const form = new FormData();
   form.append('image', buffer, {
@@ -196,17 +241,21 @@ async function downloadImageFromUrl(url) {
  * 1) Gmail MIME image attachments
  * 2) Quotation / contact "View Image" HTML links (Cloudinary etc.)
  *
- * Returns { labels, items, imageCount }.
+ * Returns:
+ *  - items / labels: aggregated for Python ({ name, count })
+ *  - visionItems: per accepted detection with source + imageUrl for the front
  */
 async function detectItemsFromGmailMessage(adminId, gmailMessage) {
   const empty = {
     labels: [],
     items: [],
+    visionItems: [],
     imageCount: 0,
   };
 
   if (!gmailMessage?.id) return empty;
 
+  const messageId = gmailMessage.id;
   const photos = listPhotoAttachmentsFromGmailMessage(gmailMessage);
   const mainHtml = getMessageMainHtml(gmailMessage);
   const uploadedUrls = extractUploadedItemImageUrlsFromHtml(mainHtml);
@@ -217,13 +266,21 @@ async function detectItemsFromGmailMessage(adminId, gmailMessage) {
   }
 
   const countMap = new Map();
+  const visionItems = [];
   const imageResults = [];
 
   for (const photo of photos) {
+    const imageMeta = {
+      messageId,
+      attachmentId: photo.attachmentId,
+      filename: photo.filename,
+      imageUrl: attachmentDownloadUrl(messageId, photo.attachmentId),
+    };
+
     try {
       const buffer = await downloadAttachmentBuffer(
         adminId,
-        gmailMessage.id,
+        messageId,
         photo.attachmentId
       );
       if (!buffer?.length) {
@@ -236,6 +293,13 @@ async function detectItemsFromGmailMessage(adminId, gmailMessage) {
         photo.mimeType
       );
       addLabelsToCountMap(countMap, result.labels);
+
+      for (const det of result.detections || []) {
+        if (!det.accepted) continue;
+        const row = visionItemFromDetection(det, imageMeta);
+        if (row) visionItems.push(row);
+      }
+
       imageResults.push({
         source: 'attachment',
         filename: photo.filename,
@@ -251,6 +315,13 @@ async function detectItemsFromGmailMessage(adminId, gmailMessage) {
   }
 
   for (const url of uploadedUrls) {
+    const imageMeta = {
+      messageId,
+      attachmentId: null,
+      filename: null,
+      imageUrl: url,
+    };
+
     try {
       const { buffer, mimeType, filename } = await downloadImageFromUrl(url);
       if (!buffer?.length) {
@@ -260,8 +331,17 @@ async function detectItemsFromGmailMessage(adminId, gmailMessage) {
         continue;
       }
 
+      imageMeta.filename = filename;
+
       const result = await detectItemsInImageBuffer(buffer, filename, mimeType);
       addLabelsToCountMap(countMap, result.labels);
+
+      for (const det of result.detections || []) {
+        if (!det.accepted) continue;
+        const row = visionItemFromDetection(det, imageMeta);
+        if (row) visionItems.push(row);
+      }
+
       imageResults.push({
         source: 'viewImageLink',
         filename,
@@ -279,14 +359,15 @@ async function detectItemsFromGmailMessage(adminId, gmailMessage) {
 
   const items = countMapToItems(countMap);
   const labels = items.map((item) => item.name);
+  const uniqueVisionItems = dedupeVisionItems(visionItems);
 
   console.log('[Detection AI]', {
-    messageId: gmailMessage.id,
+    messageId,
     threshold: DETECTION_AI_CONFIDENCE_THRESHOLD,
     images: imageResults,
   });
 
-  return { labels, items, imageCount };
+  return { labels, items, visionItems: uniqueVisionItems, imageCount };
 }
 
 module.exports = {

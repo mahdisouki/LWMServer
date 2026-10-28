@@ -44,7 +44,7 @@ router.post(
 /**
  * POST /api/route-optimizer/external/grouped-routes
  * Body: { date, truckIds|selectedTruckIds?, vanCurrentCapacities? } — same payload as
- * /external/calculate-routes, forwarded to the external /api/v1/grouped-routes.
+ * /external/calculate-routes, forwarded to the external /api/v1/compare-grouped.
  */
 router.post(
   '/external/grouped-routes',

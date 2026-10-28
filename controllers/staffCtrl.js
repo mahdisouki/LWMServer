@@ -80,6 +80,7 @@ const staffManagement = {
         endLng,
         isStillWorking,
         terminationReason,
+        notes,
       } = req.body;
 
       // Get file paths
@@ -144,6 +145,7 @@ const staffManagement = {
           NatInsurance: natInsuranceUrl,
           isStillWorking,
           terminationReason,
+          notes,
         };
         if (role === 'Driver' || role === 'Helper') {
           if (start_location && start_location.coordinates && start_location.coordinates.length >= 2) {
@@ -187,6 +189,7 @@ const staffManagement = {
           isSuperAdmin,
           isStillWorking,
           terminationReason,
+          notes,
         });
       } else {
         newUser = new User({
@@ -210,6 +213,7 @@ const staffManagement = {
           NatInsurance: natInsuranceUrl,
           isStillWorking,
           terminationReason,
+          notes,
         });
       }
       console.log(newUser)
