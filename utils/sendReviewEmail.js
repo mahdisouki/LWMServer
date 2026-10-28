@@ -28,9 +28,9 @@ const sendReviewRequestEmail = async ({ email, firstName, orderNumber }) => {
     : '';
 
   // For ratings 1-3, link to feedback page with name and order number
-  const feedbackLink1 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=1${orderQuery}`;
-  const feedbackLink2 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=2${orderQuery}`;
-  const feedbackLink3 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=3${orderQuery}`;
+  const feedbackLink1 = `https://lwmclient.duckdns.org/feedback?name=${encodedName}&rating=1${orderQuery}`;
+  const feedbackLink2 = `https://lwmclient.duckdns.org/feedback?name=${encodedName}&rating=2${orderQuery}`;
+  const feedbackLink3 = `https://lwmclient.duckdns.org/feedback?name=${encodedName}&rating=3${orderQuery}`;
 
   // For ratings 4-5, link to Trustpilot
   // (rating 4 and 5 both go to Trustpilot)
