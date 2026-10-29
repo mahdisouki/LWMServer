@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const SeoIndexPage = require('../../models/SeoIndexPage');
 const SeoSiteSnapshot = require('../../models/SeoSiteSnapshot');
 const { getSiteUrl, getMaxInspectUrls, isGscEnabled } = require('../../config/seoConfig');
-const { fetchTopPages, inspectUrl } = require('./gscService');
+const { fetchTopPages, inspectUrl, requestIndexing } = require('./gscService');
 
 const INSPECT_DELAY_MS = 250;
 
@@ -83,6 +83,9 @@ function mapPage(doc) {
     inspectionResultLink: doc.inspectionResultLink || null,
     lastInspectedAt: doc.lastInspectedAt || null,
     inspectError: doc.inspectError || null,
+    indexRequestedAt: doc.indexRequestedAt || null,
+    indexRequestNotifyTime: doc.indexRequestNotifyTime || null,
+    indexRequestError: doc.indexRequestError || null,
     lastCrawledAt: doc.lastCrawledAt,
     updatedAt: doc.updatedAt,
   };
@@ -395,6 +398,34 @@ async function inspectAndSave(doc) {
   return mapPage(doc);
 }
 
+async function requestIndexPageById(siteUrl, pageId) {
+  if (!mongoose.Types.ObjectId.isValid(pageId)) {
+    const err = new Error('Invalid indexation page id');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const page = await SeoIndexPage.findOne({ _id: pageId, siteUrl });
+  if (!page) {
+    return null;
+  }
+
+  try {
+    const result = await requestIndexing(inspectionUrlForPage(page));
+    page.indexRequestedAt = new Date();
+    page.indexRequestNotifyTime = result.notifyTime ? new Date(result.notifyTime) : new Date();
+    page.indexRequestError = null;
+    await page.save();
+    return mapPage(page);
+  } catch (error) {
+    page.indexRequestedAt = new Date();
+    page.indexRequestError = error.message;
+    await page.save();
+    error.statusCode = error.statusCode || 502;
+    throw error;
+  }
+}
+
 async function inspectPageById(siteUrl, pageId) {
   if (!mongoose.Types.ObjectId.isValid(pageId)) {
     const err = new Error('Invalid indexation page id');
@@ -473,5 +504,6 @@ module.exports = {
   getSummary,
   listPages,
   inspectPageById,
+  requestIndexPageById,
   inspectPriorityPages,
 };

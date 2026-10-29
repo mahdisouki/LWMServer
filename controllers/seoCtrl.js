@@ -373,6 +373,19 @@ const seoCtrl = {
     }
   },
 
+  requestIndexationPage: async (req, res) => {
+    try {
+      const page = await indexationService.requestIndexPageById(siteUrlFromReq(req), req.params.id);
+      if (!page) {
+        return res.status(404).json({ message: 'Indexation page not found' });
+      }
+      res.status(200).json({ message: 'Indexing request sent to Google', page });
+    } catch (error) {
+      const status = error.statusCode || 500;
+      res.status(status).json({ message: 'Failed to request indexing', error: error.message });
+    }
+  },
+
   enrichAuditWithAgent: async (req, res) => {
     try {
       const result = await seoAgentService.enrichAuditIssues(siteUrlFromReq(req));

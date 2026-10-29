@@ -32,6 +32,7 @@ router.post('/competitors/content-gaps/:id/create-page', ...admin, seoCtrl.creat
 router.get('/indexation/summary', ...admin, seoCtrl.getIndexationSummary);
 router.get('/indexation/pages', ...admin, seoCtrl.getIndexationPages);
 router.post('/indexation/pages/:id/inspect', ...admin, seoCtrl.inspectIndexationPage);
+router.post('/indexation/pages/:id/request-index', ...admin, seoCtrl.requestIndexationPage);
 
 router.get('/agent/status', ...admin, seoCtrl.getAgentStatus);
 router.post('/agent/drafts', ...admin, seoCtrl.createBlogDraftFromIdea);
