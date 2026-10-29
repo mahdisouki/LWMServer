@@ -8,6 +8,7 @@ const { buildSuggestReplyPythonPayloadForThread } = require('./suggestReplyServi
 const {
   extractUploadedItemImageUrlsFromHtml,
 } = require('./detectionAiService');
+const { runPythonHigh } = require('./pythonPriorityQueue');
 
 const PYTHON_SERVER = (
   process.env.PYTHON_SERVER || 'http://localhost:8001'
@@ -248,10 +249,13 @@ function buildPythonLlmOrderPayload(suggestPayload, ctx, items) {
 }
 
 async function callPythonLlmOrder(pythonPayload, ctx, attachments) {
-  const res = await axios.post(LLM_ORDER_URL, pythonPayload, {
-    headers: { 'Content-Type': 'application/json' },
-    timeout: LLM_ORDER_TIMEOUT_MS,
-  });
+  // High priority on shared Python gate (ahead of classify).
+  const res = await runPythonHigh(() =>
+    axios.post(LLM_ORDER_URL, pythonPayload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: LLM_ORDER_TIMEOUT_MS,
+    })
+  );
 
   console.log(
     '[LLM Order] Python engine raw response:',
