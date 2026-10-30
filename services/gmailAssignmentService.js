@@ -379,6 +379,7 @@ async function assignIncomingMessages({
 /**
  * Re-split open/queued among admins who have assignment active.
  * Drain newest queued first, then newest open — so recent mail hits active admins ASAP.
+ * Every queued and open thread is included. Flagged (pushed) threads stay put.
  */
 async function rebalanceAssignmentsAmongActiveAdmins() {
   const activeAdminIds = await getActiveAdminIds();
@@ -386,75 +387,87 @@ async function rebalanceAssignmentsAmongActiveAdmins() {
     return { moved: 0, activeCount: 0, reason: 'no_active_admins' };
   }
 
-  const newestFirst = { updatedAt: -1 };
-  const [queuedDocs, openDocs] = await Promise.all([
+  const newestFirst = { updatedAt: -1, _id: -1 };
+  const [queuedIds, openIds] = await Promise.all([
     EmailThreadAssignment.find({ status: 'queued' })
       .sort(newestFirst)
-      .limit(500),
+      .select('_id')
+      .lean(),
     EmailThreadAssignment.find({ status: 'open' })
       .sort(newestFirst)
-      .limit(500),
+      .select('_id')
+      .lean(),
   ]);
 
-  // Queued first (unassigned → active pool), then open redistribution; newest within each.
-  const docs = [...queuedDocs, ...openDocs].slice(0, 500);
-
-  if (!docs.length) {
+  // Snapshot ids before any save(). Saving bumps updatedAt, so a live
+  // newest-first query would revisit the same threads.
+  const orderedIds = [...queuedIds, ...openIds].map((row) => row._id);
+  if (!orderedIds.length) {
     return { moved: 0, activeCount: activeAdminIds.length, reason: 'empty' };
   }
 
   let moved = 0;
   // Start from current open loads, then adjust as we move threads in this pass.
   const loadByAdminId = await countOpenAssignmentsByAdmin(activeAdminIds);
+  const batchSize = 100;
 
-  for (const doc of docs) {
-    const contactEmail = doc.contactEmail || extractEmailAddress(doc.from);
-    const previousAssignee = doc.assignedTo ? String(doc.assignedTo) : null;
-    const wasQueued = doc.status === 'queued';
+  for (let offset = 0; offset < orderedIds.length; offset += batchSize) {
+    const chunkIds = orderedIds.slice(offset, offset + batchSize);
+    const docs = await EmailThreadAssignment.find({ _id: { $in: chunkIds } });
+    const docById = new Map(docs.map((doc) => [String(doc._id), doc]));
 
-    // Temporarily free this thread from the previous assignee so least-load
-    // sees the post-move world (avoids pinning everything to one person).
-    if (!wasQueued && previousAssignee && loadByAdminId.has(previousAssignee)) {
-      loadByAdminId.set(
-        previousAssignee,
-        Math.max(0, (loadByAdminId.get(previousAssignee) || 0) - 1),
-      );
-    }
+    for (const id of chunkIds) {
+      const doc = docById.get(String(id));
+      if (!doc || (doc.status !== 'queued' && doc.status !== 'open')) continue;
 
-    const { adminId, source } = await resolveAssignee({
-      mailboxEmail: doc.mailboxEmail,
-      contactEmail,
-      activeAdminIds,
-      loadByAdminId,
-      preferSticky: true,
-    });
-    if (!adminId) {
+      const contactEmail = doc.contactEmail || extractEmailAddress(doc.from);
+      const previousAssignee = doc.assignedTo ? String(doc.assignedTo) : null;
+      const wasQueued = doc.status === 'queued';
+
+      // Temporarily free this thread from the previous assignee so least-load
+      // sees the post-move world (avoids pinning everything to one person).
       if (!wasQueued && previousAssignee && loadByAdminId.has(previousAssignee)) {
         loadByAdminId.set(
           previousAssignee,
-          (loadByAdminId.get(previousAssignee) || 0) + 1,
+          Math.max(0, (loadByAdminId.get(previousAssignee) || 0) - 1),
         );
       }
-      continue;
-    }
 
-    const nextId = String(adminId);
-    if (!wasQueued && previousAssignee === nextId) {
+      const { adminId, source } = await resolveAssignee({
+        mailboxEmail: doc.mailboxEmail,
+        contactEmail,
+        activeAdminIds,
+        loadByAdminId,
+        preferSticky: true,
+      });
+      if (!adminId) {
+        if (!wasQueued && previousAssignee && loadByAdminId.has(previousAssignee)) {
+          loadByAdminId.set(
+            previousAssignee,
+            (loadByAdminId.get(previousAssignee) || 0) + 1,
+          );
+        }
+        continue;
+      }
+
+      const nextId = String(adminId);
+      if (!wasQueued && previousAssignee === nextId) {
+        loadByAdminId.set(nextId, (loadByAdminId.get(nextId) || 0) + 1);
+        continue;
+      }
+
+      doc.assignedTo = adminId;
+      doc.assignmentSource = source === 'sticky' ? 'sticky' : 'rebalance';
+      doc.status = 'open';
+      await doc.save();
+
       loadByAdminId.set(nextId, (loadByAdminId.get(nextId) || 0) + 1);
-      continue;
+
+      const plain = doc.toObject();
+      // Socket only — no bell notifications for rebalance/queue drain (can be hundreds).
+      emitRebalanceMove(plain, previousAssignee, nextId);
+      moved += 1;
     }
-
-    doc.assignedTo = adminId;
-    doc.assignmentSource = source === 'sticky' ? 'sticky' : 'rebalance';
-    doc.status = 'open';
-    await doc.save();
-
-    loadByAdminId.set(nextId, (loadByAdminId.get(nextId) || 0) + 1);
-
-    const plain = doc.toObject();
-    // Socket only — no bell notifications for rebalance/queue drain (can be hundreds).
-    emitRebalanceMove(plain, previousAssignee, nextId);
-    moved += 1;
   }
 
   console.log(
@@ -802,7 +815,7 @@ async function getAssignmentStatusForAdmin(adminId) {
   };
 }
 
-async function setAssignmentActiveForAdmin(adminId, active) {
+async function setAssignmentActiveForAdmin(adminId, active, options = {}) {
   const now = new Date();
   const update = {
     inboxAssignmentActive: Boolean(active),
@@ -826,16 +839,61 @@ async function setAssignmentActiveForAdmin(adminId, active) {
     console.warn('[Gmail Assignment] active-changed emit failed:', e.message);
   });
 
-  setImmediate(() => {
-    rebalanceAssignmentsAmongActiveAdmins().catch((err) => {
-      console.warn('[Gmail Assignment] rebalance after active toggle failed:', err.message);
+  if (!options.skipRebalance) {
+    setImmediate(() => {
+      rebalanceAssignmentsAmongActiveAdmins().catch((err) => {
+        console.warn('[Gmail Assignment] rebalance after active toggle failed:', err.message);
+      });
     });
-  });
+  }
 
   return {
     assignmentActive: Boolean(admin.inboxAssignmentActive),
     lastActivityAt: admin.inboxAssignmentLastActivityAt || null,
   };
+}
+
+/** No recorded use of My inbox for this long → leave the assignment pool. */
+const ASSIGNMENT_IDLE_MS = 30 * 60 * 1000;
+
+/**
+ * Turn off admins whose last My inbox activity is older than 30 minutes.
+ * Runs on the server so it still applies after the tab is closed or they leave the email page.
+ * One rebalance at the end, not one per admin.
+ */
+async function deactivateIdleAssignmentAdmins() {
+  const now = new Date();
+  // Active rows with no timestamp yet get one grace window instead of an immediate kick.
+  await Admin.updateMany(
+    {
+      inboxAssignmentActive: true,
+      $or: [
+        { inboxAssignmentLastActivityAt: null },
+        { inboxAssignmentLastActivityAt: { $exists: false } },
+      ],
+    },
+    { $set: { inboxAssignmentLastActivityAt: now } }
+  );
+
+  const cutoff = new Date(now.getTime() - ASSIGNMENT_IDLE_MS);
+  const stale = await Admin.find({
+    inboxAssignmentActive: true,
+    inboxAssignmentLastActivityAt: { $lte: cutoff },
+  })
+    .select('_id')
+    .lean();
+
+  if (!stale.length) return { deactivated: 0 };
+
+  for (const admin of stale) {
+    await setAssignmentActiveForAdmin(admin._id, false, { skipRebalance: true });
+  }
+
+  await rebalanceAssignmentsAmongActiveAdmins();
+  console.log(
+    `[Gmail Assignment] Deactivated ${stale.length} admin(s) after ${ASSIGNMENT_IDLE_MS / 60000} min idle`
+  );
+  return { deactivated: stale.length };
 }
 
 async function touchAssignmentActivity(adminId) {
@@ -930,6 +988,7 @@ module.exports = {
   getOnlineAdminIds,
   getAssignmentStatusForAdmin,
   setAssignmentActiveForAdmin,
+  deactivateIdleAssignmentAdmins,
   touchAssignmentActivity,
   assignIncomingMessages,
   rebalanceAssignmentsAmongActiveAdmins,
