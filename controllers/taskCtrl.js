@@ -2015,6 +2015,7 @@ const taskCtrl = {
         date: taskDate,
         createdBy,
         createdByType,
+        ...(createdByType === 'public' ? { ipAddress: getRealIP(req) } : {}),
         cashReceived,
         cashReceivedBy: cashReceivedBySanitized,
         paymentStatus: paymentStatus || 'Unpaid',
