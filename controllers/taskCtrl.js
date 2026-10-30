@@ -27,6 +27,7 @@ const { applyMailtoClickIdsToTask, findMatchingMailtoLead } = require('../servic
 const { usesAdminPricing, usesPublicAutomaticPricing, isBasketPercentageDiscount } = require('../utils/orderPricingMode');
 const { getRealIP } = require('../middlewares/rateLimiter');
 const bookingOffer = require('../services/bookingOffer');
+const { syncCancelledVanAssignment } = require('../services/cancelledVanAssignment');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -2136,6 +2137,7 @@ const taskCtrl = {
         }
         throw saveError;
       }
+      await syncCancelledVanAssignment(savedTask);
       if (claimedHoldId) {
         await bookingOffer.attachTask(claimedHoldId, savedTask._id);
       }
@@ -3248,6 +3250,7 @@ const taskCtrl = {
         { $set: { taskStatus } },
         { new: true },
       );
+      await syncCancelledVanAssignment(updatedTask);
 
       // If the task status has just been switched to Completed, refresh daily sheets
       if (updatedTask && updatedTask.taskStatus === 'Completed') {
@@ -4173,6 +4176,8 @@ const taskCtrl = {
         console.error('[RepeatCustomer] Error syncing repeatCustomer on updateTask:', err);
       }
 
+      await syncCancelledVanAssignment(updatedTask);
+
       console.log('Updated task:', JSON.stringify(updatedTask, null, 2));
 
       // Update Google Calendar event if it exists and relevant fields changed
@@ -4913,6 +4918,7 @@ const taskCtrl = {
 
       // Sauvegarder les montants mis à jour
       await task.save();
+      await syncCancelledVanAssignment(task);
       if (task.email) {
         await syncRepeatCustomerForEmail(task.email);
       }
@@ -5191,6 +5197,7 @@ const taskCtrl = {
         }
 
         await task.save(); // ✅ Sauvegarder SEULEMENT après confirmation
+        await syncCancelledVanAssignment(task);
         if (task.email) {
           await syncRepeatCustomerForEmail(task.email);
         }
@@ -5485,6 +5492,7 @@ const taskCtrl = {
         }
 
         await task.save();
+        await syncCancelledVanAssignment(task);
         if (task.email) {
           await syncRepeatCustomerForEmail(task.email);
         }
@@ -6295,6 +6303,7 @@ const taskCtrl = {
         }
 
         await task.save();
+        await syncCancelledVanAssignment(task);
         try {
           await syncTaskQuotationLink(task);
         } catch (err) {
@@ -6736,6 +6745,7 @@ const taskCtrl = {
           }
 
           await task.save();
+          await syncCancelledVanAssignment(task);
           try {
             await syncTaskQuotationLink(task);
           } catch (err) {
@@ -6968,6 +6978,7 @@ const taskCtrl = {
           }
 
           await task.save();
+          await syncCancelledVanAssignment(task);
           try {
             await syncTaskQuotationLink(task);
           } catch (err) {
@@ -7926,6 +7937,9 @@ const taskCtrl = {
 
       // Fetch updated tasks
       const updatedTasks = await Task.find({ _id: { $in: taskIds } });
+      for (const updatedTask of updatedTasks) {
+        await syncCancelledVanAssignment(updatedTask);
+      }
 
       // Update daily sheets for all affected dates
       try {

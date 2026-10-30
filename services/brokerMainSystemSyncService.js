@@ -5,6 +5,7 @@ const BrokerLead = require('../models/BrokerLead');
 const BrokerQuoteRequest = require('../models/BrokerQuoteRequest');
 const { User } = require('../models/User');
 const { syncTaskQuotationLink } = require('../services/quotationTaskMatchingService');
+const { syncCancelledVanAssignment } = require('../services/cancelledVanAssignment');
 const { emitNotificationToUser } = require('../socket');
 
 function splitContactName(lead) {
@@ -217,10 +218,15 @@ async function handleBrokerOrderMainSystemVisibility({
 
   if (isVisible && !wasVisible) {
     if (order.mainTaskId) {
-      await Task.findByIdAndUpdate(order.mainTaskId, {
-        taskStatus: 'New',
-        reasonForCancellation: '',
-      });
+      const restored = await Task.findByIdAndUpdate(
+        order.mainTaskId,
+        {
+          taskStatus: 'New',
+          reasonForCancellation: '',
+        },
+        { new: true },
+      );
+      await syncCancelledVanAssignment(restored);
       return;
     }
     if (lead && broker) {
@@ -230,13 +236,18 @@ async function handleBrokerOrderMainSystemVisibility({
   }
 
   if (!isVisible && order.mainTaskId) {
-    await Task.findByIdAndUpdate(order.mainTaskId, {
-      taskStatus: 'Cancelled',
-      reasonForCancellation:
-        order.status === 'Draft'
-          ? 'Broker order moved to draft'
-          : 'Broker order cancelled',
-    });
+    const cancelled = await Task.findByIdAndUpdate(
+      order.mainTaskId,
+      {
+        taskStatus: 'Cancelled',
+        reasonForCancellation:
+          order.status === 'Draft'
+            ? 'Broker order moved to draft'
+            : 'Broker order cancelled',
+      },
+      { new: true },
+    );
+    await syncCancelledVanAssignment(cancelled);
   }
 }
 

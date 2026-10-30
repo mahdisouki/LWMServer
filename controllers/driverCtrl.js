@@ -20,6 +20,7 @@ const {
   getShiftPendingStatusForUser,
 } = require('../services/shiftStartService');
 const dailySheetController = require('./dailySheetController');
+const { syncCancelledVanAssignment } = require('../services/cancelledVanAssignment');
 const payrollCtrl = require('./payrollCtrl');
 const adminId = "67cb6810c9e768ec25d39523"
 
@@ -1226,6 +1227,7 @@ const driverManagement = {
       // See: cron/sendReviewEmails.js
 
       await task.save();
+      await syncCancelledVanAssignment(task);
 
       // Recalculate payroll totalCash and DailySheet totalCash after setting cash on task
       try {
