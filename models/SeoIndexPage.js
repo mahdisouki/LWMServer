@@ -53,6 +53,9 @@ const seoIndexPageSchema = new Schema({
   inspectionResultLink: { type: String, default: null },
   lastInspectedAt: { type: Date, default: null },
   inspectError: { type: String, default: null },
+  indexRequestedAt: { type: Date, default: null },
+  indexRequestNotifyTime: { type: Date, default: null },
+  indexRequestError: { type: String, default: null },
   refreshJobId: { type: Schema.Types.ObjectId, ref: 'SeoRefreshJob', default: null },
   lastCrawledAt: { type: Date, default: null },
 }, { timestamps: true });

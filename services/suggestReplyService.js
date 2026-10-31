@@ -10,6 +10,7 @@ const {
   normalizeQuoteItems,
   enrichDetectionPricesFromCatalogue,
 } = require('./threadQuoteItemsService');
+const { runPythonHigh } = require('./pythonPriorityQueue');
 
 const PYTHON_SERVER = (
   process.env.PYTHON_SERVER || 'http://localhost:8001'
@@ -64,12 +65,13 @@ function buildContentMainForSuggest(contentMain, _photoCount) {
 }
 
 async function callPythonSuggestReply(pythonPayload, fallbackCategory, messageContext) {
-
-
-  const res = await axios.post(SUGGEST_REPLY_URL, pythonPayload, {
-    headers: { 'Content-Type': 'application/json' },
-    timeout: SUGGEST_REPLY_TIMEOUT_MS,
-  });
+  // High priority on shared Python gate (ahead of classify).
+  const res = await runPythonHigh(() =>
+    axios.post(SUGGEST_REPLY_URL, pythonPayload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: SUGGEST_REPLY_TIMEOUT_MS,
+    })
+  );
 
   // Raw Python engine body — before any Node normalize / merge.
   console.log(

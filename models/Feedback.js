@@ -30,6 +30,10 @@ const feedbackSchema = new mongoose.Schema({
         max: 5,
         required: true
     },
+    orderNumber: {
+        type: String,
+        trim: true,
+    },
     isVisible: {
         type: Boolean,
         default: false

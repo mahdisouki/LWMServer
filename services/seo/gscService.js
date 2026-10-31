@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const { OAuth2Client } = require('google-auth-library');
 const { isGscEnabled, getGscSiteUrl } = require('../../config/seoConfig');
 
-async function getSearchConsoleClient() {
+function getGoogleOAuthClient() {
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
   const refreshToken = process.env.SEO_GSC_REFRESH_TOKEN
@@ -15,7 +15,11 @@ async function getSearchConsoleClient() {
 
   const oauth2Client = new OAuth2Client(clientId, clientSecret);
   oauth2Client.setCredentials({ refresh_token: refreshToken });
-  return google.searchconsole({ version: 'v1', auth: oauth2Client });
+  return oauth2Client;
+}
+
+async function getSearchConsoleClient() {
+  return google.searchconsole({ version: 'v1', auth: getGoogleOAuthClient() });
 }
 
 async function fetchTopQueries(days = 28, rowLimit = 1000) {
@@ -158,9 +162,51 @@ async function inspectUrl(inspectionUrl) {
   };
 }
 
+function googleApiErrorMessage(error) {
+  return error?.response?.data?.error?.message
+    || error?.errors?.[0]?.message
+    || error?.message
+    || 'Google request failed';
+}
+
+/**
+ * Ask Google to crawl a URL via the Indexing API.
+ * Google only accepts this for pages with JobPosting or BroadcastEvent markup.
+ */
+async function requestIndexing(url) {
+  if (!isGscEnabled()) {
+    const err = new Error('Google Search Console is not enabled (set SEO_GSC_ENABLED=true)');
+    err.statusCode = 503;
+    throw err;
+  }
+
+  const indexing = google.indexing({ version: 'v3', auth: getGoogleOAuthClient() });
+  try {
+    const { data } = await indexing.urlNotifications.publish({
+      requestBody: {
+        url,
+        type: 'URL_UPDATED',
+      },
+    });
+    return {
+      url: data?.urlNotificationMetadata?.url || url,
+      notifyTime: data?.urlNotificationMetadata?.latestUpdate?.notifyTime || new Date().toISOString(),
+    };
+  } catch (error) {
+    const err = new Error(googleApiErrorMessage(error));
+    const status = Number(error?.response?.status || error?.code);
+    err.statusCode = Number.isFinite(status) && status >= 400 && status < 600 ? status : 502;
+    if (err.statusCode === 403) {
+      err.message = `${err.message}. The Indexing API only accepts job-posting and livestream pages, and the Google account needs the indexing scope.`;
+    }
+    throw err;
+  }
+}
+
 module.exports = {
   fetchTopQueries,
   fetchTopPages,
   fetchSiteSummary,
   inspectUrl,
+  requestIndexing,
 };

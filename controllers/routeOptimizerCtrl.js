@@ -15,6 +15,7 @@ const { truckDisplayName } = require('../utils/truckHelpers');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
+const { cancelledVanTruckId } = require('../services/cancelledVanAssignment');
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
   process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org';
 /** External optimizer: manual job groups (POST body: date, truck_contexts, job_groups). */
@@ -25,9 +26,6 @@ const EXTERNAL_COMPARE_ROUTES_API_PATH =
   process.env.EXTERNAL_COMPARE_ROUTES_API_PATH || '/api/v1/compare-routes';
 
 const ROUTE_PROPOSAL_TTL_MS = Number(process.env.ROUTE_PROPOSAL_TTL_MS) || 24 * 60 * 60 * 1000;
-
-/** Trucks skipped by reset-vans-for-date (e.g. "Cancelled unit" holding archived jobs). */
-const RESET_VANS_EXCLUDED_TRUCK_IDS = new Set(['694d6ec329bc56b433c9891b']);
 
 const OPTIMIZER_AXIOS_OPTS = {
   timeout: 120000,
@@ -43,9 +41,14 @@ function normalizeMongoId(value) {
   return null;
 }
 
+function excludedResetVanIds() {
+  const id = cancelledVanTruckId();
+  return id ? [id] : [];
+}
+
 function isExcludedFromResetVans(truckId) {
   const id = normalizeMongoId(truckId);
-  return id != null && RESET_VANS_EXCLUDED_TRUCK_IDS.has(id);
+  return id != null && excludedResetVanIds().includes(id);
 }
 
 function filterResetVansTruckIds(truckIds) {
@@ -2834,7 +2837,7 @@ async function discardRoutePreview(req, res) {
  * POST /api/route-optimizer/external/reset-vans-for-date
  * Body: { date: string|Date, truckIds?: string[] }
  * Clears truck routes for the date (empties van/task lists) and unassigns tasks + tipping requests.
- * Skips trucks in RESET_VANS_EXCLUDED_TRUCK_IDS (e.g. "Cancelled unit").
+ * Skips the cancelled van from CANCELLED_VAN_TRUCK_ID.
  */
 async function resetAllVansForDate(req, res) {
   try {
@@ -2847,7 +2850,7 @@ async function resetAllVansForDate(req, res) {
     }
 
     const { dateStr, startOfDay, endOfDay } = parsed;
-    const excludedTruckIds = [...RESET_VANS_EXCLUDED_TRUCK_IDS];
+    const excludedTruckIds = excludedResetVanIds();
     const hasTruckSelection = Array.isArray(requestedTruckIds) && requestedTruckIds.length > 0;
     const effectiveTruckIds = hasTruckSelection
       ? filterResetVansTruckIds(requestedTruckIds)

@@ -73,7 +73,7 @@ async function sendScheduledReviewEmails() {
                 await sendReviewRequestEmail({
                     email: task.email,
                     firstName: task.firstName,
-                    orderId: task._id.toString()
+                    orderNumber: task.orderNumber
                 });
 
                 // Mark this task as review email sent

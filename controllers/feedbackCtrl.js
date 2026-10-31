@@ -8,7 +8,7 @@ const sendReviewRequestEmail = require('../utils/sendReviewEmail');
 const feedbackCtrl = {
     createFeedback: async (req, res) => {
         try {
-            const { name, description, rate, isVisible, createdByType } = req.body;
+            const { name, description, rate, isVisible, createdByType, orderNumber } = req.body;
             const image = req.file ? req.file.path : null; // Handle image upload via Cloudinary
 
             // if (!image) {
@@ -19,13 +19,16 @@ const feedbackCtrl = {
                 return res.status(400).json({ message: "Rate is required and must be between 0 and 5" });
             }
 
+            const trimmedOrderNumber = typeof orderNumber === 'string' ? orderNumber.trim() : '';
+
             const newFeedback = new Feedback({
                 name,
                 description,
                 image,
                 rate,
                 isVisible: isVisible !== undefined ? isVisible : false,
-                createdByType: createdByType || 'user'
+                createdByType: createdByType || 'user',
+                ...(trimmedOrderNumber ? { orderNumber: trimmedOrderNumber } : {}),
             });
 
             await newFeedback.save();
@@ -78,7 +81,7 @@ const feedbackCtrl = {
                 if (maxRate) filters.rate.$lte = parseFloat(maxRate);
             }
 
-            const query = Feedback.find(filters);
+            const query = Feedback.find(filters).select('-orderNumber');
 
             const features = new APIfeatures(query, req.query)
                 .sorting()
@@ -109,7 +112,7 @@ const feedbackCtrl = {
     getFeedbackById: async (req, res) => {
         const { id } = req.params;
         try {
-            const feedback = await Feedback.findById(id);
+            const feedback = await Feedback.findById(id).select('-orderNumber');
             if (!feedback) {
                 return res.status(404).json({ message: "Feedback not found" });
             }
@@ -182,6 +185,7 @@ const feedbackCtrl = {
                     $or: [
                         { name: { $regex: searchTerm, $options: 'i' } },
                         { description: { $regex: searchTerm, $options: 'i' } },
+                        { orderNumber: { $regex: searchTerm, $options: 'i' } },
                     ],
                 };
             }
@@ -351,7 +355,7 @@ const feedbackCtrl = {
                     await sendReviewRequestEmail({
                         email: task.email,
                         firstName: task.firstName,
-                        orderId: task._id.toString()
+                        orderNumber: task.orderNumber
                     });
 
                     // Mark as sent - one time only!

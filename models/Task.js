@@ -180,6 +180,11 @@ const taskSchema = new Schema(
       enum: ['Admin', 'public', 'broker'],
       default: 'public',
     },
+    // Client IP captured at public checkout. Not sent by the website.
+    ipAddress: {
+      type: String,
+      required: false,
+    },
     // Unlocks admin editing and pricing on a public order without changing its origin.
     adminEditingEnabled: {
       type: Boolean,

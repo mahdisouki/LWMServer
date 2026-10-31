@@ -3,7 +3,7 @@ const path = require('path');
 const nodemailer = require('nodemailer');
 const { addStagingToSubject, addStagingBanner } = require('./emailHelpers');
 
-const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
+const sendReviewRequestEmail = async ({ email, firstName, orderNumber }) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -23,10 +23,14 @@ const sendReviewRequestEmail = async ({ email, firstName, orderId }) => {
   // Encode the name for URL parameter
   const encodedName = encodeURIComponent(firstName);
 
-  // For ratings 1-3, link to feedback page with name parameter
-  const feedbackLink1 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=1`;
-  const feedbackLink2 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=2`;
-  const feedbackLink3 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=3`;
+  const orderQuery = orderNumber
+    ? `&orderNumber=${encodeURIComponent(String(orderNumber).trim())}`
+    : '';
+
+  // For ratings 1-3, link to feedback page with name and order number
+  const feedbackLink1 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=1${orderQuery}`;
+  const feedbackLink2 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=2${orderQuery}`;
+  const feedbackLink3 = `https://www.londonwastemanagement.com/feedback?name=${encodedName}&rating=3${orderQuery}`;
 
   // For ratings 4-5, link to Trustpilot
   // (rating 4 and 5 both go to Trustpilot)

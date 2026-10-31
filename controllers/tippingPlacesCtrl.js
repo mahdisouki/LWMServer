@@ -17,6 +17,7 @@ const NUMBER_FIELDS = [
     'additionalFridgeCharge',
     'additionalSofaCharge',
     'minimumTonnage',
+    'tipDuration',
 ];
 
 const PRICE_KEYS = ['wood', 'inertConstruction', 'mixedGeneral'];

@@ -39,6 +39,7 @@ connectToDatabase()
     require('./cron/deleteExpiredCoupons');
     require('./cron/sendRetargetingFailedTasks');
     require('./cron/gmailWatchRenew');
+    require('./cron/gmailAssignmentIdle');
     require('./cron/scheduledEmailSender');
     require('./workers/paymentLinkRetryWorker');
     require('./cron/sendWasteTransferNotes');
@@ -49,6 +50,12 @@ connectToDatabase()
     require('./cron/updatePopularityScores');
     require('./cron/updateTopPostcodesCache');
     require('./cron/syncLsaOrderTrafficSources');
+
+    const {
+      startPendingClassificationWorker,
+    } = require('./services/pendingClassificationWorker');
+    await startPendingClassificationWorker();
+
     // sendBookingConfirmationEmail("67e1e4c301ba1a14b5f9eba5")
 
   })

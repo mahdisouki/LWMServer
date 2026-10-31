@@ -9,6 +9,7 @@ const {
   getThreadLatestListItem,
   getThreadMessageCount,
 } = require('./gmailService');
+const { runPythonLow } = require('./pythonPriorityQueue');
 
 const PYTHON_SERVER = (
   process.env.PYTHON_SERVER || 'http://localhost:8001'
@@ -67,27 +68,30 @@ async function classifyEmailViaPython({
   snippet = null,
   from_address = null,
 }) {
-  const res = await axios.post(
-    CLASSIFIER_URL,
-    {
-      subject: subject || '',
-      contentMain: contentMain || '',
-      snippet,
-      from_address,
-    },
-    {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: CLASSIFIER_TIMEOUT_MS,
-    }
-  );
+  // Low priority — yields to suggest_reply / order_llm on the shared Python gate.
+  return runPythonLow(async () => {
+    const res = await axios.post(
+      CLASSIFIER_URL,
+      {
+        subject: subject || '',
+        contentMain: contentMain || '',
+        snippet,
+        from_address,
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: CLASSIFIER_TIMEOUT_MS,
+      }
+    );
 
-  const data = res.data || {};
-  return {
-    category: data.category || null,
-    confidence:
-      typeof data.confidence === 'number' ? data.confidence : null,
-    reason: data.reason || null,
-  };
+    const data = res.data || {};
+    return {
+      category: data.category || null,
+      confidence:
+        typeof data.confidence === 'number' ? data.confidence : null,
+      reason: data.reason || null,
+    };
+  });
 }
 
 /** Update stored list snapshot for an already-classified thread. */
@@ -218,12 +222,20 @@ async function attachStoredAiCategories(adminId, messages = []) {
   return applyAiCategoryFields(messages, classMap);
 }
 
-/** New inbox: classify threads not yet stored, then attach fields. */
+/**
+ * New inbox: enqueue unclassified threads into durable pending queue
+ * (survives restarts; drained at low Python priority). Already-done threads
+ * only refresh list snapshot.
+ */
 async function enrichNewMessagesWithAiCategory(adminId, messages = []) {
   if (!messages.length) return messages;
 
+  const {
+    enqueuePendingClassification,
+  } = require('./pendingClassificationWorker');
+
   const threadIds = [...new Set(messages.map((m) => m.threadId).filter(Boolean))];
-  let classMap = await getClassificationMapForThreads(adminId, threadIds);
+  const classMap = await getClassificationMapForThreads(adminId, threadIds);
 
   for (const threadId of threadIds) {
     const existing = classMap.get(threadId);
@@ -240,11 +252,10 @@ async function enrichNewMessagesWithAiCategory(adminId, messages = []) {
     }
 
     try {
-      const stored = await classifyAndStoreThread(adminId, threadId);
-      classMap.set(threadId, stored);
+      await enqueuePendingClassification(adminId, threadId);
     } catch (err) {
       console.warn(
-        `[emailClassifier] skip thread ${threadId}:`,
+        `[emailClassifier] enqueue pending failed thread ${threadId}:`,
         err.message
       );
     }

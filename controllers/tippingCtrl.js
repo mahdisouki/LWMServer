@@ -808,6 +808,7 @@ const tippingController = {
           weeklySchedule: place.weeklySchedule,
           pricesPerTonne: place.pricesPerTonne,
           minimumTonnage: place.minimumTonnage,
+          tipDuration: place.tipDuration,
           paymentInstructions: place.paymentInstructions,
           notes: place.notes
         })),

@@ -70,6 +70,10 @@ const TippingPlaceSchema = new Schema({
     minimumTonnage: {
         type: Number,
     },
+    tipDuration: {
+        type: Number,
+        min: 0,
+    },
     paymentInstructions: {
         type: String,
     },
