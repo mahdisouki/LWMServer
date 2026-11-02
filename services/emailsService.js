@@ -16,6 +16,17 @@ const {
   isBankTransferPayment,
   buildBankTransferDetailsHtml,
 } = require('../utils/emailHelpers');
+function addressWithPostcode(address, postcode) {
+  const line = address == null ? '' : String(address).trim();
+  const code = String(postcode || '').trim();
+  if (!code) return line;
+
+  const compact = (value) => value.toUpperCase().replace(/\s+/g, '');
+  if (line && compact(line).includes(compact(code))) return line;
+
+  return line ? `${line}, ${code}` : code;
+}
+
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -535,7 +546,7 @@ module.exports = {
 
     const vars = {
       billingName: `${task.firstName} ${task.lastName}`,
-      billingAddress: task.billingAddress,
+      billingAddress: addressWithPostcode(task.billingAddress, task.postcode),
       email: task.email,
       postcode: task.postcode,
       phone: task.phoneNumber,
@@ -560,7 +571,7 @@ module.exports = {
       additionalNotes: task.additionalNotes,
       privateNotes: task.privateNotes,
       businessName: task.bussinessName,
-      collectionAddress: task.collectionAddress,
+      collectionAddress: addressWithPostcode(task.collectionAddress, task.postcode),
       // Payment status for stamps - hide when it's a refund invoice
       paymentStatusPaid: paymentStatusPaidDisplay,
       paymentStatusUnpaid: paymentStatusUnpaidDisplay,
