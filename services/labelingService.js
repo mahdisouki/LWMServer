@@ -4,6 +4,7 @@ const sharp = require('sharp');
 const LabelClass = require('../models/LabelClass');
 const LabelingJob = require('../models/LabelingJob');
 const LabeledImage = require('../models/LabeledImage');
+const StandardItem = require('../models/StandardItem');
 const QuotationRequest = require('../models/QuotationRequest');
 const Task = require('../models/Task');
 const AdditionalItemRequest = require('../models/AdditionalItemRequest');
@@ -296,6 +297,75 @@ function yoloClassNames(classes = []) {
     )
     .sort((a, b) => a.yoloIndex - b.yoloIndex)
     .map((item) => item.name);
+}
+
+function classNameKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+const SERVICE_CATEGORY_GROUPS = [
+  ['furniture', 'furniture'],
+  ['kitchen', 'kitchen'],
+  ['bathroom', 'bathroom'],
+  ['electronic', 'electronics'],
+  ['electrical', 'electronics'],
+  ['appliance', 'kitchen'],
+  ['outdoor', 'outdoor'],
+  ['garden', 'outdoor'],
+  ['other', 'other'],
+  ['general', 'other'],
+  ['misc', 'other'],
+];
+
+function groupForServiceCategories(categoryNames = []) {
+  const labels = categoryNames.map((name) => classNameKey(name)).filter(Boolean);
+  for (const label of labels) {
+    const exact = SERVICE_CATEGORY_GROUPS.find(([alias]) => alias === label);
+    if (exact) return exact[1];
+  }
+  let best = null;
+  for (const label of labels) {
+    for (const [alias, group] of SERVICE_CATEGORY_GROUPS) {
+      if (!label.includes(alias)) continue;
+      if (!best || alias.length > best.alias.length) best = { alias, group };
+    }
+  }
+  return best ? best.group : 'other';
+}
+
+/**
+ * Visible standard items that are not already a YAML class.
+ * `group` matches the labeling filters (furniture, kitchen, …) using the item's service category.
+ * Names are not inserted into LabelClass until a labeler picks one.
+ */
+async function listCatalogueNamesMissingFromYaml(_classes = []) {
+  const known = new Set([
+    ...DEFAULT_YOLO_CLASSES.map(classNameKey),
+    ...LOAD_SIZES.map(classNameKey),
+  ]);
+  const items = await StandardItem.find({ isHidden: { $ne: true } })
+    .select('itemName category')
+    .populate('category', 'name')
+    .lean();
+
+  const names = [];
+  const seen = new Set();
+  for (const item of items) {
+    const name = String(item?.itemName || '').trim();
+    const key = classNameKey(name);
+    if (!key || known.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    const categoryNames = (Array.isArray(item.category) ? item.category : [])
+      .map((category) => String(category?.name || '').trim())
+      .filter(Boolean);
+    names.push({
+      name,
+      group: groupForServiceCategories(categoryNames),
+    });
+  }
+
+  names.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  return names;
 }
 
 /**
@@ -659,6 +729,7 @@ module.exports = {
   syncAllLabelingJobs,
   toYoloRow,
   yoloClassNames,
+  listCatalogueNamesMissingFromYaml,
   buildDataYamlNames,
   publishLabeledImage,
   backfillLabeledImages,

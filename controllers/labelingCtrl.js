@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const LabelClass = require('../models/LabelClass');
 const LabelingJob = require('../models/LabelingJob');
 const LabeledImage = require('../models/LabeledImage');
+const StandardItem = require('../models/StandardItem');
 const labelingService = require('../services/labelingService');
 
 function parsePagination(query) {
@@ -538,9 +539,11 @@ const labelingCtrl = {
       const classes = await LabelClass.find().sort({ category: 1, name: 1 });
       const items = classes.filter((item) => item.category !== 'load');
       const loads = classes.filter((item) => item.category === 'load');
+      const catalogueNames = await labelingService.listCatalogueNamesMissingFromYaml(classes);
       return res.status(200).json({
         message: 'Label classes fetched',
         classes,
+        catalogueNames,
         categories: [
           { id: 'item', label: 'Items', classes: items },
           { id: 'load', label: 'Loads', classes: loads },
@@ -557,11 +560,25 @@ const labelingCtrl = {
   createClass: async (req, res) => {
     try {
       await labelingService.ensureDefaultClasses();
-      const name = String(req.body?.name || '').trim();
-      if (!name) {
+      const requested = String(req.body?.name || '').trim();
+      if (!requested) {
         return res.status(400).json({ message: 'Class name is required' });
       }
-      const category = req.body?.category === 'load' ? 'load' : 'item';
+
+      const escaped = requested.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const catalogueItem = await StandardItem.findOne({
+        isHidden: { $ne: true },
+        itemName: { $regex: `^${escaped}$`, $options: 'i' },
+      })
+        .select('itemName')
+        .lean();
+      const name = String(catalogueItem?.itemName || '').trim();
+      if (!name) {
+        return res.status(400).json({
+          message: 'Class names must match a standard item. Pick one from Standard items.',
+        });
+      }
+      const category = labelingService.LOAD_SIZES.includes(name) ? 'load' : 'item';
 
       const existing = await LabelClass.findOne({
         name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
