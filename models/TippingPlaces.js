@@ -61,6 +61,10 @@ const TippingPlaceSchema = new Schema({
         closeTime: {
             type: String,
         },
+        open24Hours: {
+            type: Boolean,
+            default: false,
+        },
     }],
     pricesPerTonne: {
         wood: { type: Number },
