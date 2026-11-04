@@ -41,6 +41,17 @@ function parseJsonField(value, fieldName) {
     }
 }
 
+function normalizeBoolean(value) {
+    if (value === true || value === 1) return true;
+    if (value === false || value === 0 || value == null) return false;
+    if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+        if (['false', '0', 'no', 'off', ''].includes(normalized)) return false;
+    }
+    return Boolean(value);
+}
+
 function normalizeNumber(value, label) {
     if (value == null || value === '' || value === 'null') return null;
     const numberValue = Number(value);
@@ -92,6 +103,10 @@ function normalizeTippingPlaceBody(body) {
 
     if (typeof data.phoneNumber === 'string') {
         data.phoneNumber = data.phoneNumber.trim();
+    }
+
+    if ('hidden' in data) {
+        data.hidden = normalizeBoolean(data.hidden);
     }
 
     return data;

@@ -74,6 +74,10 @@ const TippingPlaceSchema = new Schema({
         type: Number,
         min: 0,
     },
+    hidden: {
+        type: Boolean,
+        default: false,
+    },
     paymentInstructions: {
         type: String,
     },
