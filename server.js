@@ -221,6 +221,7 @@ const uploadRouter = require('./routes/upload');
 const statsRoute = require("./routes/stats");
 const gmailRoutes = require('./routes/gmail')
 const webexRoutes = require('./routes/webex')
+const yeastarRoutes = require('./routes/yeastar')
 const refundRoutes = require('./routes/refund')
 const paymentHistoRoutes = require('./routes/paymenthisto')
 const blogRoutes = require('./routes/blog')
@@ -279,6 +280,7 @@ app.use('/api/upload', uploadRouter)
 app.use('/api', quotationRoutes);
 app.use('/api/gmail', gmailRoutes);
 app.use('/api/webex', webexRoutes);
+app.use('/api/yeastar', yeastarRoutes);
 app.use('/api/blog', blogRoutes);
 app.use('/api', storageRoutes)
 app.use('/api', statsRoute)
