@@ -28,6 +28,7 @@ const { usesAdminPricing, usesPublicAutomaticPricing, isBasketPercentageDiscount
 const { getRealIP } = require('../middlewares/rateLimiter');
 const bookingOffer = require('../services/bookingOffer');
 const { syncCancelledVanAssignment } = require('../services/cancelledVanAssignment');
+const { resolveTaskLocation } = require('../services/mapboxGeocodeService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -2003,6 +2004,12 @@ const taskCtrl = {
         priorityToSet = pNorm;
       }
 
+      const resolvedLocation = await resolveTaskLocation({
+        location,
+        collectionAddress,
+        postcode,
+      });
+
       // Create the task
       const newTask = new Task({
         firstName,
@@ -2012,7 +2019,7 @@ const taskCtrl = {
         phoneNumber2,
         email,
         available,
-        location,
+        location: resolvedLocation,
         date: taskDate,
         createdBy,
         createdByType,

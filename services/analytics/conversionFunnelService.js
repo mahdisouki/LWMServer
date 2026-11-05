@@ -7,6 +7,7 @@ const { getPeriodLabels } = require('../../utils/analyticsDateRange');
 const { isGa4Enabled } = require('../../config/ga4Config');
 const { fetchPeriodTraffic, fetchTrafficByChannel } = require('./ga4Service');
 const { excludeMigratedOrdersFilter } = require('./taskFilters');
+const { TRAFFIC_SOURCES } = require('../../utils/trafficSource');
 
 const FUNNEL_STAGES = [
   { id: 'visitors', label: 'Website Visitors', expandable: true, expandKind: 'ga4Visitors' },
@@ -36,6 +37,16 @@ const ORDER_ORIGIN_META = {
   Admin: { id: 'admin', label: 'Admin', color: 'orange' },
   broker: { id: 'broker', label: 'Broker', color: 'purple' },
 };
+
+const ORDER_TRAFFIC_SOURCE_META = [
+  { id: TRAFFIC_SOURCES.GOOGLE_ADS, label: TRAFFIC_SOURCES.GOOGLE_ADS, color: 'green' },
+  { id: TRAFFIC_SOURCES.LSA, label: TRAFFIC_SOURCES.LSA, color: 'yellow' },
+  { id: TRAFFIC_SOURCES.MICROSOFT_ADS, label: TRAFFIC_SOURCES.MICROSOFT_ADS, color: 'blue' },
+  { id: TRAFFIC_SOURCES.INSTAGRAM, label: TRAFFIC_SOURCES.INSTAGRAM, color: 'purple' },
+  { id: TRAFFIC_SOURCES.FACEBOOK, label: TRAFFIC_SOURCES.FACEBOOK, color: 'pink' },
+  { id: TRAFFIC_SOURCES.DIRECT, label: TRAFFIC_SOURCES.DIRECT, color: 'gray' },
+  { id: TRAFFIC_SOURCES.ORGANIC, label: TRAFFIC_SOURCES.ORGANIC, color: 'orange' },
+];
 
 const CHANNEL_COLORS = [
   'blue', 'purple', 'green', 'orange', 'pink', 'cyan', 'indigo', 'amber',
@@ -159,6 +170,23 @@ async function loadQuotationStats(start, end) {
   };
 }
 
+function normalizeTrafficSourceExpression() {
+  return {
+    $let: {
+      vars: {
+        raw: { $trim: { input: { $ifNull: ['$trafficSource', ''] } } },
+      },
+      in: {
+        $cond: [
+          { $eq: ['$$raw', ''] },
+          TRAFFIC_SOURCES.ORGANIC,
+          '$$raw',
+        ],
+      },
+    },
+  };
+}
+
 async function loadOrdersByOrigin(start, end) {
   const rows = await Task.aggregate([
     {
@@ -171,7 +199,10 @@ async function loadOrdersByOrigin(start, end) {
     },
     {
       $group: {
-        _id: '$createdByType',
+        _id: {
+          origin: '$createdByType',
+          source: normalizeTrafficSourceExpression(),
+        },
         orders: { $sum: 1 },
         revenue: { $sum: { $ifNull: ['$totalPrice', 0] } },
       },
@@ -179,34 +210,45 @@ async function loadOrdersByOrigin(start, end) {
   ]);
 
   const byOrigin = {
-    public: { orders: 0, revenue: 0 },
-    admin: { orders: 0, revenue: 0 },
-    broker: { orders: 0, revenue: 0 },
+    public: { orders: 0, revenue: 0, sources: new Map() },
+    admin: { orders: 0, revenue: 0, sources: new Map() },
+    broker: { orders: 0, revenue: 0, sources: new Map() },
   };
 
   for (const row of rows) {
-    if (row._id === 'public') {
-      byOrigin.public = {
-        orders: row.orders || 0,
-        revenue: roundMoney(row.revenue || 0),
-      };
-    } else if (row._id === 'Admin') {
-      byOrigin.admin = {
-        orders: row.orders || 0,
-        revenue: roundMoney(row.revenue || 0),
-      };
-    } else if (row._id === 'broker') {
-      byOrigin.broker = {
-        orders: row.orders || 0,
-        revenue: roundMoney(row.revenue || 0),
-      };
-    }
+    const orders = row.orders || 0;
+    const revenue = row.revenue || 0;
+    const origin = row._id?.origin;
+    const source = row._id?.source || TRAFFIC_SOURCES.ORGANIC;
+    const bucket = origin === 'public'
+      ? byOrigin.public
+      : origin === 'Admin'
+        ? byOrigin.admin
+        : origin === 'broker'
+          ? byOrigin.broker
+          : null;
+    if (!bucket) continue;
+
+    bucket.orders += orders;
+    bucket.revenue += revenue;
+    const current = bucket.sources.get(source) || { orders: 0, revenue: 0 };
+    current.orders += orders;
+    current.revenue += revenue;
+    bucket.sources.set(source, current);
+  }
+
+  for (const key of Object.keys(byOrigin)) {
+    byOrigin[key].revenue = roundMoney(byOrigin[key].revenue);
   }
 
   const totalOrders =
     byOrigin.public.orders + byOrigin.admin.orders + byOrigin.broker.orders;
   const totalRevenue = roundMoney(
     byOrigin.public.revenue + byOrigin.admin.revenue + byOrigin.broker.revenue,
+  );
+
+  const shareOfOrders = (orders) => (
+    totalOrders > 0 ? roundPercent((orders / totalOrders) * 100) : 0
   );
 
   const orderOriginBreakdown = ['public', 'Admin', 'broker'].map((key) => {
@@ -217,8 +259,9 @@ async function loadOrdersByOrigin(start, end) {
       label: meta.label,
       orders: stats.orders,
       revenue: stats.revenue,
-      sharePercent: totalOrders > 0 ? roundPercent((stats.orders / totalOrders) * 100) : 0,
+      sharePercent: shareOfOrders(stats.orders),
       color: meta.color,
+      trafficSources: buildOriginTrafficSources(stats.sources, stats.orders),
     };
   });
 
@@ -233,6 +276,41 @@ async function loadOrdersByOrigin(start, end) {
     totalRevenue,
     orderOriginBreakdown,
   };
+}
+
+function buildOriginTrafficSources(sourceMap, originOrders) {
+  const knownSourceIds = new Set(ORDER_TRAFFIC_SOURCE_META.map((meta) => meta.id));
+  const shareOfOrigin = (orders) => (
+    originOrders > 0 ? roundPercent((orders / originOrders) * 100) : 0
+  );
+
+  const rows = [];
+  for (const meta of ORDER_TRAFFIC_SOURCE_META) {
+    const stats = sourceMap.get(meta.id);
+    if (!stats?.orders) continue;
+    rows.push({
+      id: meta.id,
+      label: meta.label,
+      orders: stats.orders,
+      revenue: roundMoney(stats.revenue),
+      sharePercent: shareOfOrigin(stats.orders),
+      color: meta.color,
+    });
+  }
+
+  for (const [source, stats] of sourceMap) {
+    if (knownSourceIds.has(source) || !stats.orders) continue;
+    rows.push({
+      id: slugifyChannel(source),
+      label: source,
+      orders: stats.orders,
+      revenue: roundMoney(stats.revenue),
+      sharePercent: shareOfOrigin(stats.orders),
+      color: 'slate',
+    });
+  }
+
+  return rows;
 }
 
 function buildLeadBreakdown(counts) {
@@ -299,7 +377,7 @@ function buildFunnelSteps(
         step.expandHint = `Total revenue £${orderStats.totalRevenue.toLocaleString('en-GB', {
           minimumFractionDigits: 0,
           maximumFractionDigits: 2,
-        })} · Public, admin & broker`;
+        })} · Origin and traffic source`;
       }
     }
 
@@ -423,6 +501,8 @@ async function getConversionFunnel({
       publicOrders: 'createdByType public',
       adminOrders: 'createdByType Admin',
       brokerOrders: 'createdByType broker',
+      orderTrafficSources:
+        'Same Task set as orders, grouped by createdByType then trafficSource. Missing or blank trafficSource is counted as Organic. Each origin section lists its own order count and revenue.',
       overallConversion: 'Public orders ÷ website visitors (GA4 totalUsers)',
     },
   };
