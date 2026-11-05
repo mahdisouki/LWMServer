@@ -578,8 +578,16 @@ const labelingCtrl = {
           message: 'Class names must match a standard item. Pick one from Standard items.',
         });
       }
-      const category = labelingService.LOAD_SIZES.includes(name) ? 'load' : 'item';
+      const coveredBy = labelingService.yamlNameForCatalogueItem(name);
+      if (coveredBy) {
+        const yamlClass = await LabelClass.findOne({ name: coveredBy });
+        return res.status(409).json({
+          message: `Already covered by the class "${coveredBy}"`,
+          class: yamlClass,
+        });
+      }
 
+      const category = labelingService.LOAD_SIZES.includes(name) ? 'load' : 'item';
       const existing = await LabelClass.findOne({
         name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
       });

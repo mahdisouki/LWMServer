@@ -238,6 +238,7 @@ async function ensureDefaultClasses() {
     },
   }));
   await LabelClass.bulkWrite(ops);
+  await collapseSpellingAliasClasses();
   await LabelClass.updateMany(
     { $or: [{ category: { $exists: false } }, { category: null }] },
     { $set: { category: 'item' } },
@@ -303,6 +304,71 @@ function classNameKey(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+// Ignore punctuation and case so "American (Double) Fridge" matches "American double fridge".
+function looseClassKey(value) {
+  return classNameKey(value).replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Standard-item names that are the same object as a frozen YAML class.
+// Keys and values are looseClassKey() forms.
+const YAML_SPELLING_ALIASES = {
+  'dining chair': 'dinning chair',
+  'dining table': 'dinning table',
+  'double mattress': 'double matresse',
+  'single mattress': 'single matress',
+  'exercise bike': 'exercice bike',
+  'vaccums hoovers': 'vaccum',
+  vacuum: 'vaccum',
+  vacuums: 'vaccum',
+  'vaccum hoovers': 'vaccum',
+  'vacuums hoovers': 'vaccum',
+  'washing machine removal': 'washing machine or tumble dryer',
+  'tumble dryer': 'washing machine or tumble dryer',
+  'washing machine': 'washing machine or tumble dryer',
+};
+
+function catalogueMatchKey(value) {
+  const loose = looseClassKey(value);
+  return YAML_SPELLING_ALIASES[loose] || loose;
+}
+
+function yamlNameForCatalogueItem(name) {
+  const key = catalogueMatchKey(name);
+  const pool = [...DEFAULT_YOLO_CLASSES, ...LOAD_SIZES];
+  return pool.find((yamlName) => catalogueMatchKey(yamlName) === key) || null;
+}
+
+async function repointLabels(fromName, toName) {
+  await LabelingJob.updateMany({ label: fromName }, { $set: { label: toName } });
+  await LabelingJob.updateMany(
+    { 'boxes.label': fromName },
+    { $set: { 'boxes.$[box].label': toName } },
+    { arrayFilters: [{ 'box.label': fromName }] },
+  );
+  await LabeledImage.updateMany(
+    { label: fromName },
+    { $set: { label: toName, exportedAt: null } },
+  );
+  await LabeledImage.updateMany(
+    { 'boxes.label': fromName },
+    { $set: { 'boxes.$[box].label': toName, exportedAt: null } },
+    { arrayFilters: [{ 'box.label': fromName }] },
+  );
+}
+
+async function collapseSpellingAliasClasses() {
+  const extras = await LabelClass.find({
+    name: { $nin: [...DEFAULT_YOLO_CLASSES, ...LOAD_SIZES] },
+  }).select('name');
+
+  for (const doc of extras) {
+    const yamlName = yamlNameForCatalogueItem(doc.name);
+    if (!yamlName || yamlName === doc.name) continue;
+    await repointLabels(doc.name, yamlName);
+    await LabelClass.deleteOne({ _id: doc._id });
+  }
+}
+
 const SERVICE_CATEGORY_GROUPS = [
   ['furniture', 'furniture'],
   ['kitchen', 'kitchen'],
@@ -335,13 +401,14 @@ function groupForServiceCategories(categoryNames = []) {
 
 /**
  * Visible standard items that are not already a YAML class.
+ * Spelling, punctuation, and combined YAML names are treated as that class.
  * `group` matches the labeling filters (furniture, kitchen, …) using the item's service category.
  * Names are not inserted into LabelClass until a labeler picks one.
  */
 async function listCatalogueNamesMissingFromYaml(_classes = []) {
   const known = new Set([
-    ...DEFAULT_YOLO_CLASSES.map(classNameKey),
-    ...LOAD_SIZES.map(classNameKey),
+    ...DEFAULT_YOLO_CLASSES.map(catalogueMatchKey),
+    ...LOAD_SIZES.map(catalogueMatchKey),
   ]);
   const items = await StandardItem.find({ isHidden: { $ne: true } })
     .select('itemName category')
@@ -352,7 +419,7 @@ async function listCatalogueNamesMissingFromYaml(_classes = []) {
   const seen = new Set();
   for (const item of items) {
     const name = String(item?.itemName || '').trim();
-    const key = classNameKey(name);
+    const key = catalogueMatchKey(name);
     if (!key || known.has(key) || seen.has(key)) continue;
     seen.add(key);
     const categoryNames = (Array.isArray(item.category) ? item.category : [])
@@ -729,6 +796,7 @@ module.exports = {
   syncAllLabelingJobs,
   toYoloRow,
   yoloClassNames,
+  yamlNameForCatalogueItem,
   listCatalogueNamesMissingFromYaml,
   buildDataYamlNames,
   publishLabeledImage,
