@@ -1,5 +1,6 @@
 const { getRealIP } = require('../middlewares/rateLimiter');
 const bookingOffer = require('../services/bookingOffer');
+const ExitOfferView = require('../models/ExitOfferView');
 
 function requireIp(req, res) {
   const ip = getRealIP(req);
@@ -11,12 +12,33 @@ function requireIp(req, res) {
 }
 
 const bookingHoldCtrl = {
+  recordExitPopupView: async (req, res) => {
+    try {
+      const ip = requireIp(req, res);
+      if (!ip) return undefined;
+
+      const device = bookingOffer.normalizeDevice(req.body?.device);
+      if (device === 'unknown') {
+        return res.status(400).json({ message: 'Device must be mobile or desktop' });
+      }
+
+      await ExitOfferView.create({ ip, device });
+      return res.status(201).json({ recorded: true });
+    } catch (error) {
+      console.error('Error recording exit popup view:', error);
+      return res.status(500).json({
+        message: 'Failed to record the exit popup view',
+        error: error.message,
+      });
+    }
+  },
+
   createBookingHold: async (req, res) => {
     try {
       const ip = requireIp(req, res);
       if (!ip) return undefined;
 
-      const result = await bookingOffer.createOrReuseHold(ip);
+      const result = await bookingOffer.createOrReuseHold(ip, req.body?.device);
       if (result.denied) {
         return res.status(429).json({
           active: false,
