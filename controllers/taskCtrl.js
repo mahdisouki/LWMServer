@@ -2133,6 +2133,7 @@ const taskCtrl = {
           });
         }
         claimedHoldId = claimed._id;
+        newTask.bookingDiscountValue = Math.round(preliminarySubtotal * (Number(appliedDiscountPercent) / 100) * 100) / 100;
       }
 
       let savedTask;

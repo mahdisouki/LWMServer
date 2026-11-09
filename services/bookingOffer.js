@@ -70,11 +70,22 @@ function serializeHold(hold) {
   };
 }
 
-async function createOrReuseHold(ip) {
+function normalizeDevice(device) {
+  return device === 'mobile' || device === 'desktop' ? device : 'unknown';
+}
+
+async function createOrReuseHold(ip, device) {
   const latest = await BookingHold.findOne({ ip }).sort({ createdAt: -1 });
+  const normalizedDevice = normalizeDevice(device);
 
   if (latest) {
-    if (isHoldActive(latest)) return { hold: latest, created: false };
+    if (isHoldActive(latest)) {
+      if (latest.device === 'unknown' && normalizedDevice !== 'unknown') {
+        latest.device = normalizedDevice;
+        await latest.save();
+      }
+      return { hold: latest, created: false };
+    }
 
     const ageMs = Date.now() - new Date(latest.createdAt).getTime();
     if (ageMs < CLAIM_WINDOW_MS) return claimDenial(latest.createdAt);
@@ -83,6 +94,7 @@ async function createOrReuseHold(ip) {
   const startedAt = new Date();
   const hold = await BookingHold.create({
     ip,
+    device: normalizedDevice,
     startedAt,
     expiresAt: new Date(startedAt.getTime() + HOLD_MS),
   });
@@ -177,6 +189,7 @@ module.exports = {
   basketOfferPercent,
   chooseBookingOrCoupon,
   serializeHold,
+  normalizeDevice,
   createOrReuseHold,
   getClaimEligibility,
   getHoldForIp,

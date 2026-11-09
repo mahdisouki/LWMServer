@@ -24,5 +24,6 @@ router.get('/order-traffic-sources/orders', ...admin, analyticsCtrl.getOrderTraf
 router.get('/paid-search-terms', ...admin, analyticsCtrl.getPaidSearchTerms);
 router.get('/admin-orders', ...admin, analyticsCtrl.getAdminOrders);
 router.get('/staff-working-hours', ...admin, analyticsCtrl.getStaffWorkingHours);
+router.get('/exit-offer', ...admin, analyticsCtrl.getExitOffer);
 
 module.exports = router;

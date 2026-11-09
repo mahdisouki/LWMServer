@@ -261,6 +261,26 @@ const interestTrackingLimiter = rateLimit({
   },
 });
 
+const EXIT_OFFER_VIEW_WINDOW_MS = 15 * 60 * 1000;
+const exitOfferViewLimiter = rateLimit({
+  windowMs: EXIT_OFFER_VIEW_WINDOW_MS,
+  max: 20,
+  message: 'Too many offer requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getRealIP(req),
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+  handler: (req, res) => {
+    return sendRateLimitResponse(
+      req,
+      res,
+      'Too many offer requests from this IP, please try again later.',
+      Math.ceil(EXIT_OFFER_VIEW_WINDOW_MS / 1000),
+    );
+  },
+});
+
 module.exports = {
   apiLimiter,
   strictLimiter,
@@ -272,6 +292,7 @@ module.exports = {
   exitIntentRevealLimiter,
   bookingHoldLimiter,
   bookingHoldReadLimiter,
+  exitOfferViewLimiter,
   interestTrackingLimiter,
   getRealIP,
 };
