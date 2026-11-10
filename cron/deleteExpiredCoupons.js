@@ -1,8 +1,8 @@
 const cron = require('node-cron');
 const Coupon = require('../models/Coupon');
 
-// Schedule a job to run once per day at 3:00 AM
-cron.schedule('0 3 * * *', async () => {
+// 03:20, after daily sheets have started at 03:00.
+cron.schedule('20 3 * * *', async () => {
     try {
         const now = new Date();
         // Calculate date 3 days ago from now
@@ -25,5 +25,5 @@ cron.schedule('0 3 * * *', async () => {
     }
 });
 
-console.log('Delete expired coupons scheduler running...');
+console.log('Delete expired coupons scheduler running (03:20 daily)...');
 

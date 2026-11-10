@@ -29,6 +29,20 @@ const toUTCMidnight = (dateInput) => {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
 };
 
+function taskIdsForBlueSheetDate(dayTasks) {
+  if (!Array.isArray(dayTasks)) return [];
+
+  return dayTasks
+    .map((task) => {
+      if (typeof task === 'string') return task;
+      if (task && task.taskId && (task.type === 'task' || task.type === 'Task')) {
+        return task.taskId;
+      }
+      return null;
+    })
+    .filter((id) => id !== null);
+}
+
 const blueSheetController = {
   // Generate blue sheets for all trucks for a specific date
   generateBlueSheetsForAllTrucks: async (req, res) => {
@@ -44,40 +58,20 @@ const blueSheetController = {
       const endOfDay = new Date(dateObj);
       endOfDay.setUTCHours(23, 59, 59, 999);
 
-      // Get all trucks
-      const trucks = await applyTruckStaffPopulate(Truck.find().populate('vanId'));
+      // One day only. The tasks map holds every date, so the full history is not loaded.
+      const dayRows = await Truck.aggregate([
+        {
+          $project: {
+            dayTasks: { $getField: { field: formattedDate, input: '$tasks' } },
+          },
+        },
+      ]);
       const blueSheets = [];
       const truckRouteTotals = [];
 
       // First pass: Calculate route totals for all trucks
-      for (const truck of trucks) {
-        let routeTotal = 0;
-        const taskIdsForDate = [];
-
-        // Get tasks for this truck and date
-        if (truck.tasks) {
-          let tasksForDate = [];
-          if (truck.tasks instanceof Map) {
-            tasksForDate = truck.tasks.get(formattedDate) || [];
-          } else if (typeof truck.tasks === 'object') {
-            tasksForDate = truck.tasks[formattedDate] || [];
-          }
-
-          // Extract task IDs
-          if (Array.isArray(tasksForDate)) {
-            const taskIds = tasksForDate
-              .map(task => {
-                if (typeof task === 'string') return task;
-                if (task && task.taskId && (task.type === 'task' || task.type === 'Task')) {
-                  return task.taskId;
-                }
-                return null;
-              })
-              .filter(id => id !== null);
-
-            taskIdsForDate.push(...taskIds);
-          }
-        }
+      for (const row of dayRows) {
+        const taskIdsForDate = taskIdsForBlueSheetDate(row.dayTasks);
 
         // Get tasks for this truck and date (includes paid, partial paid, and unpaid)
         const tasks = await Task.find({
@@ -87,11 +81,12 @@ const blueSheetController = {
         });
 
         // Calculate route total (sum of all task prices for this van route)
-        routeTotal = tasks.reduce((sum, task) => sum + (task.totalPrice || 0), 0);
+        const routeTotal = tasks.reduce((sum, task) => sum + (task.totalPrice || 0), 0);
 
         truckRouteTotals.push({
-          truckId: truck._id,
+          truckId: row._id,
           routeTotal,
+          taskIdsForDate,
         });
       }
 
@@ -99,8 +94,8 @@ const blueSheetController = {
       const totalIn = truckRouteTotals.reduce((sum, t) => sum + t.routeTotal, 0);
       
       console.log('📊 BlueSheet Calculation Debug:');
-      console.log('Total trucks:', trucks.length);
-      console.log('Truck route totals:', truckRouteTotals);
+      console.log('Total trucks:', dayRows.length);
+      console.log('Truck route totals:', truckRouteTotals.map(({ truckId, routeTotal }) => ({ truckId, routeTotal })));
       console.log('Total In (sum of all route totals):', totalIn);
 
       // Tipping: use tipdate when set (day the tip applies to), else fall back to createdAt
@@ -116,10 +111,14 @@ const blueSheetController = {
         ],
       };
 
-      // Second pass: Generate blue sheets for each truck
-      for (const truck of trucks) {
-        const truckData = truckRouteTotals.find(t => t.truckId.toString() === truck._id.toString());
-        const routeTotal = truckData ? truckData.routeTotal : 0;
+      // Second pass: one truck at a time, without the task history.
+      for (const truckData of truckRouteTotals) {
+        const truck = await applyTruckStaffPopulate(
+          Truck.findById(truckData.truckId).select('name vanId driverId helperId').populate('vanId')
+        );
+        if (!truck) continue;
+
+        const routeTotal = truckData.routeTotal;
 
         // Calculate commission percentage and amount (Column E and F)
         let commissionPercentage = 0;
@@ -199,28 +198,7 @@ const blueSheetController = {
           fuel = dailySheetForFuel.fuelLogs.reduce((sum, log) => sum + (log.amount || 0), 0);
         }
 
-        // Get tasks for this date
-        let taskIdsForDate = [];
-        if (truck.tasks) {
-          let tasksForDate = [];
-          if (truck.tasks instanceof Map) {
-            tasksForDate = truck.tasks.get(formattedDate) || [];
-          } else if (typeof truck.tasks === 'object') {
-            tasksForDate = truck.tasks[formattedDate] || [];
-          }
-
-          if (Array.isArray(tasksForDate)) {
-            taskIdsForDate = tasksForDate
-              .map(task => {
-                if (typeof task === 'string') return task;
-                if (task && task.taskId && (task.type === 'task' || task.type === 'Task')) {
-                  return task.taskId;
-                }
-                return null;
-              })
-              .filter(id => id !== null);
-          }
-        }
+        const taskIdsForDate = truckData.taskIdsForDate;
 
         // Calculate Stripe commission (1.4% + 20p per transaction)
         let stripeCom = 0;

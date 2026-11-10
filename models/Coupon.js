@@ -101,6 +101,10 @@ const couponSchema = new Schema({
   }
 }, { timestamps: true });
 
+// 03:20 cleanup: deleteMany({ usageCount: 0, expiresAt: { $lt } }).
+// Equality on usageCount first, then the expiry range, so the delete does not scan every coupon.
+couponSchema.index({ usageCount: 1, expiresAt: 1 });
+
 // Pre-save hook to calculate expiresAt based on expirationDuration (random) or endDate (custom)
 couponSchema.pre('save', function (next) {
   if (this.type === 'random' && this.isNew && this.expirationDuration) {

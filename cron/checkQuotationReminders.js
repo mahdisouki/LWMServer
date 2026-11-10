@@ -5,8 +5,6 @@ const {
   AUTO_RETARGET_DAYS,
   AUTO_RETARGET_DELAY_MS,
   AUTO_RETARGET_HOUR,
-  isAutoRetargetEligible,
-  isReminderRetargetDue,
 } = require('../services/quotationTaskMatchingService');
 const {
   processQuotationForRetargeting,
@@ -30,6 +28,43 @@ const RETARGETING_BATCH_DELAY_MS = Number.parseInt(
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function serverTimeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+}
+
+/** Same instant as getAutoRetargetEligibleAt: local calendar day + 2, at the auto hour. */
+function autoRetargetDueExpr(now) {
+  const timeZone = serverTimeZone();
+  const shifted = {
+    $dateAdd: {
+      startDate: '$createdAt',
+      unit: 'day',
+      amount: AUTO_RETARGET_DAYS,
+      timezone: timeZone,
+    },
+  };
+
+  return {
+    $let: {
+      vars: { shifted },
+      in: {
+        $lte: [
+          {
+            $dateFromParts: {
+              year: { $year: { date: '$$shifted', timezone: timeZone } },
+              month: { $month: { date: '$$shifted', timezone: timeZone } },
+              day: { $dayOfMonth: { date: '$$shifted', timezone: timeZone } },
+              hour: AUTO_RETARGET_HOUR,
+              timezone: timeZone,
+            },
+          },
+          now,
+        ],
+      },
+    },
+  };
 }
 
 function dedupeQuotationsById(quotations) {
@@ -159,22 +194,20 @@ async function checkQuotationReminders() {
 
     const autoCutoff = new Date(now.getTime() - AUTO_RETARGET_DELAY_MS);
 
-    const [reminderCandidates, autoCandidates] = await Promise.all([
+    // Due rows only. Reminder quotes wait for reminderDate. Auto quotes keep the
+    // previous 48h cutoff, plus the local 2-day / hour rule that used to run in memory.
+    const [reminderDue, autoDue] = await Promise.all([
       QuotationRequest.find({
-        reminderDate: { $ne: null },
+        reminderDate: { $ne: null, $lte: now },
         retargetingEmailSent: { $ne: true },
       }),
       QuotationRequest.find({
         reminderDate: null,
         retargetingEmailSent: { $ne: true },
         createdAt: { $lte: autoCutoff },
+        $expr: autoRetargetDueExpr(now),
       }),
     ]);
-
-    const reminderDue = reminderCandidates.filter((q) =>
-      isReminderRetargetDue(q, now),
-    );
-    const autoDue = autoCandidates.filter((q) => isAutoRetargetEligible(q, now));
 
     const quotationsToProcess = dedupeQuotationsById([...reminderDue, ...autoDue]).sort(
       (a, b) => new Date(a.createdAt) - new Date(b.createdAt),

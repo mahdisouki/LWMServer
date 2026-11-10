@@ -46,11 +46,36 @@ async function processSubscriptionReminders(now = new Date()) {
     errors: [],
   };
 
+  // Same window as the loop: today >= start of renewal day minus remindDaysBefore.
+  // Missing remindDaysBefore matches the schema default of 7.
   const subscriptions = await Subscription.find({
     status: 'Active',
     billingFrequency: { $in: ['Monthly', 'Yearly'] },
     nextRenewalDate: { $ne: null },
     reminderAdminId: { $ne: null },
+    $expr: {
+      $lte: [
+        {
+          $subtract: [
+            {
+              $dateFromParts: {
+                year: { $year: { date: '$nextRenewalDate', timezone: 'UTC' } },
+                month: { $month: { date: '$nextRenewalDate', timezone: 'UTC' } },
+                day: { $dayOfMonth: { date: '$nextRenewalDate', timezone: 'UTC' } },
+                timezone: 'UTC',
+              },
+            },
+            {
+              $multiply: [
+                { $ifNull: ['$remindDaysBefore', 7] },
+                24 * 60 * 60 * 1000,
+              ],
+            },
+          ],
+        },
+        today,
+      ],
+    },
   }).populate('reminderAdminId', 'username email firstName lastName officialEmail');
 
   summary.checked = subscriptions.length;
@@ -65,6 +90,8 @@ async function processSubscriptionReminders(now = new Date()) {
       const alreadySentThisCycle =
         sub.lastReminderSentAt &&
         startOfUtcDay(sub.lastReminderSentAt).getTime() >= remindOn.getTime();
+
+      let changed = false;
 
       if (today.getTime() >= remindOn.getTime() && !alreadySentThisCycle) {
         const admin = sub.reminderAdminId;
@@ -95,6 +122,7 @@ async function processSubscriptionReminders(now = new Date()) {
 
         sub.lastReminderSentAt = now;
         summary.reminded += 1;
+        changed = true;
       } else {
         summary.skipped += 1;
       }
@@ -105,10 +133,13 @@ async function processSubscriptionReminders(now = new Date()) {
         if (advanced && advanced.getTime() !== sub.nextRenewalDate.getTime()) {
           sub.nextRenewalDate = advanced;
           summary.advanced += 1;
+          changed = true;
         }
       }
 
-      await sub.save();
+      if (changed) {
+        await sub.save();
+      }
     } catch (error) {
       summary.errors.push({
         id: sub._id?.toString?.(),

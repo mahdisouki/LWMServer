@@ -18,12 +18,12 @@ async function runRenewal() {
   }
 }
 
-// Run daily at 3:00 AM to renew watches expiring within 24h
-cron.schedule('0 3 * * *', runRenewal);
+// 03:40, after daily sheets have started at 03:00. Watches expiring within 24h are renewed.
+cron.schedule('40 3 * * *', runRenewal);
 
 // Run once shortly after server start to catch missing/expired watches
 setTimeout(runRenewal, 30 * 1000);
 
-console.log('[Gmail Watch Renew] Scheduler running (daily 03:00 + on startup)');
+console.log('[Gmail Watch Renew] Scheduler running (daily 03:40 + on startup)');
 
 module.exports = { runRenewal };

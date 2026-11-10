@@ -38,37 +38,29 @@ const dailySheetController = {
       const dailySheets = [];
 
       for (const driver of drivers) {
-        const trucks = await Truck.find({ driverId: driver._id });
+        // One day only. The tasks map holds every date, so the full document is not loaded.
+        const trucks = await Truck.aggregate([
+          { $match: { driverId: driver._id } },
+          {
+            $project: {
+              vanId: 1,
+              helperId: 1,
+              tasksType: { $type: '$tasks' },
+              dayTasks: { $getField: { field: formattedDate, input: '$tasks' } },
+            },
+          },
+        ]);
 
         for (const truck of trucks) {
           const allTaskIdsForDate = [];
           const allTippingRequestIdsForDate = [];
 
-          if (!truck.tasks) {
+          if (truck.tasksType === 'missing' || truck.tasksType === 'null') {
             console.log(`Truck ${truck._id} has no tasks`);
             continue;
           }
 
-          let tasksForDate = [];
-
-          // Handle both Map and Object structures
-          if (truck.tasks instanceof Map) {
-            // If it's a Map
-            const taskKeys = Array.from(truck.tasks.keys());
-            console.log(`Truck ${truck._id} task keys (Map):`, taskKeys);
-            if (!taskKeys.includes(formattedDate)) {
-              console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
-            }
-            tasksForDate = truck.tasks.get(formattedDate) || [];
-          } else if (typeof truck.tasks === 'object') {
-            // If it's an Object
-            const taskKeys = Object.keys(truck.tasks);
-            console.log(`Truck ${truck._id} task keys (Object):`, taskKeys);
-            if (!taskKeys.includes(formattedDate)) {
-              console.log(`⚠️ No tasks for ${formattedDate}. Try one of these: ${taskKeys.join(', ')}`);
-            }
-            tasksForDate = truck.tasks[formattedDate] || [];
-          }
+          const tasksForDate = Array.isArray(truck.dayTasks) ? truck.dayTasks : [];
 
           console.log(`Tasks for ${formattedDate} in truck ${truck._id}:`, tasksForDate);
 

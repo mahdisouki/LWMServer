@@ -166,13 +166,13 @@ async function autoEndShifts() {
   }
 }
 
-// Schedule the cron job to run every day at midnight.
+// 00:15, after the midnight notification delete. Each open shift calls Mapbox.
 // Cron format: minute hour day month dayOfWeek
-// '0 0 * * *' means: at minute 0 of hour 0 every day.
-cron.schedule('0 0 * * *', autoEndShifts);
+// '15 0 * * *' means: at minute 15 of hour 0 every day.
+cron.schedule('15 0 * * *', autoEndShifts);
 
 console.log(
-  '[Auto End Shifts] Scheduler running - will auto-end shifts at midnight daily'
+  '[Auto End Shifts] Scheduler running - will auto-end shifts at 00:15 daily'
 );
 
 module.exports = { autoEndShifts };
