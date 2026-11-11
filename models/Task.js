@@ -276,7 +276,7 @@ const taskSchema = new Schema(
     applySundayFee: { type: Boolean, default: false }, // Admin option to apply Sunday fee
     priority:{
       type:String,
-      enum: ['low', 'medium', 'high'],
+      enum: ['low', 'high', 'critical'],
       default: 'low',
     },
     redflag: { type: Boolean, default: false },

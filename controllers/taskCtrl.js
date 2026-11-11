@@ -635,7 +635,7 @@ async function createPersistentPaymentLink({
   return { paymentLink, stableLink };
 }
 
-const TASK_PRIORITIES = ['low', 'medium', 'high'];
+const TASK_PRIORITIES = ['low', 'high', 'critical'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
@@ -1997,7 +1997,7 @@ const taskCtrl = {
         const pNorm = normalizeTaskPriority(priority);
         if (pNorm === null) {
           return res.status(400).json({
-            message: 'Invalid priority. Allowed values: low, medium, high.',
+            message: 'Invalid priority. Allowed values: low, high, critical.',
             error: 'INVALID_PRIORITY',
           });
         }
@@ -4066,7 +4066,7 @@ const taskCtrl = {
           const pNorm = normalizeTaskPriority(rawPriority);
           if (pNorm === null) {
             return res.status(400).json({
-              message: 'Invalid priority. Allowed values: low, medium, high.',
+              message: 'Invalid priority. Allowed values: low, high, critical.',
               error: 'INVALID_PRIORITY',
             });
           }
