@@ -1543,6 +1543,7 @@ async function calculateTaskDuration(allItems) {
 }
 
 const VAN_LOAD_OPTION_PERCENT = {
+  'Mini Load': 10,
   '1/4 Load': 25,
   '1/2 Load': 50,
   '3/4 Load': 75,
@@ -1552,7 +1553,7 @@ const VAN_LOAD_OPTION_PERCENT = {
 /**
  * Calculate van load percentage (0–100) from task items.
  * - Standard items: use spaceOfVan from item or StandardItem; add (quantity/spaceOfVan)*100.
- * - Custom items with vanLoadOption: add quantity * mapped percentage (1/4→25, 1/2→50, 3/4→75, Full→100).
+ * - Custom items with vanLoadOption: add quantity * mapped percentage (Mini→10, 1/4→25, 1/2→50, 3/4→75, Full→100).
  * Result is capped at 100 and rounded.
  */
 async function calculateVanLoadPercentage(task) {
@@ -1946,7 +1947,7 @@ const taskCtrl = {
         );
       }
       // Merge custom items (objects): validate vanLoadOption; when set, copy times/position from matching StandardItem
-      const VAN_LOAD_OPTIONS = ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
+      const VAN_LOAD_OPTIONS = ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
       if (orderObjects.length > 0) {
         console.log('objects', orderObjects);
         const customItems = [];
@@ -3691,7 +3692,7 @@ const taskCtrl = {
           });
 
           if (validObjects.length > 0) {
-            const VAN_LOAD_OPTIONS = ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
+            const VAN_LOAD_OPTIONS = ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
             const customItems = [];
             for (const obj of validObjects) {
               console.log('Processing custom object:', JSON.stringify(obj, null, 2));
@@ -6126,11 +6127,11 @@ const taskCtrl = {
 
           const matchingPayment = paymentIds.ids.length
             ? await PaymentHistory.findOne({
-                taskId: task._id,
-                paymentType: 'Stripe',
-                status: 'success',
-                transactionId: { $in: paymentIds.ids },
-              }).select('_id transactionId')
+              taskId: task._id,
+              paymentType: 'Stripe',
+              status: 'success',
+              transactionId: { $in: paymentIds.ids },
+            }).select('_id transactionId')
             : null;
 
           if (matchingPayment) {
