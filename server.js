@@ -237,6 +237,7 @@ const whatsappRoutes = require('./routes/whatsapp');
 const emailTemplateRoutes = require('./routes/emailTemplate');
 const logRouter = require('./routes/log');
 const customerRoutes = require('./routes/customerRoutes');
+const blockedCustomerRoutes = require('./routes/blockedCustomer');
 const feedbackRoutes = require('./routes/feedback');
 const announcementRoutes = require('./routes/announcement');
 const analyticsRoutes = require('./routes/analytics');
@@ -289,6 +290,7 @@ app.use('/api', serviceCategoryRoutes);
 app.use('/api', notificationRoutes);
 app.use('/api', emailTemplateRoutes)
 app.use('/api/customers', customerRoutes);
+app.use('/api/blocked-customers', blockedCustomerRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/analytics', analyticsRoutes);

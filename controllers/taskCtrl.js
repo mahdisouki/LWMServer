@@ -29,6 +29,11 @@ const { getRealIP } = require('../middlewares/rateLimiter');
 const bookingOffer = require('../services/bookingOffer');
 const { syncCancelledVanAssignment } = require('../services/cancelledVanAssignment');
 const { resolveTaskLocation } = require('../services/mapboxGeocodeService');
+const {
+  findActiveBlock,
+  applyBlockedMatch,
+  notifyAdminsBlockedCustomer,
+} = require('../services/blockedCustomerService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -586,6 +591,16 @@ async function createDirectLinkedAdditionalTaskFromItems({
     items: normalizedItems,
     taskStatus: 'New',
   });
+
+  const childBlockedMatch = await findActiveBlock(childTask);
+  if (applyBlockedMatch(childTask, childBlockedMatch)) {
+    await childTask.save();
+    try {
+      await notifyAdminsBlockedCustomer(childTask);
+    } catch (notificationError) {
+      console.error('Error sending blocked-customer notification:', notificationError);
+    }
+  }
 
   const labelingService = require('../services/labelingService');
   labelingService.enqueueTaskImages(childTask).catch((enqueueError) => {
@@ -2139,6 +2154,8 @@ const taskCtrl = {
 
       let savedTask;
       try {
+        const blockedMatch = await findActiveBlock(newTask);
+        applyBlockedMatch(newTask, blockedMatch);
         savedTask = await newTask.save();
       } catch (saveError) {
         if (claimedHoldId) {
@@ -2305,6 +2322,14 @@ const taskCtrl = {
           console.error('❌ Error creating calendar event:', calendarError.message);
         }
         // Optionally log this error but don't throw
+      }
+
+      if (savedTask.blockedCustomer) {
+        try {
+          await notifyAdminsBlockedCustomer(savedTask);
+        } catch (notificationError) {
+          console.error('Error sending blocked-customer notification:', notificationError);
+        }
       }
 
       res.status(201).json({
@@ -4099,6 +4124,34 @@ const taskCtrl = {
         }
       }
 
+      delete updates.blockedCustomer;
+      delete updates.blockedMatchOn;
+      delete updates.blockedReason;
+      delete updates.blockedCustomerId;
+
+      const identityFields = ['email', 'phoneNumber', 'phoneNumber2', 'collectionAddress'];
+      const identityChanged = identityFields.some((field) =>
+        Object.prototype.hasOwnProperty.call(updates, field),
+      );
+      let notifyBlocked = false;
+      if (identityChanged) {
+        const nextIdentity = {
+          email: updates.email !== undefined ? updates.email : oldTask.email,
+          phoneNumber: updates.phoneNumber !== undefined ? updates.phoneNumber : oldTask.phoneNumber,
+          phoneNumber2: updates.phoneNumber2 !== undefined ? updates.phoneNumber2 : oldTask.phoneNumber2,
+          collectionAddress:
+            updates.collectionAddress !== undefined ? updates.collectionAddress : oldTask.collectionAddress,
+        };
+        const blockedMatch = await findActiveBlock(nextIdentity);
+        applyBlockedMatch(updates, blockedMatch);
+        const sameBlock = Boolean(
+          blockedMatch &&
+          oldTask.blockedCustomer === true &&
+          String(oldTask.blockedCustomerId || '') === String(blockedMatch.block._id),
+        );
+        notifyBlocked = Boolean(blockedMatch) && !sameBlock;
+      }
+
       console.log('=== FINAL UPDATE ===');
       console.log('Updates to apply:', JSON.stringify(updates, null, 2));
 
@@ -4108,6 +4161,14 @@ const taskCtrl = {
         { $set: updates },
         { new: true },
       );
+
+      if (notifyBlocked && updatedTask) {
+        try {
+          await notifyAdminsBlockedCustomer(updatedTask);
+        } catch (notificationError) {
+          console.error('Error sending blocked-customer notification:', notificationError);
+        }
+      }
 
       // If payment was manually marked as paid (cash/BankTransfer/admin), increment coupon usage once.
       // Online payments already do this in their confirmation/webhook handlers, guarded by couponUsageIncremented.

@@ -7,6 +7,11 @@ const { User } = require('../models/User');
 const { syncTaskQuotationLink } = require('../services/quotationTaskMatchingService');
 const { syncCancelledVanAssignment } = require('../services/cancelledVanAssignment');
 const { emitNotificationToUser } = require('../socket');
+const {
+  findActiveBlock,
+  applyBlockedMatch,
+  notifyAdminsBlockedCustomer,
+} = require('../services/blockedCustomerService');
 
 function splitContactName(lead) {
   if (lead.firstName?.trim()) {
@@ -171,6 +176,9 @@ async function syncBrokerOrderToMainSystem({ order, lead, broker, actorName }) {
     priority: (order.priority || 'Medium').toLowerCase(),
   });
 
+  const blockedMatch = await findActiveBlock(task);
+  applyBlockedMatch(task, blockedMatch);
+
   const savedTask = await task.save();
 
   if (quotationId) {
@@ -183,6 +191,14 @@ async function syncBrokerOrderToMainSystem({ order, lead, broker, actorName }) {
 
   order.mainTaskId = savedTask._id;
   await order.save();
+
+  if (savedTask.blockedCustomer) {
+    try {
+      await notifyAdminsBlockedCustomer(savedTask);
+    } catch (notificationError) {
+      console.error('[Broker Sync] blocked customer notification error:', notificationError);
+    }
+  }
 
   await notifyAdmins({
     type: 'Orders',

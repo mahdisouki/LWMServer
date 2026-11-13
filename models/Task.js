@@ -284,6 +284,10 @@ const taskSchema = new Schema(
     redflagNote: { type: String },
     redflagBy: { type: Schema.Types.ObjectId, ref: 'User' },
     redflagAt: { type: Date },
+    blockedCustomer: { type: Boolean, default: false },
+    blockedMatchOn: { type: [String], default: [] },
+    blockedReason: { type: String, default: '' },
+    blockedCustomerId: { type: Schema.Types.ObjectId, ref: 'BlockedCustomer', default: null },
     quotationId: {
       type: Schema.Types.ObjectId,
       ref: 'QuotationRequest', // Reference to your Quotation model
