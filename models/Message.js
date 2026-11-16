@@ -43,6 +43,9 @@ const MessageSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+// 02:00 cleanup: deleteMany({ createdAt: { $lt } }). Without this, that delete scans every message.
+MessageSchema.index({ createdAt: 1 });
+
 MessageSchema.pre('save', function normalizeSeenBy(next) {
   if (Array.isArray(this.seenBy)) {
     for (const entry of this.seenBy) {

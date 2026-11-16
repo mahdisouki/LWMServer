@@ -21,8 +21,10 @@ const {
 const { excludeMigratedOrdersFilter } = require('./taskFilters');
 const {
   DEFAULT_LOOKBACK_DAYS,
-  fetchLsaLeads,
+  withLsaLeadPages,
 } = require('./lsaLeadsService');
+
+const LEAD_BATCH_SIZE = 100;
 
 const DEFAULT_WINDOW_DAYS = Math.min(
   Math.max(parseInt(process.env.LSA_ORDER_MATCH_WINDOW_DAYS, 10) || 7, 1),
@@ -150,6 +152,13 @@ async function loadCandidateOrders({ earliestLeadAt, latestOrderAt }) {
     .lean();
 }
 
+function leadIsLater(lead, otherLead) {
+  const leadMs = new Date(lead.createdAt).getTime();
+  const otherMs = new Date(otherLead.createdAt).getTime();
+  if (leadMs !== otherMs) return leadMs > otherMs;
+  return String(lead.id).localeCompare(String(otherLead.id)) > 0;
+}
+
 /**
  * @param {{ lookbackDays?: number, windowDays?: number, dryRun?: boolean }} [opts]
  */
@@ -158,18 +167,16 @@ async function syncLsaOrderTrafficSources({
   windowDays = DEFAULT_WINDOW_DAYS,
   dryRun = false,
 } = {}) {
-  const fetched = await fetchLsaLeads({ lookbackDays });
-
   const summary = {
-    skipped: !fetched.available,
-    reason: fetched.reason || null,
-    error: fetched.error || null,
+    skipped: false,
+    reason: null,
+    error: null,
     dryRun,
-    startKey: fetched.startKey,
-    endKey: fetched.endKey,
-    lookbackDays: fetched.lookbackDays,
+    startKey: null,
+    endKey: null,
+    lookbackDays,
     windowDays,
-    leadsFetched: fetched.leads.length,
+    leadsFetched: 0,
     candidates: 0,
     matched: 0,
     updated: 0,
@@ -181,76 +188,91 @@ async function syncLsaOrderTrafficSources({
     samples: [],
   };
 
-  if (!fetched.available) {
-    return summary;
-  }
-
-  const leads = fetched.leads;
-  if (!leads.length) {
-    return summary;
-  }
-
-  const earliestLeadAt = leads[0].createdAt;
-  const latestLeadAt = leads[leads.length - 1].createdAt;
-  const latestOrderAt = new Date(latestLeadAt.getTime() + windowDays * MS_PER_DAY);
-
-  const candidates = await loadCandidateOrders({ earliestLeadAt, latestOrderAt });
-  summary.candidates = candidates.length;
-
-  const byPhone = buildPhoneIndex(candidates);
-  const byEmail = buildEmailIndex(candidates);
-
-  /** @type {Map<string, Array<{ lead: object, task: object, matchBy: string }>>} */
-  const claimsByOrderId = new Map();
+  /** One winning lead per order. Latest lead before the order still wins across batches. */
+  const bestByOrderId = new Map();
+  const candidateIds = new Set();
   const syncedAt = new Date();
 
-  for (const lead of leads) {
-    const result = findMatchingOrderForLead(lead, { byPhone, byEmail, windowDays });
-
-    if (!result.task) {
-      summary.noMatch += 1;
-      continue;
-    }
-
-    const task = result.task;
-    if (!canApplyLsaTrafficSource(task.trafficSource)) {
-      summary.notApplicable += 1;
-      continue;
-    }
-
+  function rememberClaim(lead, task, matchBy) {
     const orderKey = String(task._id);
-    if (!claimsByOrderId.has(orderKey)) claimsByOrderId.set(orderKey, []);
-    claimsByOrderId.get(orderKey).push({ lead, task, matchBy: result.matchBy });
-  }
+    const current = bestByOrderId.get(orderKey);
+    if (!current) {
+      bestByOrderId.set(orderKey, { lead, task, matchBy, losingLeadIds: [] });
+      return;
+    }
 
-  /** @type {Array<{ lead: object, task: object, matchBy: string }>} */
-  const winners = [];
-  for (const claims of claimsByOrderId.values()) {
-    const sorted = [...claims].sort((a, b) => {
-      const aMs = new Date(a.lead.createdAt).getTime();
-      const bMs = new Date(b.lead.createdAt).getTime();
-      if (bMs !== aMs) return bMs - aMs; // latest lead before the order wins
-      return String(b.lead.id).localeCompare(String(a.lead.id));
-    });
-    const winner = sorted[0];
-    winners.push(winner);
-    summary.matched += 1;
-
-    if (sorted.length > 1) {
-      summary.alreadyClaimed += sorted.length - 1;
-      if (summary.samples.length < 20) {
-        summary.samples.push({
-          leadId: winner.lead.id,
-          orderNumber: winner.task.orderNumber,
-          status: 'multi_lead_picked_latest',
-          losingLeadIds: sorted.slice(1).map((c) => c.lead.id),
-          matchBy: winner.matchBy,
-        });
-      }
+    summary.alreadyClaimed += 1;
+    if (leadIsLater(lead, current.lead)) {
+      const losingLeadIds = current.losingLeadIds.slice();
+      if (losingLeadIds.length < 19) losingLeadIds.push(String(current.lead.id));
+      bestByOrderId.set(orderKey, { lead, task, matchBy, losingLeadIds });
+      return;
+    }
+    if (current.losingLeadIds.length < 19) {
+      current.losingLeadIds.push(String(lead.id));
     }
   }
 
-  for (const { lead, task, matchBy } of winners) {
+  async function matchLeadBatch(batch) {
+    const earliestLeadAt = batch[0].createdAt;
+    const latestLeadAt = batch[batch.length - 1].createdAt;
+    const latestOrderAt = new Date(latestLeadAt.getTime() + windowDays * MS_PER_DAY);
+    const candidates = await loadCandidateOrders({ earliestLeadAt, latestOrderAt });
+
+    for (const task of candidates) candidateIds.add(String(task._id));
+
+    const byPhone = buildPhoneIndex(candidates);
+    const byEmail = buildEmailIndex(candidates);
+
+    for (const lead of batch) {
+      const result = findMatchingOrderForLead(lead, { byPhone, byEmail, windowDays });
+      if (!result.task) {
+        summary.noMatch += 1;
+        continue;
+      }
+      if (!canApplyLsaTrafficSource(result.task.trafficSource)) {
+        summary.notApplicable += 1;
+        continue;
+      }
+      rememberClaim(lead, result.task, result.matchBy);
+    }
+  }
+
+  const fetched = await withLsaLeadPages({ lookbackDays }, async (page) => {
+    summary.leadsFetched += page.length;
+    for (let i = 0; i < page.length; i += LEAD_BATCH_SIZE) {
+      const batch = page.slice(i, i + LEAD_BATCH_SIZE);
+      await matchLeadBatch(batch);
+      page.fill(null, i, i + batch.length);
+    }
+  });
+
+  summary.skipped = !fetched.available;
+  summary.reason = fetched.reason || null;
+  summary.error = fetched.error || null;
+  summary.startKey = fetched.startKey;
+  summary.endKey = fetched.endKey;
+  summary.lookbackDays = fetched.lookbackDays;
+  summary.candidates = candidateIds.size;
+  summary.matched = bestByOrderId.size;
+
+  if (!fetched.available || summary.leadsFetched === 0) {
+    return summary;
+  }
+
+  for (const claim of bestByOrderId.values()) {
+    if (claim.losingLeadIds.length && summary.samples.length < 20) {
+      summary.samples.push({
+        leadId: claim.lead.id,
+        orderNumber: claim.task.orderNumber,
+        status: 'multi_lead_picked_latest',
+        losingLeadIds: claim.losingLeadIds,
+        matchBy: claim.matchBy,
+      });
+    }
+  }
+
+  for (const { lead, task, matchBy } of bestByOrderId.values()) {
     if (summary.samples.length < 20) {
       summary.samples.push({
         leadId: lead.id,

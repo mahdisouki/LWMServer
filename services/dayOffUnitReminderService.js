@@ -151,9 +151,12 @@ async function buildContextForDayOff(dayOff) {
 
 async function processDayOffUnitReminders() {
   const todayStart = startOfLocalDay(new Date());
+  // daysUntil <= 7. Exclusive end is the start of the 8th day, matching getCalendarDaysUntilStart.
+  const windowEnd = new Date(todayStart);
+  windowEnd.setDate(windowEnd.getDate() + 8);
   const dayOffs = await Dayoff.find({
     status: 'Approved',
-    startDate: { $gte: todayStart },
+    startDate: { $gte: todayStart, $lt: windowEnd },
   }).lean();
 
   const summary = {

@@ -149,72 +149,91 @@ WHERE local_services_lead.creation_date_time >= '${startKey} 00:00:00'
 /**
  * @returns {{ available: boolean, reason?: string, startKey: string, endKey: string, lookbackDays: number, leads: Array }}
  */
-async function fetchLsaLeads({ lookbackDays = DEFAULT_LOOKBACK_DAYS } = {}) {
+function adsErrorMessage(error) {
+  return (
+    error?.response?.data?.error?.message
+    || error?.message
+    || 'Unknown Google Ads error'
+  );
+}
+
+/**
+ * Calls onPage with each Google Ads page of normalized leads, sorted by time.
+ * Does not keep earlier pages. onPage errors are not reported as an Ads outage.
+ */
+async function withLsaLeadPages({ lookbackDays = DEFAULT_LOOKBACK_DAYS } = {}, onPage) {
   const { startKey, endKey, lookbackDays: days } = resolveLookbackRange(lookbackDays);
+  const meta = { startKey, endKey, lookbackDays: days };
 
   if (!isGoogleAdsConfigured()) {
     return {
       available: false,
       reason: 'GOOGLE_ADS_NOT_CONFIGURED',
-      startKey,
-      endKey,
-      lookbackDays: days,
-      leads: [],
+      ...meta,
     };
   }
 
+  let accessToken;
   try {
-    const accessToken = await getAccessToken();
-    const customerId = getCustomerId();
-    const query = buildLeadsQuery({ startKey, endKey });
-    const url = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${customerId}/googleAds:search`;
-
-    const leads = [];
-    let pageToken;
-
-    do {
-      const body = { query };
-      if (pageToken) body.pageToken = pageToken;
-
-      const { data } = await axios.post(url, body, {
-        headers: buildSearchHeaders(accessToken),
-      });
-
-      for (const result of data.results || []) {
-        const normalized = normalizeLeadRow(result);
-        if (!normalized.id || !normalized.createdAt) continue;
-        if (!normalized.phone && !normalized.email) continue;
-        leads.push(normalized);
-      }
-
-      pageToken = data.nextPageToken || null;
-    } while (pageToken);
-
-    leads.sort((a, b) => a.createdAt - b.createdAt);
-
-    return {
-      available: true,
-      startKey,
-      endKey,
-      lookbackDays: days,
-      leads,
-    };
+    accessToken = await getAccessToken();
   } catch (error) {
-    const message =
-      error?.response?.data?.error?.message
-      || error?.message
-      || 'Unknown Google Ads error';
+    const message = adsErrorMessage(error);
     console.error('[LSA Leads] Fetch failed:', message);
     return {
       available: false,
       reason: 'GOOGLE_ADS_UNAVAILABLE',
       error: message,
-      startKey,
-      endKey,
-      lookbackDays: days,
-      leads: [],
+      ...meta,
     };
   }
+
+  const customerId = getCustomerId();
+  const query = buildLeadsQuery({ startKey, endKey });
+  const url = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}/customers/${customerId}/googleAds:search`;
+  let pageToken;
+
+  do {
+    let data;
+    try {
+      ({ data } = await axios.post(
+        url,
+        pageToken ? { query, pageToken } : { query },
+        { headers: buildSearchHeaders(accessToken) },
+      ));
+    } catch (error) {
+      const message = adsErrorMessage(error);
+      console.error('[LSA Leads] Fetch failed:', message);
+      return {
+        available: false,
+        reason: 'GOOGLE_ADS_UNAVAILABLE',
+        error: message,
+        ...meta,
+      };
+    }
+
+    const page = [];
+    for (const result of data.results || []) {
+      const normalized = normalizeLeadRow(result);
+      if (!normalized.id || !normalized.createdAt) continue;
+      if (!normalized.phone && !normalized.email) continue;
+      page.push(normalized);
+    }
+    page.sort((a, b) => a.createdAt - b.createdAt || String(a.id).localeCompare(String(b.id)));
+    if (page.length) await onPage(page);
+
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+
+  return { available: true, ...meta };
+}
+
+async function fetchLsaLeads({ lookbackDays = DEFAULT_LOOKBACK_DAYS } = {}) {
+  const leads = [];
+  const result = await withLsaLeadPages({ lookbackDays }, (page) => {
+    leads.push(...page);
+  });
+  leads.sort((a, b) => a.createdAt - b.createdAt);
+  return { ...result, leads };
 }
 
 module.exports = {
@@ -223,4 +242,5 @@ module.exports = {
   resolveLookbackRange,
   parseLsaCreationDateTime,
   fetchLsaLeads,
+  withLsaLeadPages,
 };

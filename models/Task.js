@@ -14,6 +14,7 @@ const VAN_LOAD_OPTION_PERCENT = {
   '1/2 Load': 50,
   '3/4 Load': 75,
   'Full Load / Large Load': 100,
+  'Mini Load': 10,
 };
 
 function round2(n) {
@@ -117,7 +118,7 @@ const taskSchema = new Schema(
         /** Custom items: copy times/position from matching standard load item when set. */
         vanLoadOption: {
           type: String,
-          enum: ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'],
+          enum: ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'],
           required: false,
         },
         customPrice: { type: Number },
@@ -274,15 +275,19 @@ const taskSchema = new Schema(
     reasonForCancellation: { type: String },
     applyMinFee: { type: Boolean, default: false }, // Admin option to apply minimum fee
     applySundayFee: { type: Boolean, default: false }, // Admin option to apply Sunday fee
-    priority:{
-      type:String,
-      enum: ['low', 'medium', 'high'],
+    priority: {
+      type: String,
+      enum: ['low', 'high', 'critical'],
       default: 'low',
     },
     redflag: { type: Boolean, default: false },
     redflagNote: { type: String },
     redflagBy: { type: Schema.Types.ObjectId, ref: 'User' },
     redflagAt: { type: Date },
+    blockedCustomer: { type: Boolean, default: false },
+    blockedMatchOn: { type: [String], default: [] },
+    blockedReason: { type: String, default: '' },
+    blockedCustomerId: { type: Schema.Types.ObjectId, ref: 'BlockedCustomer', default: null },
     quotationId: {
       type: Schema.Types.ObjectId,
       ref: 'QuotationRequest', // Reference to your Quotation model

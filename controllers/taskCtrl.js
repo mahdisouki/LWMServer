@@ -29,6 +29,11 @@ const { getRealIP } = require('../middlewares/rateLimiter');
 const bookingOffer = require('../services/bookingOffer');
 const { syncCancelledVanAssignment } = require('../services/cancelledVanAssignment');
 const { resolveTaskLocation } = require('../services/mapboxGeocodeService');
+const {
+  findActiveBlock,
+  applyBlockedMatch,
+  notifyAdminsBlockedCustomer,
+} = require('../services/blockedCustomerService');
 
 const EXPORT_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -587,6 +592,16 @@ async function createDirectLinkedAdditionalTaskFromItems({
     taskStatus: 'New',
   });
 
+  const childBlockedMatch = await findActiveBlock(childTask);
+  if (applyBlockedMatch(childTask, childBlockedMatch)) {
+    await childTask.save();
+    try {
+      await notifyAdminsBlockedCustomer(childTask);
+    } catch (notificationError) {
+      console.error('Error sending blocked-customer notification:', notificationError);
+    }
+  }
+
   const labelingService = require('../services/labelingService');
   labelingService.enqueueTaskImages(childTask).catch((enqueueError) => {
     console.error('Failed to enqueue labeling jobs for additional-item order:', enqueueError);
@@ -635,7 +650,7 @@ async function createPersistentPaymentLink({
   return { paymentLink, stableLink };
 }
 
-const TASK_PRIORITIES = ['low', 'medium', 'high'];
+const TASK_PRIORITIES = ['low', 'high', 'critical'];
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
@@ -1543,6 +1558,7 @@ async function calculateTaskDuration(allItems) {
 }
 
 const VAN_LOAD_OPTION_PERCENT = {
+  'Mini Load': 10,
   '1/4 Load': 25,
   '1/2 Load': 50,
   '3/4 Load': 75,
@@ -1552,7 +1568,7 @@ const VAN_LOAD_OPTION_PERCENT = {
 /**
  * Calculate van load percentage (0–100) from task items.
  * - Standard items: use spaceOfVan from item or StandardItem; add (quantity/spaceOfVan)*100.
- * - Custom items with vanLoadOption: add quantity * mapped percentage (1/4→25, 1/2→50, 3/4→75, Full→100).
+ * - Custom items with vanLoadOption: add quantity * mapped percentage (Mini→10, 1/4→25, 1/2→50, 3/4→75, Full→100).
  * Result is capped at 100 and rounded.
  */
 async function calculateVanLoadPercentage(task) {
@@ -1946,7 +1962,7 @@ const taskCtrl = {
         );
       }
       // Merge custom items (objects): validate vanLoadOption; when set, copy times/position from matching StandardItem
-      const VAN_LOAD_OPTIONS = ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
+      const VAN_LOAD_OPTIONS = ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
       if (orderObjects.length > 0) {
         console.log('objects', orderObjects);
         const customItems = [];
@@ -1997,7 +2013,7 @@ const taskCtrl = {
         const pNorm = normalizeTaskPriority(priority);
         if (pNorm === null) {
           return res.status(400).json({
-            message: 'Invalid priority. Allowed values: low, medium, high.',
+            message: 'Invalid priority. Allowed values: low, high, critical.',
             error: 'INVALID_PRIORITY',
           });
         }
@@ -2138,6 +2154,8 @@ const taskCtrl = {
 
       let savedTask;
       try {
+        const blockedMatch = await findActiveBlock(newTask);
+        applyBlockedMatch(newTask, blockedMatch);
         savedTask = await newTask.save();
       } catch (saveError) {
         if (claimedHoldId) {
@@ -2304,6 +2322,14 @@ const taskCtrl = {
           console.error('❌ Error creating calendar event:', calendarError.message);
         }
         // Optionally log this error but don't throw
+      }
+
+      if (savedTask.blockedCustomer) {
+        try {
+          await notifyAdminsBlockedCustomer(savedTask);
+        } catch (notificationError) {
+          console.error('Error sending blocked-customer notification:', notificationError);
+        }
       }
 
       res.status(201).json({
@@ -2726,7 +2752,7 @@ const taskCtrl = {
         },
       })
         .select(
-          'location date spaceOfVan totalPrice available taskDuration firstName lastName priority _id items postcode',
+          'location date spaceOfVan taskStatus paymentStatus totalPrice available taskDuration firstName lastName priority _id items postcode',
         )
         .populate('items.standardItemId', 'itemName')
         .sort({ createdAt: -1 })
@@ -2753,6 +2779,8 @@ const taskCtrl = {
           totalPrice: t.totalPrice,
           timeSlot: t.available,
           taskDuration: t.taskDuration,
+          taskStatus: t.taskStatus,
+          paymentStatus: t.paymentStatus,
           priority: t.priority,
           postcode: t.postcode,
           _id: t._id,
@@ -3691,7 +3719,7 @@ const taskCtrl = {
           });
 
           if (validObjects.length > 0) {
-            const VAN_LOAD_OPTIONS = ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
+            const VAN_LOAD_OPTIONS = ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load / Large Load'];
             const customItems = [];
             for (const obj of validObjects) {
               console.log('Processing custom object:', JSON.stringify(obj, null, 2));
@@ -4066,7 +4094,7 @@ const taskCtrl = {
           const pNorm = normalizeTaskPriority(rawPriority);
           if (pNorm === null) {
             return res.status(400).json({
-              message: 'Invalid priority. Allowed values: low, medium, high.',
+              message: 'Invalid priority. Allowed values: low, high, critical.',
               error: 'INVALID_PRIORITY',
             });
           }
@@ -4098,6 +4126,34 @@ const taskCtrl = {
         }
       }
 
+      delete updates.blockedCustomer;
+      delete updates.blockedMatchOn;
+      delete updates.blockedReason;
+      delete updates.blockedCustomerId;
+
+      const identityFields = ['email', 'phoneNumber', 'phoneNumber2', 'collectionAddress'];
+      const identityChanged = identityFields.some((field) =>
+        Object.prototype.hasOwnProperty.call(updates, field),
+      );
+      let notifyBlocked = false;
+      if (identityChanged) {
+        const nextIdentity = {
+          email: updates.email !== undefined ? updates.email : oldTask.email,
+          phoneNumber: updates.phoneNumber !== undefined ? updates.phoneNumber : oldTask.phoneNumber,
+          phoneNumber2: updates.phoneNumber2 !== undefined ? updates.phoneNumber2 : oldTask.phoneNumber2,
+          collectionAddress:
+            updates.collectionAddress !== undefined ? updates.collectionAddress : oldTask.collectionAddress,
+        };
+        const blockedMatch = await findActiveBlock(nextIdentity);
+        applyBlockedMatch(updates, blockedMatch);
+        const sameBlock = Boolean(
+          blockedMatch &&
+          oldTask.blockedCustomer === true &&
+          String(oldTask.blockedCustomerId || '') === String(blockedMatch.block._id),
+        );
+        notifyBlocked = Boolean(blockedMatch) && !sameBlock;
+      }
+
       console.log('=== FINAL UPDATE ===');
       console.log('Updates to apply:', JSON.stringify(updates, null, 2));
 
@@ -4107,6 +4163,14 @@ const taskCtrl = {
         { $set: updates },
         { new: true },
       );
+
+      if (notifyBlocked && updatedTask) {
+        try {
+          await notifyAdminsBlockedCustomer(updatedTask);
+        } catch (notificationError) {
+          console.error('Error sending blocked-customer notification:', notificationError);
+        }
+      }
 
       // If payment was manually marked as paid (cash/BankTransfer/admin), increment coupon usage once.
       // Online payments already do this in their confirmation/webhook handlers, guarded by couponUsageIncremented.
@@ -6126,11 +6190,11 @@ const taskCtrl = {
 
           const matchingPayment = paymentIds.ids.length
             ? await PaymentHistory.findOne({
-                taskId: task._id,
-                paymentType: 'Stripe',
-                status: 'success',
-                transactionId: { $in: paymentIds.ids },
-              }).select('_id transactionId')
+              taskId: task._id,
+              paymentType: 'Stripe',
+              status: 'success',
+              transactionId: { $in: paymentIds.ids },
+            }).select('_id transactionId')
             : null;
 
           if (matchingPayment) {

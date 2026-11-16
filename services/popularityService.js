@@ -73,10 +73,9 @@ async function isPopularityStale() {
 
 async function updatePopularityScores() {
   const now = new Date();
-  const [itemPopularity, categoryPopularity] = await Promise.all([
-    aggregateItemPopularity(),
-    aggregateCategoryPopularity(),
-  ]);
+  // One scan at a time. Each one unwinds every paid order.
+  const itemPopularity = await aggregateItemPopularity();
+  const categoryPopularity = await aggregateCategoryPopularity();
 
   const itemPopularityMap = new Map(
     itemPopularity.map((entry) => [String(entry._id), entry]),

@@ -21,6 +21,27 @@ const {
   buildVisibleItemsCsv,
 } = require('../utils/standardItemsExport');
 
+function parseEssentialBullets(value) {
+  if (value == null || value === '') return [];
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  }
+  const text = String(value).trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed.map((entry) => String(entry || '').trim()).filter(Boolean);
+    }
+  } catch {
+    // Treat as one bullet per line
+  }
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*[-*•]\s*/, '').trim())
+    .filter(Boolean);
+}
+
 const standardItemCtrl = {
   createStandardItem: async (req, res) => {
     try {
@@ -28,7 +49,23 @@ const standardItemCtrl = {
         return res.status(400).json({ message: 'Main image file is required' });
       }
 
-      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode, isHidden, spaceOfVan, timespentOutside, timespentInside, timespentInsdiewithDis } = req.body;
+      const {
+        itemName,
+        price,
+        category,
+        description,
+        essentialDescription,
+        essentialDescriptionBullets,
+        insidePrice,
+        insideWithDismantlingPrice,
+        Objectsposition,
+        ewcCode,
+        isHidden,
+        spaceOfVan,
+        timespentOutside,
+        timespentInside,
+        timespentInsdiewithDis,
+      } = req.body;
 
       // Main image
       const image = req.file.path;
@@ -43,6 +80,8 @@ const standardItemCtrl = {
         price,
         category,
         description,
+        essentialDescription,
+        essentialDescriptionBullets: parseEssentialBullets(essentialDescriptionBullets),
         insidePrice,
         insideWithDismantlingPrice,
         Objectsposition,
@@ -624,13 +663,31 @@ const standardItemCtrl = {
 
   updateStandardItem: async (req, res) => {
     try {
-      const { itemName, price, category, description, insidePrice, insideWithDismantlingPrice, Objectsposition, ewcCode, isHidden, spaceOfVan, timespentOutside, timespentInside, timespentInsdiewithDis } = req.body;
+      const {
+        itemName,
+        price,
+        category,
+        description,
+        essentialDescription,
+        essentialDescriptionBullets,
+        insidePrice,
+        insideWithDismantlingPrice,
+        Objectsposition,
+        ewcCode,
+        isHidden,
+        spaceOfVan,
+        timespentOutside,
+        timespentInside,
+        timespentInsdiewithDis,
+      } = req.body;
 
       const updateData = {
         itemName,
         price,
         category,
         description,
+        essentialDescription,
+        essentialDescriptionBullets: parseEssentialBullets(essentialDescriptionBullets),
         insidePrice,
         insideWithDismantlingPrice,
         Objectsposition,

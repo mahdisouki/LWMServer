@@ -58,5 +58,9 @@ const notificationSchema = new mongoose.Schema({
 // find({ userId }).sort({ createdAt: -1 }) without an in-memory sort.
 notificationSchema.index({ userId: 1, read: 1, createdAt: -1 });
 
+// Midnight cleanup: deleteMany({ read: true, createdAt: { $lt } }).
+// The userId index above cannot serve a collection-wide delete.
+notificationSchema.index({ read: 1, createdAt: 1 });
+
 const Notification = mongoose.model("Notification", notificationSchema);
 module.exports = Notification;
