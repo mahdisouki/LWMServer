@@ -11,11 +11,20 @@ const Truck = require('../models/Truck');
 const Driver = require('../models/Driver');
 const Helper = require('../models/Helper');
 const RouteOptimizerProposal = require('../models/RouteOptimizerProposal');
+const RouteOptimizerJob = require('../models/RouteOptimizerJob');
 const { truckDisplayName } = require('../utils/truckHelpers');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
 const { cancelledVanTruckId } = require('../services/cancelledVanAssignment');
+const {
+  buildCallbackUrl,
+  createAndKickCompareGroupedJob,
+  claimGroupedJobForApply,
+  completeGroupedJobSuccess,
+  completeGroupedJobFailure,
+  assertCallbackSecret,
+} = require('../services/groupedRoutesJobService');
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
   process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org';
 /** External optimizer: manual job groups (POST body: date, truck_contexts, job_groups). */
@@ -1218,11 +1227,12 @@ async function calculateRoutesExternal(req, res) {
 
 /**
  * POST /api/route-optimizer/external/grouped-routes
- * Same flow as calculate-routes, but forwards to the external /api/v1/compare-grouped endpoint,
- * which compares calculate-routes and grouped-routes and returns the winner.
- * Body: { date: string|Date, truckIds?: string[], selectedTruckIds?: string[],
- *   vanCurrentCapacities?: Record<string, number>, include_tipping?: boolean }
- * Returns: { success, winner, winner_reason, routes, api_calls_used } from external API.
+ * Async: returns 202 { jobId, status: "processing" } immediately.
+ * Python runs compare-grouped in background and POSTs results to
+ * /external/grouped-routes/callback; Node then persists + socket-emits
+ * `routeOptimizer:groupedDone`.
+ *
+ * Body: { date, truckIds?, selectedTruckIds?, vanCurrentCapacities?, include_tipping? }
  */
 async function calculateRoutesExternalArea(req, res) {
   try {
@@ -1232,10 +1242,6 @@ async function calculateRoutesExternalArea(req, res) {
     }
 
     const dateStr = inputDate.toISOString().split('T')[0];
-    const startOfDay = new Date(inputDate);
-    startOfDay.setUTCHours(0, 0, 0, 0);
-    const endOfDay = new Date(inputDate);
-    endOfDay.setUTCHours(23, 59, 59, 999);
 
     const requestedTruckIds = Array.isArray(req.body.truckIds)
       ? req.body.truckIds
@@ -1243,10 +1249,12 @@ async function calculateRoutesExternalArea(req, res) {
         ? req.body.selectedTruckIds
         : null;
 
-    const hasTruckSelection = Array.isArray(requestedTruckIds) && requestedTruckIds.length > 0;
+    const hasTruckSelection =
+      Array.isArray(requestedTruckIds) && requestedTruckIds.length > 0;
 
-    // Use UnitAssignmentLogRange to determine which driver is on which truck for this day
-    const truckQuery = hasTruckSelection ? { _id: { $in: requestedTruckIds } } : {};
+    const truckQuery = hasTruckSelection
+      ? { _id: { $in: requestedTruckIds } }
+      : {};
     const allTrucks = await Truck.find(truckQuery).populate('vanId');
 
     if (hasTruckSelection && !allTrucks.length) {
@@ -1263,14 +1271,20 @@ async function calculateRoutesExternalArea(req, res) {
         if (!driver) continue;
         let helper = null;
         if (assignment.helperId) {
-          helper = await Helper.findById(assignment.helperId).select('start_location end_location');
+          helper = await Helper.findById(assignment.helperId).select(
+            'start_location end_location'
+          );
         }
         trucksWithDrivers.push({
           truck: t,
           driverId: assignment.driverId,
           assignedVanId: assignment.vanId || null,
-          startLocation: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
-          endLocation: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+          startLocation: helper
+            ? toLatLngFromGeoPoint(helper.start_location)
+            : null,
+          endLocation: helper
+            ? toLatLngFromGeoPoint(helper.end_location)
+            : null,
         });
       }
     }
@@ -1281,29 +1295,32 @@ async function calculateRoutesExternalArea(req, res) {
       });
     }
 
-    console.log('[RouteOptimizer:area] date=%s trucksWithDrivers=%d', dateStr, trucksWithDrivers.length);
-    trucksWithDrivers.forEach(({ truck, driverId }, i) => {
-      console.log(
-        '[RouteOptimizer:area] truck[%d] _id=%s name=%s driverId=%s',
-        i,
-        truck._id.toString(),
-        truckDisplayName(truck),
-        driverId.toString()
-      );
-    });
+    console.log(
+      '[RouteOptimizer:area] date=%s trucksWithDrivers=%d (async job)',
+      dateStr,
+      trucksWithDrivers.length
+    );
 
     const vanIdsInScope = new Set(
       trucksWithDrivers
-        .map(({ assignedVanId }) => (assignedVanId ? assignedVanId.toString() : null))
+        .map(({ assignedVanId }) =>
+          assignedVanId ? assignedVanId.toString() : null
+        )
         .filter(Boolean)
     );
-    const rawVanCaps = req.body.vanCurrentCapacities ?? req.body.van_current_capacities;
+    const rawVanCaps =
+      req.body.vanCurrentCapacities ?? req.body.van_current_capacities;
     const vanCapsNormalized = normalizeVanCurrentCapacitiesMap(rawVanCaps);
-    const vanCapsForOptimizer = filterVanCapacitiesToScope(vanCapsNormalized, vanIdsInScope);
-    const includeTippingRaw = req.body.include_tipping ?? req.body.includeTipping;
-    const includeTipping = includeTippingRaw === true || includeTippingRaw === 'true';
+    const vanCapsForOptimizer = filterVanCapacitiesToScope(
+      vanCapsNormalized,
+      vanIdsInScope
+    );
+    const includeTippingRaw =
+      req.body.include_tipping ?? req.body.includeTipping;
+    const includeTipping =
+      includeTippingRaw === true || includeTippingRaw === 'true';
 
-    const payload = {
+    const requestPayload = {
       date: dateStr,
       include_tipping: includeTipping,
       truck_contexts: trucksWithDrivers.map(
@@ -1316,140 +1333,183 @@ async function calculateRoutesExternalArea(req, res) {
       ),
     };
     if (vanCapsForOptimizer) {
-      payload.van_current_capacities = vanCapsForOptimizer;
-    }
-    console.log("payload", payload);
-    const { data, status } = await axios.post(
-      `${EXTERNAL_ROUTE_OPTIMIZER_URL}/api/v1/compare-grouped`,
-      payload,
-      {
-        timeout: 120000,
-        validateStatus: () => true,
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
-
-    if (status !== 200) {
-      if (data?.detail && Array.isArray(data.detail)) {
-        console.error('[RouteOptimizer:area] validation errors (full):', JSON.stringify(data.detail, null, 2));
-      } else {
-        console.log(data);
-      }
-      return res.status(status >= 500 ? 502 : status).json({
-        message: data?.detail || data?.message || 'External route optimizer request failed',
-        ...(data && typeof data === 'object' && { detail: data }),
-      });
-    }
-    console.log(data.routes);
-    const routes = data.routes || {};
-    const routeKeys = Object.keys(routes);
-    console.log('[RouteOptimizer:area] external response route keys (%d): %s', routeKeys.length, routeKeys.join(', '));
-
-    // Unassign tasks only for selected/considered trucks on this date so unrelated trucks are untouched.
-    const consideredTruckIds = trucksWithDrivers.map(({ truck }) => truck._id);
-    await Task.updateMany(
-      {
-        date: { $gte: startOfDay, $lte: endOfDay },
-        truckId: { $in: consideredTruckIds },
-      },
-      { $set: { truckId: null } }
-    );
-
-    // Persist assignment: clear old routes for this date on each truck, then assign new order
-    let assignedCount = 0;
-    for (const routeKey of routeKeys) {
-      // New response: routeKey is truck_id (Truck._id)
-      const entry = trucksWithDrivers.find(({ truck }) => truck._id.toString() === routeKey);
-      if (!entry) {
-        console.log('[RouteOptimizer:area] routeKey=%s no truck/driver assignment matched (skip)', routeKey);
-        continue;
-      }
-      const { truck } = entry;
-      console.log(
-        '[RouteOptimizer:area] routeKey=%s matched truck name=%s _id=%s (by truckId)',
-        routeKey,
-        truckDisplayName(truck),
-        truck._id.toString()
-      );
-      // Remove old routes for this date so we don't duplicate tasks
-      if (!truck.tasks) truck.tasks = new Map();
-      truck.tasks.set(dateStr, []);
-      truck.markModified('tasks');
-
-      // New response format: routes[truckId].route_segments is an array of objects:
-      // { taskId, type, order, ... }
-      const routeSegments = Array.isArray(routes[routeKey].route_segments)
-        ? routes[routeKey].route_segments
-        : [];
-      let assignedThisTruck = 0;
-      const missingTaskIds = [];
-      for (let i = 0; i < routeSegments.length; i++) {
-        const segment = routeSegments[i];
-        if (!segment || typeof segment !== 'object') continue;
-
-        const rawTaskId = segment.taskId;
-        const taskId = typeof rawTaskId === 'string'
-          ? rawTaskId
-          : (rawTaskId && typeof rawTaskId === 'object' && rawTaskId.$oid ? rawTaskId.$oid : null);
-
-        if (!taskId) {
-          missingTaskIds.push(String(rawTaskId));
-          continue;
-        }
-
-        const order = Number.isFinite(Number(segment.order)) ? Number(segment.order) : (i + 1);
-        const segType = segment.type === 'TippingRequest' ? 'TippingRequest' : 'task';
-
-        if (segType === 'TippingRequest') {
-          await TippingRequest.findByIdAndUpdate(taskId, { truckId: truck._id });
-          truck.addTippingRequest(dateStr, taskId, order);
-        } else {
-          await Task.findByIdAndUpdate(taskId, { truckId: truck._id });
-          truck.addTask(dateStr, taskId, order);
-        }
-
-        assignedCount += 1;
-        assignedThisTruck += 1;
-      }
-      if (missingTaskIds.length) {
-        console.log('[RouteOptimizer:area] truck %s: segments without valid taskId: %s', truckDisplayName(truck), missingTaskIds.join(', '));
-      }
-      console.log('[RouteOptimizer:area] truck %s: assigned %d tasks (total so far %d)', truckDisplayName(truck), assignedThisTruck, assignedCount);
-      await truck.save();
-    }
-    console.log('[RouteOptimizer:area] persist done assignedCount=%d', assignedCount);
-
-    try {
-      const mockReq = { body: { date: dateStr } };
-      const mockRes = { status: () => ({ json: () => {} }), json: () => {} };
-      await dailySheetController.updateExistingDailySheets(mockReq, mockRes);
-    } catch (dailySheetErr) {
-      console.error('Route optimizer area: daily sheet sync error', dailySheetErr);
+      requestPayload.van_current_capacities = vanCapsForOptimizer;
     }
 
-    const externalSummary = data.summary && typeof data.summary === 'object' ? data.summary : {};
-    return res.status(200).json({
-      success: data.success !== false,
-      winner: data.winner ?? null,
-      winner_reason: data.winner_reason ?? null,
-      routes,
-      api_calls_used: data.api_calls_used ?? 0,
-      summary: {
-        date: dateStr,
-        trucks_used: Object.keys(routes).length,
-        ...externalSummary,
-        assigned: assignedCount,
-      },
+    const truckIds = trucksWithDrivers.map(({ truck }) => truck._id);
+    const createdBy = req.user?._id || req.user?.userId || null;
+    const callbackUrl = buildCallbackUrl(req);
+
+    const job = await createAndKickCompareGroupedJob({
+      dateStr,
+      truckIds,
+      requestPayload,
+      createdBy,
+      callbackUrl,
+    });
+
+    return res.status(202).json({
+      success: true,
+      status: 'processing',
+      jobId: job.jobId,
+      date: dateStr,
+      message:
+        'Grouped routes started. Listen for socket event routeOptimizer:groupedDone or GET /external/grouped-routes/jobs/:jobId',
+      callbackUrl,
     });
   } catch (error) {
     console.error('Route optimizer external grouped-routes error:', error);
     if (isOptimizerTransportFailure(error)) {
-      const { status, body } = responseFromOptimizerNetworkError(error, 'grouped-routes');
+      const { status, body } = responseFromOptimizerNetworkError(
+        error,
+        'grouped-routes'
+      );
       return res.status(status).json(body);
     }
     return res.status(500).json({
       message: 'External grouped routes failed',
       error: error.response?.data || error.message,
+    });
+  }
+}
+
+/**
+ * POST /api/route-optimizer/external/grouped-routes/callback
+ * Called by Python when compare-grouped finishes.
+ * Acks quickly (200) then persists routes in the background so Python's
+ * short callback timeout does not retry and double-assign.
+ * Body: { job_id, status: "done"|"failed", routes?, winner?, winner_reason?, error?, ... }
+ */
+async function groupedRoutesCallback(req, res) {
+  try {
+    if (!assertCallbackSecret(req)) {
+      return res.status(401).json({ message: 'Invalid callback secret' });
+    }
+
+    const jobId = String(
+      req.body?.job_id || req.body?.jobId || ''
+    ).trim();
+    if (!jobId) {
+      return res.status(400).json({ message: 'job_id is required' });
+    }
+
+    const existing = await RouteOptimizerJob.findOne({ jobId }).lean();
+    if (!existing) {
+      return res.status(404).json({ message: 'Job not found', jobId });
+    }
+
+    if (
+      existing.status === 'done' ||
+      existing.status === 'failed' ||
+      existing.status === 'applying'
+    ) {
+      return res.status(200).json({
+        success: true,
+        message:
+          existing.status === 'applying'
+            ? 'Job already applying'
+            : 'Job already finalized',
+        jobId,
+        status: existing.status,
+      });
+    }
+
+    const cbStatus = String(req.body?.status || 'done').toLowerCase();
+    const isFailure = cbStatus === 'failed' || cbStatus === 'error';
+
+    if (!isFailure && (!req.body?.routes || typeof req.body.routes !== 'object')) {
+      return res.status(400).json({
+        message: 'routes object is required for a successful callback',
+        jobId,
+      });
+    }
+
+    const claimed = await claimGroupedJobForApply(jobId);
+    if (!claimed) {
+      const again = await RouteOptimizerJob.findOne({ jobId }).lean();
+      return res.status(200).json({
+        success: true,
+        message: 'Job already claimed or finalized',
+        jobId,
+        status: again?.status || 'unknown',
+      });
+    }
+
+    // Snapshot body for background work, then ack Python immediately.
+    const payload = { ...req.body };
+    const failureMessage =
+      payload.error || payload.message || 'Python reported failure';
+
+    setImmediate(() => {
+      const run = isFailure
+        ? completeGroupedJobFailure(claimed, failureMessage)
+        : completeGroupedJobSuccess(claimed, payload);
+
+      run.catch(async (err) => {
+        console.error(
+          '[RouteOptimizer:groupedJob] background apply failed jobId=%s:',
+          jobId,
+          err.message
+        );
+        try {
+          const fresh = await RouteOptimizerJob.findOne({ jobId });
+          if (fresh && fresh.status === 'applying') {
+            await completeGroupedJobFailure(fresh, err.message);
+          }
+        } catch (e) {
+          console.error(
+            '[RouteOptimizer:groupedJob] mark failed after apply error:',
+            e.message
+          );
+        }
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      jobId,
+      status: 'applying',
+      message: 'Callback accepted; applying routes in background',
+    });
+  } catch (error) {
+    console.error('[RouteOptimizer:groupedJob] callback error:', error);
+    return res.status(500).json({
+      message: 'Grouped routes callback failed',
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * GET /api/route-optimizer/external/grouped-routes/jobs/:jobId
+ */
+async function getGroupedRoutesJob(req, res) {
+  try {
+    const jobId = String(req.params.jobId || '').trim();
+    if (!jobId) {
+      return res.status(400).json({ message: 'jobId is required' });
+    }
+
+    const job = await RouteOptimizerJob.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found', jobId });
+    }
+
+    return res.status(200).json({
+      success: true,
+      jobId: job.jobId,
+      status: job.status,
+      date: job.date,
+      assignedCount: job.assignedCount || 0,
+      error: job.error || null,
+      result: job.result || null,
+      createdAt: job.createdAt,
+      completedAt: job.completedAt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to load grouped routes job',
+      error: error.message,
     });
   }
 }
@@ -2958,6 +3018,8 @@ async function resetAllVansForDate(req, res) {
 module.exports = {
   calculateRoutesExternal,
   calculateRoutesExternalArea,
+  groupedRoutesCallback,
+  getGroupedRoutesJob,
   calculateRoutesExternalWithGroups,
   compareRoutePreviews,
   acceptRoutePreview,

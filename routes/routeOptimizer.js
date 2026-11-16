@@ -43,12 +43,24 @@ router.post(
 
 /**
  * POST /api/route-optimizer/external/grouped-routes
- * Body: { date, truckIds|selectedTruckIds?, vanCurrentCapacities? } — same payload as
- * /external/calculate-routes, forwarded to the external /api/v1/compare-grouped.
+ * Async compare-grouped: returns 202 { jobId, status: "processing" }.
+ * Listen for socket `routeOptimizer:groupedDone` or poll GET .../jobs/:jobId.
  */
 router.post(
   '/external/grouped-routes',
   routeOptimizerCtrl.calculateRoutesExternalArea
+);
+
+/** Python callback when compare-grouped finishes. */
+router.post(
+  '/external/grouped-routes/callback',
+  routeOptimizerCtrl.groupedRoutesCallback
+);
+
+/** Poll async grouped-routes job status. */
+router.get(
+  '/external/grouped-routes/jobs/:jobId',
+  routeOptimizerCtrl.getGroupedRoutesJob
 );
 
 /**
