@@ -9,13 +9,13 @@ const Task = require('../models/Task');
 const TippingRequest = require('../models/TippingRequest');
 const Truck = require('../models/Truck');
 const Driver = require('../models/Driver');
-const Helper = require('../models/Helper');
 const RouteOptimizerProposal = require('../models/RouteOptimizerProposal');
 const RouteOptimizerJob = require('../models/RouteOptimizerJob');
 const { truckDisplayName } = require('../utils/truckHelpers');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
+const { resolveTruckDayRouteCoords } = require('../services/truckRouteLocationService');
 const { cancelledVanTruckId } = require('../services/cancelledVanAssignment');
 const {
   buildCallbackUrl,
@@ -89,6 +89,23 @@ function toLatLngFromGeoPoint(point) {
     return null;
   }
   return { lat: Number(lat), lng: Number(lng) };
+}
+
+/** Convert resolveTruckDayRouteCoords point → external optimizer { lat, lng }. */
+function toLatLngFromRouteDayPoint(point) {
+  return toLatLngFromGeoPoint(point?.location) || toLatLngFromGeoPoint(point);
+}
+
+/**
+ * Effective unit start/end for optimizer payloads:
+ * truck.routeLocations[date] → helper → driver.
+ */
+async function resolveOptimizerStartEnd(truckId, dateStr, assignmentHint = null, truckDoc = null) {
+  const resolved = await resolveTruckDayRouteCoords(truckId, dateStr, assignmentHint, truckDoc);
+  return {
+    startLocation: toLatLngFromRouteDayPoint(resolved.start),
+    endLocation: toLatLngFromRouteDayPoint(resolved.end),
+  };
 }
 
 /**
@@ -324,16 +341,18 @@ async function loadTrucksWithDriversForDate({ dateStr, requestedTruckIds }) {
     if (assignment.driverId) {
       const driver = await Driver.findById(assignment.driverId).select('_id');
       if (!driver) continue;
-      let helper = null;
-      if (assignment.helperId) {
-        helper = await Helper.findById(assignment.helperId).select('start_location end_location');
-      }
+      const { startLocation, endLocation } = await resolveOptimizerStartEnd(
+        t._id,
+        dateStr,
+        assignment,
+        t,
+      );
       trucksWithDrivers.push({
         truck: t,
         driverId: assignment.driverId,
         assignedVanId: assignment.vanId || null,
-        startLocation: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
-        endLocation: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+        startLocation,
+        endLocation,
       });
     }
   }
@@ -1037,16 +1056,18 @@ async function calculateRoutesExternal(req, res) {
       if (assignment.driverId) {
         const driver = await Driver.findById(assignment.driverId).select('_id');
         if (!driver) continue;
-        let helper = null;
-        if (assignment.helperId) {
-          helper = await Helper.findById(assignment.helperId).select('start_location end_location');
-        }
+        const { startLocation, endLocation } = await resolveOptimizerStartEnd(
+          t._id,
+          dateStr,
+          assignment,
+          t,
+        );
         trucksWithDrivers.push({
           truck: t,
           driverId: assignment.driverId,
           assignedVanId: assignment.vanId || null,
-          startLocation: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
-          endLocation: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+          startLocation,
+          endLocation,
         });
       }
     }
@@ -1269,22 +1290,18 @@ async function calculateRoutesExternalArea(req, res) {
       if (assignment.driverId) {
         const driver = await Driver.findById(assignment.driverId).select('_id');
         if (!driver) continue;
-        let helper = null;
-        if (assignment.helperId) {
-          helper = await Helper.findById(assignment.helperId).select(
-            'start_location end_location'
-          );
-        }
+        const { startLocation, endLocation } = await resolveOptimizerStartEnd(
+          t._id,
+          dateStr,
+          assignment,
+          t,
+        );
         trucksWithDrivers.push({
           truck: t,
           driverId: assignment.driverId,
           assignedVanId: assignment.vanId || null,
-          startLocation: helper
-            ? toLatLngFromGeoPoint(helper.start_location)
-            : null,
-          endLocation: helper
-            ? toLatLngFromGeoPoint(helper.end_location)
-            : null,
+          startLocation,
+          endLocation,
         });
       }
     }
@@ -1896,10 +1913,12 @@ async function recalculateTruckRoute(req, res) {
     }
 
     const assignment = await getAssignedForDayFromRanges(truck._id, dateStr);
-    let helper = null;
-    if (assignment.helperId) {
-      helper = await Helper.findById(assignment.helperId).select('start_location end_location');
-    }
+    const { startLocation, endLocation } = await resolveOptimizerStartEnd(
+      truck._id,
+      dateStr,
+      assignment,
+      truck,
+    );
 
     const payload = {
       jobs,
@@ -1908,8 +1927,8 @@ async function recalculateTruckRoute(req, res) {
         {
           van_id: assignment.vanId ? assignment.vanId.toString() : null,
           truck_id: truck._id.toString(),
-          start_location: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
-          end_location: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+          start_location: startLocation,
+          end_location: endLocation,
         },
       ],
     };
@@ -2197,10 +2216,12 @@ async function refreshRoute(req, res) {
     }
 
     const assignment = await getAssignedForDayFromRanges(truck._id, dateStr);
-    let helper = null;
-    if (assignment.helperId) {
-      helper = await Helper.findById(assignment.helperId).select('start_location end_location');
-    }
+    const { startLocation, endLocation } = await resolveOptimizerStartEnd(
+      truck._id,
+      dateStr,
+      assignment,
+      truck,
+    );
 
     const payload = {
       jobs,
@@ -2209,8 +2230,8 @@ async function refreshRoute(req, res) {
         {
           van_id: assignment.vanId ? assignment.vanId.toString() : null,
           truck_id: truck._id.toString(),
-          start_location: helper ? toLatLngFromGeoPoint(helper.start_location) : null,
-          end_location: helper ? toLatLngFromGeoPoint(helper.end_location) : null,
+          start_location: startLocation,
+          end_location: endLocation,
         },
       ],
     };
@@ -2481,13 +2502,17 @@ async function requestBestTippingPlace(req, res) {
         lat: Number(lastCompleted.lat),
         lng: Number(lastCompleted.lng),
       };
-    } else if (selectedAssignment?.helperId) {
-      const helper = await Helper.findById(selectedAssignment.helperId).select('start_location');
-      const helperStart = helper ? toLatLngFromGeoPoint(helper.start_location) : null;
-      if (helperStart) {
+    } else if (selectedAssignment) {
+      const { startLocation } = await resolveOptimizerStartEnd(
+        selectedTruck._id,
+        dateStr,
+        selectedAssignment,
+        selectedTruck,
+      );
+      if (startLocation) {
         lastCompletedJobLocation = {
-          lat: Number(helperStart.lat),
-          lng: Number(helperStart.lng),
+          lat: Number(startLocation.lat),
+          lng: Number(startLocation.lng),
         };
       }
     }

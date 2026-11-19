@@ -47,6 +47,36 @@ const truckSchema = new Schema({
       message: 'Tasks must be a valid Map with string keys and array values containing {taskId, type, order} objects'
     }
   },
+  /**
+   * Optional start/end for a unit on a specific date (YYYY-MM-DD).
+   * Missing date → use helper then driver profile locations at read time.
+   * Never written back to Driver/Helper profiles.
+   */
+  routeLocations: {
+    type: Map,
+    of: new Schema(
+      {
+        start: {
+          postcode: { type: String, trim: true },
+          address: { type: String, trim: true },
+          location: {
+            type: { type: String, enum: ['Point'], default: 'Point' },
+            coordinates: { type: [Number] }, // [lng, lat]
+          },
+        },
+        end: {
+          postcode: { type: String, trim: true },
+          address: { type: String, trim: true },
+          location: {
+            type: { type: String, enum: ['Point'], default: 'Point' },
+            coordinates: { type: [Number] },
+          },
+        },
+      },
+      { _id: false },
+    ),
+    default: new Map(),
+  },
   // Assignment log refs with date (unit assignment history)
   assignmentLogs: [{
     logId: { type: Schema.Types.ObjectId, ref: 'UnitAssignmentLog', required: true },
