@@ -89,6 +89,38 @@ const DEFAULT_YOLO_CLASSES = [
   'single matress',
 ];
 
+// No matching standard item. Hidden from the picker and from predictions.
+// They stay in DEFAULT_YOLO_CLASSES so the current weights keep their indices.
+const HIDDEN_YOLO_CLASSES = new Set([
+  'BBQ',
+  'Bed with matress',
+  'Bin',
+  'Book',
+  'Bookshelf',
+  'Coffee machine',
+  'Cooker hood',
+  'Desk',
+  'Double cooker',
+  'Hob Cooker',
+  'Keyboard',
+  'Mouse',
+  'Oven',
+  'Paint cans',
+  'Plant',
+  'Pool',
+  'Pot',
+  'Printer',
+  'Radiator',
+  'Washing machine OR Tumble dryer',
+  'Waste bag',
+  'Wooden door',
+  'Wooden pallet',
+]);
+
+function isHiddenYoloClass(name) {
+  return HIDDEN_YOLO_CLASSES.has(String(name || '').trim());
+}
+
 const VIDEO_EXT_RE = /\.(mp4|webm|ogg|mov|avi|m4v)(\?|$)/i;
 const HTTP_IMAGE_QUERY = { $regex: /^https?:\/\// };
 // New classes appended after the frozen filtered model order on export.
@@ -322,9 +354,6 @@ const YAML_SPELLING_ALIASES = {
   vacuums: 'vaccum',
   'vaccum hoovers': 'vaccum',
   'vacuums hoovers': 'vaccum',
-  'washing machine removal': 'washing machine or tumble dryer',
-  'tumble dryer': 'washing machine or tumble dryer',
-  'washing machine': 'washing machine or tumble dryer',
 };
 
 function catalogueMatchKey(value) {
@@ -335,7 +364,9 @@ function catalogueMatchKey(value) {
 function yamlNameForCatalogueItem(name) {
   const key = catalogueMatchKey(name);
   const pool = [...DEFAULT_YOLO_CLASSES, ...LOAD_SIZES];
-  return pool.find((yamlName) => catalogueMatchKey(yamlName) === key) || null;
+  return pool.find(
+    (yamlName) => !isHiddenYoloClass(yamlName) && catalogueMatchKey(yamlName) === key,
+  ) || null;
 }
 
 async function repointLabels(fromName, toName) {
@@ -400,14 +431,15 @@ function groupForServiceCategories(categoryNames = []) {
 }
 
 /**
- * Visible standard items that are not already a YAML class.
- * Spelling, punctuation, and combined YAML names are treated as that class.
+ * Visible standard items that are not already a visible YAML class.
+ * Spelling and punctuation variants of a visible class are treated as that class.
+ * Hidden trained classes do not cover a standard item.
  * `group` matches the labeling filters (furniture, kitchen, …) using the item's service category.
  * Names are not inserted into LabelClass until a labeler picks one.
  */
 async function listCatalogueNamesMissingFromYaml(_classes = []) {
   const known = new Set([
-    ...DEFAULT_YOLO_CLASSES.map(catalogueMatchKey),
+    ...DEFAULT_YOLO_CLASSES.filter((name) => !isHiddenYoloClass(name)).map(catalogueMatchKey),
     ...LOAD_SIZES.map(catalogueMatchKey),
   ]);
   const items = await StandardItem.find({ isHidden: { $ne: true } })
@@ -464,8 +496,10 @@ function extensionFromContentType(contentType) {
 }
 
 function mapDetectApiBoxes(detections, imageWidth, imageHeight) {
-  return detections.map((detection) => {
+  const boxes = [];
+  for (const detection of detections) {
     const label = String(detection?.class || '').trim();
+    if (isHiddenYoloClass(label)) continue;
     const bbox = detection?.bbox || {};
     const x1 = Number(bbox.x1);
     const y1 = Number(bbox.y1);
@@ -487,7 +521,7 @@ function mapDetectApiBoxes(detections, imageWidth, imageHeight) {
       throw new Error('YOLO detect returned an invalid bounding box');
     }
 
-    return toYoloBox({
+    boxes.push(toYoloBox({
       x: ((x1 + x2) / 2) / imageWidth,
       y: ((y1 + y2) / 2) / imageHeight,
       width: widthPx / imageWidth,
@@ -495,8 +529,9 @@ function mapDetectApiBoxes(detections, imageWidth, imageHeight) {
       label,
       score: typeof detection.confidence === 'number' ? detection.confidence : undefined,
       source: 'yolo',
-    });
-  });
+    }));
+  }
+  return boxes;
 }
 
 function detectUrlWithNoAnnotate(predictUrl) {
@@ -783,6 +818,8 @@ async function resetJobToUnlabeled(job) {
 
 module.exports = {
   DEFAULT_YOLO_CLASSES,
+  HIDDEN_YOLO_CLASSES,
+  isHiddenYoloClass,
   LOAD_SIZES,
   isLabelingImageUrl,
   ensureDefaultClasses,

@@ -11,11 +11,23 @@ function parsePagination(query) {
   return { page, limit, skip: (page - 1) * limit };
 }
 
+function visibleLabel(label) {
+  if (labelingService.isHiddenYoloClass(label)) return null;
+  return label || null;
+}
+
+function visibleBoxes(boxes) {
+  return (Array.isArray(boxes) ? boxes : []).filter(
+    (box) => !labelingService.isHiddenYoloClass(box?.label),
+  );
+}
+
 function serializeJob(job) {
   const plain = typeof job.toObject === 'function' ? job.toObject() : job;
-  const label = plain.label || plain.loadSize || null;
+  const storedLabel = plain.label || plain.loadSize || null;
+  const label = visibleLabel(storedLabel);
   const category = plain.category
-    || (labelingService.LOAD_SIZES.includes(label) ? 'load' : label ? 'item' : null);
+    || (labelingService.LOAD_SIZES.includes(storedLabel) ? 'load' : label ? 'item' : null);
   return {
     _id: String(plain._id),
     source: plain.source || 'quotation',
@@ -29,7 +41,7 @@ function serializeJob(job) {
     loadSize: plain.loadSize || null,
     category,
     status: plain.status,
-    boxes: plain.boxes || [],
+    boxes: visibleBoxes(plain.boxes),
     predictedAt: plain.predictedAt || null,
     labeledAt: plain.labeledAt || null,
     skippedAt: plain.skippedAt || null,
@@ -125,9 +137,9 @@ function serializeLabeled(doc) {
     customerName: plain.customerName || '',
     email: plain.email || '',
     category: plain.category,
-    label: plain.label,
+    label: visibleLabel(plain.label),
     loadSize: plain.loadSize || null,
-    boxes: plain.boxes || [],
+    boxes: visibleBoxes(plain.boxes),
     labeledBy: plain.labeledBy || null,
     labeledAt: plain.labeledAt,
     exportedAt: plain.exportedAt || null,
@@ -256,6 +268,7 @@ const labelingCtrl = {
       stats.unlabeled = queueCount;
       stats.total = labeledCount + queueCount;
       for (const row of classCounts) {
+        if (labelingService.isHiddenYoloClass(row._id)) continue;
         stats.classes[row._id] = row.count;
       }
       stats.unexported = unexportedCount;
@@ -536,7 +549,8 @@ const labelingCtrl = {
   getClasses: async (req, res) => {
     try {
       await labelingService.ensureDefaultClasses();
-      const classes = await LabelClass.find().sort({ category: 1, name: 1 });
+      const classes = (await LabelClass.find().sort({ category: 1, name: 1 }))
+        .filter((item) => !labelingService.isHiddenYoloClass(item.name));
       const items = classes.filter((item) => item.category !== 'load');
       const loads = classes.filter((item) => item.category === 'load');
       const catalogueNames = await labelingService.listCatalogueNamesMissingFromYaml(classes);
