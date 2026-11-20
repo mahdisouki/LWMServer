@@ -451,6 +451,92 @@ async function getTruckCrewUserIdsForTaskDate(truckId, taskDate) {
   return [...ids];
 }
 
+const CREW_STAFF_SELECT = 'firstName lastName username';
+
+function collectionDateKey(date) {
+  if (!date) return null;
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().split('T')[0];
+}
+
+function staffPublic(user) {
+  if (!user) return null;
+  return {
+    _id: user._id,
+    username: user.username || '',
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+  };
+}
+
+/**
+ * Driver and helper who were on the unit for the order's collection day.
+ * Source of truth is UnitAssignmentLogRange (same lookup as route management).
+ */
+async function loadDayCrewByTruckDate(pairs) {
+  const unique = new Map();
+  for (const pair of pairs) {
+    if (!pair.truckId || !pair.dateKey) continue;
+    unique.set(`${pair.truckId}:${pair.dateKey}`, pair);
+  }
+
+  const resolved = new Map();
+  await Promise.all(
+    [...unique.entries()].map(async ([key, { truckId, dateKey }]) => {
+      const assigned = await getAssignedForDayFromRanges(truckId, dateKey);
+      resolved.set(key, {
+        driverId: assigned?.driverId || null,
+        helperId: assigned?.helperId || null,
+      });
+    }),
+  );
+
+  const userIds = new Set();
+  for (const crew of resolved.values()) {
+    if (crew.driverId) userIds.add(String(crew.driverId));
+    if (crew.helperId) userIds.add(String(crew.helperId));
+  }
+
+  const users = userIds.size
+    ? await User.find({ _id: { $in: [...userIds] } }).select(CREW_STAFF_SELECT).lean()
+    : [];
+  const usersById = new Map(users.map((user) => [String(user._id), user]));
+
+  const named = new Map();
+  for (const [key, crew] of resolved) {
+    named.set(key, {
+      assignedDriver: staffPublic(crew.driverId ? usersById.get(String(crew.driverId)) : null),
+      assignedHelper: staffPublic(crew.helperId ? usersById.get(String(crew.helperId)) : null),
+    });
+  }
+  return named;
+}
+
+async function attachTruckAndDayCrew(tasks) {
+  const trucks = await Promise.all(
+    tasks.map((task) => (task.truckId ? Truck.findById(task.truckId).populate('vanId') : null)),
+  );
+  const pairs = tasks.map((task) => ({
+    truckId: task.truckId,
+    dateKey: collectionDateKey(task.date),
+  }));
+  const crewByKey = await loadDayCrewByTruckDate(pairs);
+
+  return tasks.map((task, index) => {
+    const obj = typeof task.toObject === 'function' ? task.toObject() : { ...task };
+    const truck = trucks[index];
+    obj.truckName = truck ? truckDisplayName(truck) : obj.truckName || null;
+    const pair = pairs[index];
+    const crew = pair.truckId && pair.dateKey
+      ? crewByKey.get(`${pair.truckId}:${pair.dateKey}`)
+      : null;
+    obj.assignedDriver = crew?.assignedDriver || null;
+    obj.assignedHelper = crew?.assignedHelper || null;
+    return obj;
+  });
+}
+
 async function notifyTruckCrewLinkedAdditionalTaskAccepted({
   parentTask,
   childTask,
@@ -2361,9 +2447,10 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
       const vanLoadPercentage = await calculateVanLoadPercentage(task);
+      const [taskWithCrew] = await attachTruckAndDayCrew([task]);
       res.status(200).json({
         message: 'Task retrieved successfully',
-        task,
+        task: taskWithCrew,
         vanLoadPercentage,
       });
     } catch (error) {
@@ -2439,9 +2526,10 @@ const taskCtrl = {
         return res.status(404).json({ message: 'Task not found' });
       }
       const vanLoadPercentage = await calculateVanLoadPercentage(task);
+      const [taskWithCrew] = await attachTruckAndDayCrew([task]);
       res.status(200).json({
         message: 'Task retrieved successfully',
-        task,
+        task: taskWithCrew,
         vanLoadPercentage,
       });
     } catch (error) {
@@ -2482,16 +2570,7 @@ const taskCtrl = {
         select: 'code percentage discountType discountValue',
       });
 
-      const tasksWithTrucks = await Promise.all(
-        tasks.map(async (task) => {
-          if (task.truckId) {
-            const truck = await Truck.findById(task.truckId).populate('vanId');
-            task = task.toObject();
-            task.truckName = truck ? truckDisplayName(truck) : null;
-          }
-          return task;
-        }),
-      );
+      const tasksWithTrucks = await attachTruckAndDayCrew(tasks);
 
       res.status(200).json({
         message: 'All tasks retrieved successfully',
@@ -2517,16 +2596,7 @@ const taskCtrl = {
 
       const { data: tasks, meta } = await paginateBusinessCustomerTasks(req.query);
 
-      const tasksWithTrucks = await Promise.all(
-        tasks.map(async (task) => {
-          if (task.truckId) {
-            const truck = await Truck.findById(task.truckId).populate('vanId');
-            task = task.toObject();
-            task.truckName = truck ? truckDisplayName(truck) : null;
-          }
-          return task;
-        }),
-      );
+      const tasksWithTrucks = await attachTruckAndDayCrew(tasks);
 
       res.status(200).json({
         message: 'Business customer tasks retrieved successfully',
