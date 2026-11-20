@@ -78,6 +78,25 @@ const labelingJobSchema = new Schema(
       ref: 'User',
       default: null,
     },
+    // One load-size label per labeler. The photo stays unlabeled until 75% match.
+    loadLabels: {
+      type: [
+        new Schema(
+          {
+            userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+            loadSize: {
+              type: String,
+              enum: ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load'],
+              required: true,
+            },
+            boxes: { type: [boxSchema], default: [] },
+            labeledAt: { type: Date, default: Date.now },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );

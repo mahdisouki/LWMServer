@@ -60,9 +60,11 @@ async function getLabelingProgress({ preset, startDate, endDate } = {}) {
     itemsSkipped,
     loadsSkipped,
     unexported,
-    labeledInPeriod,
+    itemsLabeledInPeriod,
     skippedInPeriod,
     labeledByUser,
+    loadAttemptsByUser,
+    legacyLoadsByUser,
     skippedByUser,
   ] = await Promise.all([
     LabeledImage.countDocuments({ category: 'item' }),
@@ -72,16 +74,56 @@ async function getLabelingProgress({ preset, startDate, endDate } = {}) {
     LabelingJob.countDocuments({ status: 'skipped', category: { $ne: 'load' } }),
     LabelingJob.countDocuments({ status: 'skipped', category: 'load' }),
     LabeledImage.countDocuments(UNEXPORTED),
-    LabeledImage.countDocuments({ labeledAt: range }),
+    LabeledImage.countDocuments({ category: 'item', labeledAt: range }),
     LabelingJob.countDocuments({ status: 'skipped', skippedAt: range }),
     LabeledImage.aggregate([
-      { $match: { labeledAt: range } },
+      { $match: { category: 'item', labeledAt: range } },
       {
         $group: {
           _id: '$labeledBy',
           labeled: { $sum: 1 },
-          items: { $sum: { $cond: [{ $eq: ['$category', 'item'] }, 1, 0] } },
-          loads: { $sum: { $cond: [{ $eq: ['$category', 'load'] }, 1, 0] } },
+          items: { $sum: 1 },
+          boxes: { $sum: { $size: { $ifNull: ['$boxes', []] } } },
+          lastLabeledAt: { $max: '$labeledAt' },
+        },
+      },
+    ]),
+    // Every saved load size counts, including sizes that have not reached 75% yet.
+    LabelingJob.aggregate([
+      { $unwind: '$loadLabels' },
+      { $match: { 'loadLabels.labeledAt': range } },
+      {
+        $group: {
+          _id: '$loadLabels.userId',
+          loads: { $sum: 1 },
+          boxes: { $sum: { $size: { $ifNull: ['$loadLabels.boxes', []] } } },
+          lastLabeledAt: { $max: '$loadLabels.labeledAt' },
+        },
+      },
+    ]),
+    // Finished loads from before each labeler was recorded separately.
+    LabeledImage.aggregate([
+      { $match: { category: 'load', labeledAt: range } },
+      {
+        $lookup: {
+          from: 'labelingjobs',
+          localField: 'jobId',
+          foreignField: '_id',
+          as: 'job',
+        },
+      },
+      {
+        $match: {
+          $or: [
+            { job: { $size: 0 } },
+            { 'job.loadLabels.0': { $exists: false } },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id: '$labeledBy',
+          loads: { $sum: 1 },
           boxes: { $sum: { $size: { $ifNull: ['$boxes', []] } } },
           lastLabeledAt: { $max: '$labeledAt' },
         },
@@ -98,6 +140,10 @@ async function getLabelingProgress({ preset, startDate, endDate } = {}) {
       },
     ]),
   ]);
+
+  const loadAttemptCount = loadAttemptsByUser.reduce((sum, row) => sum + row.loads, 0);
+  const legacyLoadCount = legacyLoadsByUser.reduce((sum, row) => sum + row.loads, 0);
+  const labeledInPeriod = itemsLabeledInPeriod + loadAttemptCount + legacyLoadCount;
 
   const byUser = new Map();
   const touch = (id) => {
@@ -116,13 +162,28 @@ async function getLabelingProgress({ preset, startDate, endDate } = {}) {
     return byUser.get(key);
   };
 
+  const takeLatest = (current, next) => {
+    if (!next) return current;
+    if (!current) return next;
+    return new Date(next) > new Date(current) ? next : current;
+  };
+
   for (const row of labeledByUser) {
     const entry = touch(row._id);
-    entry.labeled = row.labeled;
     entry.items = row.items;
-    entry.loads = row.loads;
-    entry.boxes = row.boxes;
+    entry.boxes += row.boxes;
     entry.lastActivityAt = row.lastLabeledAt || null;
+  }
+
+  for (const row of [...loadAttemptsByUser, ...legacyLoadsByUser]) {
+    const entry = touch(row._id);
+    entry.loads += row.loads;
+    entry.boxes += row.boxes;
+    entry.lastActivityAt = takeLatest(entry.lastActivityAt, row.lastLabeledAt);
+  }
+
+  for (const entry of byUser.values()) {
+    entry.labeled = entry.items + entry.loads;
   }
 
   for (const row of skippedByUser) {

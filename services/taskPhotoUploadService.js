@@ -158,12 +158,12 @@ async function processTaskPhotoUploadJob(jobId) {
 
     await emitPhotoUploadRefresh(job, 'completed');
 
-    if (job.step === 'additional') {
+    if (job.step === 'initial' || job.step === 'intermediate' || job.step === 'final' || job.step === 'additional') {
       const labelingService = require('./labelingService');
       const taskForLabeling = await Task.findById(job.taskId);
       if (taskForLabeling) {
         labelingService.enqueueTaskImages(taskForLabeling, urls).catch((enqueueError) => {
-          console.error('Failed to enqueue labeling jobs after extra item upload:', enqueueError);
+          console.error('Failed to enqueue labeling jobs after task photo upload:', enqueueError);
         });
       }
     }

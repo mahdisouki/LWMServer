@@ -44,6 +44,126 @@ function visibleBoxes(boxes) {
   );
 }
 
+function hideOwnLoadLabels(filter, userId) {
+  if (!userId) return filter;
+  return {
+    $and: [
+      filter,
+      { loadLabels: { $not: { $elemMatch: { userId } } } },
+    ],
+  };
+}
+
+async function loadLabelerIds(currentUserId) {
+  const Admin = require('../models/Admin');
+  const admins = await Admin.find({
+    isStillWorking: { $ne: false },
+    'permissions.Labeling': 'Edit',
+  }).select('_id').lean();
+  const ids = admins.map((admin) => String(admin._id));
+  const current = String(currentUserId);
+  if (!ids.includes(current)) ids.push(current);
+  return ids;
+}
+
+function majorityNeeded(labelerCount) {
+  return Math.ceil(Math.max(1, labelerCount) * 0.75);
+}
+
+async function recordLoadMajority(req, res, job) {
+  const userId = req.user._id;
+  const entry = {
+    userId,
+    loadSize: job.label,
+    boxes: job.boxes,
+    labeledAt: new Date(),
+  };
+  const openFilter = {
+    _id: job._id,
+    status: { $nin: ['deleted', 'labeled'] },
+  };
+
+  const pulled = await LabelingJob.updateOne(openFilter, {
+    $pull: { loadLabels: { userId } },
+  });
+  if (!pulled.matchedCount) {
+    return res.status(409).json({
+      message: 'This photo was just labeled by someone else',
+    });
+  }
+
+  const saved = await LabelingJob.findOneAndUpdate(
+    openFilter,
+    {
+      $push: { loadLabels: entry },
+      $set: {
+        label: null,
+        loadSize: null,
+        boxes: [],
+        category: 'load',
+        status: 'pending',
+        labeledAt: null,
+        skippedAt: null,
+      },
+    },
+    { new: true },
+  );
+  if (!saved) {
+    return res.status(409).json({
+      message: 'This photo was just labeled by someone else',
+    });
+  }
+
+  const labelerIds = await loadLabelerIds(userId);
+  const allowed = new Set(labelerIds);
+  const counts = {};
+  for (const vote of saved.loadLabels || []) {
+    if (!allowed.has(String(vote.userId))) continue;
+    counts[vote.loadSize] = (counts[vote.loadSize] || 0) + 1;
+  }
+  const needed = majorityNeeded(labelerIds.length);
+  const winner = Object.keys(counts).find((size) => counts[size] >= needed) || null;
+
+  if (!winner) {
+    emitLabelingJobsChanged(saved, userId);
+    return res.status(200).json({
+      message: 'Load size recorded. Waiting for the other labelers.',
+      awaitingMajority: true,
+      job: serializeJob(saved),
+    });
+  }
+
+  const winningVote = [...saved.loadLabels].reverse().find(
+    (vote) => vote.loadSize === winner && allowed.has(String(vote.userId)),
+  );
+  const finalized = await LabelingJob.findOneAndUpdate(
+    openFilter,
+    {
+      $set: {
+        label: winner,
+        loadSize: winner,
+        boxes: winningVote?.boxes || job.boxes,
+        category: 'load',
+        status: 'labeled',
+        labeledAt: new Date(),
+        labeledBy: winningVote?.userId || userId,
+        skippedAt: null,
+      },
+    },
+    { new: true },
+  );
+  const done = finalized || await LabelingJob.findById(job._id);
+  if (finalized) {
+    await labelingService.publishLabeledImage(finalized, userId);
+  }
+  emitLabelingJobsChanged(done, userId);
+  return res.status(200).json({
+    message: 'Annotation saved',
+    awaitingMajority: false,
+    job: serializeJob(done),
+  });
+}
+
 function emitLabelingJobsChanged(jobs, actorId) {
   try {
     const { getIo } = require('../socket');
@@ -277,13 +397,20 @@ const labelingCtrl = {
         Object.assign(filter, next);
       }
 
+      const visibleFilter = moduleName === 'loads' && status !== 'labeled'
+        ? hideOwnLoadLabels(filter, req.user?._id)
+        : filter;
+      const visibleModuleFilter = moduleName === 'loads'
+        ? hideOwnLoadLabels(moduleFilter, req.user?._id)
+        : moduleFilter;
+
       const labeledImageFilter = labeledImageCategoryFilter(moduleName);
       const [jobs, total, statusCounts, classCounts, labeledCount, queueCount, unexportedCount] =
         await Promise.all([
-          LabelingJob.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-          LabelingJob.countDocuments(filter),
+          LabelingJob.find(visibleFilter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+          LabelingJob.countDocuments(visibleFilter),
           LabelingJob.aggregate([
-            { $match: moduleFilter },
+            { $match: visibleModuleFilter },
             { $group: { _id: '$status', count: { $sum: 1 } } },
           ]),
           LabeledImage.aggregate([
@@ -292,7 +419,7 @@ const labelingCtrl = {
             { $group: { _id: '$boxes.label', count: { $sum: 1 } } },
           ]),
           LabeledImage.countDocuments(labeledImageFilter),
-          LabelingJob.countDocuments(moduleFilter),
+          LabelingJob.countDocuments(visibleModuleFilter),
           LabeledImage.countDocuments({
             $or: [{ exportedAt: null }, { exportedAt: { $exists: false } }],
           }),
@@ -362,7 +489,9 @@ const labelingCtrl = {
     try {
       const moduleName = req.query.module === 'loads' ? 'loads' : 'items';
       const excludeId = req.query.excludeId;
-      const filter = { ...unlabeledFilter(moduleName) };
+      const filter = moduleName === 'loads'
+        ? hideOwnLoadLabels({ ...unlabeledFilter(moduleName) }, req.user?._id)
+        : { ...unlabeledFilter(moduleName) };
       if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) {
         filter._id = { $ne: excludeId };
       }
@@ -508,6 +637,16 @@ const labelingCtrl = {
         }));
       }
 
+      const recordingLoadSize = job.category === 'load'
+        && labelingService.LOAD_SIZES.includes(job.label)
+        && Array.isArray(job.boxes)
+        && job.boxes.length > 0
+        && !(job.status === 'labeled' && String(job.labeledBy) === String(req.user._id));
+
+      if (recordingLoadSize) {
+        return recordLoadMajority(req, res, job);
+      }
+
       const queuedLoad = job.category === 'load'
         && !labelingService.LOAD_SIZES.includes(job.label);
 
@@ -558,6 +697,7 @@ const labelingCtrl = {
             labeledBy: job.labeledBy,
             skippedAt: job.skippedAt,
             predictedAt: job.predictedAt,
+            loadLabels: [],
           },
         },
         { new: true },

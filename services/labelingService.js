@@ -160,6 +160,9 @@ function collectTaskImageUrls(task, extraUrls = []) {
   const urls = [
     ...(Array.isArray(task.clientObjectPhotos) ? task.clientObjectPhotos : []),
     ...collectGroupPhotoUrls(task.additionalItems),
+    ...collectGroupPhotoUrls(task.initialConditionPhotos),
+    ...collectGroupPhotoUrls(task.intermediateConditionPhotos),
+    ...collectGroupPhotoUrls(task.finalConditionPhotos),
     ...extraUrls,
   ];
   return [...new Set(urls.filter(isLabelingImageUrl))];
@@ -664,10 +667,13 @@ async function syncJobsFromOrders() {
     $or: [
       { clientObjectPhotos: { $elemMatch: HTTP_IMAGE_QUERY } },
       { 'additionalItems.items': HTTP_IMAGE_QUERY },
+      { 'initialConditionPhotos.items': HTTP_IMAGE_QUERY },
+      { 'intermediateConditionPhotos.items': HTTP_IMAGE_QUERY },
+      { 'finalConditionPhotos.items': HTTP_IMAGE_QUERY },
     ],
   })
     .select(
-      '_id firstName lastName email orderNumber clientObjectPhotos additionalItems'
+      '_id firstName lastName email orderNumber clientObjectPhotos additionalItems initialConditionPhotos intermediateConditionPhotos finalConditionPhotos'
     )
     .lean();
 
@@ -819,6 +825,7 @@ async function resetJobToUnlabeled(job) {
   job.predictedAt = null;
   job.labeledBy = null;
   job.category = keepLoadQueue ? 'load' : null;
+  job.loadLabels = [];
   await job.save();
   await publishLabeledImage(job, null);
   return job;
