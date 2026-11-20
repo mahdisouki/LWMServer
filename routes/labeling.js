@@ -27,6 +27,7 @@ router.get('/next', ...canView, labelingCtrl.getNextJob);
 router.get('/classes', ...canView, labelingCtrl.getClasses);
 router.post('/classes', ...canEdit, labelingCtrl.createClass);
 router.post('/sync', ...canEdit, labelingCtrl.syncFromQuotations);
+router.post('/bulk-delete', ...canEdit, labelingCtrl.deleteJobs);
 router.get('/export', ...canView, labelingCtrl.exportDataset);
 router.get('/labeled', ...canView, labelingCtrl.getLabeledImages);
 router.post('/labeled/:id/unlabel', ...canDelete, labelingCtrl.unlabelLabeledImage);
@@ -35,6 +36,7 @@ router.get('/:id', ...canView, labelingCtrl.getJobById);
 router.post('/:id/predict', ...canEdit, labelingCtrl.predictJob);
 router.post('/:id/save', ...canEdit, labelingCtrl.saveJob);
 router.post('/:id/skip', ...canEdit, labelingCtrl.skipJob);
+router.post('/:id/delete', ...canEdit, labelingCtrl.deleteJob);
 router.post('/:id/unlabel', ...canDelete, labelingCtrl.unlabelJob);
 
 module.exports = router;

@@ -52,7 +52,7 @@ const labelingJobSchema = new Schema(
     },
     loadSize: {
       type: String,
-      enum: ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load', null],
+      enum: ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load', null],
       default: null,
       index: true,
     },
@@ -64,7 +64,7 @@ const labelingJobSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'predicted', 'labeled', 'skipped'],
+      enum: ['pending', 'predicted', 'labeled', 'skipped', 'deleted'],
       default: 'pending',
       index: true,
     },
@@ -72,6 +72,7 @@ const labelingJobSchema = new Schema(
     predictedAt: { type: Date, default: null },
     labeledAt: { type: Date, default: null },
     skippedAt: { type: Date, default: null },
+    deletedAt: { type: Date, default: null },
     labeledBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

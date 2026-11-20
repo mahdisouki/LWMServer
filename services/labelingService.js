@@ -125,7 +125,15 @@ const VIDEO_EXT_RE = /\.(mp4|webm|ogg|mov|avi|m4v)(\?|$)/i;
 const HTTP_IMAGE_QUERY = { $regex: /^https?:\/\// };
 // New classes appended after the frozen filtered model order on export.
 // category:'load' is back-office UI only — in YOLO they are normal class names.
-const LOAD_SIZES = ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load'];
+const LOAD_SIZES = ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load'];
+// Existing sizes keep their YOLO offsets. Mini Load is appended so those indexes do not move.
+const LOAD_SIZE_YOLO_OFFSET = {
+  '1/4 Load': 0,
+  '1/2 Load': 1,
+  '3/4 Load': 2,
+  'Full Load': 3,
+  'Mini Load': 4,
+};
 const REMOVED_HELPER_CLASSES = ['Sofa', 'Chair', 'Table'];
 
 function getYoloPredictUrl() {
@@ -248,11 +256,11 @@ async function ensureDefaultClasses() {
       category: 'item',
       yoloIndex,
     })),
-    ...LOAD_SIZES.map((name, offset) => ({
+    ...LOAD_SIZES.map((name) => ({
       name,
       isYoloClass: true,
       category: 'load',
-      yoloIndex: DEFAULT_YOLO_CLASSES.length + offset,
+      yoloIndex: DEFAULT_YOLO_CLASSES.length + LOAD_SIZE_YOLO_OFFSET[name],
     })),
   ];
   const ops = defaultClasses.map((item) => ({

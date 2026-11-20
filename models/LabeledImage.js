@@ -57,7 +57,7 @@ const labeledImageSchema = new Schema(
     label: { type: String, required: true, index: true },
     loadSize: {
       type: String,
-      enum: ['1/4 Load', '1/2 Load', '3/4 Load', 'Full Load', null],
+      enum: ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load', null],
       default: null,
     },
     boxes: { type: [boxSchema], required: true },

@@ -28,14 +28,20 @@ function displayName(user) {
 
 const ITEMS_REMAINING = {
   $and: [
-    { $or: [{ category: { $exists: false } }, { category: null }] },
-    { status: { $nin: ['labeled', 'skipped'] } },
+    {
+      $or: [
+        { category: { $exists: false } },
+        { category: null },
+        { category: 'item' },
+      ],
+    },
+    { status: { $nin: ['labeled', 'skipped', 'deleted'] } },
   ],
 };
 
 const LOADS_REMAINING = {
   category: 'load',
-  status: { $nin: ['labeled', 'skipped'] },
+  status: { $nin: ['labeled', 'skipped', 'deleted'] },
 };
 
 const UNEXPORTED = {

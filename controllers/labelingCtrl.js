@@ -5,6 +5,28 @@ const LabeledImage = require('../models/LabeledImage');
 const StandardItem = require('../models/StandardItem');
 const labelingService = require('../services/labelingService');
 
+function denyUnlessSuperAdmin(req, res) {
+  if (req.user?.isSuperAdmin === true) return false;
+  res.status(403).json({
+    message: 'Only a super admin has access to the delete button',
+  });
+  return true;
+}
+
+async function removeLabelingJob(job, userId) {
+  job.label = null;
+  job.loadSize = null;
+  job.boxes = [];
+  job.status = 'deleted';
+  job.deletedAt = new Date();
+  job.labeledAt = null;
+  job.skippedAt = null;
+  job.labeledBy = userId || null;
+  await job.save();
+  await labelingService.publishLabeledImage(job, null);
+  return job;
+}
+
 function parsePagination(query) {
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(2000, Math.max(1, parseInt(query.limit, 10) || 20));
@@ -20,6 +42,24 @@ function visibleBoxes(boxes) {
   return (Array.isArray(boxes) ? boxes : []).filter(
     (box) => !labelingService.isHiddenYoloClass(box?.label),
   );
+}
+
+function emitLabelingJobsChanged(jobs, actorId) {
+  try {
+    const { getIo } = require('../socket');
+    const io = getIo();
+    const list = (Array.isArray(jobs) ? jobs : [jobs]).filter(Boolean).map((job) => ({
+      jobId: String(job._id),
+      status: job.status,
+      category: job.category || null,
+      label: job.label || job.loadSize || null,
+      actorId: actorId ? String(actorId) : null,
+    }));
+    if (!list.length) return;
+    io.emit('labeling:jobs-changed', { jobs: list });
+  } catch (error) {
+    // Socket is not available when the API is imported outside the running server.
+  }
 }
 
 function serializeJob(job) {
@@ -82,11 +122,19 @@ function validateBoxes(boxes) {
 }
 
 function itemsModuleFilter() {
-  // Classes queue only: not finished, not sent to Loads
+  // Classes queue: not finished and not sitting in Loads.
+  // category "item" here is only an unfinished revert; a labeled class photo
+  // has status "labeled" and is excluded below.
   return {
     $and: [
-      { $or: [{ category: { $exists: false } }, { category: null }] },
-      { status: { $nin: ['labeled', 'skipped'] } },
+      {
+        $or: [
+          { category: { $exists: false } },
+          { category: null },
+          { category: 'item' },
+        ],
+      },
+      { status: { $nin: ['labeled', 'skipped', 'deleted'] } },
     ],
   };
 }
@@ -95,7 +143,7 @@ function loadsModuleFilter() {
   // Loads queue only: unfinished load photos
   return {
     category: 'load',
-    status: { $nin: ['labeled', 'skipped'] },
+    status: { $nin: ['labeled', 'skipped', 'deleted'] },
   };
 }
 
@@ -103,7 +151,7 @@ function unlabeledFilter(moduleName) {
   if (moduleName === 'loads') {
     return {
       category: 'load',
-      status: { $nin: ['labeled', 'skipped'] },
+      status: { $nin: ['labeled', 'skipped', 'deleted'] },
       $or: [{ boxes: { $exists: false } }, { boxes: { $size: 0 } }],
     };
   }
@@ -484,14 +532,47 @@ const labelingCtrl = {
       } else {
         job.status = 'pending';
         job.labeledAt = null;
+        // The Classes queue lists photos with no category. "item" is only for a labeled class.
+        if (job.category === 'item') {
+          job.category = null;
+        }
       }
 
-      await job.save();
-      await labelingService.publishLabeledImage(job, req.user._id);
+      const saved = await LabelingJob.findOneAndUpdate(
+        {
+          _id: job._id,
+          status: { $ne: 'deleted' },
+          $or: [
+            { status: { $ne: 'labeled' } },
+            { labeledBy: req.user._id },
+          ],
+        },
+        {
+          $set: {
+            label: job.label,
+            loadSize: job.loadSize,
+            category: job.category,
+            boxes: job.boxes,
+            status: job.status,
+            labeledAt: job.labeledAt,
+            labeledBy: job.labeledBy,
+            skippedAt: job.skippedAt,
+            predictedAt: job.predictedAt,
+          },
+        },
+        { new: true },
+      );
+      if (!saved) {
+        return res.status(409).json({
+          message: 'This photo was just labeled by someone else',
+        });
+      }
+      await labelingService.publishLabeledImage(saved, req.user._id);
+      emitLabelingJobsChanged(saved, req.user._id);
 
       return res.status(200).json({
         message: 'Annotation saved',
-        job: serializeJob(job),
+        job: serializeJob(saved),
       });
     } catch (error) {
       return res.status(500).json({
@@ -512,6 +593,7 @@ const labelingCtrl = {
       job.skippedAt = new Date();
       job.labeledBy = req.user._id;
       await job.save();
+      emitLabelingJobsChanged(job, req.user._id);
 
       return res.status(200).json({
         message: 'Job skipped',
@@ -525,6 +607,55 @@ const labelingCtrl = {
     }
   },
 
+  deleteJob: async (req, res) => {
+    try {
+      if (denyUnlessSuperAdmin(req, res)) return;
+      const job = await LabelingJob.findById(req.params.id);
+      if (!job) {
+        return res.status(404).json({ message: 'Labeling job not found' });
+      }
+
+      await removeLabelingJob(job, req.user._id);
+      emitLabelingJobsChanged(job, req.user._id);
+
+      return res.status(200).json({
+        message: 'Photo deleted',
+        job: serializeJob(job),
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to delete photo',
+        error: error.message,
+      });
+    }
+  },
+
+  deleteJobs: async (req, res) => {
+    try {
+      if (denyUnlessSuperAdmin(req, res)) return;
+      const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [])
+        .map((id) => String(id))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id));
+      if (!ids.length) {
+        return res.status(400).json({ message: 'Select at least one photo' });
+      }
+
+      const jobs = await LabelingJob.find({ _id: { $in: ids } });
+      await Promise.all(jobs.map((job) => removeLabelingJob(job, req.user._id)));
+      emitLabelingJobsChanged(jobs, req.user._id);
+
+      return res.status(200).json({
+        message: 'Photos deleted',
+        deleted: jobs.length,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to delete photos',
+        error: error.message,
+      });
+    }
+  },
+
   unlabelJob: async (req, res) => {
     try {
       const job = await LabelingJob.findById(req.params.id);
@@ -533,6 +664,7 @@ const labelingCtrl = {
       }
 
       await labelingService.resetJobToUnlabeled(job);
+      emitLabelingJobsChanged(job, req.user._id);
 
       return res.status(200).json({
         message: 'Photo unlabeled',
@@ -822,6 +954,7 @@ const labelingCtrl = {
           job.labeledAt = record.labeledAt;
           job.labeledBy = req.user._id;
           await job.save();
+          emitLabelingJobsChanged(job, req.user._id);
         }
       }
 
@@ -855,6 +988,7 @@ const labelingCtrl = {
       }
 
       await labelingService.resetJobToUnlabeled(job);
+      emitLabelingJobsChanged(job, req.user._id);
 
       return res.status(200).json({
         message: 'Image unlabeled',
