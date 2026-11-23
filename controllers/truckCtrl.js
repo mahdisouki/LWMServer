@@ -11,6 +11,11 @@ const { findTruckByTruckName, applyTruckStaffPopulate, populateHelperId, assertV
 const {
   buildChatTrucksPayload,
 } = require('../utils/chatMessageHelpers');
+const {
+  resolveTruckDayRouteCoords,
+  upsertTruckDayRouteLocations,
+  deleteTruckDayRouteLocations,
+} = require('../services/truckRouteLocationService');
 const formatDate = (date) => {
   const d = new Date(date);
   const year = d.getFullYear();
@@ -496,6 +501,8 @@ const truckCtrl = {
         assigned.helperId ? User.findById(assigned.helperId).select(staffGeoSelect) : null,
       ]);
 
+      const routeLocations = await resolveTruckDayRouteCoords(id, date, assigned);
+
       return res.status(200).json({
         message: 'Assignments from ranges retrieved successfully',
         truckId: id,
@@ -507,10 +514,92 @@ const truckCtrl = {
           van,
           driver,
           helper,
+          routeStart: routeLocations.start,
+          routeEnd: routeLocations.end,
+          routeStartSource: routeLocations.startSource,
+          routeEndSource: routeLocations.endSource,
+          routeLocationOverride: routeLocations.override,
         },
       });
     } catch (error) {
       res.status(500).json({ message: 'Failed to get assigned resources from ranges', error: error.message });
+    }
+  },
+
+  getTruckDayRouteLocations: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { date } = req.query;
+      if (!date) {
+        return res.status(400).json({ message: 'Query parameter "date" is required (YYYY-MM-DD)' });
+      }
+      const resolved = await resolveTruckDayRouteCoords(id, date);
+      return res.status(200).json({
+        message: 'Truck day route locations retrieved successfully',
+        truckId: id,
+        ...resolved,
+      });
+    } catch (error) {
+      const status = error.statusCode || 500;
+      return res.status(status).json({
+        message: status === 400 || status === 404 ? error.message : 'Failed to get truck day route locations',
+        error: error.message,
+      });
+    }
+  },
+
+  upsertTruckDayRouteLocations: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { date, start, end, clearStart, clearEnd } = req.body || {};
+      if (!date) {
+        return res.status(400).json({ message: 'date is required (YYYY-MM-DD)' });
+      }
+
+      await upsertTruckDayRouteLocations({
+        truckId: id,
+        date,
+        start,
+        end,
+        clearStart: clearStart === true || clearStart === 'true',
+        clearEnd: clearEnd === true || clearEnd === 'true',
+      });
+
+      const resolved = await resolveTruckDayRouteCoords(id, date);
+      return res.status(200).json({
+        message: 'Truck day route locations saved successfully',
+        truckId: id,
+        ...resolved,
+      });
+    } catch (error) {
+      const status = error.statusCode || 500;
+      return res.status(status).json({
+        message: status === 400 || status === 404 ? error.message : 'Failed to save truck day route locations',
+        error: error.message,
+      });
+    }
+  },
+
+  deleteTruckDayRouteLocations: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { date } = req.query;
+      if (!date) {
+        return res.status(400).json({ message: 'Query parameter "date" is required (YYYY-MM-DD)' });
+      }
+      await deleteTruckDayRouteLocations(id, date);
+      const resolved = await resolveTruckDayRouteCoords(id, date);
+      return res.status(200).json({
+        message: 'Truck day route locations cleared successfully',
+        truckId: id,
+        ...resolved,
+      });
+    } catch (error) {
+      const status = error.statusCode || 500;
+      return res.status(status).json({
+        message: status === 400 || status === 404 ? error.message : 'Failed to clear truck day route locations',
+        error: error.message,
+      });
     }
   },
 

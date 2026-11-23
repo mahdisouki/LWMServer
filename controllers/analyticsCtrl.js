@@ -13,6 +13,7 @@ const paidSearchTermsService = require('../services/analytics/paidSearchTermsSer
 const adminOrdersService = require('../services/analytics/adminOrdersService');
 const staffWorkingHoursService = require('../services/analytics/staffWorkingHoursService');
 const exitOfferService = require('../services/analytics/exitOfferService');
+const labelingProgressService = require('../services/analytics/labelingProgressService');
 const { getPageFilters } = require('../config/analyticsPageMap');
 
 const analyticsCtrl = {
@@ -584,6 +585,30 @@ const analyticsCtrl = {
         : 500;
       res.status(status).json({
         message: 'Failed to load exit offer analytics',
+        error: error.message,
+      });
+    }
+  },
+
+  getLabelingProgress: async (req, res) => {
+    try {
+      const data = await labelingProgressService.getLabelingProgress({
+        preset: req.query.preset,
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      });
+      res.status(200).json({
+        message: 'Labeling progress retrieved successfully',
+        ...data,
+      });
+    } catch (error) {
+      const status = error.message.includes('Invalid')
+        || error.message.includes('preset')
+        || error.message.includes('startDate')
+        ? 400
+        : 500;
+      res.status(status).json({
+        message: 'Failed to load labeling progress',
         error: error.message,
       });
     }

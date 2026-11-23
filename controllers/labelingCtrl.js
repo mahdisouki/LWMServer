@@ -5,17 +5,189 @@ const LabeledImage = require('../models/LabeledImage');
 const StandardItem = require('../models/StandardItem');
 const labelingService = require('../services/labelingService');
 
+function denyUnlessSuperAdmin(req, res) {
+  if (req.user?.isSuperAdmin === true) return false;
+  res.status(403).json({
+    message: 'Only a super admin has access to the delete button',
+  });
+  return true;
+}
+
+async function removeLabelingJob(job, userId) {
+  job.label = null;
+  job.loadSize = null;
+  job.boxes = [];
+  job.status = 'deleted';
+  job.deletedAt = new Date();
+  job.labeledAt = null;
+  job.skippedAt = null;
+  job.labeledBy = userId || null;
+  await job.save();
+  await labelingService.publishLabeledImage(job, null);
+  return job;
+}
+
 function parsePagination(query) {
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(2000, Math.max(1, parseInt(query.limit, 10) || 20));
   return { page, limit, skip: (page - 1) * limit };
 }
 
+function visibleLabel(label) {
+  if (labelingService.isHiddenYoloClass(label)) return null;
+  return label || null;
+}
+
+function visibleBoxes(boxes) {
+  return (Array.isArray(boxes) ? boxes : []).filter(
+    (box) => !labelingService.isHiddenYoloClass(box?.label),
+  );
+}
+
+function hideOwnLoadLabels(filter, userId) {
+  if (!userId) return filter;
+  return {
+    $and: [
+      filter,
+      { loadLabels: { $not: { $elemMatch: { userId } } } },
+    ],
+  };
+}
+
+async function loadLabelerIds(currentUserId) {
+  const Admin = require('../models/Admin');
+  const admins = await Admin.find({
+    isStillWorking: { $ne: false },
+    'permissions.Labeling': 'Edit',
+  }).select('_id').lean();
+  const ids = admins.map((admin) => String(admin._id));
+  const current = String(currentUserId);
+  if (!ids.includes(current)) ids.push(current);
+  return ids;
+}
+
+function majorityNeeded(labelerCount) {
+  return Math.ceil(Math.max(1, labelerCount) * 0.75);
+}
+
+async function recordLoadMajority(req, res, job) {
+  const userId = req.user._id;
+  const entry = {
+    userId,
+    loadSize: job.label,
+    boxes: job.boxes,
+    labeledAt: new Date(),
+  };
+  const openFilter = {
+    _id: job._id,
+    status: { $nin: ['deleted', 'labeled'] },
+  };
+
+  const pulled = await LabelingJob.updateOne(openFilter, {
+    $pull: { loadLabels: { userId } },
+  });
+  if (!pulled.matchedCount) {
+    return res.status(409).json({
+      message: 'This photo was just labeled by someone else',
+    });
+  }
+
+  const saved = await LabelingJob.findOneAndUpdate(
+    openFilter,
+    {
+      $push: { loadLabels: entry },
+      $set: {
+        label: null,
+        loadSize: null,
+        boxes: [],
+        category: 'load',
+        status: 'pending',
+        labeledAt: null,
+        skippedAt: null,
+      },
+    },
+    { new: true },
+  );
+  if (!saved) {
+    return res.status(409).json({
+      message: 'This photo was just labeled by someone else',
+    });
+  }
+
+  const labelerIds = await loadLabelerIds(userId);
+  const allowed = new Set(labelerIds);
+  const counts = {};
+  for (const vote of saved.loadLabels || []) {
+    if (!allowed.has(String(vote.userId))) continue;
+    counts[vote.loadSize] = (counts[vote.loadSize] || 0) + 1;
+  }
+  const needed = majorityNeeded(labelerIds.length);
+  const winner = Object.keys(counts).find((size) => counts[size] >= needed) || null;
+
+  if (!winner) {
+    emitLabelingJobsChanged(saved, userId);
+    return res.status(200).json({
+      message: 'Load size recorded. Waiting for the other labelers.',
+      awaitingMajority: true,
+      job: serializeJob(saved),
+    });
+  }
+
+  const winningVote = [...saved.loadLabels].reverse().find(
+    (vote) => vote.loadSize === winner && allowed.has(String(vote.userId)),
+  );
+  const finalized = await LabelingJob.findOneAndUpdate(
+    openFilter,
+    {
+      $set: {
+        label: winner,
+        loadSize: winner,
+        boxes: winningVote?.boxes || job.boxes,
+        category: 'load',
+        status: 'labeled',
+        labeledAt: new Date(),
+        labeledBy: winningVote?.userId || userId,
+        skippedAt: null,
+      },
+    },
+    { new: true },
+  );
+  const done = finalized || await LabelingJob.findById(job._id);
+  if (finalized) {
+    await labelingService.publishLabeledImage(finalized, userId);
+  }
+  emitLabelingJobsChanged(done, userId);
+  return res.status(200).json({
+    message: 'Annotation saved',
+    awaitingMajority: false,
+    job: serializeJob(done),
+  });
+}
+
+function emitLabelingJobsChanged(jobs, actorId) {
+  try {
+    const { getIo } = require('../socket');
+    const io = getIo();
+    const list = (Array.isArray(jobs) ? jobs : [jobs]).filter(Boolean).map((job) => ({
+      jobId: String(job._id),
+      status: job.status,
+      category: job.category || null,
+      label: job.label || job.loadSize || null,
+      actorId: actorId ? String(actorId) : null,
+    }));
+    if (!list.length) return;
+    io.emit('labeling:jobs-changed', { jobs: list });
+  } catch (error) {
+    // Socket is not available when the API is imported outside the running server.
+  }
+}
+
 function serializeJob(job) {
   const plain = typeof job.toObject === 'function' ? job.toObject() : job;
-  const label = plain.label || plain.loadSize || null;
+  const storedLabel = plain.label || plain.loadSize || null;
+  const label = visibleLabel(storedLabel);
   const category = plain.category
-    || (labelingService.LOAD_SIZES.includes(label) ? 'load' : label ? 'item' : null);
+    || (labelingService.LOAD_SIZES.includes(storedLabel) ? 'load' : label ? 'item' : null);
   return {
     _id: String(plain._id),
     source: plain.source || 'quotation',
@@ -29,7 +201,7 @@ function serializeJob(job) {
     loadSize: plain.loadSize || null,
     category,
     status: plain.status,
-    boxes: plain.boxes || [],
+    boxes: visibleBoxes(plain.boxes),
     predictedAt: plain.predictedAt || null,
     labeledAt: plain.labeledAt || null,
     skippedAt: plain.skippedAt || null,
@@ -70,11 +242,19 @@ function validateBoxes(boxes) {
 }
 
 function itemsModuleFilter() {
-  // Classes queue only: not finished, not sent to Loads
+  // Classes queue: not finished and not sitting in Loads.
+  // category "item" here is only an unfinished revert; a labeled class photo
+  // has status "labeled" and is excluded below.
   return {
     $and: [
-      { $or: [{ category: { $exists: false } }, { category: null }] },
-      { status: { $nin: ['labeled', 'skipped'] } },
+      {
+        $or: [
+          { category: { $exists: false } },
+          { category: null },
+          { category: 'item' },
+        ],
+      },
+      { status: { $nin: ['labeled', 'skipped', 'deleted'] } },
     ],
   };
 }
@@ -83,7 +263,7 @@ function loadsModuleFilter() {
   // Loads queue only: unfinished load photos
   return {
     category: 'load',
-    status: { $nin: ['labeled', 'skipped'] },
+    status: { $nin: ['labeled', 'skipped', 'deleted'] },
   };
 }
 
@@ -91,7 +271,7 @@ function unlabeledFilter(moduleName) {
   if (moduleName === 'loads') {
     return {
       category: 'load',
-      status: { $nin: ['labeled', 'skipped'] },
+      status: { $nin: ['labeled', 'skipped', 'deleted'] },
       $or: [{ boxes: { $exists: false } }, { boxes: { $size: 0 } }],
     };
   }
@@ -125,9 +305,9 @@ function serializeLabeled(doc) {
     customerName: plain.customerName || '',
     email: plain.email || '',
     category: plain.category,
-    label: plain.label,
+    label: visibleLabel(plain.label),
     loadSize: plain.loadSize || null,
-    boxes: plain.boxes || [],
+    boxes: visibleBoxes(plain.boxes),
     labeledBy: plain.labeledBy || null,
     labeledAt: plain.labeledAt,
     exportedAt: plain.exportedAt || null,
@@ -217,13 +397,20 @@ const labelingCtrl = {
         Object.assign(filter, next);
       }
 
+      const visibleFilter = moduleName === 'loads' && status !== 'labeled'
+        ? hideOwnLoadLabels(filter, req.user?._id)
+        : filter;
+      const visibleModuleFilter = moduleName === 'loads'
+        ? hideOwnLoadLabels(moduleFilter, req.user?._id)
+        : moduleFilter;
+
       const labeledImageFilter = labeledImageCategoryFilter(moduleName);
       const [jobs, total, statusCounts, classCounts, labeledCount, queueCount, unexportedCount] =
         await Promise.all([
-          LabelingJob.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-          LabelingJob.countDocuments(filter),
+          LabelingJob.find(visibleFilter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+          LabelingJob.countDocuments(visibleFilter),
           LabelingJob.aggregate([
-            { $match: moduleFilter },
+            { $match: visibleModuleFilter },
             { $group: { _id: '$status', count: { $sum: 1 } } },
           ]),
           LabeledImage.aggregate([
@@ -232,7 +419,7 @@ const labelingCtrl = {
             { $group: { _id: '$boxes.label', count: { $sum: 1 } } },
           ]),
           LabeledImage.countDocuments(labeledImageFilter),
-          LabelingJob.countDocuments(moduleFilter),
+          LabelingJob.countDocuments(visibleModuleFilter),
           LabeledImage.countDocuments({
             $or: [{ exportedAt: null }, { exportedAt: { $exists: false } }],
           }),
@@ -256,6 +443,7 @@ const labelingCtrl = {
       stats.unlabeled = queueCount;
       stats.total = labeledCount + queueCount;
       for (const row of classCounts) {
+        if (labelingService.isHiddenYoloClass(row._id)) continue;
         stats.classes[row._id] = row.count;
       }
       stats.unexported = unexportedCount;
@@ -301,7 +489,9 @@ const labelingCtrl = {
     try {
       const moduleName = req.query.module === 'loads' ? 'loads' : 'items';
       const excludeId = req.query.excludeId;
-      const filter = { ...unlabeledFilter(moduleName) };
+      const filter = moduleName === 'loads'
+        ? hideOwnLoadLabels({ ...unlabeledFilter(moduleName) }, req.user?._id)
+        : { ...unlabeledFilter(moduleName) };
       if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) {
         filter._id = { $ne: excludeId };
       }
@@ -447,6 +637,16 @@ const labelingCtrl = {
         }));
       }
 
+      const recordingLoadSize = job.category === 'load'
+        && labelingService.LOAD_SIZES.includes(job.label)
+        && Array.isArray(job.boxes)
+        && job.boxes.length > 0
+        && !(job.status === 'labeled' && String(job.labeledBy) === String(req.user._id));
+
+      if (recordingLoadSize) {
+        return recordLoadMajority(req, res, job);
+      }
+
       const queuedLoad = job.category === 'load'
         && !labelingService.LOAD_SIZES.includes(job.label);
 
@@ -471,14 +671,48 @@ const labelingCtrl = {
       } else {
         job.status = 'pending';
         job.labeledAt = null;
+        // The Classes queue lists photos with no category. "item" is only for a labeled class.
+        if (job.category === 'item') {
+          job.category = null;
+        }
       }
 
-      await job.save();
-      await labelingService.publishLabeledImage(job, req.user._id);
+      const saved = await LabelingJob.findOneAndUpdate(
+        {
+          _id: job._id,
+          status: { $ne: 'deleted' },
+          $or: [
+            { status: { $ne: 'labeled' } },
+            { labeledBy: req.user._id },
+          ],
+        },
+        {
+          $set: {
+            label: job.label,
+            loadSize: job.loadSize,
+            category: job.category,
+            boxes: job.boxes,
+            status: job.status,
+            labeledAt: job.labeledAt,
+            labeledBy: job.labeledBy,
+            skippedAt: job.skippedAt,
+            predictedAt: job.predictedAt,
+            loadLabels: [],
+          },
+        },
+        { new: true },
+      );
+      if (!saved) {
+        return res.status(409).json({
+          message: 'This photo was just labeled by someone else',
+        });
+      }
+      await labelingService.publishLabeledImage(saved, req.user._id);
+      emitLabelingJobsChanged(saved, req.user._id);
 
       return res.status(200).json({
         message: 'Annotation saved',
-        job: serializeJob(job),
+        job: serializeJob(saved),
       });
     } catch (error) {
       return res.status(500).json({
@@ -499,6 +733,7 @@ const labelingCtrl = {
       job.skippedAt = new Date();
       job.labeledBy = req.user._id;
       await job.save();
+      emitLabelingJobsChanged(job, req.user._id);
 
       return res.status(200).json({
         message: 'Job skipped',
@@ -512,6 +747,55 @@ const labelingCtrl = {
     }
   },
 
+  deleteJob: async (req, res) => {
+    try {
+      if (denyUnlessSuperAdmin(req, res)) return;
+      const job = await LabelingJob.findById(req.params.id);
+      if (!job) {
+        return res.status(404).json({ message: 'Labeling job not found' });
+      }
+
+      await removeLabelingJob(job, req.user._id);
+      emitLabelingJobsChanged(job, req.user._id);
+
+      return res.status(200).json({
+        message: 'Photo deleted',
+        job: serializeJob(job),
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to delete photo',
+        error: error.message,
+      });
+    }
+  },
+
+  deleteJobs: async (req, res) => {
+    try {
+      if (denyUnlessSuperAdmin(req, res)) return;
+      const ids = (Array.isArray(req.body?.ids) ? req.body.ids : [])
+        .map((id) => String(id))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id));
+      if (!ids.length) {
+        return res.status(400).json({ message: 'Select at least one photo' });
+      }
+
+      const jobs = await LabelingJob.find({ _id: { $in: ids } });
+      await Promise.all(jobs.map((job) => removeLabelingJob(job, req.user._id)));
+      emitLabelingJobsChanged(jobs, req.user._id);
+
+      return res.status(200).json({
+        message: 'Photos deleted',
+        deleted: jobs.length,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: 'Failed to delete photos',
+        error: error.message,
+      });
+    }
+  },
+
   unlabelJob: async (req, res) => {
     try {
       const job = await LabelingJob.findById(req.params.id);
@@ -520,6 +804,7 @@ const labelingCtrl = {
       }
 
       await labelingService.resetJobToUnlabeled(job);
+      emitLabelingJobsChanged(job, req.user._id);
 
       return res.status(200).json({
         message: 'Photo unlabeled',
@@ -536,7 +821,8 @@ const labelingCtrl = {
   getClasses: async (req, res) => {
     try {
       await labelingService.ensureDefaultClasses();
-      const classes = await LabelClass.find().sort({ category: 1, name: 1 });
+      const classes = (await LabelClass.find().sort({ category: 1, name: 1 }))
+        .filter((item) => !labelingService.isHiddenYoloClass(item.name));
       const items = classes.filter((item) => item.category !== 'load');
       const loads = classes.filter((item) => item.category === 'load');
       const catalogueNames = await labelingService.listCatalogueNamesMissingFromYaml(classes);
@@ -808,6 +1094,7 @@ const labelingCtrl = {
           job.labeledAt = record.labeledAt;
           job.labeledBy = req.user._id;
           await job.save();
+          emitLabelingJobsChanged(job, req.user._id);
         }
       }
 
@@ -841,6 +1128,7 @@ const labelingCtrl = {
       }
 
       await labelingService.resetJobToUnlabeled(job);
+      emitLabelingJobsChanged(job, req.user._id);
 
       return res.status(200).json({
         message: 'Image unlabeled',
