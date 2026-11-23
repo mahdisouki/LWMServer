@@ -75,12 +75,24 @@ router.post(
 
 /**
  * POST /api/route-optimizer/external/compare-route-previews
- * Proxies to external POST /api/v1/compare-routes; returns auto + custom previews with driving times.
- * Body: { date, truckIds?, jobGroups|groups|jobs, vanCurrentCapacities?, respectTimeSlots? }
+ * Async compare-routes: returns 202 { jobId, status: "processing" }.
+ * Listen for socket `routeOptimizer:comparePreviewsDone` or poll GET .../jobs/:jobId.
  */
 router.post(
   '/external/compare-route-previews',
   routeOptimizerCtrl.compareRoutePreviews
+);
+
+/** Python callback when compare-routes finishes. */
+router.post(
+  '/external/compare-route-previews/callback',
+  routeOptimizerCtrl.compareRoutePreviewsCallback
+);
+
+/** Poll async compare-route-previews job status. */
+router.get(
+  '/external/compare-route-previews/jobs/:jobId',
+  routeOptimizerCtrl.getCompareRoutePreviewsJob
 );
 
 /**

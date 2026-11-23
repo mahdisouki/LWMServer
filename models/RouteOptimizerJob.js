@@ -10,10 +10,12 @@ const routeOptimizerJobSchema = new Schema(
     jobId: { type: String, required: true, unique: true, index: true },
     kind: {
       type: String,
-      enum: ['compare_grouped'],
+      enum: ['compare_grouped', 'compare_previews'],
       default: 'compare_grouped',
       index: true,
     },
+    /** Extra context for finalize (e.g. jobGroupIds for compare_previews). */
+    jobContext: { type: Schema.Types.Mixed, default: {} },
     status: {
       type: String,
       // applying = callback accepted; persist running (acks Python before heavy work)

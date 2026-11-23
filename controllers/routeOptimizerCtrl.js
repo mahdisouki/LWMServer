@@ -25,6 +25,14 @@ const {
   completeGroupedJobFailure,
   assertCallbackSecret,
 } = require('../services/groupedRoutesJobService');
+const {
+  buildComparePreviewsCallbackUrl,
+  createAndKickComparePreviewsJob,
+  claimComparePreviewsJob,
+  completeComparePreviewsSuccess,
+  completeComparePreviewsFailure,
+  assertCallbackSecret: assertComparePreviewsCallbackSecret,
+} = require('../services/comparePreviewsJobService');
 const EXTERNAL_ROUTE_OPTIMIZER_URL =
   process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org';
 /** External optimizer: manual job groups (POST body: date, truck_contexts, job_groups). */
@@ -2550,10 +2558,266 @@ async function requestBestTippingPlace(req, res) {
 }
 
 /**
+ * Persist auto/custom preview proposals and build the client options payload.
+ */
+async function storeComparePreviewOptions({
+  dateStr,
+  truckIds,
+  trucksInScope,
+  autoResult,
+  customResult,
+  externalComparison,
+  compareMode,
+  jobGroupIds,
+  createdBy,
+}) {
+  const comparisonId = crypto.randomUUID();
+  const expiresAt = new Date(Date.now() + ROUTE_PROPOSAL_TTL_MS);
+
+  /** @type {Array<object>} */
+  const options = [];
+  const variantDefs = [
+    { variant: 'auto', label: 'Automatic assignment', result: autoResult },
+    { variant: 'custom', label: 'Manual job groups', result: customResult },
+  ];
+
+  for (const def of variantDefs) {
+    if (!def.result?.ok) {
+      options.push({
+        previewId: null,
+        variant: def.variant,
+        label: def.label,
+        available: false,
+        error: def.result?.error || `${def.label} unavailable`,
+        detail: def.result?.detail,
+      });
+      continue;
+    }
+
+    const metrics = buildRoutePreviewMetrics(def.result.routes, trucksInScope, {
+      fleetTotalDurationMin: def.result.fleetTotalDurationMin,
+      fleetTotalDurationDisplay: def.result.fleetTotalDurationDisplay,
+    });
+    const routesWithComparison = enrichRouteMetricsWithComparison(
+      metrics.routes,
+      externalComparison,
+      def.variant
+    );
+
+    const proposal = await RouteOptimizerProposal.create({
+      comparisonId,
+      variant: def.variant,
+      date: dateStr,
+      truckIds,
+      status: 'pending',
+      optimizerMode: def.result.optimizerMode,
+      routes: def.result.routes,
+      externalSummary: def.result.externalSummary || {},
+      apiCallsUsed: def.result.apiCallsUsed ?? 0,
+      jobGroupIds: def.variant === 'custom' ? jobGroupIds : [],
+      createdBy,
+      expiresAt,
+    });
+
+    options.push({
+      previewId: proposal._id,
+      variant: def.variant,
+      label: def.label,
+      available: true,
+      optimizerMode: def.result.optimizerMode,
+      apiCallsUsed: def.result.apiCallsUsed ?? 0,
+      routes: routesWithComparison,
+      fleetTotalDurationMin: metrics.fleetTotalDurationMin,
+      fleetTotalDurationDisplay: metrics.fleetTotalDurationDisplay,
+      fleetTotalDistanceKm: metrics.fleetTotalDistanceKm,
+      summary: {
+        date: dateStr,
+        trucks_used: routesWithComparison.length,
+        ...(def.result.externalSummary &&
+        typeof def.result.externalSummary === 'object'
+          ? def.result.externalSummary
+          : {}),
+      },
+    });
+  }
+
+  const anyAvailable = options.some((o) => o.available);
+  return {
+    success: anyAvailable,
+    comparisonId,
+    date: dateStr,
+    expiresAt: expiresAt.toISOString(),
+    compareMode,
+    comparison: externalComparison,
+    options,
+  };
+}
+
+/**
+ * Finalize from Python compare-routes payload (callback or sync 200).
+ * Exported for comparePreviewsJobService (lazy require).
+ */
+async function finalizeComparePreviewsFromExternalData(job, externalData) {
+  await expireStaleRouteProposals();
+
+  const dateStr = job.date;
+  const truckIds = job.truckIds || [];
+  const jobGroupIds = Array.isArray(job.jobContext?.jobGroupIds)
+    ? job.jobContext.jobGroupIds
+    : [];
+  const createdBy = job.createdBy || null;
+
+  const loaded = await loadTrucksWithDriversForDate({
+    dateStr,
+    requestedTruckIds: truckIds.map((id) => String(id)),
+  });
+  if (!loaded.ok) {
+    throw new Error(loaded.message || 'Failed to reload trucks for previews');
+  }
+  const trucksInScope = loaded.trucksWithDrivers;
+
+  // Reuse parser via resolveCompareRoutesExternal shape when possible.
+  const autoRoutes = externalData?.calculate_routes?.routes;
+  const customRoutes = externalData?.custom?.routes;
+  const hasAnyRoutes =
+    (autoRoutes && typeof autoRoutes === 'object') ||
+    (customRoutes && typeof customRoutes === 'object');
+
+  if (!hasAnyRoutes && externalData?.__dualFallback) {
+    return storeComparePreviewOptions({
+      dateStr,
+      truckIds,
+      trucksInScope,
+      autoResult: externalData.autoResult,
+      customResult: externalData.customResult,
+      externalComparison: null,
+      compareMode: 'dual-fallback',
+      jobGroupIds,
+      createdBy,
+    });
+  }
+
+  if (!hasAnyRoutes) {
+    throw new Error('Compare-routes callback missing calculate_routes/custom routes');
+  }
+
+  // Parse callback/sync body locally — do not call Python again.
+  const autoBlock = externalData.calculate_routes || {};
+  const customBlock = externalData.custom || {};
+  const comparison =
+    externalData.comparison && typeof externalData.comparison === 'object'
+      ? externalData.comparison
+      : null;
+  const fleet = comparison?.fleet || {};
+  const autoRoutesMap =
+    autoBlock.routes && typeof autoBlock.routes === 'object' ? autoBlock.routes : {};
+  const customRoutesMap =
+    customBlock.routes && typeof customBlock.routes === 'object'
+      ? customBlock.routes
+      : {};
+
+  const buildVariant = (block, routesMap, variant, fleetKey, fleetDisplayKey) => {
+    const hasRoutes = Object.keys(routesMap).length > 0;
+    const blockOk = block.success !== false;
+    return {
+      ok: blockOk && hasRoutes,
+      routes: routesMap,
+      apiCallsUsed: block.api_calls_used ?? 0,
+      optimizerMode: `compare-routes/${variant}`,
+      externalSummary: {
+        ...(block.summary && typeof block.summary === 'object' ? block.summary : {}),
+        comparison,
+      },
+      fleetTotalDurationMin: parseDrivingTimeMin(fleet[fleetKey]),
+      fleetTotalDurationDisplay: fleet[fleetDisplayKey] ?? null,
+      error:
+        !blockOk || !hasRoutes
+          ? block.message ||
+            block.error ||
+            (typeof block.detail === 'string' ? block.detail : null) ||
+            `${variant} routes unavailable`
+          : null,
+    };
+  };
+
+  return storeComparePreviewOptions({
+    dateStr,
+    truckIds,
+    trucksInScope,
+    autoResult: buildVariant(
+      autoBlock,
+      autoRoutesMap,
+      'auto',
+      'calculate_routes_total',
+      'calculate_routes_total'
+    ),
+    customResult: buildVariant(
+      customBlock,
+      customRoutesMap,
+      'custom',
+      'custom_total',
+      'custom_total'
+    ),
+    externalComparison: comparison,
+    compareMode: 'compare-routes',
+    jobGroupIds,
+    createdBy,
+  });
+}
+
+/**
+ * When Python compare-routes is unavailable: dual local calls.
+ * Returns a marker object consumed by completeComparePreviewsSuccess.
+ */
+async function finalizeComparePreviewsDualFallback(job) {
+  const dateStr = job.date;
+  const truckIds = job.truckIds || [];
+  const jobGroups = Array.isArray(job.jobContext?.jobGroups)
+    ? job.jobContext.jobGroups
+    : [];
+  const job_groups = job.requestPayload?.job_groups || [];
+
+  const loaded = await loadTrucksWithDriversForDate({
+    dateStr,
+    requestedTruckIds: truckIds.map((id) => String(id)),
+  });
+  if (!loaded.ok) {
+    throw new Error(loaded.message || 'Failed to reload trucks for dual fallback');
+  }
+  const trucksInScope = loaded.trucksWithDrivers;
+
+  const basePayload = {
+    date: dateStr,
+    truck_contexts: job.requestPayload?.truck_contexts || [],
+  };
+  if (job.requestPayload?.van_current_capacities) {
+    basePayload.van_current_capacities =
+      job.requestPayload.van_current_capacities;
+  }
+
+  const [autoResult, customResult] = await Promise.all([
+    resolveAutoRoutes(basePayload),
+    resolveCustomGroupRoutes({
+      basePayload: { ...basePayload, job_groups },
+      job_groups,
+      jobGroups,
+      trucksInScope,
+      dateStr,
+    }),
+  ]);
+
+  return {
+    __dualFallback: true,
+    autoResult,
+    customResult,
+  };
+}
+
+/**
  * POST /api/route-optimizer/external/compare-route-previews
- * Calls external POST /api/v1/compare-routes (auto + custom in one call), stores two previews (no DB assign).
- * Falls back to parallel /calculate-routes + /custom if compare-routes is unavailable.
- * Body: { date, truckIds?, jobGroups|groups|jobs, vanCurrentCapacities?, respectTimeSlots? }
+ * Async: returns 202 { jobId, status: "processing" }.
+ * Python compare-routes runs in background and callbacks Node; socket
+ * `routeOptimizer:comparePreviewsDone` carries preview options.
  */
 async function compareRoutePreviews(req, res) {
   try {
@@ -2579,16 +2843,21 @@ async function compareRoutePreviews(req, res) {
         ? req.body.selectedTruckIds
         : null;
 
-    const loaded = await loadTrucksWithDriversForDate({ dateStr, requestedTruckIds });
+    const loaded = await loadTrucksWithDriversForDate({
+      dateStr,
+      requestedTruckIds,
+    });
     if (!loaded.ok) {
       return res.status(loaded.status).json({ message: loaded.message });
     }
 
-    const { trucksWithDrivers } = loaded;
-    const trucksInScope = trucksWithDrivers;
+    const trucksInScope = loaded.trucksWithDrivers;
     const truckIds = trucksInScope.map(({ truck }) => truck._id);
 
-    const builtGroups = await buildJobGroupsForPayload(jobGroups, '[comparePreviews]');
+    const builtGroups = await buildJobGroupsForPayload(
+      jobGroups,
+      '[comparePreviews]'
+    );
     if (!builtGroups.ok) {
       return res.status(400).json({
         message: builtGroups.message,
@@ -2599,156 +2868,49 @@ async function compareRoutePreviews(req, res) {
 
     const vanCapsForOptimizer = buildVanCapsForTrucks(req.body, trucksInScope);
     const truck_contexts = buildTruckContextsPayload(trucksInScope);
-    const basePayload = attachVanCapsToPayload(
-      {
-        date: dateStr,
-        truck_contexts,
-      },
-      vanCapsForOptimizer
-    );
+
+    const requestPayload = {
+      date: dateStr,
+      truck_contexts,
+      job_groups: builtGroups.job_groups,
+      respect_time_slots:
+        req.body.respectTimeSlots ?? req.body.respect_time_slots ?? false,
+      van_capacity: req.body.vanCapacity ?? req.body.van_capacity ?? null,
+    };
+    if (vanCapsForOptimizer) {
+      requestPayload.van_current_capacities = vanCapsForOptimizer;
+    }
 
     console.log(
-      '[RouteOptimizer:compare] date=%s jobGroups=%d trucks=%d',
+      '[RouteOptimizer:compare] date=%s jobGroups=%d trucks=%d (async job)',
       dateStr,
       builtGroups.job_groups.length,
       trucksInScope.length
     );
 
-    let externalComparison = null;
-    let compareMode = 'compare-routes';
-    /** @type {{ ok: boolean, routes?: object, error?: string, detail?: unknown, optimizerMode?: string, apiCallsUsed?: number, externalSummary?: object, fleetTotalDurationMin?: number|null, fleetTotalDurationDisplay?: string|null }} */
-    let autoResult;
-    /** @type {typeof autoResult} */
-    let customResult;
+    const createdBy = req.user?._id || req.user?.userId || null;
+    const callbackUrl = buildComparePreviewsCallbackUrl(req);
 
-    const compareBundle = await resolveCompareRoutesExternal({
+    const job = await createAndKickComparePreviewsJob({
       dateStr,
-      truck_contexts,
-      job_groups: builtGroups.job_groups,
-      vanCapsForOptimizer,
-      reqBody: req.body,
+      truckIds,
+      requestPayload,
+      jobContext: {
+        jobGroupIds: builtGroups.job_groups.map((g) => g.group_id),
+        jobGroups,
+      },
+      createdBy,
+      callbackUrl,
     });
 
-    if (compareBundle.ok) {
-      externalComparison = compareBundle.comparison;
-      autoResult = compareBundle.auto;
-      customResult = compareBundle.custom;
-      console.log('[RouteOptimizer:compare] external compare-routes OK');
-    } else if (compareBundle.fallback) {
-      compareMode = 'dual-fallback';
-      console.log(
-        '[RouteOptimizer:compare] compare-routes unavailable (HTTP %s), dual-call fallback',
-        compareBundle.status
-      );
-      [autoResult, customResult] = await Promise.all([
-        resolveAutoRoutes(basePayload),
-        resolveCustomGroupRoutes({
-          basePayload: { ...basePayload, job_groups: builtGroups.job_groups },
-          job_groups: builtGroups.job_groups,
-          jobGroups,
-          trucksInScope,
-          dateStr,
-        }),
-      ]);
-    } else {
-      return res.status(compareBundle.status || 502).json({
-        message: compareBundle.error || 'Compare routes failed',
-        ...(compareBundle.detail && typeof compareBundle.detail === 'object'
-          ? { detail: compareBundle.detail }
-          : {}),
-      });
-    }
-
-    const comparisonId = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + ROUTE_PROPOSAL_TTL_MS);
-    const createdBy = req.user?._id || null;
-    const jobGroupIds = builtGroups.job_groups.map((g) => g.group_id);
-
-    /** @type {Array<object>} */
-    const options = [];
-
-    const variantDefs = [
-      {
-        variant: 'auto',
-        label: 'Automatic assignment',
-        result: autoResult,
-      },
-      {
-        variant: 'custom',
-        label: 'Manual job groups',
-        result: customResult,
-      },
-    ];
-
-    for (const def of variantDefs) {
-      if (!def.result?.ok) {
-        options.push({
-          previewId: null,
-          variant: def.variant,
-          label: def.label,
-          available: false,
-          error: def.result?.error || `${def.label} unavailable`,
-          detail: def.result?.detail,
-        });
-        continue;
-      }
-
-      const metrics = buildRoutePreviewMetrics(def.result.routes, trucksInScope, {
-        fleetTotalDurationMin: def.result.fleetTotalDurationMin,
-        fleetTotalDurationDisplay: def.result.fleetTotalDurationDisplay,
-      });
-      const routesWithComparison = enrichRouteMetricsWithComparison(
-        metrics.routes,
-        externalComparison,
-        def.variant
-      );
-
-      const proposal = await RouteOptimizerProposal.create({
-        comparisonId,
-        variant: def.variant,
-        date: dateStr,
-        truckIds,
-        status: 'pending',
-        optimizerMode: def.result.optimizerMode,
-        routes: def.result.routes,
-        externalSummary: def.result.externalSummary || {},
-        apiCallsUsed: def.result.apiCallsUsed ?? 0,
-        jobGroupIds: def.variant === 'custom' ? jobGroupIds : [],
-        createdBy,
-        expiresAt,
-      });
-
-      options.push({
-        previewId: proposal._id,
-        variant: def.variant,
-        label: def.label,
-        available: true,
-        optimizerMode: def.result.optimizerMode,
-        apiCallsUsed: def.result.apiCallsUsed ?? 0,
-        routes: routesWithComparison,
-        fleetTotalDurationMin: metrics.fleetTotalDurationMin,
-        fleetTotalDurationDisplay: metrics.fleetTotalDurationDisplay,
-        fleetTotalDistanceKm: metrics.fleetTotalDistanceKm,
-        summary: {
-          date: dateStr,
-          trucks_used: routesWithComparison.length,
-          ...(def.result.externalSummary && typeof def.result.externalSummary === 'object'
-            ? def.result.externalSummary
-            : {}),
-        },
-      });
-    }
-
-    const anyAvailable = options.some((o) => o.available);
-
-    return res.status(anyAvailable ? 200 : 502).json({
-      success: anyAvailable,
-      comparisonId,
+    return res.status(202).json({
+      success: true,
+      status: 'processing',
+      jobId: job.jobId,
       date: dateStr,
-      expiresAt: expiresAt.toISOString(),
-      compareMode,
-      comparison: externalComparison,
-      options,
+      message:
+        'Compare route previews started. Listen for socket event routeOptimizer:comparePreviewsDone or GET /external/compare-route-previews/jobs/:jobId',
+      callbackUrl,
     });
   } catch (error) {
     console.error('Route optimizer compare-route-previews error:', error);
@@ -2761,12 +2923,162 @@ async function compareRoutePreviews(req, res) {
       });
     }
     if (isOptimizerTransportFailure(error)) {
-      const { status, body } = responseFromOptimizerNetworkError(error, 'compare-route-previews');
+      const { status, body } = responseFromOptimizerNetworkError(
+        error,
+        'compare-route-previews'
+      );
       return res.status(status).json(body);
     }
     return res.status(500).json({
       message: 'Compare route previews failed',
       error: error.response?.data || error.message,
+    });
+  }
+}
+
+/**
+ * POST /api/route-optimizer/external/compare-route-previews/callback
+ * Fast ack; finalize proposals in background.
+ */
+async function compareRoutePreviewsCallback(req, res) {
+  try {
+    if (!assertComparePreviewsCallbackSecret(req)) {
+      return res.status(401).json({ message: 'Invalid callback secret' });
+    }
+
+    const jobId = String(req.body?.job_id || req.body?.jobId || '').trim();
+    if (!jobId) {
+      return res.status(400).json({ message: 'job_id is required' });
+    }
+
+    const existing = await RouteOptimizerJob.findOne({
+      jobId,
+      kind: 'compare_previews',
+    }).lean();
+    if (!existing) {
+      return res.status(404).json({ message: 'Job not found', jobId });
+    }
+
+    if (
+      existing.status === 'done' ||
+      existing.status === 'failed' ||
+      existing.status === 'applying'
+    ) {
+      return res.status(200).json({
+        success: true,
+        message:
+          existing.status === 'applying'
+            ? 'Job already applying'
+            : 'Job already finalized',
+        jobId,
+        status: existing.status,
+      });
+    }
+
+    const cbStatus = String(req.body?.status || 'done').toLowerCase();
+    const isFailure = cbStatus === 'failed' || cbStatus === 'error';
+
+    if (
+      !isFailure &&
+      !(
+        (req.body?.calculate_routes && req.body.calculate_routes.routes) ||
+        (req.body?.custom && req.body.custom.routes)
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          'calculate_routes.routes and/or custom.routes required for success callback',
+        jobId,
+      });
+    }
+
+    const claimed = await claimComparePreviewsJob(jobId);
+    if (!claimed) {
+      const again = await RouteOptimizerJob.findOne({ jobId }).lean();
+      return res.status(200).json({
+        success: true,
+        message: 'Job already claimed or finalized',
+        jobId,
+        status: again?.status || 'unknown',
+      });
+    }
+
+    const payload = { ...req.body };
+    const failureMessage =
+      payload.error || payload.message || 'Python reported failure';
+
+    setImmediate(() => {
+      const run = isFailure
+        ? completeComparePreviewsFailure(claimed, failureMessage)
+        : completeComparePreviewsSuccess(claimed, payload);
+
+      run.catch(async (err) => {
+        console.error(
+          '[RouteOptimizer:comparePreviews] background finalize failed jobId=%s:',
+          jobId,
+          err.message
+        );
+        try {
+          const fresh = await RouteOptimizerJob.findOne({ jobId });
+          if (fresh && fresh.status === 'applying') {
+            await completeComparePreviewsFailure(fresh, err.message);
+          }
+        } catch (e) {
+          console.error(
+            '[RouteOptimizer:comparePreviews] mark failed after finalize error:',
+            e.message
+          );
+        }
+      });
+    });
+
+    return res.status(200).json({
+      success: true,
+      jobId,
+      status: 'applying',
+      message: 'Callback accepted; storing previews in background',
+    });
+  } catch (error) {
+    console.error('[RouteOptimizer:comparePreviews] callback error:', error);
+    return res.status(500).json({
+      message: 'Compare route previews callback failed',
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * GET /api/route-optimizer/external/compare-route-previews/jobs/:jobId
+ */
+async function getCompareRoutePreviewsJob(req, res) {
+  try {
+    const jobId = String(req.params.jobId || '').trim();
+    if (!jobId) {
+      return res.status(400).json({ message: 'jobId is required' });
+    }
+
+    const job = await RouteOptimizerJob.findOne({
+      jobId,
+      kind: 'compare_previews',
+    }).lean();
+    if (!job) {
+      return res.status(404).json({ message: 'Job not found', jobId });
+    }
+
+    return res.status(200).json({
+      success: true,
+      jobId: job.jobId,
+      status: job.status,
+      date: job.date,
+      error: job.error || null,
+      result: job.result || null,
+      createdAt: job.createdAt,
+      completedAt: job.completedAt,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Failed to load compare route previews job',
+      error: error.message,
     });
   }
 }
@@ -3022,6 +3334,10 @@ module.exports = {
   getGroupedRoutesJob,
   calculateRoutesExternalWithGroups,
   compareRoutePreviews,
+  compareRoutePreviewsCallback,
+  getCompareRoutePreviewsJob,
+  finalizeComparePreviewsFromExternalData,
+  finalizeComparePreviewsDualFallback,
   acceptRoutePreview,
   discardRoutePreview,
   recalculateTruckRoute,
