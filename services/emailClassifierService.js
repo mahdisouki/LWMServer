@@ -108,6 +108,22 @@ async function refreshThreadListSnapshot(adminId, threadId) {
   return doc;
 }
 
+function saveQuoteEmailImagesForLabeling(adminId, { threadId, messageId, customerName, email }) {
+  const labelingService = require('./labelingService');
+  labelingService.enqueueQuoteEmailImages({
+    adminId,
+    threadId,
+    messageId,
+    customerName,
+    email,
+  }).catch((err) => {
+    console.error(
+      `[labeling] quote email images failed thread ${threadId}:`,
+      err.message
+    );
+  });
+}
+
 /**
  * Classify one thread (oldest message) and upsert Mongo. Skips if already done unless force.
  */
@@ -167,6 +183,15 @@ async function classifyAndStoreThread(adminId, threadId, options = {}) {
     },
     { upsert: true, new: true }
   );
+
+  if (aiCategory === 'quote' && status === 'done') {
+    saveQuoteEmailImagesForLabeling(adminId, {
+      threadId,
+      messageId: classifyPayload.messageId,
+      customerName: classifyPayload.from,
+      email: from_address,
+    });
+  }
 
   return formatClassificationDoc(doc);
 }

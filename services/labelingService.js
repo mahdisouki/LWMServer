@@ -1,6 +1,8 @@
+const crypto = require('crypto');
 const FormData = require('form-data');
 const axios = require('axios');
 const sharp = require('sharp');
+const cloudinary = require('../helper/cloudinaryConfig');
 const LabelClass = require('../models/LabelClass');
 const LabelingJob = require('../models/LabelingJob');
 const LabeledImage = require('../models/LabeledImage');
@@ -632,6 +634,111 @@ async function enqueueQuotationImages(quotation) {
   });
 }
 
+function quoteEmailImagePublicId(messageId, attachmentId) {
+  const hash = crypto
+    .createHash('sha256')
+    .update(`${messageId}\n${attachmentId}`)
+    .digest('hex');
+  return `quote-email/${hash}`;
+}
+
+function quoteEmailImageUrl(publicId) {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  if (!cloudName) {
+    throw new Error('CLOUDINARY_CLOUD_NAME is not set');
+  }
+  return `https://res.cloudinary.com/${cloudName}/image/upload/${publicId}.jpg`;
+}
+
+function quoteFilePhotoAttachments(message) {
+  const {
+    listPhotoAttachmentsFromGmailMessage,
+  } = require('./gmailService');
+  const photos = listPhotoAttachmentsFromGmailMessage(message).filter(
+    (photo) => photo.attachmentRole === 'file_attachment'
+  );
+
+  const root = message?.payload;
+  const rootId = root?.body?.attachmentId;
+  const rootType = String(root?.mimeType || '').split(';')[0].trim().toLowerCase();
+  if (
+    rootId &&
+    rootType.startsWith('image/') &&
+    !photos.some((photo) => photo.attachmentId === rootId)
+  ) {
+    photos.push({
+      attachmentId: rootId,
+      filename: root.filename || 'photo.jpg',
+      mimeType: rootType,
+      attachmentRole: 'file_attachment',
+    });
+  }
+
+  return photos;
+}
+
+async function uploadQuoteEmailImage(buffer, messageId, photo) {
+  const publicId = quoteEmailImagePublicId(messageId, photo.attachmentId);
+  const mimeType = photo.mimeType || 'image/jpeg';
+  const uploaded = await cloudinary.uploader.upload(
+    `data:${mimeType};base64,${buffer.toString('base64')}`,
+    {
+      public_id: publicId,
+      resource_type: 'image',
+      overwrite: true,
+      unique_filename: false,
+      format: 'jpg',
+    }
+  );
+  if (!uploaded?.public_id) {
+    throw new Error(
+      `Cloudinary did not store quote image ${photo.filename || photo.attachmentId}`
+    );
+  }
+  return quoteEmailImageUrl(publicId);
+}
+
+/**
+ * Photo attachments on a quote email (sent from Gmail, not the quote form).
+ * Uploads each file to Cloudinary and enqueues that URL for labeling.
+ * Suggest-reply and stored quote items are left unchanged.
+ */
+async function enqueueQuoteEmailImages({ adminId, threadId, messageId, customerName, email }) {
+  if (!adminId || !threadId || !messageId) {
+    throw new Error('adminId, threadId and messageId are required to save quote email images');
+  }
+
+  const { getThread, downloadAttachmentBuffer } = require('./gmailService');
+  const thread = await getThread(adminId, threadId);
+  const message = (thread.messages || []).find((row) => row.id === messageId);
+  if (!message) {
+    throw new Error(`Quote email message ${messageId} was not found`);
+  }
+
+  const photos = quoteFilePhotoAttachments(message);
+  if (photos.length === 0) {
+    return { created: 0 };
+  }
+
+  const imageUrls = [];
+  for (const photo of photos) {
+    const buffer = await downloadAttachmentBuffer(adminId, message.id, photo.attachmentId);
+    if (!buffer?.length) {
+      throw new Error(
+        `Quote email image ${photo.filename || photo.attachmentId} was empty`
+      );
+    }
+    imageUrls.push(await uploadQuoteEmailImage(buffer, message.id, photo));
+  }
+
+  return enqueueImageJobs({
+    source: 'quotation',
+    customerName: customerName || '',
+    email: email || '',
+    imageUrls,
+  });
+}
+
 async function enqueueTaskImages(task, extraUrls = []) {
   if (!task) {
     return { created: 0 };
@@ -841,6 +948,7 @@ module.exports = {
   nextYoloIndex,
   predictBoxes,
   enqueueQuotationImages,
+  enqueueQuoteEmailImages,
   enqueueTaskImages,
   enqueueImageJobs,
   syncJobsFromQuotations,
