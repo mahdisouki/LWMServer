@@ -706,6 +706,10 @@ async function createDirectLinkedAdditionalTaskFromItems({
     createdByUser,
   });
 
+  if (childTask.blockedCustomer === true) {
+    await syncCancelledVanAssignment(childTask);
+  }
+
   return { childTask };
 }
 

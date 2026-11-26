@@ -8,6 +8,7 @@ const {
   customerName,
   findActiveBlock,
 } = require('../services/blockedCustomerService');
+const { syncCancelledVanAssignment } = require('../services/cancelledVanAssignment');
 
 function uniquePhones(phones) {
   return [...new Set((phones || []).filter(Boolean))];
@@ -135,6 +136,7 @@ const blockedCustomerCtrl = {
     task.blockedReason = reason;
     task.blockedCustomerId = block._id;
     await task.save();
+    await syncCancelledVanAssignment(task);
 
     await loggingService.createLog({
       userId: req.user._id,
@@ -181,6 +183,10 @@ const blockedCustomerCtrl = {
       { blockedCustomerId: block._id },
       { $set: { blockedCustomer: false, blockedMatchOn: [], blockedReason: '' } },
     );
+    const releasedTasks = await Task.find({ blockedCustomerId: block._id });
+    for (const releasedTask of releasedTasks) {
+      await syncCancelledVanAssignment(releasedTask);
+    }
 
     await loggingService.createLog({
       userId: req.user._id,

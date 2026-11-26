@@ -19,7 +19,11 @@ function TaskModel() {
 
 function shouldParkOnCancelledVan(task) {
   if (!task) return false;
-  return task.taskStatus === 'Cancelled' || task.paymentStatus === 'Failed';
+  return (
+    task.taskStatus === 'Cancelled' ||
+    task.paymentStatus === 'Failed' ||
+    task.blockedCustomer === true
+  );
 }
 
 function idString(value) {
@@ -190,8 +194,8 @@ async function setTaskTruck(taskId, truckId) {
 }
 
 /**
- * Failed payments and cancelled orders stay on the cancelled van for the collection date.
- * Any other status leaves that van so the order can be routed.
+ * Failed payments, cancelled orders, and blocked orders stay on the cancelled van
+ * for the collection date. Any other status leaves that van so the order can be routed.
  */
 async function syncCancelledVanAssignment(task) {
   if (!task || !task._id) return;

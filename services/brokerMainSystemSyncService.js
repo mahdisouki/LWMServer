@@ -180,6 +180,7 @@ async function syncBrokerOrderToMainSystem({ order, lead, broker, actorName }) {
   applyBlockedMatch(task, blockedMatch);
 
   const savedTask = await task.save();
+  await syncCancelledVanAssignment(savedTask);
 
   if (quotationId) {
     try {
