@@ -99,6 +99,13 @@ function toLatLngFromGeoPoint(point) {
   return { lat: Number(lat), lng: Number(lng) };
 }
 
+/** Meet-only multi-unit: default 1; pass through to external optimizer as required_units. */
+function requiredUnitsFromTask(task) {
+  const n = Number(task?.requiredUnitCount);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
+
 /** Convert resolveTruckDayRouteCoords point → external optimizer { lat, lng }. */
 function toLatLngFromRouteDayPoint(point) {
   return toLatLngFromGeoPoint(point?.location) || toLatLngFromGeoPoint(point);
@@ -321,6 +328,7 @@ async function buildOptimizerJobsFromSegments(segments, logPrefix = '[routeGroup
           typeof task.taskDuration === 'number' && task.taskDuration >= 0 ? task.taskDuration : 10,
         spaceOfVan:
           typeof task.spaceOfVan === 'number' && task.spaceOfVan >= 0 ? task.spaceOfVan : 0,
+        required_units: requiredUnitsFromTask(task),
         order,
         type,
       });
@@ -1892,6 +1900,7 @@ async function recalculateTruckRoute(req, res) {
             typeof task.taskDuration === 'number' && task.taskDuration >= 0 ? task.taskDuration : 10,
           spaceOfVan:
             typeof task.spaceOfVan === 'number' && task.spaceOfVan >= 0 ? task.spaceOfVan : 0,
+          required_units: requiredUnitsFromTask(task),
           order,
           type,
         });
@@ -2195,6 +2204,7 @@ async function refreshRoute(req, res) {
             typeof task.taskDuration === 'number' && task.taskDuration >= 0 ? task.taskDuration : 10,
           spaceOfVan:
             typeof task.spaceOfVan === 'number' && task.spaceOfVan >= 0 ? task.spaceOfVan : 0,
+          required_units: requiredUnitsFromTask(task),
           order,
           type,
         });

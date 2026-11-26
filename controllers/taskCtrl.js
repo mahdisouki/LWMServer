@@ -741,6 +741,7 @@ async function createPersistentPaymentLink({
 }
 
 const TASK_PRIORITIES = ['low', 'high', 'critical'];
+const REQUIRED_UNIT_COUNT_MAX = 10;
 const PAYMENT_LINK_REFRESH_COOLDOWN_MS = 5 * 1000;
 const PAYMENT_LINK_BASE_URL = process.env.PAYMENT_LINK_BASE_URL;
 
@@ -1256,6 +1257,34 @@ function normalizeTaskPriority(value) {
   if (s === '') return undefined;
   if (!TASK_PRIORITIES.includes(s)) return null;
   return s;
+}
+
+/**
+ * Normalize requiredUnitCount from body (requiredUnitCount | required_unit_count | requiredUnits).
+ * @returns {number|undefined|null} number if valid; undefined if omitted/empty; null if invalid
+ */
+function normalizeRequiredUnitCount(value) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'string' && value.trim() === '') return undefined;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > REQUIRED_UNIT_COUNT_MAX) {
+    return null;
+  }
+  return n;
+}
+
+function pickRequiredUnitCountFromBody(body) {
+  if (!body || typeof body !== 'object') return undefined;
+  if (Object.prototype.hasOwnProperty.call(body, 'requiredUnitCount')) {
+    return body.requiredUnitCount;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'required_unit_count')) {
+    return body.required_unit_count;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'requiredUnits')) {
+    return body.requiredUnits;
+  }
+  return undefined;
 }
 
 // Fonction auxiliaire pour traiter les événements de commande approuvés
@@ -2110,6 +2139,19 @@ const taskCtrl = {
         priorityToSet = pNorm;
       }
 
+      let requiredUnitCountToSet;
+      const rawRequiredUnitCount = pickRequiredUnitCountFromBody(req.body);
+      if (rawRequiredUnitCount !== undefined) {
+        const unitsNorm = normalizeRequiredUnitCount(rawRequiredUnitCount);
+        if (unitsNorm === null) {
+          return res.status(400).json({
+            message: `Invalid requiredUnitCount. Allowed: integer from 1 to ${REQUIRED_UNIT_COUNT_MAX}.`,
+            error: 'INVALID_REQUIRED_UNIT_COUNT',
+          });
+        }
+        if (unitsNorm !== undefined) requiredUnitCountToSet = unitsNorm;
+      }
+
       const resolvedLocation = await resolveTaskLocation({
         location,
         collectionAddress,
@@ -2159,6 +2201,9 @@ const taskCtrl = {
         taskDuration: taskDuration || undefined,
         spaceOfVan: taskVanSpacePercent,
         ...(priorityToSet ? { priority: priorityToSet } : {}),
+        ...(requiredUnitCountToSet !== undefined
+          ? { requiredUnitCount: requiredUnitCountToSet }
+          : {}),
         redflag: redflagBoolean,
         ...(redflagBoolean && redflagNoteTrimmed
           ? { redflagNote: redflagNoteTrimmed, redflagBy: req.user?._id, redflagAt: new Date() }
@@ -2826,7 +2871,7 @@ const taskCtrl = {
         },
       })
         .select(
-          'location date spaceOfVan taskStatus paymentStatus totalPrice available taskDuration firstName lastName priority _id items postcode',
+          'location date spaceOfVan taskStatus paymentStatus totalPrice available taskDuration firstName lastName priority requiredUnitCount _id items postcode',
         )
         .populate('items.standardItemId', 'itemName')
         .sort({ createdAt: -1 })
@@ -2846,6 +2891,11 @@ const taskCtrl = {
           quantity: item?.quantity ?? 0,
         }));
 
+        const requiredUnitCount =
+          Number.isFinite(Number(t.requiredUnitCount)) && Number(t.requiredUnitCount) >= 1
+            ? Math.floor(Number(t.requiredUnitCount))
+            : 1;
+
         return {
           location: t.location,
           date: t.date,
@@ -2856,6 +2906,7 @@ const taskCtrl = {
           taskStatus: t.taskStatus,
           paymentStatus: t.paymentStatus,
           priority: t.priority,
+          requiredUnitCount,
           postcode: t.postcode,
           _id: t._id,
           name: name || null,
@@ -4173,6 +4224,29 @@ const taskCtrl = {
             });
           }
           updates.priority = pNorm;
+        }
+      }
+
+      // Accept requiredUnitCount / required_unit_count / requiredUnits like priority input
+      const hasRequiredUnitCount =
+        Object.prototype.hasOwnProperty.call(updates, 'requiredUnitCount') ||
+        Object.prototype.hasOwnProperty.call(updates, 'required_unit_count') ||
+        Object.prototype.hasOwnProperty.call(updates, 'requiredUnits');
+      if (hasRequiredUnitCount) {
+        const rawUnits = pickRequiredUnitCountFromBody(updates);
+        delete updates.required_unit_count;
+        delete updates.requiredUnits;
+        if (rawUnits === '' || rawUnits === null) {
+          delete updates.requiredUnitCount;
+        } else {
+          const unitsNorm = normalizeRequiredUnitCount(rawUnits);
+          if (unitsNorm === null || unitsNorm === undefined) {
+            return res.status(400).json({
+              message: `Invalid requiredUnitCount. Allowed: integer from 1 to ${REQUIRED_UNIT_COUNT_MAX}.`,
+              error: 'INVALID_REQUIRED_UNIT_COUNT',
+            });
+          }
+          updates.requiredUnitCount = unitsNorm;
         }
       }
 

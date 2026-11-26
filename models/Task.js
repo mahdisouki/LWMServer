@@ -280,6 +280,12 @@ const taskSchema = new Schema(
       enum: ['low', 'high', 'critical'],
       default: 'low',
     },
+    /** How many units must meet at this job (1 = normal; 2+ = meet-only multi-unit). */
+    requiredUnitCount: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
     redflag: { type: Boolean, default: false },
     redflagNote: { type: String },
     redflagBy: { type: Schema.Types.ObjectId, ref: 'User' },
