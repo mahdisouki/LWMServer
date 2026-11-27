@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
+const { LOAD_SIZES, applyCanonicalLoadNames } = require('../config/loadClasses');
 
 const boxSchema = new Schema(
   {
@@ -52,7 +53,7 @@ const labelingJobSchema = new Schema(
     },
     loadSize: {
       type: String,
-      enum: ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load', null],
+      enum: [...LOAD_SIZES, null],
       default: null,
       index: true,
     },
@@ -86,7 +87,7 @@ const labelingJobSchema = new Schema(
             userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
             loadSize: {
               type: String,
-              enum: ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load'],
+              enum: LOAD_SIZES,
               required: true,
             },
             boxes: { type: [boxSchema], default: [] },
@@ -103,6 +104,10 @@ const labelingJobSchema = new Schema(
 
 labelingJobSchema.index({ imageUrl: 1 }, { unique: true });
 labelingJobSchema.index({ status: 1, createdAt: -1 });
+
+labelingJobSchema.pre('validate', function rewriteLegacyFullLoad() {
+  applyCanonicalLoadNames(this);
+});
 
 const LabelingJob = mongoose.model('LabelingJob', labelingJobSchema);
 module.exports = LabelingJob;

@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
+const { LOAD_SIZES, applyCanonicalLoadNames } = require('../config/loadClasses');
 
 const boxSchema = new Schema(
   {
@@ -57,7 +58,7 @@ const labeledImageSchema = new Schema(
     label: { type: String, required: true, index: true },
     loadSize: {
       type: String,
-      enum: ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load', null],
+      enum: [...LOAD_SIZES, null],
       default: null,
     },
     boxes: { type: [boxSchema], required: true },
@@ -75,6 +76,10 @@ const labeledImageSchema = new Schema(
 
 labeledImageSchema.index({ imageUrl: 1 }, { unique: true });
 labeledImageSchema.index({ category: 1, labeledAt: -1 });
+
+labeledImageSchema.pre('validate', function rewriteLegacyFullLoad() {
+  applyCanonicalLoadNames(this);
+});
 
 const LabeledImage = mongoose.model('LabeledImage', labeledImageSchema);
 module.exports = LabeledImage;

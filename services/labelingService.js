@@ -10,6 +10,13 @@ const StandardItem = require('../models/StandardItem');
 const QuotationRequest = require('../models/QuotationRequest');
 const Task = require('../models/Task');
 const AdditionalItemRequest = require('../models/AdditionalItemRequest');
+const {
+  LOAD_SIZES,
+  LOAD_SIZE_YOLO_OFFSET,
+  LEGACY_FULL_LOAD_CLASS,
+  FULL_LOAD_CLASS,
+  canonicalLoadSize,
+} = require('../config/loadClasses');
 
 // Canonical order from item-detection/data_filtered.yaml (nc: 76). Do not reorder.
 const DEFAULT_YOLO_CLASSES = [
@@ -127,16 +134,12 @@ const VIDEO_EXT_RE = /\.(mp4|webm|ogg|mov|avi|m4v)(\?|$)/i;
 const HTTP_IMAGE_QUERY = { $regex: /^https?:\/\// };
 // New classes appended after the frozen filtered model order on export.
 // category:'load' is back-office UI only — in YOLO they are normal class names.
-const LOAD_SIZES = ['Mini Load', '1/4 Load', '1/2 Load', '3/4 Load', 'Full Load'];
-// Existing sizes keep their YOLO offsets. Mini Load is appended so those indexes do not move.
-const LOAD_SIZE_YOLO_OFFSET = {
-  '1/4 Load': 0,
-  '1/2 Load': 1,
-  '3/4 Load': 2,
-  'Full Load': 3,
-  'Mini Load': 4,
-};
 const REMOVED_HELPER_CLASSES = ['Sofa', 'Chair', 'Table'];
+
+function canonicalClassName(value) {
+  const text = String(value ?? '').trim();
+  return canonicalLoadSize(text);
+}
 
 function getYoloPredictUrl() {
   return process.env.YOLO_PREDICT_URL || 'http://127.0.0.1:8002/detect';
@@ -239,9 +242,44 @@ async function migrateBoxesToYolo() {
   await migrateDocumentBoxes(LabeledImage);
 }
 
+async function renameLegacyFullLoadClass() {
+  await repointLabels(LEGACY_FULL_LOAD_CLASS, FULL_LOAD_CLASS);
+  await LabelingJob.updateMany(
+    { loadSize: LEGACY_FULL_LOAD_CLASS },
+    { $set: { loadSize: FULL_LOAD_CLASS } },
+  );
+  await LabelingJob.updateMany(
+    { 'loadLabels.loadSize': LEGACY_FULL_LOAD_CLASS },
+    { $set: { 'loadLabels.$[vote].loadSize': FULL_LOAD_CLASS } },
+    { arrayFilters: [{ 'vote.loadSize': LEGACY_FULL_LOAD_CLASS }] },
+  );
+  await LabeledImage.updateMany(
+    { loadSize: LEGACY_FULL_LOAD_CLASS },
+    { $set: { loadSize: FULL_LOAD_CLASS, exportedAt: null } },
+  );
+
+  const legacy = await LabelClass.findOne({ name: LEGACY_FULL_LOAD_CLASS });
+  if (!legacy) {
+    await LabelClass.updateOne(
+      { name: FULL_LOAD_CLASS },
+      { $set: { category: 'load', isYoloClass: true } },
+    );
+    return;
+  }
+
+  await LabelClass.deleteOne({ name: FULL_LOAD_CLASS });
+  legacy.name = FULL_LOAD_CLASS;
+  legacy.category = 'load';
+  legacy.isYoloClass = true;
+  legacy.yoloIndex = DEFAULT_YOLO_CLASSES.length + LOAD_SIZE_YOLO_OFFSET[FULL_LOAD_CLASS];
+  await legacy.save();
+}
+
 async function ensureDefaultClasses() {
   await ensureIndexes();
   await migrateBoxesToYolo();
+  // Rename before reserved indexes are cleared. "Full Load" is not in LOAD_SIZES.
+  await renameLegacyFullLoadClass();
   await LabelClass.deleteMany({ name: { $in: REMOVED_HELPER_CLASSES } });
 
   const reservedEnd = DEFAULT_YOLO_CLASSES.length + LOAD_SIZES.length;
@@ -367,6 +405,9 @@ const YAML_SPELLING_ALIASES = {
   vacuums: 'vaccum',
   'vaccum hoovers': 'vaccum',
   'vacuums hoovers': 'vaccum',
+  // Van full-load option. Kept out of standard-item classes.
+  'full load': 'full load large load',
+  'large load full load': 'full load large load',
 };
 
 function catalogueMatchKey(value) {
@@ -842,14 +883,14 @@ function toYoloRow(box, classIndex) {
 
 function isPublishableJob(job) {
   if (!job || !Array.isArray(job.boxes) || job.boxes.length === 0) return false;
-  const label = job.label || job.loadSize;
+  const label = canonicalClassName(job.label || job.loadSize);
   if (!label) return false;
   if (job.category === 'load' && !LOAD_SIZES.includes(label)) return false;
   return true;
 }
 
 function labeledImagePayload(job, userId) {
-  const label = job.label || job.loadSize;
+  const label = canonicalClassName(job.label || job.loadSize);
   const category = job.category === 'load' || LOAD_SIZES.includes(label)
     ? 'load'
     : 'item';
@@ -870,7 +911,7 @@ function labeledImagePayload(job, userId) {
       y: box.y,
       width: box.width,
       height: box.height,
-      label: box.label,
+      label: canonicalClassName(box.label),
       score: box.score,
       source: box.source || 'human',
     })),
@@ -943,6 +984,8 @@ module.exports = {
   HIDDEN_YOLO_CLASSES,
   isHiddenYoloClass,
   LOAD_SIZES,
+  canonicalClassName,
+  renameLegacyFullLoadClass,
   isLabelingImageUrl,
   ensureDefaultClasses,
   nextYoloIndex,

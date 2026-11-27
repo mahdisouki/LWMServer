@@ -39,9 +39,14 @@ function visibleLabel(label) {
 }
 
 function visibleBoxes(boxes) {
-  return (Array.isArray(boxes) ? boxes : []).filter(
-    (box) => !labelingService.isHiddenYoloClass(box?.label),
-  );
+  return (Array.isArray(boxes) ? boxes : [])
+    .filter((box) => !labelingService.isHiddenYoloClass(box?.label))
+    .map((box) => {
+      const label = labelingService.canonicalClassName(box?.label);
+      if (!box || label === box.label) return box;
+      const plain = typeof box.toObject === 'function' ? box.toObject() : { ...box };
+      return { ...plain, label };
+    });
 }
 
 function hideOwnLoadLabels(filter, userId) {
@@ -184,7 +189,7 @@ function emitLabelingJobsChanged(jobs, actorId) {
 
 function serializeJob(job) {
   const plain = typeof job.toObject === 'function' ? job.toObject() : job;
-  const storedLabel = plain.label || plain.loadSize || null;
+  const storedLabel = labelingService.canonicalClassName(plain.label || plain.loadSize || '');
   const label = visibleLabel(storedLabel);
   const category = plain.category
     || (labelingService.LOAD_SIZES.includes(storedLabel) ? 'load' : label ? 'item' : null);
@@ -198,7 +203,7 @@ function serializeJob(job) {
     customerName: plain.customerName || '',
     email: plain.email || '',
     label,
-    loadSize: plain.loadSize || null,
+    loadSize: plain.loadSize ? labelingService.canonicalClassName(plain.loadSize) : null,
     category,
     status: plain.status,
     boxes: visibleBoxes(plain.boxes),
@@ -305,8 +310,8 @@ function serializeLabeled(doc) {
     customerName: plain.customerName || '',
     email: plain.email || '',
     category: plain.category,
-    label: visibleLabel(plain.label),
-    loadSize: plain.loadSize || null,
+    label: visibleLabel(labelingService.canonicalClassName(plain.label)),
+    loadSize: plain.loadSize ? labelingService.canonicalClassName(plain.loadSize) : null,
     boxes: visibleBoxes(plain.boxes),
     labeledBy: plain.labeledBy || null,
     labeledAt: plain.labeledAt,
@@ -556,6 +561,7 @@ const labelingCtrl = {
 
   saveJob: async (req, res) => {
     try {
+      await labelingService.renameLegacyFullLoadClass();
       const job = await LabelingJob.findById(req.params.id);
       if (!job) {
         return res.status(404).json({ message: 'Labeling job not found' });
@@ -593,7 +599,7 @@ const labelingCtrl = {
         const rawLabel = Object.prototype.hasOwnProperty.call(req.body, 'label')
           ? req.body.label
           : req.body.loadSize;
-        const name = rawLabel == null ? '' : String(rawLabel).trim();
+        const name = rawLabel == null ? '' : labelingService.canonicalClassName(rawLabel);
 
         if (!name) {
           job.label = null;
