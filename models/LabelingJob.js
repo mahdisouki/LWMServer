@@ -59,7 +59,7 @@ const labelingJobSchema = new Schema(
     },
     category: {
       type: String,
-      enum: ['item', 'load', null],
+      enum: ['item', 'load', 'mixed', null],
       default: null,
       index: true,
     },

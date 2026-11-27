@@ -40,7 +40,7 @@ const ITEMS_REMAINING = {
 };
 
 const LOADS_REMAINING = {
-  category: 'load',
+  category: { $in: ['load', 'mixed'] },
   status: { $nin: ['labeled', 'skipped', 'deleted'] },
 };
 
@@ -68,11 +68,11 @@ async function getLabelingProgress({ preset, startDate, endDate } = {}) {
     skippedByUser,
   ] = await Promise.all([
     LabeledImage.countDocuments({ category: 'item' }),
-    LabeledImage.countDocuments({ category: 'load' }),
+    LabeledImage.countDocuments({ category: { $in: ['load', 'mixed'] } }),
     LabelingJob.countDocuments(ITEMS_REMAINING),
     LabelingJob.countDocuments(LOADS_REMAINING),
-    LabelingJob.countDocuments({ status: 'skipped', category: { $ne: 'load' } }),
-    LabelingJob.countDocuments({ status: 'skipped', category: 'load' }),
+    LabelingJob.countDocuments({ status: 'skipped', category: { $nin: ['load', 'mixed'] } }),
+    LabelingJob.countDocuments({ status: 'skipped', category: { $in: ['load', 'mixed'] } }),
     LabeledImage.countDocuments(UNEXPORTED),
     LabeledImage.countDocuments({ category: 'item', labeledAt: range }),
     LabelingJob.countDocuments({ status: 'skipped', skippedAt: range }),
@@ -103,7 +103,7 @@ async function getLabelingProgress({ preset, startDate, endDate } = {}) {
     ]),
     // Finished loads from before each labeler was recorded separately.
     LabeledImage.aggregate([
-      { $match: { category: 'load', labeledAt: range } },
+      { $match: { category: { $in: ['load', 'mixed'] }, labeledAt: range } },
       {
         $lookup: {
           from: 'labelingjobs',

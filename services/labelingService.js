@@ -881,19 +881,55 @@ function toYoloRow(box, classIndex) {
   return `${classIndex} ${box.x} ${box.y} ${box.width} ${box.height}`;
 }
 
+function isLoadSizeLabel(name) {
+  return LOAD_SIZES.includes(canonicalClassName(name));
+}
+
+function plainAnnotationBox(box) {
+  const label = canonicalClassName(box?.label);
+  return {
+    x: Number(box.x),
+    y: Number(box.y),
+    width: Number(box.width),
+    height: Number(box.height),
+    label,
+    score: typeof box.score === 'number' ? box.score : undefined,
+    source: box.source === 'yolo' ? 'yolo' : 'human',
+  };
+}
+
+function splitAnnotationBoxes(boxes) {
+  const itemBoxes = [];
+  const loadBoxes = [];
+  for (const box of Array.isArray(boxes) ? boxes : []) {
+    if (!box || !String(box.label || '').trim()) continue;
+    const plain = plainAnnotationBox(box);
+    if (!plain.label) continue;
+    if (isLoadSizeLabel(plain.label)) loadBoxes.push(plain);
+    else itemBoxes.push(plain);
+  }
+  return { itemBoxes, loadBoxes };
+}
+
 function isPublishableJob(job) {
-  if (!job || !Array.isArray(job.boxes) || job.boxes.length === 0) return false;
-  const label = canonicalClassName(job.label || job.loadSize);
-  if (!label) return false;
-  if (job.category === 'load' && !LOAD_SIZES.includes(label)) return false;
-  return true;
+  if (!job || job.status !== 'labeled') return false;
+  const { itemBoxes, loadBoxes } = splitAnnotationBoxes(job.boxes);
+  if (job.category === 'mixed') return itemBoxes.length > 0 && loadBoxes.length > 0;
+  if (job.category === 'load') return loadBoxes.length > 0;
+  return itemBoxes.length > 0;
 }
 
 function labeledImagePayload(job, userId) {
-  const label = canonicalClassName(job.label || job.loadSize);
-  const category = job.category === 'load' || LOAD_SIZES.includes(label)
-    ? 'load'
-    : 'item';
+  const { itemBoxes, loadBoxes } = splitAnnotationBoxes(job.boxes);
+  const agreedSize = isLoadSizeLabel(job.loadSize)
+    ? canonicalClassName(job.loadSize)
+    : (loadBoxes[0] ? loadBoxes[0].label : null);
+  let category = 'item';
+  if (itemBoxes.length && agreedSize) category = 'mixed';
+  else if (agreedSize || job.category === 'load') category = 'load';
+  const label = category === 'load'
+    ? agreedSize
+    : (itemBoxes[0]?.label || canonicalClassName(job.label) || agreedSize);
   return {
     jobId: job._id,
     source: job.source || 'quotation',
@@ -905,16 +941,8 @@ function labeledImagePayload(job, userId) {
     email: job.email || '',
     category,
     label,
-    loadSize: LOAD_SIZES.includes(label) ? label : null,
-    boxes: job.boxes.map((box) => ({
-      x: box.x,
-      y: box.y,
-      width: box.width,
-      height: box.height,
-      label: canonicalClassName(box.label),
-      score: box.score,
-      source: box.source || 'human',
-    })),
+    loadSize: agreedSize || null,
+    boxes: [...itemBoxes, ...loadBoxes],
     labeledBy: userId || job.labeledBy || null,
     labeledAt: job.labeledAt || new Date(),
   };
@@ -998,6 +1026,8 @@ module.exports = {
   syncJobsFromOrders,
   syncAllLabelingJobs,
   toYoloRow,
+  isLoadSizeLabel,
+  splitAnnotationBoxes,
   yoloClassNames,
   yamlNameForCatalogueItem,
   listCatalogueNamesMissingFromYaml,

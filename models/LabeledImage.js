@@ -51,7 +51,7 @@ const labeledImageSchema = new Schema(
     email: { type: String, default: '' },
     category: {
       type: String,
-      enum: ['item', 'load'],
+      enum: ['item', 'load', 'mixed'],
       required: true,
       index: true,
     },

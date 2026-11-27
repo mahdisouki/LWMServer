@@ -77,16 +77,23 @@ function majorityNeeded(labelerCount) {
 
 async function recordLoadMajority(req, res, job) {
   const userId = req.user._id;
+  const { itemBoxes, loadBoxes } = labelingService.splitAnnotationBoxes(job.boxes);
+  if (!loadBoxes.length) {
+    return res.status(400).json({
+      message: 'Pick a load size. Draw a region, or leave it to use the whole photo.',
+    });
+  }
   const entry = {
     userId,
     loadSize: job.label,
-    boxes: job.boxes,
+    boxes: loadBoxes,
     labeledAt: new Date(),
   };
   const openFilter = {
     _id: job._id,
     status: { $nin: ['deleted', 'labeled'] },
   };
+  const waitingCategory = itemBoxes.length ? 'mixed' : 'load';
 
   const pulled = await LabelingJob.updateOne(openFilter, {
     $pull: { loadLabels: { userId } },
@@ -104,8 +111,8 @@ async function recordLoadMajority(req, res, job) {
       $set: {
         label: null,
         loadSize: null,
-        boxes: [],
-        category: 'load',
+        boxes: itemBoxes,
+        category: waitingCategory,
         status: 'pending',
         labeledAt: null,
         skippedAt: null,
@@ -141,14 +148,17 @@ async function recordLoadMajority(req, res, job) {
   const winningVote = [...saved.loadLabels].reverse().find(
     (vote) => vote.loadSize === winner && allowed.has(String(vote.userId)),
   );
+  const winningBoxes = labelingService.splitAnnotationBoxes(winningVote?.boxes || loadBoxes).loadBoxes;
+  const finalBoxes = [...itemBoxes, ...winningBoxes];
+  const category = itemBoxes.length ? 'mixed' : 'load';
   const finalized = await LabelingJob.findOneAndUpdate(
     openFilter,
     {
       $set: {
-        label: winner,
+        label: category === 'mixed' ? itemBoxes[0].label : winner,
         loadSize: winner,
-        boxes: winningVote?.boxes || job.boxes,
-        category: 'load',
+        boxes: finalBoxes,
+        category,
         status: 'labeled',
         labeledAt: new Date(),
         labeledBy: winningVote?.userId || userId,
@@ -265,27 +275,21 @@ function itemsModuleFilter() {
 }
 
 function loadsModuleFilter() {
-  // Loads queue only: unfinished load photos
+  // Unfinished load-only photos, and photos that already have item boxes and still need a size.
   return {
-    category: 'load',
+    category: { $in: ['load', 'mixed'] },
     status: { $nin: ['labeled', 'skipped', 'deleted'] },
   };
 }
 
 function unlabeledFilter(moduleName) {
-  if (moduleName === 'loads') {
-    return {
-      category: 'load',
-      status: { $nin: ['labeled', 'skipped', 'deleted'] },
-      $or: [{ boxes: { $exists: false } }, { boxes: { $size: 0 } }],
-    };
-  }
+  if (moduleName === 'loads') return loadsModuleFilter();
   return itemsModuleFilter();
 }
 
 function labeledFilter(moduleName) {
   if (moduleName === 'loads') {
-    return { category: 'load', status: 'labeled' };
+    return { category: { $in: ['load', 'mixed'] }, status: 'labeled' };
   }
   if (moduleName === 'items') {
     return { category: 'item', status: 'labeled' };
@@ -294,7 +298,8 @@ function labeledFilter(moduleName) {
 }
 
 function labeledImageCategoryFilter(moduleName) {
-  return moduleName === 'loads' ? { category: 'load' } : { category: 'item' };
+  if (moduleName === 'loads') return { category: { $in: ['load', 'mixed'] } };
+  return { category: 'item' };
 }
 
 function serializeLabeled(doc) {
@@ -588,6 +593,8 @@ const labelingCtrl = {
       if (hasCategoryField) {
         if (req.body.category === 'load') {
           job.category = 'load';
+        } else if (req.body.category === 'mixed') {
+          job.category = 'mixed';
         } else if (req.body.category === 'item') {
           job.category = 'item';
         } else {
@@ -643,42 +650,66 @@ const labelingCtrl = {
         }));
       }
 
-      const recordingLoadSize = job.category === 'load'
-        && labelingService.LOAD_SIZES.includes(job.label)
-        && Array.isArray(job.boxes)
-        && job.boxes.length > 0
-        && !(job.status === 'labeled' && String(job.labeledBy) === String(req.user._id));
+      const requestedCategory = hasCategoryField ? req.body.category : undefined;
+      const split = labelingService.splitAnnotationBoxes(job.boxes);
+      const loadName = labelingService.LOAD_SIZES.includes(job.label) ? job.label : null;
+      const sameOwnerEdit = job.status === 'labeled'
+        && String(job.labeledBy) === String(req.user._id);
 
-      if (recordingLoadSize) {
-        return recordLoadMajority(req, res, job);
-      }
-
-      const queuedLoad = job.category === 'load'
-        && !labelingService.LOAD_SIZES.includes(job.label);
-
-      if (queuedLoad && (!job.boxes || job.boxes.length === 0)) {
-        job.boxes = [];
+      const queuePending = (nextCategory, nextBoxes) => {
+        job.boxes = nextBoxes;
+        job.label = null;
+        job.loadSize = null;
+        job.category = nextCategory;
         job.status = 'pending';
         job.labeledAt = null;
-      } else if (job.boxes.length > 0) {
-        if (!job.label) {
-          job.label = job.boxes[0].label;
-          job.loadSize = labelingService.LOAD_SIZES.includes(job.label)
-            ? job.label
-            : null;
-          job.category = labelingService.LOAD_SIZES.includes(job.label)
-            ? 'load'
-            : 'item';
+        job.labeledBy = null;
+        job.skippedAt = null;
+      };
+
+      // Back to Classes. Item boxes stay; the load vote is cleared with the save.
+      if (hasCategoryField && (requestedCategory == null || requestedCategory === '')) {
+        queuePending(null, split.itemBoxes);
+      } else if (job.category === 'mixed' && !loadName) {
+        if (!split.itemBoxes.length) {
+          return res.status(400).json({
+            message: 'Draw at least one item before adding a load',
+          });
+        }
+        queuePending('mixed', split.itemBoxes);
+      } else if (job.category === 'load' && !loadName) {
+        queuePending('load', []);
+      } else if (loadName && split.loadBoxes.length && !sameOwnerEdit) {
+        job.category = split.itemBoxes.length ? 'mixed' : 'load';
+        job.label = loadName;
+        job.loadSize = loadName;
+        job.boxes = [...split.itemBoxes, ...split.loadBoxes];
+        return recordLoadMajority(req, res, job);
+      } else if (loadName && split.loadBoxes.length) {
+        job.category = split.itemBoxes.length ? 'mixed' : 'load';
+        job.label = split.itemBoxes.length ? split.itemBoxes[0].label : loadName;
+        job.loadSize = loadName;
+        job.boxes = [...split.itemBoxes, ...split.loadBoxes];
+        job.status = 'labeled';
+        job.labeledAt = new Date();
+        job.labeledBy = req.user._id;
+        job.skippedAt = null;
+      } else if (split.itemBoxes.length) {
+        job.boxes = split.itemBoxes;
+        job.category = 'item';
+        job.loadSize = null;
+        if (!job.label || labelingService.LOAD_SIZES.includes(job.label)) {
+          job.label = split.itemBoxes[0].label;
         }
         job.status = 'labeled';
         job.labeledAt = new Date();
         job.labeledBy = req.user._id;
         job.skippedAt = null;
       } else {
+        job.boxes = [];
         job.status = 'pending';
         job.labeledAt = null;
-        // The Classes queue lists photos with no category. "item" is only for a labeled class.
-        if (job.category === 'item') {
+        if (job.category === 'item' || job.category === 'mixed') {
           job.category = null;
         }
       }
@@ -987,7 +1018,7 @@ const labelingCtrl = {
       const category = String(req.query.category || 'all');
       const keyword = String(req.query.keyword || '').trim();
       const filter = {};
-      if (category === 'item' || category === 'load') {
+      if (category === 'item' || category === 'load' || category === 'mixed') {
         filter.category = category;
       }
       if (keyword) {
@@ -1053,37 +1084,51 @@ const labelingCtrl = {
         return res.status(400).json({ message: 'At least one bounding box is required' });
       }
 
-      const name = String(req.body?.label || req.body.boxes[0].label || '').trim();
-      if (!name) {
-        return res.status(400).json({ message: 'Class label is required' });
-      }
-
-      const existing = await LabelClass.findOne({
-        name: {
-          $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
-          $options: 'i',
-        },
-      });
-      if (!existing) {
-        return res.status(400).json({
-          message: `Unknown class "${name}". Add it first.`,
+      const normalizedBoxes = [];
+      for (const box of req.body.boxes) {
+        const name = labelingService.canonicalClassName(String(box.label || '').trim());
+        if (!name) {
+          return res.status(400).json({ message: 'Class label is required' });
+        }
+        const existing = await LabelClass.findOne({
+          name: {
+            $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+            $options: 'i',
+          },
+        });
+        if (!existing) {
+          return res.status(400).json({
+            message: `Unknown class "${name}". Add it first.`,
+          });
+        }
+        normalizedBoxes.push({
+          x: Number(box.x),
+          y: Number(box.y),
+          width: Number(box.width),
+          height: Number(box.height),
+          label: existing.name,
+          score: typeof box.score === 'number' ? box.score : undefined,
+          source: box.source === 'yolo' ? 'yolo' : 'human',
         });
       }
 
-      record.label = existing.name;
-      record.category = existing.category === 'load' ? 'load' : 'item';
-      record.loadSize = labelingService.LOAD_SIZES.includes(existing.name)
-        ? existing.name
-        : null;
-      record.boxes = req.body.boxes.map((box) => ({
-        x: Number(box.x),
-        y: Number(box.y),
-        width: Number(box.width),
-        height: Number(box.height),
-        label: String(box.label).trim(),
-        score: typeof box.score === 'number' ? box.score : undefined,
-        source: box.source === 'yolo' ? 'yolo' : 'human',
-      }));
+      const { itemBoxes, loadBoxes } = labelingService.splitAnnotationBoxes(normalizedBoxes);
+      if (itemBoxes.length && loadBoxes.length) {
+        record.category = 'mixed';
+        record.label = itemBoxes[0].label;
+        record.loadSize = loadBoxes[0].label;
+      } else if (loadBoxes.length) {
+        record.category = 'load';
+        record.label = loadBoxes[0].label;
+        record.loadSize = loadBoxes[0].label;
+      } else if (itemBoxes.length) {
+        record.category = 'item';
+        record.label = itemBoxes[0].label;
+        record.loadSize = null;
+      } else {
+        return res.status(400).json({ message: 'Class label is required' });
+      }
+      record.boxes = [...itemBoxes, ...loadBoxes];
       record.labeledAt = new Date();
       record.labeledBy = req.user._id;
       record.exportedAt = null;
