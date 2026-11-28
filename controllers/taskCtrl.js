@@ -2871,7 +2871,7 @@ const taskCtrl = {
         },
       })
         .select(
-          'location date spaceOfVan taskStatus paymentStatus totalPrice available taskDuration firstName lastName priority requiredUnitCount _id items postcode',
+          'location date spaceOfVan taskStatus paymentStatus totalPrice available taskDuration firstName lastName priority requiredUnitCount truckId assistingTruckIds _id items postcode',
         )
         .populate('items.standardItemId', 'itemName')
         .sort({ createdAt: -1 })
@@ -2896,6 +2896,10 @@ const taskCtrl = {
             ? Math.floor(Number(t.requiredUnitCount))
             : 1;
 
+        const assistingTruckIds = Array.isArray(t.assistingTruckIds)
+          ? t.assistingTruckIds.map((id) => String(id))
+          : [];
+
         return {
           location: t.location,
           date: t.date,
@@ -2907,6 +2911,8 @@ const taskCtrl = {
           paymentStatus: t.paymentStatus,
           priority: t.priority,
           requiredUnitCount,
+          truckId: t.truckId ? String(t.truckId) : null,
+          assistingTruckIds,
           postcode: t.postcode,
           _id: t._id,
           name: name || null,
@@ -2945,8 +2951,9 @@ const taskCtrl = {
       // Extract taskDate from the task's `date` field
       const taskDate = task.date.toISOString().split('T')[0]; // Format: 'YYYY-MM-DD'
 
-      // Update the task with the truck ID
+      // Manual assign = primary only; clear any previous escorts
       task.truckId = truck._id;
+      task.assistingTruckIds = [];
       await task.save();
 
       // Ensure `tasks` exists for the truck
@@ -3049,41 +3056,51 @@ const taskCtrl = {
       }
 
       const taskDate = task.date.toISOString().split('T')[0]; // Extract the task date
+      const assistIds = Array.isArray(task.assistingTruckIds)
+        ? task.assistingTruckIds.map((id) => String(id))
+        : [];
 
-      // Clear truckId on the task first
-      await Task.findByIdAndUpdate(taskId, { $unset: { truckId: 1 } });
+      // Clear primary + assist ownership
+      await Task.findByIdAndUpdate(taskId, {
+        $unset: { truckId: 1 },
+        $set: { assistingTruckIds: [] },
+      });
 
-      // Convert `truck.tasks` (Map) to a plain object for manipulation
-      const tasksByDate =
-        truck.tasks instanceof Map
-          ? Object.fromEntries(truck.tasks)
-          : truck.tasks;
+      const removeTaskFromTruckSchedule = async (truckDoc) => {
+        if (!truckDoc) return;
+        const tasksByDate =
+          truckDoc.tasks instanceof Map
+            ? Object.fromEntries(truckDoc.tasks)
+            : truckDoc.tasks || {};
+        const taskIdStr = task._id.toString();
+        let changed = false;
+        for (const dateKey of Object.keys(tasksByDate)) {
+          const entries = tasksByDate[dateKey];
+          if (!Array.isArray(entries)) continue;
+          const filtered = entries.filter((entry) => {
+            if (entry && typeof entry === 'object' && entry.taskId) {
+              return String(entry.taskId) !== taskIdStr;
+            }
+            return String(entry) !== taskIdStr;
+          });
+          if (filtered.length === entries.length) continue;
+          changed = true;
+          if (filtered.length === 0) delete tasksByDate[dateKey];
+          else tasksByDate[dateKey] = filtered;
+        }
+        if (!changed) return;
+        truckDoc.tasks = new Map(Object.entries(tasksByDate));
+        truckDoc.markModified('tasks');
+        await truckDoc.save();
+      };
 
-      // Remove task from truck schedule (entries may be strings or { taskId, type, order })
-      const taskIdStr = task._id.toString();
-      for (const dateKey of Object.keys(tasksByDate)) {
-        const entries = tasksByDate[dateKey];
-        if (!Array.isArray(entries)) continue;
-
-        const filtered = entries.filter((entry) => {
-          if (entry && typeof entry === 'object' && entry.taskId) {
-            return String(entry.taskId) !== taskIdStr;
-          }
-          return String(entry) !== taskIdStr;
-        });
-
-        if (filtered.length === entries.length) continue;
-
-        if (filtered.length === 0) {
-          delete tasksByDate[dateKey];
-        } else {
-          tasksByDate[dateKey] = filtered;
+      await removeTaskFromTruckSchedule(truck);
+      if (assistIds.length) {
+        const assistTrucks = await Truck.find({ _id: { $in: assistIds } });
+        for (const assistTruck of assistTrucks) {
+          await removeTaskFromTruckSchedule(assistTruck);
         }
       }
-
-      truck.tasks = new Map(Object.entries(tasksByDate));
-      truck.markModified('tasks');
-      await truck.save();
 
       // Update daily sheets for the driver
       try {
@@ -3106,7 +3123,10 @@ const taskCtrl = {
       }
 
       // Guard: PUT /tasks/order re-assigns truckId for every task still in its list
-      await Task.updateOne({ _id: task._id }, { $unset: { truckId: 1 } });
+      await Task.updateOne(
+        { _id: task._id },
+        { $unset: { truckId: 1 }, $set: { assistingTruckIds: [] } }
+      );
 
       // Create a log of the truck de-assignment
       if (req.user) {
@@ -3318,7 +3338,17 @@ const taskCtrl = {
         assignmentUpdates.push(
           Task.updateMany(
             { _id: { $in: removedFromSchedule }, truckId: truckObjectId },
-            { $unset: { truckId: 1 } },
+            { $unset: { truckId: 1 }, $set: { assistingTruckIds: [] } },
+          ),
+        );
+        // Escort trucks: drop this truck from assistingTruckIds only
+        assignmentUpdates.push(
+          Task.updateMany(
+            {
+              _id: { $in: removedFromSchedule },
+              assistingTruckIds: truckObjectId,
+            },
+            { $pull: { assistingTruckIds: truckObjectId } },
           ),
         );
       }

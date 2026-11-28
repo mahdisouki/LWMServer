@@ -12,6 +12,13 @@ const Driver = require('../models/Driver');
 const RouteOptimizerProposal = require('../models/RouteOptimizerProposal');
 const RouteOptimizerJob = require('../models/RouteOptimizerJob');
 const { truckDisplayName } = require('../utils/truckHelpers');
+const {
+  assignTaskFromRouteSegment,
+  buildTaskOwnershipPlan,
+  persistTaskOwnershipPlan,
+  clearTaskAssignmentFilter,
+  clearTaskAssignmentUpdate,
+} = require('../utils/multiUnitTaskAssignment');
 const routeOptimizerService = require('../services/routeOptimizerService');
 const dailySheetController = require('./dailySheetController');
 const { getAssignedForDayFromRanges } = require('../services/unitAssignmentLogService');
@@ -763,12 +770,13 @@ async function persistExternalRoutes({
 }) {
   const consideredTruckIds = trucksWithDrivers.map(({ truck }) => truck._id);
   await Task.updateMany(
-    {
-      date: { $gte: startOfDay, $lte: endOfDay },
-      truckId: { $in: consideredTruckIds },
-    },
-    { $set: { truckId: null } }
+    clearTaskAssignmentFilter(startOfDay, endOfDay, consideredTruckIds),
+    clearTaskAssignmentUpdate()
   );
+
+  // Same task on multiple truck routes → pick one primary, rest escorts (LWMServer).
+  const ownershipPlan = buildTaskOwnershipPlan(routes);
+  await persistTaskOwnershipPlan(Task, ownershipPlan);
 
   const routeKeys = Object.keys(routes || {});
   let assignedCount = 0;
@@ -814,7 +822,8 @@ async function persistExternalRoutes({
         await TippingRequest.findByIdAndUpdate(taskId, { truckId: truck._id });
         truck.addTippingRequest(dateStr, taskId, order);
       } else {
-        await Task.findByIdAndUpdate(taskId, { truckId: truck._id });
+        // Ownership already persisted from plan; keep schedule entry on every unit.
+        await assignTaskFromRouteSegment(Task, taskId, truck._id, segment, ownershipPlan);
         truck.addTask(dateStr, taskId, order);
       }
 
@@ -1158,12 +1167,12 @@ async function calculateRoutesExternal(req, res) {
     // Unassign tasks only for selected/considered trucks on this date so unrelated trucks are untouched.
     const consideredTruckIds = trucksWithDrivers.map(({ truck }) => truck._id);
     await Task.updateMany(
-      {
-        date: { $gte: startOfDay, $lte: endOfDay },
-        truckId: { $in: consideredTruckIds },
-      },
-      { $set: { truckId: null } }
+      clearTaskAssignmentFilter(startOfDay, endOfDay, consideredTruckIds),
+      clearTaskAssignmentUpdate()
     );
+
+    const ownershipPlan = buildTaskOwnershipPlan(routes);
+    await persistTaskOwnershipPlan(Task, ownershipPlan);
 
     // Persist assignment: clear old routes for this date on each truck, then assign new order
     let assignedCount = 0;
@@ -1214,7 +1223,7 @@ async function calculateRoutesExternal(req, res) {
           await TippingRequest.findByIdAndUpdate(taskId, { truckId: truck._id });
           truck.addTippingRequest(dateStr, taskId, order);
         } else {
-          await Task.findByIdAndUpdate(taskId, { truckId: truck._id });
+          await assignTaskFromRouteSegment(Task, taskId, truck._id, segment, ownershipPlan);
           truck.addTask(dateStr, taskId, order);
         }
 
@@ -2026,7 +2035,7 @@ async function recalculateTruckRoute(req, res) {
           await TippingRequest.findByIdAndUpdate(taskIdStr, { truckId: truck._id });
           truck.addTippingRequest(dateStr, taskIdStr, order);
         } else {
-          await Task.findByIdAndUpdate(taskIdStr, { truckId: truck._id });
+          await assignTaskFromRouteSegment(Task, taskIdStr, truck._id, segment);
           truck.addTask(dateStr, taskIdStr, order);
         }
       }
@@ -2330,7 +2339,7 @@ async function refreshRoute(req, res) {
           await TippingRequest.findByIdAndUpdate(taskIdStr, { truckId: truck._id });
           truck.addTippingRequest(dateStr, taskIdStr, order);
         } else {
-          await Task.findByIdAndUpdate(taskIdStr, { truckId: truck._id });
+          await assignTaskFromRouteSegment(Task, taskIdStr, truck._id, segment);
           truck.addTask(dateStr, taskIdStr, order);
         }
       }
@@ -3308,14 +3317,20 @@ async function resetAllVansForDate(req, res) {
       trucksCleared += 1;
     }
 
+    const truckIdClause = hasTruckSelection
+      ? { $in: effectiveTruckIds }
+      : { $ne: null, $nin: excludedTruckIds };
     const taskFilter = {
       date: { $gte: startOfDay, $lte: endOfDay },
-      truckId: hasTruckSelection
-        ? { $in: effectiveTruckIds }
-        : { $ne: null, $nin: excludedTruckIds },
+      $or: [
+        { truckId: truckIdClause },
+        ...(hasTruckSelection
+          ? [{ assistingTruckIds: { $in: effectiveTruckIds } }]
+          : [{ assistingTruckIds: { $exists: true, $ne: [] } }]),
+      ],
     };
 
-    const taskResult = await Task.updateMany(taskFilter, { $set: { truckId: null } });
+    const taskResult = await Task.updateMany(taskFilter, clearTaskAssignmentUpdate());
 
     const tippingFilters = [];
     if (clearedTippingIds.size) {

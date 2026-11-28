@@ -90,6 +90,8 @@ const taskSchema = new Schema(
     orderNumber: { type: String, unique: true },
     // clientId: { type: Schema.Types.ObjectId, ref: "Client", required: false },
     truckId: { type: Schema.Types.ObjectId, ref: "Truck", required: false },
+    /** Extra units for meet-only multi-unit jobs (primary stays in truckId). */
+    assistingTruckIds: [{ type: Schema.Types.ObjectId, ref: "Truck" }],
     firstName: { type: String, required: true },
     billingAddress: { type: String },
     collectionAddress: { type: String },

@@ -6,6 +6,13 @@ const Truck = require('../models/Truck');
 const RouteOptimizerJob = require('../models/RouteOptimizerJob');
 const dailySheetController = require('../controllers/dailySheetController');
 const { truckDisplayName } = require('../utils/truckHelpers');
+const {
+  assignTaskFromRouteSegment,
+  buildTaskOwnershipPlan,
+  persistTaskOwnershipPlan,
+  clearTaskAssignmentFilter,
+  clearTaskAssignmentUpdate,
+} = require('../utils/multiUnitTaskAssignment');
 
 const EXTERNAL_ROUTE_OPTIMIZER_URL = (
   process.env.EXTERNAL_ROUTE_OPTIMIZER_URL || 'https://routeoptimiser.duckdns.org'
@@ -89,13 +96,14 @@ async function applyGroupedRoutesResult({
 
   if (consideredTruckIds.length) {
     await Task.updateMany(
-      {
-        date: { $gte: startOfDay, $lte: endOfDay },
-        truckId: { $in: consideredTruckIds },
-      },
-      { $set: { truckId: null } }
+      clearTaskAssignmentFilter(startOfDay, endOfDay, consideredTruckIds),
+      clearTaskAssignmentUpdate()
     );
   }
+
+  // Same task on several truck routes → one primary, rest escorts (chosen here).
+  const ownershipPlan = buildTaskOwnershipPlan(routes);
+  await persistTaskOwnershipPlan(Task, ownershipPlan);
 
   const trucks = await Truck.find({ _id: { $in: consideredTruckIds } });
   const truckById = new Map(trucks.map((t) => [t._id.toString(), t]));
@@ -145,7 +153,13 @@ async function applyGroupedRoutesResult({
         });
         truck.addTippingRequest(dateStr, taskId, order);
       } else {
-        await Task.findByIdAndUpdate(taskId, { truckId: truck._id });
+        await assignTaskFromRouteSegment(
+          Task,
+          taskId,
+          truck._id,
+          segment,
+          ownershipPlan,
+        );
         truck.addTask(dateStr, taskId, order);
       }
       assignedCount += 1;
