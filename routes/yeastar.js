@@ -8,6 +8,7 @@ const admin = [isAuth, checkRole('Admin')];
 
 router.get('/status', ...admin, yeastarCtrl.getStatus);
 router.get('/extensions', ...admin, yeastarCtrl.listExtensions);
+router.get('/softphone-session', ...admin, yeastarCtrl.getSoftphoneSession);
 router.post('/call', ...admin, yeastarCtrl.dial);
 
 module.exports = router;

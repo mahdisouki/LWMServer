@@ -12,18 +12,36 @@ function handleError(res, err, fallback = 'Yeastar error') {
 exports.getStatus = async (req, res) => {
   try {
     const config = yeastar.getConfig();
+    const softphoneConfigured = yeastar.isSoftphoneConfigured();
     return res.json({
       success: true,
       configured: yeastar.isConfigured(),
+      softphoneConfigured,
       baseUrl: config.baseUrl,
       extension: config.extension,
       extensionName: config.extensionName,
+      softphoneExtension: config.softphoneExtension,
       setupHint: yeastar.isConfigured()
         ? null
         : 'Set YEASTAR_CLIENT_ID and YEASTAR_CLIENT_SECRET in the server environment',
+      softphoneHint: softphoneConfigured
+        ? null
+        : 'Set YEASTAR_LINKUS_ACCESS_ID and YEASTAR_LINKUS_ACCESS_KEY from Integrations → Linkus SDK, then restart',
     });
   } catch (err) {
     return handleError(res, err);
+  }
+};
+
+/** Short-lived Linkus Web SDK login for the browser softphone. */
+exports.getSoftphoneSession = async (req, res) => {
+  try {
+    const session = await yeastar.createSoftphoneSession({
+      extension: req.query?.extension || req.body?.extension,
+    });
+    return res.json({ success: true, session });
+  } catch (err) {
+    return handleError(res, err, 'Yeastar softphone session failed');
   }
 };
 
