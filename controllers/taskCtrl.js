@@ -517,22 +517,54 @@ async function attachTruckAndDayCrew(tasks) {
   const trucks = await Promise.all(
     tasks.map((task) => (task.truckId ? Truck.findById(task.truckId).populate('vanId') : null)),
   );
-  const pairs = tasks.map((task) => ({
-    truckId: task.truckId,
-    dateKey: collectionDateKey(task.date),
-  }));
+
+  const assistIdLists = tasks.map((task) =>
+    Array.isArray(task.assistingTruckIds)
+      ? task.assistingTruckIds.map((id) => String(id)).filter(Boolean)
+      : [],
+  );
+  const allAssistIds = [...new Set(assistIdLists.flat())];
+  const assistTrucks = allAssistIds.length
+    ? await Truck.find({ _id: { $in: allAssistIds } }).populate('vanId')
+    : [];
+  const assistTruckById = new Map(
+    assistTrucks.map((t) => [String(t._id), t]),
+  );
+
+  const pairs = [];
+  for (const task of tasks) {
+    const dateKey = collectionDateKey(task.date);
+    if (task.truckId) pairs.push({ truckId: task.truckId, dateKey });
+    for (const aid of Array.isArray(task.assistingTruckIds) ? task.assistingTruckIds : []) {
+      if (aid) pairs.push({ truckId: aid, dateKey });
+    }
+  }
   const crewByKey = await loadDayCrewByTruckDate(pairs);
 
   return tasks.map((task, index) => {
     const obj = typeof task.toObject === 'function' ? task.toObject() : { ...task };
     const truck = trucks[index];
     obj.truckName = truck ? truckDisplayName(truck) : obj.truckName || null;
-    const pair = pairs[index];
-    const crew = pair.truckId && pair.dateKey
-      ? crewByKey.get(`${pair.truckId}:${pair.dateKey}`)
-      : null;
+    const dateKey = collectionDateKey(task.date);
+    const primaryKey =
+      task.truckId && dateKey ? `${task.truckId}:${dateKey}` : null;
+    const crew = primaryKey ? crewByKey.get(primaryKey) : null;
     obj.assignedDriver = crew?.assignedDriver || null;
     obj.assignedHelper = crew?.assignedHelper || null;
+
+    const assistIds = assistIdLists[index];
+    obj.assistingTruckIds = assistIds;
+    obj.assistingUnits = assistIds.map((id) => {
+      const assistTruck = assistTruckById.get(String(id));
+      const assistCrew =
+        dateKey && id ? crewByKey.get(`${id}:${dateKey}`) : null;
+      return {
+        truckId: String(id),
+        truckName: assistTruck ? truckDisplayName(assistTruck) : null,
+        assignedDriver: assistCrew?.assignedDriver || null,
+        assignedHelper: assistCrew?.assignedHelper || null,
+      };
+    });
     return obj;
   });
 }
