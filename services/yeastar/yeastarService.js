@@ -191,8 +191,10 @@ async function findConfiguredExtension() {
 }
 
 function normalizeCallee(value) {
-  const callee = String(value || '').trim();
-  if (!/^[0-9+][0-9]{2,20}$/.test(callee)) {
+  // PBX accepts 00… international; leading '+' often fails outbound routes.
+  let callee = String(value || '').replace(/[\s\-().]/g, '');
+  if (callee.startsWith('+')) callee = `00${callee.slice(1)}`;
+  if (!/^[0-9]{3,20}$/.test(callee)) {
     throw apiError('callee must be a phone or extension number', 400);
   }
   return callee;
